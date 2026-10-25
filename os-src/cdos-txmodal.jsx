@@ -14,6 +14,10 @@
     CD, Ic, CCY, reportingLimit, TODAY, crossRate, fmt, num, currencyPlaces, effectiveRate, unitText, mkRef, nowTime, newTx,
     priceDeal, spreadOf, sellUnitCad, CommitBtn
   } = window.CDOS;
+  /* The sentence a refusal uses when a deal needs ID. The checklist
+     and the Record ID button key off it, so the refusal and the fix
+     path stay the same words. */
+  const ID_NEEDED = "ID needed for this amount. Record the customer's ID.";
   const deskHome = () => {
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return (pack && pack.homeCurrency) || 'CAD';
@@ -261,7 +265,7 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const standing = c.idStanding && c.idStanding.label ? c.idStanding : null; const st = standing ? standing.label : (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = standing ? standing.tone === 'ok' : st === 'verified'; const onfile = standing ? false : st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
                 </button>); })}
@@ -387,7 +391,7 @@
     return window.matchMedia('(max-width: 599px)').matches;
   }
 
-  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted }) {
+  function TxModal({ rows, clients, setClients, setRows, settings, me, log, onClose, onDone, prefillClient, rateVersion, cheques, setCheques, chequeSchedule, onOpenCheques, serverBacked, onServerPosted, onRecordId }) {
     const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
     const names = useMemo(() => { const s = new Set(Object.keys(clients)); live.forEach(r => r.customer && s.add(r.customer)); return Array.from(s).sort(); }, [clients, live]);
@@ -445,7 +449,7 @@
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false);   // launches the KYC scan-ID walk-through
-    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [parkedForId, setParkedForId] = useState(false); // sheet stays mounted while the client file is open
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
@@ -522,14 +526,14 @@
     };
     useEffect(() => {
       const h = (e) => {
-        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (e.key !== 'Escape' || present || addFlow || quickChk || parkedForId) return;
         if (discardAsk) { setDiscardAsk(false); return; }
         if (phoneSheet && dealDirty) { setDiscardAsk(true); return; }
         onClose();
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    }, [onClose, present, addFlow, quickChk, parkedForId, discardAsk, phoneSheet, dealDirty]);
     /* The soft keyboard shrinks the visual viewport and leaves the layout
        viewport tall, so a footer pinned to the layout bottom sits under
        the keys. The sheet tracks the visual viewport, and the footer sits
@@ -674,7 +678,16 @@
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);
     const rec = clients[customer];
-    const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
+    /* A server-backed file uses the server's standing. Reading the
+       primary document here is how a secondary passport, or a primary
+       that only says "Not stated", used to disagree with the gate. */
+    /* The server's object, when the file came from it. The checklist
+       shows its reason in those words. A record with no object still
+       falls through to the fields on the screen. */
+    const standing = rec && rec.idStanding && rec.idStanding.label ? rec.idStanding : null;
+    const kyc = standing ? (standing.tone === 'ok' ? 'ok' : standing.label === 'Expired' ? 'expired' : 'missing')
+      : (!rec || !rec.idType || !rec.idNum) ? 'missing'
+      : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
@@ -757,7 +770,9 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file`) : null });
+    const serverNeedsId = serverError === ID_NEEDED;
+    const blockedReason = standing && standing.reason ? standing.reason : (phoneSheet ? 'ID not recorded yet' : ID_NEEDED);
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk && !serverNeedsId, warn: !!customer && (!idOk || serverNeedsId), label: standing && !idOk ? standing.label : `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : (!idOk || serverNeedsId) ? blockedReason : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -808,6 +823,22 @@
     const onPick = (n) => { setCustomer(n); setQuery(n); };
     const onAddNew = () => setAddFlow(true);
     const onClear = () => { setQuery(''); setCustomer(''); };
+    /* Opens the client file on the identity documents. The sheet
+       stays mounted, hidden, so Back to deal returns this draft. */
+    const leaveForId = () => {
+      if (typeof onRecordId === 'function') onRecordId(customer);
+      setParkedForId(true);
+    };
+    useEffect(() => {
+      if (!parkedForId) return undefined;
+      const back = () => {
+        setParkedForId(false);
+        if (typeof window.CDOS.openApp === 'function') window.CDOS.openApp('ledger');
+      };
+      window.CDOS.returnToDeal = back;
+      return () => { if (window.CDOS.returnToDeal === back) delete window.CDOS.returnToDeal; };
+    }, [parkedForId]);
+    const showRecordId = idRequired && !!String(customer || '').trim() && (!idOk || serverError === ID_NEEDED);
 
     const applyTqWith = (val) => {
       const { r, err } = tgFind(val);
@@ -1102,7 +1133,7 @@
 
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal((
-      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk || recordId) ? 8000 : 9200 }} onMouseDown={(addFlow || quickChk || recordId) ? undefined : requestClose}>
+      <div className="cd-tx-overlay fixed inset-0 flex items-center justify-center p-4" hidden={parkedForId || undefined} style={{ background: 'var(--cd-scrim)', zIndex: (addFlow || quickChk) ? 8000 : 9200, display: parkedForId ? 'none' : undefined }} onMouseDown={(addFlow || quickChk || parkedForId) ? undefined : requestClose}>
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -1170,15 +1201,14 @@
               {customer && window.CDOS.ClientIdViewer &&
                 React.createElement(window.CDOS.ClientIdViewer, { name: customer, rec: clients[customer], log, compact: true })}
               {customer && clients[customer] && window.CDOS.KYC && window.CDOS.KYC.VerificationNudge && (!phoneSheet || personaOn) &&
-                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl) })}
+                React.createElement(window.CDOS.KYC.VerificationNudge, { key: customer + ':' + single + ':' + idRequired, name: customer, rec: clients[customer], settings, amountCad: inCadEquiv, idRequired: idRequired && kyc !== 'ok', onRun: (tpl) => setQuickChk(tpl), onRecordId: leaveForId })}
               {/* Phone only, and display:none at a desk width so the 1280
-                  dialog does not move. This is not an ID form. It opens
-                  the client file's identity editor, which writes the
-                  document — type, number, and expiry — on the server. */}
+                  dialog does not move. Same label and destination as
+                  the footer: the client file, at Identity documents. */}
               {idRequired && String(customer || '').trim() && !idOk && (
                 <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
                   <span className="cd-tx-id-need-label">ID needed for this amount</span>
-                  <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
+                  <button type="button" data-testid="record-id" onClick={leaveForId} className="cd-tx-id-need-go">Record ID</button>
                 </div>
               )}
               {idRequired && idOk && (
@@ -1413,7 +1443,7 @@
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" data-testid="record-id" onClick={leaveForId} className="cd-tx-id-need-go mt-1">Record ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}
@@ -1435,6 +1465,10 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
+                {/* Phone keeps Record ID in the scroll. From 600px up
+                    this footer control is the one, and it is at least
+                    44px tall. */}
+                {showRecordId && !phoneSheet && <button type="button" data-testid="record-id" onClick={leaveForId} className="w-full flex items-center justify-center gap-1.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)', minHeight: 44, boxSizing: 'border-box' }}>Record ID</button>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -1468,7 +1502,6 @@
         </div>
         {present && presentQ && <PresentQuote q={presentQ} onClose={() => setPresent(false)} />}
         {addFlow && window.CDOS.KYC && React.createElement(window.CDOS.KYC.NewContactFlow, { initialName: (customer || query).trim(), by: me.name, setClients, requireId: idRequired, onClose: () => setAddFlow(false), onDone: (nm) => { setCustomer(nm); setQuery(nm); setAddFlow(false); } })}
-        {recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, { name: String(customer || '').trim(), rec: clients[customer] || null, setClients, log, onClose: () => setRecordId(false), onDone: () => setRecordId(false) })}
         {quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, { subject: customer, kind: (clients[customer] && clients[customer].kind) || 'individual', rec: clients[customer], by: me.name, initialTpl: quickChk, onClose: () => setQuickChk(null) })}
       </div>
     ), document.body);

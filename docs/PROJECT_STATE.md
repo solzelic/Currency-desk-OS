@@ -321,12 +321,12 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   row of pills, and the selected pill is in view when the sheet
   opens. That row scrolls away with the fields. The customer search
   is one row: icon, name, clear. The suggestion list closes when
-  focus leaves it. When the customer needs identification, the sheet
-  shows one row, "ID needed for this amount", and "Record the ID".
-  That opens the client file's identity editor (type, number, issued,
-  expiry, and the scan) and saves the document on the server, then
-  returns to the deal. The phone does not keep a type and number that
-  exist only in this browser. The deal ticket follows the fields in
+  focus leaves it.   When the customer needs identification, the sheet
+  shows one row, "ID needed for this amount", and "Record ID".
+  Phone and desk both open the client file at Identity documents.
+  The ID type there takes focus. Back to deal returns to this
+  ticket with what was typed still on it. The phone does not record
+  an ID inside the deal sheet. The deal ticket follows the fields in
   the same scroll. The quote button and the post button stay on
   screen for the whole sheet, including while the amount is focused
   and while the keyboard is open. The X is 44px. If the ticket has
@@ -337,7 +337,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   hidden while Persona is off. An incomplete deal says "N steps
   left" and stays tappable; tapping it scrolls to the first missing
   item and marks it. The checklist says "ID not recorded yet" and
-  offers Record the ID. Rates show four decimals. Ticket amounts
+  offers Record ID, the same destination as the row above it. Rates show four decimals. Ticket amounts
   include the currency code. The amount the customer receives is
   the text colour in the field and white on the dark ticket. Green
   stays on the margin. Purpose and source of funds stay in the ordinary
@@ -355,8 +355,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   like "Oct 11, 2026", including the header and an ID expiry. The
   amount field keeps what was typed. The customer stats read "ID on file"
   and "Last {n} days". The type row keeps a 16px inset and fades the pills
-  at the right edge. Record the ID is one column, so the ID type is
-  not cut off. Its subtitle is "Type, number and expiry". Customer,
+  at the right edge. Record ID opens the client file, so the ID
+  type is the field on that file. Customer,
   the amounts, the rate, and the required fields are the full width of
   the form and at least 44px tall. The
   text in those fields is 16px, so the phone does not zoom in when
@@ -751,6 +751,8 @@ authenticated narrative dashboard.
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-10-25**, Record ID from the deal. Every width uses the label Record ID, and every one of those controls opens the client file at Identity documents, in edit, with the ID type focused. The phone does not open an ID form inside the deal sheet. From 600px up, including 1280, the footer Record ID button is at least 44px tall. The checklist line for a missing customer ends with a period, then "Search or add them". Back to deal closes the file and shows the same ticket, including a 4,000.00 CAD amount that was typed before the click. When Persona is not connected, the verification nudge uses the same Record ID label. A file that already carries `idStanding` shows that label. A file that does not still uses the type and number on the screen.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only `PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`. A field left out of PUT stays as stored. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 

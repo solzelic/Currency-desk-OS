@@ -247,6 +247,18 @@
      picture is not a paper filed for the customer, and it is not this
      change. */
   const stampToday = () => window.CDOS.deskDay(Date.now(), (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto');
+  /* Document writes for one name run one after another and re-read the
+     file first. A second field typed before the first response returns
+     would otherwise open a second customer, or a second primary. */
+  const documentWrites = {};
+  function enqueueDocument(name, run) {
+    const key = String(name);
+    const prev = documentWrites[key] || Promise.resolve();
+    const next = prev.then(run, run);
+    documentWrites[key] = next.catch(() => {});
+    return next;
+  }
+
   function clientWriter({ name, rec, setClients, reload, onError }) {
     const api = (window.CDOS.Backend && window.CDOS.Backend.Clients) || null;
     rec = rec || {};
@@ -264,26 +276,39 @@
       .catch(e => onError((e && e.message) || 'CurrencyDesk could not save that change. Nothing was saved.'));
 
     const extraDoc = (i) => (rec.ids || [])[i] || {};
-    /* A health card as the primary is not edited: the server refuses
-       that. Typing an ID on such a file adds a new primary document and
-       the health card stays on the file beside it, not accepted. */
-    const healthPrimary = isHealthType(rec.idType);
-    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
-    const typeOnFile = healthPrimary ? '' : rec.idType;
 
-    function field(k, v) {
-      if (!onServer) return localSet(k, v);
-      const DOC = api.DOCUMENT_FIELDS;
-      if (DOC[k]) {
-        const patch = {}; patch[DOC[k]] = v || null;
-        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
-        /* Typing a document's details when the file has none is how a
-           document gets created — the same gesture the old flat editor
-           made, landing in the right table. */
-        return send(() => api.addDocument(clientId, Object.assign(
-          { docType: k === 'idType' ? (v || 'Not stated') : (typeOnFile || 'Not stated'), isPrimary: true },
-          k === 'idType' ? {} : patch)));
+    async function persistDocumentField(k, v, DOC) {
+      await ClientRecords.load(true);
+      let match = clientId ? ClientRecords.byId(clientId) : null;
+      if (!match) {
+        const matches = ClientRecords.byName(name);
+        if (matches.length > 1) throw new Error('More than one customer has this name. Open their file and record the ID there.');
+        match = matches[0] || null;
       }
+      if (!match) {
+        const created = await ClientRecords.open(name, { [k]: v, kind: (rec && rec.kind) || 'individual' });
+        if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
+        return;
+      }
+      const desk = api.toDeskRecord(match, {});
+      const health = isHealthType(desk.idType);
+      const primary = health ? null : desk.primaryDocumentId;
+      const typeOn = health ? '' : (desk.idType || '');
+      const patch = {}; patch[DOC[k]] = v || null;
+      if (primary) await api.updateDocument(match.clientId, primary, patch);
+      else await api.addDocument(match.clientId, Object.assign(
+        { docType: k === 'idType' ? (v || 'Not stated') : (typeOn || 'Not stated'), isPrimary: true },
+        k === 'idType' ? {} : patch));
+      await ClientRecords.load(true);
+    }
+    function field(k, v) {
+      const DOC = api && api.DOCUMENT_FIELDS;
+      if (DOC && DOC[k] && ClientRecords.serverBacked()) {
+        return enqueueDocument(name, () => persistDocumentField(k, v, DOC))
+          .then(() => reload(true))
+          .catch(e => onError((e && e.message) || 'CurrencyDesk could not save that change. Nothing was saved.'));
+      }
+      if (!onServer) return localSet(k, v);
       if (k === 'photo') {
         if (!v) return rec.primaryDocumentId && rec.primaryHasScan
           ? send(() => api.removeDocumentScan(clientId, rec.primaryDocumentId))
@@ -550,6 +575,17 @@
     // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
+    /* The server's standing, when the file came from it. A primary
+       that says "Not stated", or a current document that is not the
+       primary, must not be re-judged from the flattened fields. */
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.tone !== 'ok') return [rec.idStanding.label, CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding && rec.idStanding.label === 'Identified') {
+      const shown = rec.displayedDocument || null;
+      const shownExpiry = shown ? shown.expiresOn : rec.idExpiry;
+      const warn = settings && +settings.idExpiryWarnDays;
+      if (warn && shownExpiry) { const days = (new Date(shownExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
+      return [rec.idStanding.label, CD.green, CD.greenSoft];
+    }
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
@@ -656,7 +692,7 @@
     const health = isHealthType(rec.idType);
     const editDoc = canEdit && !health;
     return (<div className="grid grid-cols-2 gap-3">
-      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
+      <EditField label={kind === 'corporate' ? 'Document type' : 'ID type'}><select data-testid="id-type" aria-label={kind === 'corporate' ? 'Document type' : 'ID type'} disabled={!canEdit} value={rec.idType || ''} onChange={e => set('idType', e.target.value)} className={inCls} style={inSty}><option value="">—</option>{keptTypeOption(rec.idType, types)}{types.map(t => <option key={t}>{t}</option>)}</select>{health && <HealthCardNote />}<SwitchedOffNote text={rec.idNotice} /></EditField>
       {!health && <EditField label={kind === 'corporate' ? 'Business / document #' : 'ID number'}><input disabled={!canEdit} value={rec.idNum || ''} onChange={e => set('idNum', e.target.value)} className={inCls} style={inSty} /></EditField>}
       <EditField label="Issued"><input disabled={!editDoc} type="date" value={rec.idIssued || ''} onChange={e => set('idIssued', e.target.value)} className={inCls} style={inSty} /></EditField>
       <EditField label="Expiry"><input disabled={!editDoc} type="date" value={rec.idExpiry || ''} onChange={e => set('idExpiry', e.target.value)} className={inCls} style={inSty} /></EditField>
@@ -668,7 +704,9 @@
     </div>);
   }
 
-  // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
+  // one ADDITIONAL identity document. The primary stays the flattened
+  // fields the desk shows. Standing is the server's idStanding, not
+  // which row is primary.
   function IdEditorRow({ doc, i, kind, setId, rmId, uploadId, canEdit, clientId, who, log }) {
     const types = idTypesFor(kind);
     /* A health card can be removed. It cannot be edited or retyped. */
@@ -1088,6 +1126,25 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      set — never a figure typed into this screen. A utility bill in the
      folder below does not move this. */
   function ProcessStanding({ rec, settings }) {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.reason) {
+      const idLine = window.CDOS.identificationLimit(settings);
+      const reportLine = window.CDOS.reportingLimit(settings);
+      const standing = [rec.idStanding.label, rec.idStanding.reason];
+      const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+      const rule = stated
+        ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+        : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+      const tone = rec.idStanding.tone === 'ok' ? CD.green : CD.flag;
+      const soft = rec.idStanding.tone === 'ok' ? CD.greenSoft : CD.flagSoft;
+      return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Pill text={standing[0]} c={tone} bg={soft} />
+          <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
     const status = rec && rec.verificationStatus;
     if (!status) return null;
     const idLine = window.CDOS.identificationLimit(settings);
@@ -1176,8 +1233,30 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }
 
   /* ---------- FULL PROFILE (double click) ---------- */
-  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
+  function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload, recordIdSignal }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
+    const fileRef = useRef(null);
+    useEffect(() => {
+      if (!recordIdSignal) return undefined;
+      let live = true;
+      (async () => {
+        const shared = window.CDOS.ClientRecords;
+        if (shared) { try { await shared.load(true); } catch (e) { /* the file still opens */ } }
+        if (live) setEdit(true);
+      })();
+      return () => { live = false; };
+    }, [recordIdSignal]);
+    useEffect(() => {
+      if (!recordIdSignal || !edit) return undefined;
+      const root = fileRef.current;
+      if (!root) return undefined;
+      const section = root.querySelector('[data-testid="id-entry"]');
+      if (!section) return undefined;
+      section.scrollIntoView({ block: 'start', inline: 'nearest' });
+      const type = section.querySelector('[data-testid="id-type"]');
+      if (type && type.focus) type.focus({ preventScroll: true });
+      return undefined;
+    }, [recordIdSignal, edit]);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -1220,7 +1299,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const addr = fullAddr(rec);
 
     return (<div className="fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ background: 'var(--cd-scrim)', zIndex: 8000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
+      <div ref={fileRef} onClick={e => e.stopPropagation()} className="client-file w-full flex flex-col" style={{ maxWidth: 880, height: '92%', background: CD.paper, borderRadius: 16, boxShadow: '0 30px 70px -20px var(--cd-scrim)', overflow: 'hidden' }}>
         {/* header */}
         <div className="client-file-head flex items-start gap-4 px-6 py-5 flex-none" style={{ background: CD.panel, borderBottom: `1px solid ${CD.line}` }}>
           <div className="relative flex-none">
@@ -1238,6 +1317,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           </div>
           <div className="client-file-actions flex items-center gap-2 flex-none">
+            {recordIdSignal ? <button type="button" data-testid="back-to-deal" onClick={onClose} className="px-2 text-[13px] font-semibold underline" style={{ color: CD.ink, minHeight: 44 }}>Back to deal</button> : null}
             {canEdit && <button onClick={() => setEdit(e => !e)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" style={{ border: `1px solid ${edit ? CD.ink : CD.line}`, background: edit ? CD.ink : 'transparent', color: edit ? 'var(--cd-on-ink)' : CD.ink, borderRadius: 8 }}><Ic n={edit ? 'check' : 'pencil'} s={14} c={edit ? 'var(--cd-on-ink)' : CD.ink} /> {edit ? 'Done' : 'Edit'}</button>}
             {canExport && <button onClick={() => exportClientReport(name, rec, rows, flags, settings)} className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}><Ic n="filetext" s={14} c="var(--cd-on-ink)" /> Export report</button>}
             <button onClick={onClose} className="grid place-items-center" style={{ width: 34, height: 34, borderRadius: 8, color: CD.mute }}><Ic n="x" s={18} /></button>
@@ -1311,9 +1391,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </div>
                 <ContactEditor rec={rec} set={set} kind={rec.kind || 'individual'} />
               </div>
-              <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+              <div className="p-4" data-testid="id-entry" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                 <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>Identity documents</div>{canEdit && <button type="button" onClick={addId} className="flex items-center gap-1 text-[12px] font-medium" style={{ color: CD.ink }}><Ic n="plus" s={13} c={CD.ink} /> Add ID</button>}</div>
-                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · drives KYC status</div>
+                <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Primary ID · the document shown on the file</div>
                 <KycEditor rec={rec} set={set} kind={rec.kind || 'individual'} onUpload={upload} canEdit={canEdit} who={name} log={log} />
                 {(rec.ids || []).length > 0 && <div className="mt-3 space-y-3">{(rec.ids || []).map((d, i) => <IdEditorRow key={d.documentId || i} doc={d} i={i} kind={rec.kind || 'individual'} setId={setId} rmId={rmId} uploadId={uploadId} canEdit={canEdit} clientId={rec.clientId} who={name} log={log} />)}</div>}
               </div>
@@ -1441,12 +1521,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [filter, setFilter] = useState('all');   // all | individual | corporate | verified | attention
     const [quick, setQuick] = useState(null);
     const [profile, setProfile] = useState(null);
+    const [recordIdSignal, setRecordIdSignal] = useState(0);
     const [highlightTx, setHighlightTx] = useState(null);
     const [adding, setAdding] = useState(false);
     const clickTimer = useRef(null);
     // external request (e.g. from a ledger transaction's KYC flag) to open a profile
     const lastSig = useRef(0);
-    useEffect(() => { if (openProfileSignal && openProfileSignal.n && openProfileSignal.n !== lastSig.current) { lastSig.current = openProfileSignal.n; setQuick(null); setProfile(openProfileSignal.name); setHighlightTx(openProfileSignal.txRef || null); } }, [openProfileSignal]);
+    useEffect(() => { if (openProfileSignal && openProfileSignal.n && openProfileSignal.n !== lastSig.current) { lastSig.current = openProfileSignal.n; setQuick(null); setProfile(openProfileSignal.name); setHighlightTx(openProfileSignal.txRef || null); setRecordIdSignal(openProfileSignal.recordId ? openProfileSignal.n : 0); } }, [openProfileSignal]);
 
     const list = useMemo(() => {
       const m = {};
@@ -1591,7 +1672,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       </div>
 
       {quick && <Portal><QuickCard name={quick} rec={quickRec} rows={rows} flags={computeFlags(rows, clients, settings)} settings={settings} me={me} canEdit={canEdit} beneficiaries={beneficiaries} corridors={corridors} setField={(k, v) => setField(quick, k, v)} onUpload={(k, f) => upload(quick, k, f)} onExpand={() => { setProfile(quick); setQuick(null); }} onOpenLedger={(n) => { setQuick(null); openLedgerForClient(n); }} onClose={() => setQuick(null)} /></Portal>}
-      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { setProfile(null); setHighlightTx(null); }} log={log} highlightTx={highlightTx} reload={reload} /></Portal>}
+      {profile && <Portal><Profile name={profile} rec={profileRec} rows={rows} clients={clients} setClients={setClients} settings={settings} me={me} canEdit={canEdit} canExport={canExport} beneficiaries={beneficiaries} setBeneficiaries={setBeneficiaries} corridors={corridors} onOpenLedger={(n) => { setProfile(null); openLedgerForClient(n); }} onClose={() => { if (recordIdSignal && typeof window.CDOS.returnToDeal === 'function') window.CDOS.returnToDeal(); setProfile(null); setHighlightTx(null); setRecordIdSignal(0); }} log={log} highlightTx={highlightTx} reload={reload} recordIdSignal={recordIdSignal} /></Portal>}
       {/* The reload below is AWAITED before the profile opens. It was fired
           and forgotten, so the file that came up was whatever the browser
           happened to be holding — and the one fact a brand-new file has

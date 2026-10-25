@@ -24183,6 +24183,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      picture is not a paper filed for the customer, and it is not this
      change. */
   const stampToday = () => window.CDOS.deskDay(Date.now(), window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
+  /* Document writes for one name run one after another and re-read the
+     file first. A second field typed before the first response returns
+     would otherwise open a second customer, or a second primary. */
+  const documentWrites = {};
+  function enqueueDocument(name, run) {
+    const key = String(name);
+    const prev = documentWrites[key] || Promise.resolve();
+    const next = prev.then(run, run);
+    documentWrites[key] = next.catch(() => {});
+    return next;
+  }
   function clientWriter({
     name,
     rec,
@@ -24209,27 +24220,40 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        till sees the old one. */
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
-    /* A health card as the primary is not edited: the server refuses
-       that. Typing an ID on such a file adds a new primary document and
-       the health card stays on the file beside it, not accepted. */
-    const healthPrimary = isHealthType(rec.idType);
-    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
-    const typeOnFile = healthPrimary ? '' : rec.idType;
-    function field(k, v) {
-      if (!onServer) return localSet(k, v);
-      const DOC = api.DOCUMENT_FIELDS;
-      if (DOC[k]) {
-        const patch = {};
-        patch[DOC[k]] = v || null;
-        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
-        /* Typing a document's details when the file has none is how a
-           document gets created — the same gesture the old flat editor
-           made, landing in the right table. */
-        return send(() => api.addDocument(clientId, Object.assign({
-          docType: k === 'idType' ? v || 'Not stated' : typeOnFile || 'Not stated',
-          isPrimary: true
-        }, k === 'idType' ? {} : patch)));
+    async function persistDocumentField(k, v, DOC) {
+      await ClientRecords.load(true);
+      let match = clientId ? ClientRecords.byId(clientId) : null;
+      if (!match) {
+        const matches = ClientRecords.byName(name);
+        if (matches.length > 1) throw new Error('More than one customer has this name. Open their file and record the ID there.');
+        match = matches[0] || null;
       }
+      if (!match) {
+        const created = await ClientRecords.open(name, {
+          [k]: v,
+          kind: rec && rec.kind || 'individual'
+        });
+        if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
+        return;
+      }
+      const desk = api.toDeskRecord(match, {});
+      const health = isHealthType(desk.idType);
+      const primary = health ? null : desk.primaryDocumentId;
+      const typeOn = health ? '' : desk.idType || '';
+      const patch = {};
+      patch[DOC[k]] = v || null;
+      if (primary) await api.updateDocument(match.clientId, primary, patch);else await api.addDocument(match.clientId, Object.assign({
+        docType: k === 'idType' ? v || 'Not stated' : typeOn || 'Not stated',
+        isPrimary: true
+      }, k === 'idType' ? {} : patch));
+      await ClientRecords.load(true);
+    }
+    function field(k, v) {
+      const DOC = api && api.DOCUMENT_FIELDS;
+      if (DOC && DOC[k] && ClientRecords.serverBacked()) {
+        return enqueueDocument(name, () => persistDocumentField(k, v, DOC)).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
+      }
+      if (!onServer) return localSet(k, v);
       if (k === 'photo') {
         if (!v) return rec.primaryDocumentId && rec.primaryHasScan ? send(() => api.removeDocumentScan(clientId, rec.primaryDocumentId)) : localSet(k, null);
         return scan(v);
@@ -24823,6 +24847,20 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // An approved quick check on file. Nothing writes one now.
     if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
     // no provider check on file — judge by the ID the desk is holding
+    /* The server's standing, when the file came from it. A primary
+       that says "Not stated", or a current document that is not the
+       primary, must not be re-judged from the flattened fields. */
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.tone !== 'ok') return [rec.idStanding.label, CD.flag, CD.flagSoft];
+    if (rec && rec.idStanding && rec.idStanding.label === 'Identified') {
+      const shown = rec.displayedDocument || null;
+      const shownExpiry = shown ? shown.expiresOn : rec.idExpiry;
+      const warn = settings && +settings.idExpiryWarnDays;
+      if (warn && shownExpiry) {
+        const days = (new Date(shownExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
+        if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
+      }
+      return [rec.idStanding.label, CD.green, CD.greenSoft];
+    }
     if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
     if (expired) return ['ID expired', CD.flag, CD.flagSoft];
     const warn = settings && +settings.idExpiryWarnDays;
@@ -25161,6 +25199,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, /*#__PURE__*/React.createElement(EditField, {
       label: kind === 'corporate' ? 'Document type' : 'ID type'
     }, /*#__PURE__*/React.createElement("select", {
+      "data-testid": "id-type",
+      "aria-label": kind === 'corporate' ? 'Document type' : 'ID type',
       disabled: !canEdit,
       value: rec.idType || '',
       onChange: e => set('idType', e.target.value),
@@ -25237,7 +25277,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }))));
   }
 
-  // one ADDITIONAL identity document (the primary ID stays top-level and drives KYC status)
+  // one ADDITIONAL identity document. The primary stays the flattened
+  // fields the desk shows. Standing is the server's idStanding, not
+  // which row is primary.
   function IdEditorRow({
     doc,
     i,
@@ -26442,6 +26484,46 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     rec,
     settings
   }) {
+    if (rec && rec.idStanding && rec.idStanding.label && rec.idStanding.reason) {
+      const idLine = window.CDOS.identificationLimit(settings);
+      const reportLine = window.CDOS.reportingLimit(settings);
+      const standing = [rec.idStanding.label, rec.idStanding.reason];
+      const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+      const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+      const tone = rec.idStanding.tone === 'ok' ? CD.green : CD.flag;
+      const soft = rec.idStanding.tone === 'ok' ? CD.greenSoft : CD.flagSoft;
+      return /*#__PURE__*/React.createElement("div", {
+        "data-tour": "identification",
+        className: "mb-3 p-3.5",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] uppercase tracking-widest mb-1.5",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-2 flex-wrap"
+      }, /*#__PURE__*/React.createElement(Pill, {
+        text: standing[0],
+        c: tone,
+        bg: soft
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "text-[12.5px]",
+        style: {
+          color: CD.ink
+        }
+      }, standing[1])), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11.5px] mt-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, rule));
+    }
     const status = rec && rec.verificationStatus;
     if (!status) return null;
     const idLine = window.CDOS.identificationLimit(settings);
@@ -26700,9 +26782,43 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     onClose,
     log,
     highlightTx,
-    reload
+    reload,
+    recordIdSignal
   }) {
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
+    const fileRef = useRef(null);
+    useEffect(() => {
+      if (!recordIdSignal) return undefined;
+      let live = true;
+      (async () => {
+        const shared = window.CDOS.ClientRecords;
+        if (shared) {
+          try {
+            await shared.load(true);
+          } catch (e) {/* the file still opens */}
+        }
+        if (live) setEdit(true);
+      })();
+      return () => {
+        live = false;
+      };
+    }, [recordIdSignal]);
+    useEffect(() => {
+      if (!recordIdSignal || !edit) return undefined;
+      const root = fileRef.current;
+      if (!root) return undefined;
+      const section = root.querySelector('[data-testid="id-entry"]');
+      if (!section) return undefined;
+      section.scrollIntoView({
+        block: 'start',
+        inline: 'nearest'
+      });
+      const type = section.querySelector('[data-testid="id-type"]');
+      if (type && type.focus) type.focus({
+        preventScroll: true
+      });
+      return undefined;
+    }, [recordIdSignal, edit]);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -26789,6 +26905,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       },
       onClick: onClose
     }, /*#__PURE__*/React.createElement("div", {
+      ref: fileRef,
       onClick: e => e.stopPropagation(),
       className: "client-file w-full flex flex-col",
       style: {
@@ -26910,7 +27027,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       c: CD.faint
     }), " ", corp ? rec.jurisdiction : rec.occupation))), /*#__PURE__*/React.createElement("div", {
       className: "client-file-actions flex items-center gap-2 flex-none"
-    }, canEdit && /*#__PURE__*/React.createElement("button", {
+    }, recordIdSignal ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "back-to-deal",
+      onClick: onClose,
+      className: "px-2 text-[13px] font-semibold underline",
+      style: {
+        color: CD.ink,
+        minHeight: 44
+      }
+    }, "Back to deal") : null, canEdit && /*#__PURE__*/React.createElement("button", {
       onClick: () => setEdit(e => !e),
       className: "flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium",
       style: {
@@ -27158,6 +27284,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       kind: rec.kind || 'individual'
     })), /*#__PURE__*/React.createElement("div", {
       className: "p-4",
+      "data-testid": "id-entry",
       style: {
         background: CD.panel,
         border: `1px solid ${CD.line}`,
@@ -27187,7 +27314,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.faint,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "Primary ID \xB7 drives KYC status"), /*#__PURE__*/React.createElement(KycEditor, {
+    }, "Primary ID \xB7 the document shown on the file"), /*#__PURE__*/React.createElement(KycEditor, {
       rec: rec,
       set: set,
       kind: rec.kind || 'individual',
@@ -27623,6 +27750,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [filter, setFilter] = useState('all'); // all | individual | corporate | verified | attention
     const [quick, setQuick] = useState(null);
     const [profile, setProfile] = useState(null);
+    const [recordIdSignal, setRecordIdSignal] = useState(0);
     const [highlightTx, setHighlightTx] = useState(null);
     const [adding, setAdding] = useState(false);
     const clickTimer = useRef(null);
@@ -27634,6 +27762,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setQuick(null);
         setProfile(openProfileSignal.name);
         setHighlightTx(openProfileSignal.txRef || null);
+        setRecordIdSignal(openProfileSignal.recordId ? openProfileSignal.n : 0);
       }
     }, [openProfileSignal]);
     const list = useMemo(() => {
@@ -28027,12 +28156,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         openLedgerForClient(n);
       },
       onClose: () => {
+        if (recordIdSignal && typeof window.CDOS.returnToDeal === 'function') window.CDOS.returnToDeal();
         setProfile(null);
         setHighlightTx(null);
+        setRecordIdSignal(0);
       },
       log: log,
       highlightTx: highlightTx,
-      reload: reload
+      reload: reload,
+      recordIdSignal: recordIdSignal
     })), adding && (window.CDOS.KYC && window.CDOS.KYC.NewContactFlow ? /*#__PURE__*/React.createElement(window.CDOS.KYC.NewContactFlow, {
       by: me && me.name,
       setClients: setClients,
@@ -34291,6 +34423,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onOpenCheques,
       serverBacked,
       onServerPosted: refreshServerLedger,
+      onRecordId: name => {
+        openClientProfile && openClientProfile(name, null, {
+          recordId: true
+        });
+      },
       onClose: () => setModal(false),
       onDone: id => {
         setModal(false);
@@ -34517,6 +34654,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     sellUnitCad,
     CommitBtn
   } = window.CDOS;
+  /* The sentence a refusal uses when a deal needs ID. The checklist
+     and the Record ID button key off it, so the refusal and the fix
+     path stay the same words. */
+  const ID_NEEDED = "ID needed for this amount. Record the customer's ID.";
   const deskHome = () => {
     const pack = window.CDOS.deskPack && window.CDOS.deskPack();
     return pack && pack.homeCurrency || 'CAD';
@@ -35368,9 +35509,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           return false;
         }
       })();
-      const st = !c.idType ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file';
-      const ok = st === 'verified';
-      const onfile = st === 'ID on file';
+      const standing = c.idStanding && c.idStanding.label ? c.idStanding : null;
+      const st = standing ? standing.label : !c.idType ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file';
+      const ok = standing ? standing.tone === 'ok' : st === 'verified';
+      const onfile = standing ? false : st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onMouseDown: e => e.preventDefault(),
@@ -35748,7 +35890,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     chequeSchedule,
     onOpenCheques,
     serverBacked,
-    onServerPosted
+    onServerPosted,
+    onRecordId
   }) {
     const home = deskHome();
     const live = useMemo(() => rows.filter(r => r.status !== 'void'), [rows]);
@@ -35807,7 +35950,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false); // launches the KYC scan-ID walk-through
-    const [recordId, setRecordId] = useState(false); // the client file's identity editor
+    const [parkedForId, setParkedForId] = useState(false); // sheet stays mounted while the client file is open
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
     const sheetRef = useRef(null);
@@ -35880,7 +36023,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     };
     useEffect(() => {
       const h = e => {
-        if (e.key !== 'Escape' || present || addFlow || quickChk || recordId) return;
+        if (e.key !== 'Escape' || present || addFlow || quickChk || parkedForId) return;
         if (discardAsk) {
           setDiscardAsk(false);
           return;
@@ -35893,7 +36036,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
       document.addEventListener('keydown', h);
       return () => document.removeEventListener('keydown', h);
-    }, [onClose, present, addFlow, quickChk, recordId, discardAsk, phoneSheet, dealDirty]);
+    }, [onClose, present, addFlow, quickChk, parkedForId, discardAsk, phoneSheet, dealDirty]);
     /* The soft keyboard shrinks the visual viewport and leaves the layout
        viewport tall, so a footer pinned to the layout bottom sits under
        the keys. The sheet tracks the visual viewport, and the footer sits
@@ -36081,7 +36224,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : regime.idAt == null ? null : regime.idAt;
     const rec = clients[customer];
-    const kyc = !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
+    /* A server-backed file uses the server's standing. Reading the
+       primary document here is how a secondary passport, or a primary
+       that only says "Not stated", used to disagree with the gate. */
+    /* The server's object, when the file came from it. The checklist
+       shows its reason in those words. A record with no object still
+       falls through to the fields on the screen. */
+    const standing = rec && rec.idStanding && rec.idStanding.label ? rec.idStanding : null;
+    const kyc = standing ? standing.tone === 'ok' ? 'ok' : standing.label === 'Expired' ? 'expired' : 'missing' : !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
        compliance screen that flags everything gets ignored, which is how a
@@ -36214,12 +36364,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
+    const serverNeedsId = serverError === ID_NEEDED;
+    const blockedReason = standing && standing.reason ? standing.reason : phoneSheet ? 'ID not recorded yet' : ID_NEEDED;
     if (idRequired) reqs.push({
       key: 'id',
-      ok: !!customer && idOk,
-      warn: !!customer && !idOk,
-      label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file` : null
+      ok: !!customer && idOk && !serverNeedsId,
+      warn: !!customer && (!idOk || serverNeedsId),
+      label: standing && !idOk ? standing.label : `${custLabel} identified`,
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : !idOk || serverNeedsId ? blockedReason : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -36321,6 +36473,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setQuery('');
       setCustomer('');
     };
+    /* Opens the client file on the identity documents. The sheet
+       stays mounted, hidden, so Back to deal returns this draft. */
+    const leaveForId = () => {
+      if (typeof onRecordId === 'function') onRecordId(customer);
+      setParkedForId(true);
+    };
+    useEffect(() => {
+      if (!parkedForId) return undefined;
+      const back = () => {
+        setParkedForId(false);
+        if (typeof window.CDOS.openApp === 'function') window.CDOS.openApp('ledger');
+      };
+      window.CDOS.returnToDeal = back;
+      return () => {
+        if (window.CDOS.returnToDeal === back) delete window.CDOS.returnToDeal;
+      };
+    }, [parkedForId]);
+    const showRecordId = idRequired && !!String(customer || '').trim() && (!idOk || serverError === ID_NEEDED);
     const applyTqWith = val => {
       const {
         r,
@@ -36879,11 +37049,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     /* ---------------- render ---------------- */
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "cd-tx-overlay fixed inset-0 flex items-center justify-center p-4",
+      hidden: parkedForId || undefined,
       style: {
         background: 'var(--cd-scrim)',
-        zIndex: addFlow || quickChk || recordId ? 8000 : 9200
+        zIndex: addFlow || quickChk ? 8000 : 9200,
+        display: parkedForId ? 'none' : undefined
       },
-      onMouseDown: addFlow || quickChk || recordId ? undefined : requestClose
+      onMouseDown: addFlow || quickChk || parkedForId ? undefined : requestClose
     }, /*#__PURE__*/React.createElement("div", {
       ref: sheetRef,
       onMouseDown: e => e.stopPropagation(),
@@ -37089,7 +37261,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       settings,
       amountCad: inCadEquiv,
       idRequired: idRequired && kyc !== 'ok',
-      onRun: tpl => setQuickChk(tpl)
+      onRun: tpl => setQuickChk(tpl),
+      onRecordId: leaveForId
     }), idRequired && String(customer || '').trim() && !idOk && /*#__PURE__*/React.createElement("div", {
       "data-req-field": "id",
       className: 'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')
@@ -37097,9 +37270,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-id-need-label"
     }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: () => setRecordId(true),
+      "data-testid": "record-id",
+      onClick: leaveForId,
       className: "cd-tx-id-need-go"
-    }, "Record the ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
+    }, "Record ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-id-need"
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "checkcircle",
@@ -38079,9 +38253,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onActivate: phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined,
       action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
         type: "button",
-        onClick: () => setRecordId(true),
+        "data-testid": "record-id",
+        onClick: leaveForId,
         className: "cd-tx-id-need-go mt-1"
-      }, "Record the ID") : null
+      }, "Record ID") : null
     }))), (single || structuring) && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 text-[11px] flex items-start gap-2",
       style: {
@@ -38119,7 +38294,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), showRecordId && !phoneSheet && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "record-id",
+      onClick: leaveForId,
+      className: "w-full flex items-center justify-center gap-1.5 text-[13px] font-semibold",
+      style: {
+        borderRadius: 9,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        minHeight: 44,
+        boxSizing: 'border-box'
+      }
+    }, "Record ID"), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -38250,13 +38437,6 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         setQuery(nm);
         setAddFlow(false);
       }
-    }), recordId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, {
-      name: String(customer || '').trim(),
-      rec: clients[customer] || null,
-      setClients,
-      log,
-      onClose: () => setRecordId(false),
-      onDone: () => setRecordId(false)
     }), quickChk && window.CDOS.KYC && React.createElement(window.CDOS.KYC.SendModal, {
       subject: customer,
       kind: clients[customer] && clients[customer].kind || 'individual',
@@ -50016,7 +50196,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     onRun,
     demoChecks,
     amountCad,
-    idRequired
+    idRequired,
+    onRecordId
   }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
@@ -50107,6 +50288,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     const BLUE = '#2B50E2';
     const c = force ? CD.flag : BLUE;
     const cta = NUDGE_CTA[tier];
+    const persona = personaConnected();
+    const recordInstead = !persona && (idMissing || idRequired || idExpired);
     return /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-nudge flex items-start gap-2.5 p-3 mb-2",
       style: {
@@ -50123,7 +50306,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         background: 'var(--cd-paper)'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: force ? 'alert' : cta.ic,
+      n: force ? 'alert' : recordInstead ? 'id' : cta.ic,
       s: 15,
       c: c
     })), /*#__PURE__*/React.createElement("div", {
@@ -50140,7 +50323,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, reason), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 mt-2"
-    }, /*#__PURE__*/React.createElement("button", {
+    }, persona ? /*#__PURE__*/React.createElement("button", {
       onClick: () => onRun && onRun(tier),
       className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white",
       style: {
@@ -50151,7 +50334,19 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: cta.ic,
       s: 13,
       c: "var(--cd-on-ink)"
-    }), " ", cta.label), !force && /*#__PURE__*/React.createElement("button", {
+    }), " ", cta.label) : recordInstead ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onRecordId && onRecordId(name),
+      className: "flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-white",
+      style: {
+        background: CD.ink,
+        borderRadius: 8
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "id",
+      s: 13,
+      c: "var(--cd-on-ink)"
+    }), " Record ID") : null, !force && /*#__PURE__*/React.createElement("button", {
       onClick: () => setDismissed(true),
       className: "px-2 py-1.5 text-[12px] font-medium",
       style: {
@@ -69053,10 +69248,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       });
     };
     // open the Clients/KYC app straight to a client's full profile
-    const openClientProfile = (name, txRef) => {
+    const openClientProfile = (name, txRef, opts) => {
       setClientToOpen({
         name,
         txRef: txRef || null,
+        recordId: !!(opts && opts.recordId),
         n: Date.now()
       });
       openApp('clients');

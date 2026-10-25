@@ -263,7 +263,7 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
       `id row at ${width}: ${idText}`,
     ).toBe(true);
     if (idText.includes("ID needed for this amount")) {
-      await expect(idNeed.getByRole("button", { name: "Record the ID" })).toBeVisible();
+      await expect(idNeed.getByRole("button", { name: "Record ID" })).toBeVisible();
     }
     const idLine = page.locator(".cd-tx").getByText(/Customer identified|ID required/i).first();
     await idLine.scrollIntoViewIfNeeded();
@@ -443,6 +443,42 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
   }
 });
 
+async function postedDocument(page: Page) {
+  return page.waitForResponse((res) =>
+    res.request().method() === "POST" && res.ok() && /\/api\/clients\/[^/]+\/documents/.test(res.url()));
+}
+
+async function lookupDocument(page: Page, who: string) {
+  return page.evaluate(async (name) => {
+    const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(name));
+    const body = await res.json();
+    const client = (body.clients || [])[0];
+    if (!client) return null;
+    const primary = (client.documents || []).find((d: { isPrimary?: boolean }) => d.isPrimary) || (client.documents || [])[0];
+    return primary ? { docType: primary.docType, docNumber: primary.docNumber, expiresOn: primary.expiresOn } : null;
+  }, who);
+}
+
+/* Record ID leaves the deal mounted and opens the client file. The
+   document is written there, then Back to deal shows the same ticket. */
+async function recordOnClientFile(page: Page, type: string, number: string, expiry: string) {
+  const record = page.locator(".cd-tx-id-need").getByRole("button", { name: "Record ID" });
+  await record.scrollIntoViewIfNeeded();
+  await record.click();
+  await expect(page.locator(".cd-tx-record")).toHaveCount(0);
+  const file = page.locator("[data-testid='id-entry']");
+  await expect(file.getByText("Identity documents")).toBeVisible();
+  await expect(page.getByTestId("back-to-deal")).toBeVisible();
+  await expect(page.getByTestId("id-type")).toBeFocused();
+  const saved = postedDocument(page);
+  await file.getByLabel("ID type").selectOption(type);
+  const response = await saved;
+  await file.getByLabel("ID number").fill(number);
+  await file.getByLabel("Expiry").fill(expiry);
+  await file.getByLabel("Expiry").blur();
+  return response;
+}
+
 test("recording an ID from the phone deal writes the document", async ({ page }) => {
   test.skip(!hasLedger, "no ledger");
   test.setTimeout(90_000);
@@ -455,47 +491,20 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await page.locator(".cd-tx-customer input").fill(name);
   await page.locator(".cd-money input").first().click();
   await page.locator(".cd-money input").first().fill("3000");
-  const record = page.locator(".cd-tx-id-need").getByRole("button", { name: "Record the ID" });
-  await record.scrollIntoViewIfNeeded();
-  await record.click();
-  const sheet = page.locator(".cd-tx-record");
-  await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
-  const subtitle = sheet.locator(".cd-tx-record-sub-short");
-  await expect(subtitle).toHaveText("Type, number and expiry");
-  const clipped = await subtitle.evaluate((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1);
-  expect(clipped, "ID subtitle clipped").toBe(false);
-  await expect(sheet.locator(".cd-tx-record-sub-long")).toBeHidden();
-  const idType = sheet.locator("select").first();
-  const typeBox = await idType.boundingBox();
-  expect(typeBox!.width, "ID type width").toBeGreaterThanOrEqual(240);
-  const columns = await idType.evaluate((el) => {
-    const grid = el.closest(".grid");
-    return grid ? getComputedStyle(grid).gridTemplateColumns : "";
+  await recordOnClientFile(page, "Driver's Licence", "DL-778899", "2030-04-01");
+  await expect.poll(() => lookupDocument(page, name), { timeout: 15_000 }).toEqual({
+    docType: "Driver's Licence", docNumber: "DL-778899", expiresOn: "2030-04-01",
   });
-  expect(columns.trim().split(/\s+/).length, `ID sheet columns: ${columns}`).toBe(1);
-  await idType.selectOption("Driver's Licence");
-  await sheet.getByLabel("ID number").fill("DL-778899");
-  await sheet.getByLabel("Expiry").fill("2030-04-01");
-  const saved = page.waitForResponse((res) =>
-    /\/api\/clients\/[^/]+\/documents/.test(res.url()) && res.request().method() === "POST" && res.ok());
-  await sheet.getByRole("button", { name: "Save and return" }).click();
-  await saved;
-  await expect(sheet).toBeHidden();
+  await page.getByTestId("back-to-deal").click();
+  await expect(page.locator(".cd-tx")).toBeVisible();
+  await expect(page.locator(".cd-tx-customer input")).toHaveValue(name);
+  await expect(page.locator(".cd-money input").first()).toHaveValue("3000");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
   await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
   await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
   expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");
   await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");
-  const document = await page.evaluate(async (who) => {
-    const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
-    const body = await res.json();
-    const client = (body.clients || [])[0];
-    if (!client) return null;
-    const primary = (client.documents || []).find((d: { isPrimary?: boolean }) => d.isPrimary) || (client.documents || [])[0];
-    return primary ? { docType: primary.docType, docNumber: primary.docNumber, expiresOn: primary.expiresOn } : null;
-  }, name);
-  expect(document).toEqual({ docType: "Driver's Licence", docNumber: "DL-778899", expiresOn: "2030-04-01" });
 });
 
 test("recording an ID on an existing customer stays on that file", async ({ page }) => {
@@ -521,19 +530,11 @@ test("recording an ID on an existing customer stays on that file", async ({ page
   await page.locator(".cd-tx-customer input").fill(name);
   await page.locator(".cd-money input").first().click();
   await page.locator(".cd-money input").first().fill("3000");
-  const record = page.locator(".cd-tx-id-need").getByRole("button", { name: "Record the ID" });
-  await record.scrollIntoViewIfNeeded();
-  await record.click();
-  const sheet = page.locator(".cd-tx-record");
-  await expect(sheet.getByRole("dialog", { name: "Record the ID" })).toBeVisible();
-  await sheet.locator("select").first().selectOption("Passport");
-  await sheet.getByLabel("ID number").fill("PP-100200");
-  await sheet.getByLabel("Expiry").fill("2031-06-15");
-  const saved = page.waitForResponse((res) =>
-    res.request().method() === "POST" && res.ok() && /\/api\/clients\/[^/]+\/documents/.test(res.url()));
-  await sheet.getByRole("button", { name: "Save and return" }).click();
-  const response = await saved;
+  const response = await recordOnClientFile(page, "Passport", "PP-100200", "2031-06-15");
   expect(response.url(), "document posted on the original file").toContain("/api/clients/" + created.clientId + "/documents");
+  await page.getByTestId("back-to-deal").click();
+  await expect(page.locator(".cd-tx-customer input")).toHaveValue(name);
+  await expect(page.locator(".cd-money input").first()).toHaveValue("3000");
   const looked = await page.evaluate(async (who) => {
     const res = await fetch("/api/clients/lookup?name=" + encodeURIComponent(who));
     const body = await res.json();
