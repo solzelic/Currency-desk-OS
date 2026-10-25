@@ -32,7 +32,7 @@ Object.assign(g.window.CDOS, {
   TYPES: [], CCY: [], currencyPlaces: () => 2, effectiveRate: () => ({ text: "" }),
   RATE_NOTE: "", unitText: () => "", perCadLive: () => 1,
   branchZone: () => "America/Toronto", rulesMissing: () => false, deskPack: () => null,
-  Absent: () => null, useDeskFacts: () => ({}),
+  Absent: () => null, useDeskFacts: () => ({}), sumDealHome: () => ({ total: 0, valued: 0, unvalued: 0 }), makeSearch: () => ({ match: () => true, chips: [], wantsVoid: false, active: false }),
   STAFF: [{ name: "J. Masri", role: "Owner", staffId: "j.masri", branches: "*", home: null, demo: true }],
   ROLE_CAPS: {}, ROLE_SCOPE: {},
   defaultBaseline: () => ({ units: {} }), defaultReceipts: () => [],
@@ -55,6 +55,7 @@ load("os-src/cdos-modules.jsx");
 load("os-src/cdos-compliance-app.jsx");
 load("os-src/cdos-dashboard.jsx");
 load("os-src/cdos-apps.jsx");
+load("os-src/cdos-ledger.jsx");
 load("os-src/cdos-os.jsx");
 
 const SETTINGS = { regime: "FINTRAC", structuringDays: 7, threshold: 10000, employees: [] };
@@ -277,15 +278,12 @@ describe("the bell, the ledger nav badge, and Reportable deals are amber", () =>
 const PREPARED = { "PREP-ORPHAN": { status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000, refs: ["R-ORPHAN"] } };
 const SEALED = { "FILED-1": { status: "submitted", kind: "LCTR", subject: "B. Khan", amount: 15000, ackNo: "FWR-1", refs: ["R-FILED"] } };
 
-function shell(subs: Record<string, unknown>) {
+function shell(subs: Record<string, unknown>, rows: unknown[] = [], apps = ["compliance", "assistant"]) {
   const prev = g.localStorage.getItem;
-  g.localStorage.getItem = (k: string) => k === "cdos_submissions_v1" ? JSON.stringify(subs) : k === "cdos_rows_v1" ? "[]" : null;
+  g.localStorage.getItem = (k: string) => k === "cdos_submissions_v1" ? JSON.stringify(subs) : k === "cdos_rows_v1" ? JSON.stringify(rows) : null;
   g.window.CDOS._bootStage = "desktop";
   g.window.CDOS._bootBell = true;
-  g.window.CDOS._bootWins = [
-    { id: "compliance", x: 0, y: 0, w: 900, h: 600, z: 2, min: false },
-    { id: "assistant", x: 0, y: 0, w: 500, h: 600, z: 1, min: false },
-  ];
+  g.window.CDOS._bootWins = apps.map((id, i) => ({ id, x: 0, y: 0, w: 900, h: 700, z: i + 1, min: false }));
   g.window.CDOS._captureAlerts = true;
   try {
     const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS_App));
@@ -293,7 +291,7 @@ function shell(subs: Record<string, unknown>) {
     const line = g.window.CDOS.deskSnapshot([], {}, g.window.CDOS._deskAlerts);
     const rpt = (String(line).match(/reportable \(LCTR ≥ \$10k\): (\d+)/) || [])[1];
     return {
-      header: headerCount(html).trim(),
+      html, header: headerCount(html).trim(),
       bell: take(/mb-bell-count">([^<]*)</),
       dock: take(/dock-badge"[^>]*>([^<]*)</),
       tab: take(/Filings\s*<span class="text-\[9px\][^"]*"[^>]*>([^<]+)</),
@@ -304,7 +302,7 @@ function shell(subs: Record<string, unknown>) {
   } finally { g.localStorage.getItem = prev; }
 }
 function expectDue(subs: Record<string, unknown>, n: string) {
-  const got = shell(subs);
+  const { html, ...got } = shell(subs);
   expect(got).toEqual({ header: n, bell: n, dock: n, tab: n, list: n, rpt: n, jump: n === "0" ? "open" : "RPT" });
 }
 
@@ -312,4 +310,12 @@ describe("the shell alerts equal the header", () => {
   it("counts nothing due", () => expectDue({}, "0"));
   it("counts a prepared filing on every surface", () => expectDue(PREPARED, "1"));
   it("counts a sealed filing as zero", () => expectDue(SEALED, "0"));
+  it("renders the ledger chip equal to the header when a prepared filing outnumbers loaded deals", () => {
+    const html = shell(PREPARED, [cashDeal()], ["compliance", "ledger"]).html; const chip = /Reportable deals · (\d+)/.exec(html);
+    expect([(chip && chip[1]) || "0", headerCount(html), html.includes(">1 open<")]).toEqual(["2", "2", true]);
+  });
+  it("renders the dashboard tile equal to the header when a prepared filing outnumbers loaded deals", () => {
+    const html = shell(PREPARED, [cashDeal()], ["compliance", "dashboard"]).html; const tile = />(\d+)<\/div><div[^>]*>Reportable deals</.exec(html);
+    expect([(tile && tile[1]) || "0", headerCount(html)]).toEqual(["2", "2"]);
+  });
 });

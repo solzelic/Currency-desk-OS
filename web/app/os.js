@@ -33414,7 +33414,9 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     winId,
     onFileLCTR,
     serverBacked,
-    onTillChanged
+    onTillChanged,
+    subs,
+    beneficiaries
   }) {
     const can = k => me.role === 'Owner' ? true : !!perms.Teller[k];
     /* The desk's own trading day and its own reporting line, both from the
@@ -33682,6 +33684,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length
       };
     }, [rows, client, flags, range]);
+    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0, [rows, clients, settings, beneficiaries, subs]);
 
     // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
@@ -34216,9 +34219,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "All posted"), /*#__PURE__*/React.createElement(Chip, {
       on: view === 'RPT',
       onClick: () => setViewToggle('RPT'),
-      c: stats.openRpt > 0 ? CD.amber : CD.flag,
-      bg: stats.openRpt > 0 ? CD.panel : CD.flagSoft
-    }, "Reportable deals ", stats.openRpt > 0 && `· ${stats.openRpt}`), /*#__PURE__*/React.createElement(Chip, {
+      c: dueN > 0 ? CD.amber : CD.flag,
+      bg: dueN > 0 ? CD.panel : CD.flagSoft
+    }, "Reportable deals ", dueN > 0 && `· ${dueN}`), /*#__PURE__*/React.createElement(Chip, {
       on: view === 'STR',
       onClick: () => setViewToggle('STR'),
       c: CD.amber,
@@ -70380,6 +70383,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             clients,
             setClients,
             settings,
+            subs,
+            beneficiaries,
             me,
             perms,
             log,
@@ -70416,6 +70421,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             clients,
             setClients,
             settings,
+            subs,
+            beneficiaries,
             me,
             perms,
             log,
