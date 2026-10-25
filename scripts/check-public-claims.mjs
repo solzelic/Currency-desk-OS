@@ -35,7 +35,9 @@
    contains those words does not pass. Deadlines in days do not
    match a banned pattern, so they are not listed. US CTR and SAR
    phrases are not listed. "static 24 hours" and "within 3 business
-   days" are not a banned pattern.
+   days" are not a banned pattern. "midnight in the branch time zone"
+   is banned on every served page. The cash total is the rolling 24
+   hours before each deal.
 
    A claim this pass removed is banned as a phrase, so it cannot
    return. "AI assistant" is allowed only in the honest sentence
@@ -172,6 +174,7 @@ const phrases = [
   [/the desk does not draft or send a suspicious transaction report/, "does not draft or send a suspicious transaction report"],
   [/shared view across several locations is not built yet/, "shared view across several locations"],
   [/not drafted or sent/, "Not drafted or sent"], [/can i text clients without giving out my number/, "Can I text clients without giving out my number?"], [/ready for pickup/, "ready for pickup"],
+  [/midnight in the branch time zone/, "midnight in the branch time zone"],
 ];
 
 const HOUR_WORD = "(?:\\d+|an|a|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty|fifty|sixty|ninety)";

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +21,22 @@ describe("public marketing claims", () => {
   it("served pages do not repeat banned claims", () => {
     const out = execFileSync(process.execPath, [script], { encoding: "utf8" });
     expect(out).toMatch(/^ok /);
+  });
+
+  it("does not say midnight in the branch time zone on a public page", () => {
+    const web = path.resolve(import.meta.dirname, "../../web");
+    const pages = readdirSync(web).filter((name) => name.endsWith(".html"));
+    expect(pages.length).toBeGreaterThan(0);
+    for (const name of pages) {
+      const html = readFileSync(path.join(web, name), "utf8").toLowerCase();
+      expect(html, name).not.toContain("midnight in the branch time zone");
+    }
+    const claim = probe("Cash is added from midnight in the branch time zone.");
+    expect(claim.ok).toBe(false);
+    expect(claim.out).toMatch(/midnight in the branch time zone/);
+    expect(probe("Cash is added over the rolling 24 hours before each deal. The total never resets at midnight.").ok).toBe(true);
+    expect(probe("24-hour rule").ok).toBe(true);
+    expect(probe("SMR within 24 hours for terrorism financing", "web/compliance.html").ok).toBe(true);
   });
 
   it("flags a non-breaking space between desks and claimed", () => {
