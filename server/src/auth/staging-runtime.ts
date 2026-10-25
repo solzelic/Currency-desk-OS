@@ -1,15 +1,14 @@
-/* Flag plus host. Nothing in this file registers a route.
-   A follow-up imports isStagingRuntime for sandbox email, SMS,
-   and identity checks. Live does not set STAGING.
-
-   The host is the Host header rewriteHostToSite already reads.
-   X-Forwarded-Host is not trusted. currencydeskos.com and
-   www.currencydeskos.com are refused even when the flag is set. */
+/* The hostname Render assigned this process is the gate.
+   A request Host can only agree with it. It is never enough
+   on its own. Nothing here registers a route. A follow-up
+   imports isStagingRuntime for sandbox email, SMS, and
+   identity checks. Live does not set STAGING. */
 export const STAGING_HOST = "staging.currencydeskos.com";
+const SERVICE_HOST = "currencydesk-staging.onrender.com";
 const LIVE_HOSTS = new Set(["currencydeskos.com", "www.currencydeskos.com"]);
 /* The staging service is currencydesk-staging, so a preview is
-   currencydesk-staging-pr-<number>.onrender.com. currencydesk-pr-*
-   is a different service. A suffix or a prefix lookalike is refused. */
+   currencydesk-staging-pr-<digits>.onrender.com. The number is
+   digits only. currencydesk-pr-* is a different service. */
 const PREVIEW_HOST = /^currencydesk-staging-pr-[0-9]+\.onrender\.com$/;
 
 /** Host header, lower case, port stripped, one trailing dot removed.
@@ -21,18 +20,23 @@ export function requestHost(host: string | string[] | undefined): string {
   return bare.endsWith(".") ? bare.slice(0, -1) : bare;
 }
 
+/** The custom staging host, the staging service host, or a
+    digits-only preview while IS_PULL_REQUEST is exactly true.
+    Live hosts are refused. */
 export function isStagingHost(host: string, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!host || LIVE_HOSTS.has(host)) return false;
-  if (host === STAGING_HOST) return true;
-  /* A preview needs both: Render sets IS_PULL_REQUEST=true, and the
-     host is this service. Either one alone is not enough. */
+  if (host === STAGING_HOST || host === SERVICE_HOST) return true;
   return env.IS_PULL_REQUEST === "true" && PREVIEW_HOST.test(host);
 }
 
-/** STAGING=1 and a staging host. No shop check. */
+/** STAGING is exactly "1", and RENDER_EXTERNAL_HOSTNAME is a
+    staging host. A request Host, when passed, must be one too. */
 export function isStagingRuntime(
   host: string | string[] | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return env.STAGING === "1" && isStagingHost(requestHost(host), env);
+  if (env.STAGING !== "1") return false;
+  if (!isStagingHost(requestHost(env.RENDER_EXTERNAL_HOSTNAME), env)) return false;
+  if (host === undefined) return true;
+  return isStagingHost(requestHost(host), env);
 }

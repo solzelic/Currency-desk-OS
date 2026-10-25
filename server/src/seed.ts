@@ -7,6 +7,7 @@
    only the FIRST-BOOT bootstrap for a brand-new database and never
    touches existing accounts.
    ============================================================ */
+import { randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
@@ -94,7 +95,19 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     });
   }
 
-  for (const s of [...staff, ...stagingStaff]) {
+  /* Staging accounts must not inherit the yorkville fallback.
+     No SEED_PASSWORD means a random secret nobody is told, and
+     password sign-in for those two is off. Production staff
+     keep the existing first-boot password. */
+  let stagingPasswordHash = passwordHash;
+  if (stagingStaff.length > 0 && !process.env.SEED_PASSWORD) {
+    stagingPasswordHash = await hashPassword(randomBytes(32).toString("base64url"));
+    console.log("Password sign-in is off for staging staff.");
+  }
+  const insertStaff = async (
+    s: { staffId: string; name: string; role: (typeof staff)[number]["role"] | (typeof stagingStaff)[number]["role"] },
+    hash: string,
+  ) => {
     await db
       .insert(schema.staffUsers)
       .values({
@@ -106,12 +119,14 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
         name: s.name,
         role: s.role,
         authorizedBranchIds: [DEMO.branchId],
-        passwordHash,
+        passwordHash: hash,
       })
       // per-employee credentials: never touch an existing account — passwords
       // are set and reset in-app by managers, not by the environment
       .onConflictDoNothing();
-  }
+  };
+  for (const s of staff) await insertStaff(s, passwordHash);
+  for (const s of stagingStaff) await insertStaff(s, stagingPasswordHash);
 }
 
 // CLI: npm run seed

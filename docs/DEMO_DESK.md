@@ -67,7 +67,8 @@ again. A vault that was never counted gets this opening.
 - Not a reset for `j.masri` / `r.haddad` / the other seeded staff. Those
   passwords are first-create only (`SEED_PASSWORD`) and are lived-in on
   production. `c.adebayo` (compliance officer) and `l.berg` (auditor)
-  are inserted only when `STAGING=1`. A live boot does not create them,
-  and a later staging boot does not rewrite their passwords.
+  are inserted only when `STAGING` is exactly `1`. A live boot does not
+  create them. If `SEED_PASSWORD` is unset, their password is random and
+  password sign-in is off. A later staging boot does not rewrite a password.
 - Not a second book. The browser still only renders what the ledger
   posted.
