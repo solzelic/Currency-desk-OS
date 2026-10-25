@@ -9,11 +9,16 @@ import { buildApp } from "../src/app.js";
 import { fillRoute, listGetRoutes, seedSweepFixture, SWEEP_CUSTOMER, type SweepIds } from "./helpers/route-sweep.js";
 
 const MIN_GET_ROUTES = 64;
+const TELLER_ID = DEMO.tenantId + ":m.costa";
 const ledgerUrl = process.env.TEST_DATABASE_URL;
 
 let handle: DbHandle;
 let app: FastifyInstance;
 let pool: pg.Pool;
+let seeded: SweepIds | undefined;
+let priorPglite: string | undefined;
+let priorSeed: string | undefined;
+let capturedEnv = false;
 
 async function session(staffId: string) {
   const login = await app.inject({
@@ -26,6 +31,9 @@ async function session(staffId: string) {
 }
 
 beforeAll(async () => {
+  priorPglite = process.env.PGLITE_MEMORY;
+  priorSeed = process.env.SEED_PASSWORD;
+  capturedEnv = true;
   expect(ledgerUrl, "TEST_DATABASE_URL").toBeTruthy();
   process.env.PGLITE_MEMORY = "1";
   process.env.SEED_PASSWORD = "yorkville";
@@ -57,14 +65,47 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (pool) {
-    await pool.query("DELETE FROM rate_boards WHERE id = 'sweep-board'");
-    await pool.query("DELETE FROM market_rates WHERE id = 'sweep-snap'");
+  /* The sealed filing stays. DELETE raises "filed report is sealed"
+     once status is not draft. The two deals stay. DELETE on
+     ledger_transactions raises "append-only ledger record".
+     Closing the handle drops the in-memory PGlite. */
+  try {
+    if (pool && seeded) {
+      await pool.query("DELETE FROM quote_events WHERE quote_id = $1", [seeded.quoteId]);
+      await pool.query("DELETE FROM quote_overrides WHERE quote_id = $1", [seeded.quoteId]);
+      await pool.query("DELETE FROM quotes WHERE quote_id = $1", [seeded.quoteId]);
+      await pool.query("DELETE FROM desk_clients WHERE client_id = $1", [seeded.clientId]);
+      await pool.query("DELETE FROM ledger_customers WHERE customer_id = $1", [seeded.customerId]);
+      const left = await pool.query(
+        `SELECT
+           (SELECT count(*)::int FROM desk_clients WHERE client_id = $1) AS clients,
+           (SELECT count(*)::int FROM quotes WHERE quote_id = $2) AS quotes`,
+        [seeded.clientId, seeded.quoteId],
+      );
+      expect(left.rows[0]?.clients, "client removed").toBe(0);
+      expect(left.rows[0]?.quotes, "quote removed").toBe(0);
+    }
+    if (pool) {
+      await pool.query("DELETE FROM rate_boards WHERE id = 'sweep-board'");
+      await pool.query("DELETE FROM market_rates WHERE id = 'sweep-snap'");
+    }
+  } finally {
+    try {
+      await app?.close();
+      await handle?.close();
+      await pool?.end();
+    } finally {
+      delete process.env.LEDGER_DATABASE_URL;
+      if (capturedEnv) {
+        if (priorPglite === undefined) delete process.env.PGLITE_MEMORY;
+        else process.env.PGLITE_MEMORY = priorPglite;
+        if (priorSeed === undefined) delete process.env.SEED_PASSWORD;
+        else process.env.SEED_PASSWORD = priorSeed;
+      }
+    }
   }
-  await app?.close();
-  await handle?.close();
-  await pool?.end();
-  delete process.env.LEDGER_DATABASE_URL;
+  expect(process.env.PGLITE_MEMORY, "PGLITE_MEMORY").toBe(priorPglite);
+  expect(process.env.SEED_PASSWORD, "SEED_PASSWORD").toBe(priorSeed);
 });
 
 describe("route sweep helper", () => {
@@ -76,10 +117,14 @@ describe("route sweep helper", () => {
     expect(routes.length, "GET routes").toBeGreaterThanOrEqual(MIN_GET_ROUTES);
 
     const ids: SweepIds = await seedSweepFixture(app, pool);
+    seeded = ids;
     const admin = await session("j.masri");
     const client = await app.inject({ method: "GET", url: "/api/clients/" + ids.clientId, cookies: admin });
     expect(client.statusCode, client.body).toBe(200);
     expect(client.json().legalName).toBe(SWEEP_CUSTOMER);
+    expect(client.json().createdBy, "client creator").toBe(TELLER_ID);
+    const quoteRow = await pool.query("SELECT created_by FROM quotes WHERE quote_id = $1", [ids.quoteId]);
+    expect(quoteRow.rows[0]?.created_by, "quote creator").toBe(TELLER_ID);
 
     const deals = await app.inject({
       method: "GET",
