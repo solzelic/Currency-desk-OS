@@ -26,10 +26,16 @@
 
    Money is Decimal. A float never enters this file.
    ============================================================ */
+import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { idKindForDeal } from "./compliance-gate.js";
 import type { JurisdictionPack } from "./jurisdiction.js";
+
+const require = createRequire(import.meta.url);
+const { rollingWindow } = require("../../../shared/rolling-24h.js") as {
+  rollingWindow: (at: Date, hours?: number) => { start: Date; end: Date } | null;
+};
 
 export type IdentificationDeal = {
   kind: string;
@@ -47,6 +53,10 @@ export type IdentificationDeal = {
   purpose?: string | null;
   /** Where the money came from. Same EU due diligence line. */
   sourceOfFunds?: string | null;
+  /** The instant this deal is checked. The live gate uses now.
+      A test pins a wall time so a receipt before midnight can sit
+      inside the 24 hours. */
+  at?: Date;
 };
 
 export type GateRefusal = {
@@ -225,15 +235,10 @@ async function largeCashRule(
   };
 }
 
-/* Midnight in the branch's zone, then 24 consecutive hours. The law
-   is 24 consecutive hours, so the end is that instant plus 24 hours
-   and not "the same clock time tomorrow", which is 23 or 25 hours
-   across a daylight-saving change.
-
-   The browser lets an owner move the anchor off midnight
-   (settings.aggWindowStart). That choice is not on the server. The
-   gate uses midnight, which is the product default. A desk that
-   moves the anchor is a known gap: docs/CANADA_PACK.md. */
+/* Midnight in the branch's zone, then 24 elapsed hours. A calendar
+   date uses this. The large-cash identity gate does not. The gate
+   looks back 24 consecutive hours from the deal, through
+   shared/rolling-24h.js. A stored browser anchor is not applied. */
 export function staticWindow(
   at: Date,
   timeZone: string,
@@ -287,20 +292,6 @@ function zonedMidnight(at: Date, timeZone: string): Date {
   return new Date(start);
 }
 
-async function branchZone(client: pg.PoolClient, branchId: string): Promise<string> {
-  try {
-    const found = await client.query(
-      "SELECT timezone FROM branches WHERE id = $1",
-      [branchId],
-    );
-    const zone = String(found.rows[0]?.timezone ?? "").trim();
-    if (zone) return zone;
-  } catch (error) {
-    if ((error as { code?: string }).code !== "42P01") throw error;
-  }
-  return "America/Toronto";
-}
-
 /* Cash the desk received, in home currency, inside the window, for
    one axis only. Axes are not added together: the same notes can be
    a conductor report and, separately, an on-behalf-of report, and
@@ -338,6 +329,7 @@ async function cashReceived(
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
            LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
           WHERE t.legal_entity_id = $1
+            /* Start inclusive, end exclusive. The deal is not posted yet. */
             AND t.posted_at >= $2
             AND t.posted_at < $3
             AND r.reversal_id IS NULL
@@ -424,8 +416,8 @@ export async function countryIdentification(
         );
         const trigger =
           deskReport && deskReport.lt(rule.trigger) ? deskReport : rule.trigger;
-        const zone = await branchZone(client, args.branchId);
-        const window = staticWindow(new Date(), zone);
+        const window = rollingWindow(args.deal.at ?? new Date(), 24);
+        if (!window) return { split: true, refusal: ID_BLOCKED };
         const keys: Partial<Record<Axis, string | null>> = {
           conductor: args.deal.customerId?.trim() || null,
           on_behalf_of: personKey(args.deal.onBehalfOf),
