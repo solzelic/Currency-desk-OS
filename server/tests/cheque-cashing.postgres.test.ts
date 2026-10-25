@@ -874,6 +874,112 @@ postgres("cheque cashing on the ledger", () => {
     expect(undone.json().balances.CAD).toBe("5000.00");
   });
 
+  /* Guard. A cheque cashed on a day that was later closed and signed
+     off may still be reversed, or returned, once a new session is open.
+     The post lands in that open session. The closed day's sealed rows
+     stay as they were. */
+  it("posts a past cheque into the new open session and leaves the signed-off day unchanged", async () => {
+    const cookies = await cookie();
+    const who = `${DEMO.tenantId}:a.singh`;
+    const toReverse = await heldCheque(cookies, { chequeNumber: "004821" });
+    const toReturn = await heldCheque(cookies, { chequeNumber: "004822" });
+    expect(await tillCad()).toBe("3070.00");
+
+    await pool.query(
+      `UPDATE ledger_till_sessions
+          SET status='closed', closed_by=$1, closed_at=now(), close_note='Signed off'
+        WHERE session_id='chq-session-1'`,
+      [who],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_count_batches
+        (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+         till_id,count_kind,actor_id,idempotency_key,counted_at)
+       VALUES ('chq-day1-close','chq-session-1',$1,$2,$3,$4,$5,'close',$6,'chq-day1-close-key',now())`,
+      [...scope, who],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_counts
+        (batch_id,currency,expected_amount,counted_amount,variance_amount,stored_expected_amount)
+       VALUES ('chq-day1-close','CAD',3070.00,3070.00,0.00,3070.00)`,
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         session_number,business_date,status,opened_by,opened_at)
+       VALUES ('chq-session-2',$1,$2,$3,$4,$5,2,DATE '2026-06-19','open',$6,now())`,
+      [...scope, who],
+    );
+
+    const cashingIds = [toReverse.transactionId, toReturn.transactionId];
+    const sealed = async (sql: string, params: unknown[] = []) =>
+      (await pool.query(sql, params)).rows.map((row) => String(row.snapshot));
+    const dayOne = async () => ({
+      session: await sealed(
+        `SELECT row_to_json(s)::text AS snapshot
+           FROM ledger_till_sessions s
+          WHERE session_id='chq-session-1'`,
+      ),
+      totals: await sealed(
+        `SELECT row_to_json(c)::text AS snapshot
+           FROM ledger_till_counts c
+           JOIN ledger_till_count_batches b ON b.batch_id=c.batch_id
+          WHERE b.session_id='chq-session-1'
+          ORDER BY c.count_id`,
+      ),
+      journals: await sealed(
+        `SELECT row_to_json(j)::text AS snapshot
+           FROM ledger_journal_entries j
+          WHERE transaction_id = ANY($1::text[])
+          ORDER BY entry_id`,
+        [cashingIds],
+      ),
+      closeCount: await sealed(
+        `SELECT row_to_json(b)::text AS snapshot
+           FROM ledger_till_count_batches b
+          WHERE session_id='chq-session-1'
+          ORDER BY batch_id`,
+      ),
+    });
+
+    const openDay = await pool.query(
+      `SELECT session_id, status, business_date::text AS business_date
+         FROM ledger_till_sessions
+        WHERE status='open'`,
+    );
+    expect(openDay.rows).toEqual([
+      { session_id: "chq-session-2", status: "open", business_date: "2026-06-19" },
+    ]);
+    const before = await dayOne();
+
+    const reversed = await settle(cookies, toReverse.cheque.chequeId, "reversal", {
+      reason: "Next day",
+    });
+    expect(reversed.statusCode, reversed.body).toBe(201);
+    expect(reversed.json().status).toBe("reversed");
+    expect(await tillCad()).toBe("4035.00");
+    expect(reversed.json().balances.CAD).toBe("4035.00");
+
+    const returned = await settle(cookies, toReturn.cheque.chequeId, "return", {
+      reason: "NSF",
+      nsf: true,
+    });
+    expect(returned.statusCode, returned.body).toBe(201);
+    expect(returned.json().status).toBe("returned");
+    expect(await tillCad()).toBe("4035.00");
+    expect(returned.json().balances.CAD).toBe("4035.00");
+
+    expect(await dayOne()).toEqual(before);
+    const stillOpen = await pool.query(
+      `SELECT session_id, status, business_date::text AS business_date
+         FROM ledger_till_sessions
+        WHERE status='open'`,
+    );
+    expect(stillOpen.rows).toEqual([
+      { session_id: "chq-session-2", status: "open", business_date: "2026-06-19" },
+    ]);
+  });
+
   it("keeps a reversal and an NSF on separate paths", async () => {
     const cookies = await cookie();
     const bounced = await heldCheque(cookies, { chequeNumber: "A" });
