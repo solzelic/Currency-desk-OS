@@ -75,12 +75,12 @@ A later reversal does not take that cash back out. The reversal is
 cash paid out and is not a receipt. The exception is a reversal whose
 reason is `booking error, cash not received`. Only a supervisor, a
 branch manager, or an administrator can set that reason. The cluster
-shows "left out: booking error, cash not received" in 12px mute type,
-then a Set by line with the staff display name and the branch clock
-in 12-hour time. A reversed deal that still counts shows a reversed
+shows "left out: booking error, cash not received." then
+"Set by" the staff name and the branch clock, 12-hour, as in
+"16 Jun 2026, 4:00 pm". A reversed deal that still counts shows a reversed
 tag on its row. The same reason is refused when the deal is already
 on a prepared or filed LCTR. Prepared is a draft filing. The message
-is "This deal is already in a report. Ask your compliance officer."
+is "This deal is in a filed report. Ask your compliance officer."
 Nothing is reversed and the report row stays as it was. The
 left-out line still shows when dropping that deal leaves no cluster.
 A sealed filing is not removed.

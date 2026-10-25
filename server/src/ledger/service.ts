@@ -1726,7 +1726,7 @@ export class LedgerService {
           "REVERSAL_NOT_ALLOWED",
           "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
         );
-      /* Prepared is a draft filing. Filed is status filed. Refuse before any reversal row. */
+      /* Prepared is a draft filing. Filed is status filed. Refuse before any reversal row. Issue #327 lifts this once a filing flag exists. */
       if (isBookingErrorReason(reason)) {
         const held = await client.query(
           `SELECT 1 FROM ledger_transactions t

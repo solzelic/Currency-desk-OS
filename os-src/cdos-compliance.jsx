@@ -624,14 +624,24 @@
     const rule = window.CDOS.lctrReversal;
     return !row || row.status !== 'void' || !!(rule && rule.countsTowardLctr(row.voidReason));
   }
+  function branchWhen(raw, zone) {
+    const text = raw == null ? '' : String(raw).trim();
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const shape = (day, time) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+      return m && time ? (+m[3]) + ' ' + mon[+m[2] - 1] + ' ' + m[1] + ', ' + time : '';
+    };
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text) && window.CDOS.deskDay && window.CDOS.deskTime) {
+      const when = new Date(text);
+      if (isNaN(when.getTime())) return '';
+      return shape(window.CDOS.deskDay(when, zone), window.CDOS.deskTime(when, '12h', zone));
+    }
+    const stamped = /^(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2} [ap]m)$/i.exec(text);
+    return stamped ? shape(stamped[1], stamped[2].toLowerCase()) : text;
+  }
   function noticeOf(r, rule, zone, settings) {
     const name = rule.staffDisplayName(r.voidBy, (settings && settings.employees) || [], r.voidByName);
-    const raw = r.voidAt == null ? '' : String(r.voidAt);
-    let clock = raw.trim();
-    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && window.CDOS.deskStamp) {
-      const when = new Date(raw);
-      clock = isNaN(when.getTime()) ? '' : window.CDOS.deskStamp(when, '12h', zone);
-    }
+    const clock = branchWhen(r.voidAt, zone);
     return { line: rule.LEFT_OUT_LINE, by: name, at: clock, setBy: name && clock ? rule.setByLine(name, clock) : '', ref: r.ref };
   }
   /* A booking error in the 24 hours before a kept deal, even when no cluster remains. */

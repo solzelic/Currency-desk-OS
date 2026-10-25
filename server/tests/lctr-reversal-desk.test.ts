@@ -97,12 +97,18 @@ describe("desk paths use the shared LCTR reversal rule", () => {
     const notes = engine.lctrLeftOut(rows, regime, SETTINGS);
     expect(notes).toEqual([{
       line: "left out: booking error, cash not received",
-      by: "A. Singh", at: "2026-06-16 4:00 pm",
-      setBy: "Set by A. Singh. 2026-06-16 4:00 pm.", ref: "R-6000",
+      by: "A. Singh", at: "16 Jun 2026, 4:00 pm",
+      setBy: "Set by A. Singh, 16 Jun 2026, 4:00 pm.", ref: "R-6000",
     }]);
     const card = readFileSync(resolve(root, "os-src/cdos-compliance-app.jsx"), "utf8");
+    expect(notes[0].line + ". " + notes[0].setBy).toBe("left out: booking error, cash not received. Set by A. Singh, 16 Jun 2026, 4:00 pm.");
     expect(card).toContain("strayLeftOut");
     expect(card).toContain('className="mt-2 text-[12px]" style={{ color: CD.mute }}');
+    expect(card).toContain("{item.setBy}");
+    const slip = readFileSync(resolve(root, "os-src/cdos-modules.jsx"), "utf8");
+    const receipt = slip.slice(slip.indexOf("function ReceiptModal"), slip.indexOf("window.CDOS = Object.assign", slip.indexOf("function ReceiptModal")));
+    expect(receipt).not.toContain("booking error");
+    expect(receipt).not.toContain("left out:");
     expect(card).toContain("lctrReversal.reversedTag(t)");
     expect(card).toContain("<Tag c={CD.ink} bg={CD.chip} border={CD.line} t={tag}");
     const rule = g.window.CDOS.lctrReversal;
