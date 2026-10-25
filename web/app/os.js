@@ -13731,7 +13731,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     openFiltered,
     onOpenApp,
     serverBacked,
-    cashVersion
+    cashVersion,
+    subs,
+    beneficiaries
   }) {
     const [posMode, setPosMode] = useState('value');
     const [range, setRange] = useState('30d');
@@ -13835,6 +13837,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const fxTotal = fxValued ? fxRows.reduce((s, p) => s + p.home, 0) : null;
     const sensitivity = fxTotal == null ? null : Math.abs(fxTotal) * 0.01;
     const maxPos = Math.max(1, ...(held || []).map(p => Math.abs(p.home || 0)));
+    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0, [rows, clients, settings, beneficiaries, subs]);
     const D = useMemo(() => {
       /* These read the transaction rows the ledger sent, which is what
          `rows` now is — the demo seed is gone. Grouping records the server
@@ -14657,7 +14660,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Compliance"
     }, /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-2 gap-2"
-    }, [['Reportable open', D.rptOpen, D.rptOpen > 0 ? T.oxblood : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Reportable deals', dueN, dueN > 0 ? T.oxblood : T.green, 'RPT'], ['LCTRs filed', D.rptFiled, T.green, 'RPT'], ['Structuring', D.str, D.str > 0 ? T.bronze : T.green, 'STR'], ['KYC gaps', D.kyc, D.kyc > 0 ? T.oxblood : T.green, 'ID']].map(([l, v, col, view]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       onClick: () => openFiltered && openFiltered(view),
       className: "text-left",
@@ -14684,15 +14687,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "mt-2.5",
       style: {
         fontSize: 10.5,
-        color: D.rptOpen + D.kyc > 0 ? T.oxblood : T.green,
+        color: dueN + D.kyc > 0 ? T.oxblood : T.green,
         display: 'flex',
         alignItems: 'center',
         gap: 6
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: D.rptOpen + D.kyc > 0 ? 'alert' : 'checkcircle',
+      n: dueN + D.kyc > 0 ? 'alert' : 'checkcircle',
       s: 12
-    }), " ", D.rptOpen + D.kyc > 0 ? `${D.rptOpen + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'), /*#__PURE__*/React.createElement("div", {
+    }), " ", dueN + D.kyc > 0 ? `${dueN + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'), /*#__PURE__*/React.createElement("div", {
       className: "cd-tile-frame"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-honest-tiles mt-2.5 pt-2.5",
@@ -34215,7 +34218,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onClick: () => setViewToggle('RPT'),
       c: CD.flag,
       bg: CD.flagSoft
-    }, "Reportable ", stats.openRpt > 0 && `· ${stats.openRpt}`), /*#__PURE__*/React.createElement(Chip, {
+    }, "Reportable deals ", stats.openRpt > 0 && `· ${stats.openRpt}`), /*#__PURE__*/React.createElement(Chip, {
       on: view === 'STR',
       onClick: () => setViewToggle('STR'),
       c: CD.amber,
@@ -70521,6 +70524,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             clients: clients,
             settings: settings,
             me: me,
+            subs: subs,
+            beneficiaries: beneficiaries,
             onOpenLedger: () => openApp('ledger'),
             onOpenClient: openClientProfile,
             openFiltered: openLedgerFiltered,

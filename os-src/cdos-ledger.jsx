@@ -1809,7 +1809,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
         <Chip on={view === 'open'} onClick={() => { setFocusRefs(null); setView('open'); }}>All posted</Chip>
-        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={CD.flag} bg={CD.flagSoft}>Reportable {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
+        <Chip on={view === 'RPT'} onClick={() => setViewToggle('RPT')} c={CD.flag} bg={CD.flagSoft}>Reportable deals {stats.openRpt > 0 && `· ${stats.openRpt}`}</Chip>
         <Chip on={view === 'STR'} onClick={() => setViewToggle('STR')} c={CD.amber} bg={CD.amberSoft}>Structuring {stats.str > 0 && `· ${stats.str}`}</Chip>
         <Chip on={view === 'ID'} onClick={() => setViewToggle('ID')} c={CD.ink} bg={CD.lineSoft}>ID issues</Chip>
         <Chip on={view === 'tagged'} onClick={() => setViewToggle('tagged')} c={CD.ink} bg={CD.lineSoft}>Tagged {stats.tagged > 0 && `· ${stats.tagged}`}</Chip>

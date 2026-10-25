@@ -15,7 +15,7 @@ const root = resolve(import.meta.dirname, "../..");
 const g = globalThis as any;
 
 g.localStorage = { getItem: () => null, setItem() {}, removeItem() {}, clear() {}, length: 0, key: () => null };
-g.document = { addEventListener() {}, removeEventListener() {}, documentElement: { setAttribute() {}, style: {} }, head: { appendChild() {} }, createElement: () => ({}) };
+g.document = { addEventListener() {}, removeEventListener() {}, getElementById: () => null, documentElement: { setAttribute() {}, style: {} }, head: { appendChild() {} }, createElement: () => ({ style: {} }) };
 require("../../shared/lctr-reversal.js");
 require("../../shared/rolling-24h.js");
 require("../../os-src/cdos-desk-time.js");
@@ -38,6 +38,7 @@ Object.assign(g.window.CDOS, {
   TYPES: [], CCY: [], currencyPlaces: () => 2, effectiveRate: () => ({ text: "" }),
   RATE_NOTE: "", unitText: () => "", perCadLive: () => 1,
   branchZone: () => "America/Toronto", rulesMissing: () => false, deskPack: () => null,
+  Absent: () => null, useDeskFacts: () => ({}),
 });
 
 function load(file: string) {
@@ -49,6 +50,7 @@ function load(file: string) {
 load("os-src/cdos-compliance.jsx");
 load("os-src/cdos-modules.jsx");
 load("os-src/cdos-compliance-app.jsx");
+load("os-src/cdos-dashboard.jsx");
 
 const SETTINGS = { regime: "FINTRAC", structuringDays: 7, threshold: 10000, employees: [] };
 const FILED_FLAG = "A deal in this report was later marked booking error. Check if the filed report needs a correction.";
@@ -247,5 +249,79 @@ describe("the bell, the ledger nav badge, and Reportable deals are amber", () =>
     const fn = src.slice(src.indexOf("function StatCard"), src.indexOf("function CompKpi"));
     expect(fn).toContain("flag ? CD.amber : CD.ink");
     expect(fn).not.toContain("CD.flag");
+  });
+});
+
+const DUE_SUBS = {
+  "PREP-ORPHAN": { status: "prepared", kind: "LCTR", subject: "M. Ortega", amount: 12000, refs: ["R-ORPHAN"] },
+  "FILED-1": { status: "submitted", kind: "LCTR", subject: "B. Khan", amount: 15000, refs: ["R-FILED"] },
+};
+const STR_ROW = { id: "s1", customer: "S. Kim", status: "posted", inAmt: 100, inCcy: "CAD", receivedInstrument: "cash" };
+const STR_FLAGS = { s1: { str: true, void: false, kyc: "ok", idNeeded: false, single: false, agg24: false } };
+
+function sliceExpr(src: string, key: string) {
+  const i = src.indexOf(key);
+  if (i < 0) throw new Error(key);
+  const at = i + key.length;
+  if (src[at] !== "{" && src[at] !== "(") return src.slice(at, src.indexOf(";", i));
+  const open = src[at];
+  const close = open === "{" ? "}" : ")";
+  let depth = 0;
+  for (let j = at; j < src.length; j++) {
+    if (src[j] === open) depth++;
+    else if (src[j] === close && --depth === 0) return open === "{" ? src.slice(at + 1, j) : src.slice(at, j + 1);
+  }
+  throw new Error(key);
+}
+function run(code: string, scope: Record<string, unknown>) {
+  const keys = Object.keys(scope);
+  return new Function(...keys, code)(...keys.map((k) => scope[k]));
+}
+function wired() {
+  const os = readFileSync(resolve(root, "os-src/cdos-os.jsx"), "utf8");
+  const openObligations = run(sliceExpr(os, "const openObligations = useMemo(() => "), {
+    window: g.window, rows: [STR_ROW], clients: {}, settings: SETTINGS, beneficiaries: [], subs: DUE_SUBS,
+  });
+  const alerts = run("return " + sliceExpr(os, "const alerts = useMemo(() => "), {
+    computeAlerts: g.window.CDOS.computeAlerts, rows: [STR_ROW], flags: STR_FLAGS, openObligations,
+  });
+  return { os, alerts };
+}
+function expr(src: string, key: string, scope: Record<string, unknown>) {
+  return run("return " + sliceExpr(src, key), scope);
+}
+
+describe("each due surface reads the selector", () => {
+  it("shows the selector on the bell", () => {
+    const { os, alerts } = wired();
+    expect(expr(os, "const alertCount = ", { alerts, jViol: [] })).toBe(2);
+  });
+  it("shows the selector on the RPT tag", () => {
+    const { os, alerts } = wired();
+    expect(expr(os, "const v = ", { alerts })).toBe("RPT");
+  });
+  it("shows the selector on the Ledger badge", () => {
+    const { os, alerts } = wired();
+    expect(expr(os, "const alertN = ", { alerts, jViol: [] })).toBe(2);
+  });
+  it("shows the selector on the Compliance badge", () => {
+    const m = /Filings\s*<span class="text-\[9px\][^"]*"[^>]*>([^<]+)<\/span>/.exec(render(DUE_SUBS));
+    expect(m && m[1]).toBe("1");
+  });
+  it("shows the selector on the assistant line", () => {
+    const { alerts } = wired();
+    const apps = readFileSync(resolve(root, "os-src/cdos-apps.jsx"), "utf8");
+    const start = apps.indexOf("`Open compliance items");
+    expect(run("return " + apps.slice(start, apps.indexOf("`", start + 1) + 1), { alerts })).toContain("reportable (LCTR ≥ $10k): 1");
+  });
+  it("shows the selector on the Dashboard tile", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement(g.window.CDOS.Dashboard, {
+      rows: [], clients: {}, settings: SETTINGS, me: { name: "J. Masri" }, subs: DUE_SUBS, beneficiaries: [],
+    }));
+    const at = html.indexOf("Reportable deals");
+    expect(at).toBeGreaterThan(-1);
+    expect(html).not.toContain("Reportable open");
+    const m = /(\d+)<\/div><div[^>]*>$/.exec(html.slice(0, at));
+    expect(m && m[1]).toBe("1");
   });
 });
