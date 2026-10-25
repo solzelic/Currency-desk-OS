@@ -61823,6 +61823,39 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/staging-signin.js ---- */
+/* Labels for the staging door on the sign-in screen.
+   Disabled (anything other than true) renders nothing, so the
+   login page shows no buttons when the config endpoint is off. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.stagingEnterButtons = api.stagingEnterButtons;
+    cdos.renderStagingEnterButtons = api.renderStagingEnterButtons;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var BUTTONS = [
+    { role: "administrator", label: "Enter as Owner" },
+    { role: "branch_manager", label: "Enter as Manager" },
+    { role: "supervisor", label: "Enter as Supervisor" },
+    { role: "compliance_officer", label: "Enter as Compliance officer" },
+    { role: "teller", label: "Enter as Teller" },
+    { role: "auditor", label: "Enter as Auditor" },
+  ];
+  function stagingEnterButtons(enabled) {
+    return enabled === true ? BUTTONS.slice() : [];
+  }
+  function renderStagingEnterButtons(enabled) {
+    return stagingEnterButtons(enabled).map(function (b) {
+      return '<button type="button" data-staging-role="' + b.role + '">' + b.label + '</button>';
+    }).join("");
+  }
+  return { stagingEnterButtons: stagingEnterButtons, renderStagingEnterButtons: renderStagingEnterButtons };
+});
+
+
 /* ---- os-src/cdos-signin.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Sign-in (design: "CurrencyDesk Sign In")
@@ -61865,6 +61898,24 @@ ${snap}`;
     backgroundColor: '#e7e4dd',
     backgroundImage: 'radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px)',
     backgroundSize: 'auto, 22px 22px'
+  };
+  /* Night face. The lock's inline paper paint beats the dark stylesheet,
+     so a dark theme has to skip that paint and use these tokens instead. */
+  const NIGHT = {
+    '--si-ink': '#eceae3',
+    '--si-paper': '#161513',
+    '--si-panel': '#23221e',
+    '--si-pin': '#1c1b18',
+    '--si-line': 'rgba(236,234,227,0.14)',
+    '--si-soft': 'rgba(236,234,227,0.08)',
+    '--si-mute': '#aea89f',
+    '--si-faint': '#8a847c',
+    '--si-primary': '#36ad6d',
+    '--si-primary-deep': '#2d9160',
+    '--si-plum': '#b7a6e0',
+    '--si-flag': '#e0604f',
+    fontFamily: "'Archivo', system-ui, sans-serif",
+    color: 'var(--si-ink)'
   };
 
   // CD logo mark (filled disc + D bowl + green dot). `cut` = the notch colour
@@ -62064,7 +62115,14 @@ ${snap}`;
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
     const [lockAt, setLockAt] = useState(0);
+    const [quick, setQuick] = useState(false);
+    const [night, setNight] = useState(() => document.documentElement.getAttribute('data-cdtheme') === 'dark');
     const sending = useRef(false);
+    useEffect(() => {
+      const sync = () => setNight(document.documentElement.getAttribute('data-cdtheme') === 'dark');
+      window.addEventListener('cdos-theme', sync);
+      return () => window.removeEventListener('cdos-theme', sync);
+    }, []);
     useEffect(() => {
       if (coolUntil <= Date.now()) return undefined;
       setNow(Date.now());
@@ -62086,6 +62144,19 @@ ${snap}`;
       const t = setInterval(tick, 1000);
       return () => clearInterval(t);
     }, [locked, lockAt]);
+    /* The config endpoint is 404, or enabled is not true, unless every
+       staging check passed. Anything else leaves the buttons off. */
+    useEffect(() => {
+      let live = true;
+      fetch('/api/staging/signin', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(d => {
+        if (live && d && d.enabled === true) setQuick(true);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
     const startCooldown = secs => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
     const applyLock = d => {
       if (!d || d.error !== 'too_many_attempts') return false;
@@ -62136,6 +62207,49 @@ ${snap}`;
       setErr('');
       setStep('password');
     };
+    async function enterAs(role) {
+      if (sending.current) return;
+      sending.current = true;
+      setBusy(true);
+      setErr('');
+      try {
+        const res = await fetch('/api/staging/enter', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            role
+          })
+        });
+        const data = await res.json().catch(() => null);
+        sending.current = false;
+        setBusy(false);
+        const u = data && data.user;
+        if (!res.ok || !u) {
+          setErr('That door is closed.');
+          return;
+        }
+        u.staging = true;
+        const knownOne = dir.find(e => String(e.code || '').toLowerCase() === String(u.id).toLowerCase());
+        const rec = knownOne || {
+          id: 'e_' + u.id,
+          code: u.id,
+          name: u.name || u.id,
+          role: SRV2OS[u.role] || 'Cashier',
+          active: true,
+          branches: u.role === 'administrator' ? '*' : ['b01'],
+          home: u.role === 'administrator' ? null : 'b01',
+          _adopted: true
+        };
+        onComplete(rec, u.plan || null, u);
+      } catch (e2) {
+        sending.current = false;
+        setBusy(false);
+        setErr('That door is closed.');
+      }
+    }
     const SRV2OS = {
       administrator: 'Owner',
       branch_manager: 'Manager',
@@ -62468,10 +62582,10 @@ ${snap}`;
       style: {
         width,
         maxWidth: 'calc(100vw - 40px)',
-        background: step === 'code' ? 'var(--si-pin)' : 'rgba(255,255,255,0.55)',
+        background: night ? step === 'code' ? '#1c1b18' : '#23221e' : step === 'code' ? 'var(--si-pin)' : 'rgba(255,255,255,0.55)',
         backdropFilter: 'saturate(180%) blur(30px)',
         WebkitBackdropFilter: 'saturate(180%) blur(30px)',
-        border: '1px solid rgba(23,20,15,0.08)',
+        border: night ? '1px solid rgba(236,234,227,0.12)' : '1px solid rgba(23,20,15,0.08)',
         borderRadius: step === 'code' ? 30 : 20,
         padding: step === 'code' ? '30px 34px' : '34px 34px 26px',
         boxShadow: step === 'code' ? '0 40px 90px -28px rgba(23,20,15,0.6)' : '0 24px 60px -14px rgba(23,20,15,0.32), 0 0 0 1px rgba(23,20,15,0.05)',
@@ -62481,13 +62595,14 @@ ${snap}`;
     const shell = children => /*#__PURE__*/React.createElement("div", {
       id: "lock",
       style: {
-        ...VARS,
-        ...PAPER_BG,
+        ...(night ? NIGHT : VARS),
+        ...(night ? {} : PAPER_BG),
         position: 'fixed',
         inset: 0,
         display: 'grid',
         placeItems: 'center',
-        overflow: 'auto'
+        overflow: 'auto',
+        padding: '28px 0'
       }
     }, /*#__PURE__*/React.createElement("style", null, '@keyframes cdWinIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}@keyframes cdSpin{to{transform:rotate(360deg)}}'), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -62501,7 +62616,7 @@ ${snap}`;
     }, /*#__PURE__*/React.createElement(Mark, {
       w: 30,
       h: 21,
-      cut: "#e7e4dd"
+      cut: night ? '#161512' : '#e7e4dd'
     }), /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: MONO,
@@ -62533,7 +62648,7 @@ ${snap}`;
     }, /*#__PURE__*/React.createElement(Mark, {
       w: 44,
       h: 31,
-      cut: "rgba(255,255,255,0.55)"
+      cut: night ? '#23221e' : 'rgba(255,255,255,0.55)'
     })), /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: 'center',
@@ -62669,7 +62784,30 @@ ${snap}`;
         color: 'var(--si-ink)',
         cursor: 'pointer'
       }
-    }, ex.code || ex.name, " \xB7 ", (ex.role || 'staff').toLowerCase()))), err && /*#__PURE__*/React.createElement("div", {
+    }, ex.code || ex.name, " \xB7 ", (ex.role || 'staff').toLowerCase()))), quick ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gap: 8,
+        marginTop: 16
+      }
+    }, window.CDOS.stagingEnterButtons(true).map(b => /*#__PURE__*/React.createElement("button", {
+      key: b.role,
+      type: "button",
+      disabled: busy,
+      onClick: () => enterAs(b.role),
+      style: {
+        width: '100%',
+        minHeight: 44,
+        borderRadius: 12,
+        border: '1px solid var(--si-line)',
+        background: 'var(--si-panel)',
+        color: 'var(--si-ink)',
+        fontFamily: 'Archivo, system-ui, sans-serif',
+        fontSize: 15,
+        fontWeight: 600,
+        cursor: busy ? 'default' : 'pointer'
+      }
+    }, b.label))) : null, err && /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--si-flag)',
         fontSize: 12,
@@ -67526,6 +67664,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [signup, setSignup] = useState(null); // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null); // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null); // server user (carries tenantId) — drives per-tenant persistence
+    const [stagingOn, setStagingOn] = useState(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null); // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -68997,6 +69136,33 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return () => clearInterval(t);
     }, []);
 
+    /* A label, not a permission. It lives on document.body so the lock,
+       the station picker, and the desktop all show it. A password
+       sign-in, a sign-out, and a 401 take it down. */
+    useEffect(() => {
+      const id = 'cdos-staging-banner';
+      if (!stagingOn) {
+        const gone = document.getElementById(id);
+        if (gone) gone.remove();
+        document.body.style.paddingTop = '';
+        return undefined;
+      }
+      let node = document.getElementById(id);
+      if (!node) {
+        node = document.createElement('div');
+        node.id = id;
+        node.setAttribute('role', 'status');
+        node.textContent = 'Staging';
+        document.body.appendChild(node);
+      }
+      document.body.style.paddingTop = '22px';
+      return () => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+        document.body.style.paddingTop = '';
+      };
+    }, [stagingOn]);
+
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
        long gone — so the header greets you by name and then every app that asks
@@ -69010,6 +69176,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       let alive = true;
       const relock = () => {
         if (!alive) return;
+        setStagingOn(false);
         setStage(cur => cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock');
       };
       const check = () => {
@@ -69025,6 +69192,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           return r.json();
         }).then(d => {
           if (!alive || !d || !d.user || !d.user.id) return;
+          setStagingOn(d.staging === true);
           /* The header has to name whoever the cookie is now. A switch,
              or a change of role, does not reload the desk. The open Fee
              schedule follows that role, so a cashier sees the lock and
@@ -69063,6 +69231,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           credentials: 'same-origin'
         }).then(r => r.ok ? r.json() : null).then(async d => {
           if (!alive || !d || !d.user) return;
+          setStagingOn(d.staging === true);
           /* Never yank somebody out of a screen they are mid-way through.
              Read the live stage rather than the one this effect closed over
              on mount — by the time the request comes back they may have
@@ -70117,6 +70286,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
     function logout() {
+      setStagingOn(false);
       try {
         sessionStorage.removeItem(AUTH_KEY);
       } catch (e) {}
@@ -70173,6 +70343,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setStage('setpass');
       },
       onComplete: async (rec, srvPlan, srvUser) => {
+        setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({
           ...s,
           employees: [...(s.employees || []), {

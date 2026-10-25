@@ -795,6 +795,7 @@
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
+    const [stagingOn, setStagingOn] = useState(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -1628,6 +1629,33 @@
 
     useEffect(() => { const t = setInterval(() => { setClock(new Date()); }, 1000); return () => clearInterval(t); }, []);
 
+    /* A label, not a permission. It lives on document.body so the lock,
+       the station picker, and the desktop all show it. A password
+       sign-in, a sign-out, and a 401 take it down. */
+    useEffect(() => {
+      const id = 'cdos-staging-banner';
+      if (!stagingOn) {
+        const gone = document.getElementById(id);
+        if (gone) gone.remove();
+        document.body.style.paddingTop = '';
+        return undefined;
+      }
+      let node = document.getElementById(id);
+      if (!node) {
+        node = document.createElement('div');
+        node.id = id;
+        node.setAttribute('role', 'status');
+        node.textContent = 'Staging';
+        document.body.appendChild(node);
+      }
+      document.body.style.paddingTop = '22px';
+      return () => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+        document.body.style.paddingTop = '';
+      };
+    }, [stagingOn]);
+
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
        long gone — so the header greets you by name and then every app that asks
@@ -1642,6 +1670,7 @@
       let alive = true;
       const relock = () => {
         if (!alive) return;
+        setStagingOn(false);
         setStage(cur => (cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock'));
       };
       const check = () => {
@@ -1654,6 +1683,7 @@
           })
           .then(d => {
             if (!alive || !d || !d.user || !d.user.id) return;
+            setStagingOn(d.staging === true);
             /* The header has to name whoever the cookie is now. A switch,
                or a change of role, does not reload the desk. The open Fee
                schedule follows that role, so a cashier sees the lock and
@@ -1691,6 +1721,7 @@
           .then(r => (r.ok ? r.json() : null))
           .then(async (d) => {
             if (!alive || !d || !d.user) return;
+            setStagingOn(d.staging === true);
             /* Never yank somebody out of a screen they are mid-way through.
                Read the live stage rather than the one this effect closed over
                on mount — by the time the request comes back they may have
@@ -2259,6 +2290,7 @@
       openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
     function logout() {
+      setStagingOn(false);
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
       try { window.CDOS_PERSIST.end(); } catch (e) {}
       hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
@@ -2290,6 +2322,7 @@
         setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage('setpass');
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
+        setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
         markPersistRole(rec.role);

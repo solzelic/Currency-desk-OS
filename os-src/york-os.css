@@ -3518,3 +3518,26 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 }
 .cd-tx-rate-shown { font-size: 14px !important; line-height: 18px !important; }
 .cd-tx-rate-line > .cd-tx-rate-shown { color: var(--color-text, #111111) !important; font-family: var(--f-body, "Archivo", system-ui, sans-serif) !important; font-weight: 500 !important; }
+
+/* Staging quick sign-in. A label on every screen, light and dark. */
+#cdos-staging-banner {
+  position: fixed;
+  z-index: 10050;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 11px/1 Archivo, system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #17140f;
+  background: #f3e2a4;
+  pointer-events: none;
+}
+html[data-cdtheme="dark"] #cdos-staging-banner {
+  color: #1a1404;
+  background: #e0a106;
+}
