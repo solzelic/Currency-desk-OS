@@ -24145,6 +24145,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
      picture is not a paper filed for the customer, and it is not this
      change. */
   const stampToday = () => window.CDOS.deskDay(Date.now(), window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto');
+  /* Document writes for one name run one after another and re-read the
+     file first. A second field typed before the first response returns
+     would otherwise open a second customer, or a second primary. */
+  const documentWrites = {};
+  function enqueueDocument(name, run) {
+    const key = String(name);
+    const prev = documentWrites[key] || Promise.resolve();
+    const next = prev.then(run, run);
+    documentWrites[key] = next.catch(() => {});
+    return next;
+  }
   function clientWriter({
     name,
     rec,
@@ -24171,27 +24182,40 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        till sees the old one. */
     const send = run => Promise.resolve().then(run).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
     const extraDoc = i => (rec.ids || [])[i] || {};
-    /* A health card as the primary is not edited: the server refuses
-       that. Typing an ID on such a file adds a new primary document and
-       the health card stays on the file beside it, not accepted. */
-    const healthPrimary = isHealthType(rec.idType);
-    const primaryId = healthPrimary ? null : rec.primaryDocumentId;
-    const typeOnFile = healthPrimary ? '' : rec.idType;
-    function field(k, v) {
-      if (!onServer) return localSet(k, v);
-      const DOC = api.DOCUMENT_FIELDS;
-      if (DOC[k]) {
-        const patch = {};
-        patch[DOC[k]] = v || null;
-        if (primaryId) return send(() => api.updateDocument(clientId, primaryId, patch));
-        /* Typing a document's details when the file has none is how a
-           document gets created — the same gesture the old flat editor
-           made, landing in the right table. */
-        return send(() => api.addDocument(clientId, Object.assign({
-          docType: k === 'idType' ? v || 'Not stated' : typeOnFile || 'Not stated',
-          isPrimary: true
-        }, k === 'idType' ? {} : patch)));
+    async function persistDocumentField(k, v, DOC) {
+      await ClientRecords.load(true);
+      let match = clientId ? ClientRecords.byId(clientId) : null;
+      if (!match) {
+        const matches = ClientRecords.byName(name);
+        if (matches.length > 1) throw new Error('More than one customer has this name. Open their file and record the ID there.');
+        match = matches[0] || null;
       }
+      if (!match) {
+        const created = await ClientRecords.open(name, {
+          [k]: v,
+          kind: rec && rec.kind || 'individual'
+        });
+        if (!created || !created.clientId) throw new Error('CurrencyDesk could not open a file for this customer.');
+        return;
+      }
+      const desk = api.toDeskRecord(match, {});
+      const health = isHealthType(desk.idType);
+      const primary = health ? null : desk.primaryDocumentId;
+      const typeOn = health ? '' : desk.idType || '';
+      const patch = {};
+      patch[DOC[k]] = v || null;
+      if (primary) await api.updateDocument(match.clientId, primary, patch);else await api.addDocument(match.clientId, Object.assign({
+        docType: k === 'idType' ? v || 'Not stated' : typeOn || 'Not stated',
+        isPrimary: true
+      }, k === 'idType' ? {} : patch));
+      await ClientRecords.load(true);
+    }
+    function field(k, v) {
+      const DOC = api && api.DOCUMENT_FIELDS;
+      if (DOC && DOC[k] && ClientRecords.serverBacked()) {
+        return enqueueDocument(name, () => persistDocumentField(k, v, DOC)).then(() => reload(true)).catch(e => onError(e && e.message || 'CurrencyDesk could not save that change. Nothing was saved.'));
+      }
+      if (!onServer) return localSet(k, v);
       if (k === 'photo') {
         if (!v) return rec.primaryDocumentId && rec.primaryHasScan ? send(() => api.removeDocumentScan(clientId, rec.primaryDocumentId)) : localSet(k, null);
         return scan(v);
@@ -26726,7 +26750,20 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
     const fileRef = useRef(null);
     useEffect(() => {
-      if (recordIdSignal) setEdit(true);
+      if (!recordIdSignal) return undefined;
+      let live = true;
+      (async () => {
+        const shared = window.CDOS.ClientRecords;
+        if (shared) {
+          try {
+            await shared.load(true);
+          } catch (e) {/* the file still opens */}
+        }
+        if (live) setEdit(true);
+      })();
+      return () => {
+        live = false;
+      };
     }, [recordIdSignal]);
     useEffect(() => {
       if (!recordIdSignal || !edit) return undefined;
