@@ -1,10 +1,10 @@
-/* Issue #319. Cash received stays in the LCTR cluster after a later reversal,
+/* Issue #319. Cash received stays in the LCTR total after a reversal,
    unless the reason is a booking error set by a reversing role. */
 import { createRequire } from "node:module";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
-import { lctrCluster } from "../src/ledger/canada-rules.js";
+import { cashReceived } from "../src/ledger/canada-rules.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -13,26 +13,18 @@ const require = createRequire(import.meta.url);
 const { wallInstant } = require("../../shared/rolling-24h.js") as {
   wallInstant: (date: string, time: string, zone: string) => Date | null;
 };
-const { BOOKING_ERROR_REASON, LEFT_OUT_LINE } = require("../../shared/lctr-reversal.js") as {
+const { BOOKING_ERROR_REASON, countsTowardLctr } = require("../../shared/lctr-reversal.js") as {
   BOOKING_ERROR_REASON: string;
-  LEFT_OUT_LINE: string;
+  countsTowardLctr: (reason: unknown) => boolean;
 };
-const ZONE = "America/Toronto";
-const DAY1 = "2026-06-15";
-const DAY2 = "2026-06-16";
-const TENANT = "tnt-lctr319";
-const ENTITY = "le-lctr319";
-const BRANCH = "br-lctr319";
-const WORKSPACE = "ws-lctr319";
-const TILL = "till-lctr319";
-const SUPERVISOR = "lctr-supervisor";
-const TELLER = "lctr-teller";
-const scope = {
-  tenantId: TENANT, legalEntityId: ENTITY, branchId: BRANCH, workspaceId: WORKSPACE, tillId: TILL,
-};
-let handle: DbHandle;
-let pool: pg.Pool;
-let service: LedgerService;
+const ZONE = "America/Toronto", DAY1 = "2026-06-15", DAY2 = "2026-06-16";
+const TENANT = "tnt-lctr319", ENTITY = "le-lctr319", BRANCH = "br-lctr319";
+const WORKSPACE = "ws-lctr319", TILL = "till-lctr319";
+const SUPERVISOR = "lctr-supervisor", TELLER = "lctr-teller";
+const IN_REPORT = "This deal is already in a report. Ask your compliance officer.";
+const TELLER_MSG = "Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.";
+const scope = [TENANT, ENTITY, BRANCH, WORKSPACE, TILL];
+let handle: DbHandle, pool: pg.Pool, service: LedgerService;
 
 function at(date: string, time: string): Date {
   const instant = wallInstant(date, time, ZONE);
@@ -40,46 +32,56 @@ function at(date: string, time: string): Date {
   return instant;
 }
 function actor(userId: string, role: LedgerActor["role"]): LedgerActor {
-  return { userId, ...scope, role, authorizedBranchIds: [BRANCH] };
+  return { userId, tenantId: TENANT, legalEntityId: ENTITY, branchId: BRANCH, workspaceId: WORKSPACE, tillId: TILL, role, authorizedBranchIds: [BRANCH] };
 }
 async function deal(id: string, customerId: string, amount: string, postedAt: Date) {
   await pool.query(
-    `INSERT INTO ledger_transactions
-       (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id, workspace_id, till_id,
-        customer_id, actor_id, from_currency, to_currency, input_amount, output_amount, rate,
-        fee_cad, spread_cad, purpose, source_of_funds, posted_at, deal_kind, received_instrument,
-        disbursed_instrument, cash_in_home, cash_out_home, home_currency, third_party, third_party_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'CAD','USD',$10,$10,1,0,0,'Travel','Salary',$11,
-             'exchange','cash','cash',$10,NULL,'CAD',false,NULL)`,
-    [id, `ref-${id}`, TENANT, ENTITY, BRANCH, WORKSPACE, TILL, customerId, TELLER, amount, postedAt],
+    `INSERT INTO ledger_transactions (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id, workspace_id, till_id,
+        customer_id, actor_id, from_currency, to_currency, input_amount, output_amount, rate, fee_cad, spread_cad, purpose, source_of_funds,
+        posted_at, deal_kind, received_instrument, disbursed_instrument, cash_in_home, cash_out_home, home_currency, third_party, third_party_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'CAD','USD',$10,$10,1,0,0,'Travel','Salary',$11,'exchange','cash','cash',$10,NULL,'CAD',false,NULL)`,
+    [id, `ref-${id}`, ...scope, customerId, TELLER, amount, postedAt],
   );
 }
 async function reversal(id: string, reason: string, postedAt: Date) {
   await pool.query(
-    `INSERT INTO ledger_reversals (reversal_id, transaction_id, actor_id, reason, posted_at)
-     VALUES ($1,$2,$3,$4,$5)`,
+    "INSERT INTO ledger_reversals (reversal_id, transaction_id, actor_id, reason, posted_at) VALUES ($1,$2,$3,$4,$5)",
     [`rv-${id}`, id, SUPERVISOR, reason, postedAt],
   );
 }
-async function pair(prefix: string, customerId: string) {
-  await deal(`${prefix}-1`, customerId, "6000.00", at(DAY1, "14:00:00"));
-  await deal(`${prefix}-2`, customerId, "5000.00", at(DAY2, "10:00:00"));
-}
-async function clusterOf(customerId: string) {
+async function cashOf(customerId: string) {
   const client = await pool.connect();
   try {
-    return await lctrCluster(client, { legalEntityId: ENTITY, customerId, at: at(DAY2, "10:00:00") });
-  } finally {
-    client.release();
-  }
+    return (await cashReceived(client, ENTITY, { start: at(DAY1, "00:00:00"), end: at(DAY2, "18:00:00") }, "conductor", customerId)).toFixed(2);
+  } finally { client.release(); }
 }
 async function kept(prefix: string, customerId: string, reason: string, postedAt: Date) {
-  await pair(prefix, customerId);
+  await deal(`${prefix}-1`, customerId, "6000.00", at(DAY1, "14:00:00"));
+  await deal(`${prefix}-2`, customerId, "5000.00", at(DAY2, "10:00:00"));
   await reversal(`${prefix}-1`, reason, postedAt);
-  const cluster = await clusterOf(customerId);
-  expect(cluster.total).toBe("11000.00");
-  expect(cluster.cluster).toBe(true);
-  return cluster;
+  expect(await cashOf(customerId)).toBe("11000.00");
+}
+async function placeFiling(id: string, status: "draft" | "filed", ref: string, payload: object) {
+  await pool.query(
+    `INSERT INTO ledger_report_filings (filing_id, tenant_id, legal_entity_id, branch_id, report_id, pack_id, pack_version,
+        report_code, status, payload, subject_transaction_ids, acknowledgement_ref, created_by)
+     VALUES ($1,$2,$3,$4,'rpt-ca-lctr-v2','pack-ca-v2',2,'LCTR',$5,$6::jsonb,$7::jsonb,$8,$9)`,
+    [id, TENANT, ENTITY, BRANCH, status, JSON.stringify(payload), JSON.stringify([ref]), status === "filed" ? `ACK-${id}` : null, SUPERVISOR],
+  );
+}
+async function filingSnap(id: string) {
+  const found = await pool.query("SELECT filing_id, status, report_code, acknowledgement_ref, payload, subject_transaction_ids FROM ledger_report_filings WHERE filing_id=$1", [id]);
+  return found.rows[0];
+}
+async function bookingError(transactionId: string, key: string) {
+  try {
+    await service.reverse(actor(SUPERVISOR, "supervisor"), transactionId, key, BOOKING_ERROR_REASON);
+    return null;
+  } catch (error) { return error; }
+}
+async function reversals(id: string) {
+  const rows = await pool.query("SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1", [id]);
+  return rows.rowCount;
 }
 
 postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
@@ -90,70 +92,63 @@ postgres("LCTR total keeps reversed cash unless it was a booking error", () => {
     service = new LedgerService(pool);
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1) ON CONFLICT DO NOTHING", [TENANT]);
     await pool.query(
-      `INSERT INTO legal_entities
-         (id, tenant_id, name, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+      `INSERT INTO legal_entities (id, tenant_id, name, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
        VALUES ($1,$2,$1,'CAD','pack-ca-v2',2) ON CONFLICT (id) DO NOTHING`,
       [ENTITY, TENANT],
     );
     for (const [userId, role] of [[SUPERVISOR, "supervisor"], [TELLER, "teller"]] as const) {
       await pool.query(
-        `INSERT INTO ledger_principals
-           (user_id, tenant_id, legal_entity_id, branch_id, workspace_id, till_id, role, authorized_branch_ids)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
-        [userId, TENANT, ENTITY, BRANCH, WORKSPACE, TILL, role, JSON.stringify([BRANCH])],
+        "INSERT INTO ledger_principals (user_id, tenant_id, legal_entity_id, branch_id, workspace_id, till_id, role, authorized_branch_ids) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING",
+        [userId, ...scope, role, JSON.stringify([BRANCH])],
       );
     }
   });
-  afterAll(async () => {
-    await handle.close();
-    await pool.end();
-    delete process.env.DATABASE_URL;
-  });
+  afterAll(async () => { await handle.close(); await pool.end(); delete process.env.DATABASE_URL; });
 
-  it("keeps CAD 6000 at 2 pm and CAD 5000 at 10 am in the cluster after a normal reversal at 4 pm", async () => {
-    const cluster = await kept("lctr-n", "lctr-normal", "Customer changed their mind", at(DAY2, "16:00:00"));
-    expect(cluster.count).toBe(2);
+  it("keeps CAD 6000 and CAD 5000 in cashReceived after a normal reversal", async () => {
+    await kept("lctr-n", "lctr-normal", "Customer changed their mind", at(DAY2, "16:00:00"));
   });
-
-  it("forms no cluster when the first deal is a booking error", async () => {
-    await pair("lctr-b", "lctr-booking");
+  it("leaves a booking error out of cashReceived", async () => {
+    await deal("lctr-b-1", "lctr-booking", "6000.00", at(DAY1, "14:00:00"));
+    await deal("lctr-b-2", "lctr-booking", "5000.00", at(DAY2, "10:00:00"));
     await reversal("lctr-b-1", BOOKING_ERROR_REASON, at(DAY2, "16:00:00"));
-    const cluster = await clusterOf("lctr-booking");
-    expect(cluster.cluster).toBe(false);
-    expect(cluster.total).toBe("5000.00");
-    expect(cluster.count).toBe(1);
-    expect(cluster.leftOut).toEqual([{
-      transactionId: "lctr-b-1", line: LEFT_OUT_LINE, by: SUPERVISOR,
-      at: at(DAY2, "16:00:00").toISOString(),
-    }]);
+    expect(countsTowardLctr(BOOKING_ERROR_REASON)).toBe(false);
+    expect(await cashOf("lctr-booking")).toBe("5000.00");
   });
-
-  it("still counts a reversal with no reason", async () => {
+  it("keeps a reversal with no reason in cashReceived", async () => {
+    expect(countsTowardLctr("")).toBe(true);
+    expect(countsTowardLctr(null)).toBe(true);
     await kept("lctr-z", "lctr-noreason", "", at(DAY2, "16:00:00"));
   });
-
   it("still counts a reversal posted inside the window", async () => {
     await kept("lctr-i", "lctr-inside", "Customer changed their mind", at(DAY1, "15:00:00"));
   });
-
+  it("refuses a booking error when the deal is in a prepared LCTR", async () => {
+    await deal("lctr-prep", "lctr-prep", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-prep", "draft", "ref-lctr-prep", { mark: "prepared" });
+    expect(await bookingError("lctr-prep", "prep-booking")).toMatchObject({ code: "COMPLIANCE_BLOCKED", message: IN_REPORT });
+  });
+  it("refuses a booking error when the deal is in a filed LCTR", async () => {
+    await deal("lctr-filed", "lctr-filed", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-filed", "filed", "ref-lctr-filed", { mark: "filed" });
+    expect(await bookingError("lctr-filed", "filed-booking")).toMatchObject({ code: "COMPLIANCE_BLOCKED", message: IN_REPORT });
+  });
+  it("leaves the report unchanged and writes no reversal when the booking error is refused", async () => {
+    await deal("lctr-hold", "lctr-hold", "100.00", at(DAY1, "12:00:00"));
+    await placeFiling("fil-hold", "filed", "ref-lctr-hold", { mark: "hold", total: "11000.00" });
+    const before = await filingSnap("fil-hold");
+    expect(await bookingError("lctr-hold", "hold-booking")).toMatchObject({ message: IN_REPORT });
+    expect(await filingSnap("fil-hold")).toEqual(before);
+    expect(await reversals("lctr-hold")).toBe(0);
+  });
   it("refuses a teller who sets the booking-error reason, and the deal stays in the total", async () => {
-    await pair("lctr-t", "lctr-teller");
+    await deal("lctr-t-1", "lctr-teller", "6000.00", at(DAY1, "14:00:00"));
+    await deal("lctr-t-2", "lctr-teller", "5000.00", at(DAY2, "10:00:00"));
     let refused: unknown = null;
-    try {
-      await service.reverse(actor(TELLER, "teller"), "lctr-t-1", "teller-booking", BOOKING_ERROR_REASON);
-    } catch (error) {
-      refused = error;
-    }
-    expect(refused).toMatchObject({
-      code: "AUTHORIZATION_DENIED",
-      message: "Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.",
-    });
-    const cluster = await clusterOf("lctr-teller");
-    expect(cluster.total).toBe("11000.00");
-    expect(cluster.cluster).toBe(true);
-    const rows = await pool.query(
-      "SELECT reversal_id FROM ledger_reversals WHERE transaction_id = $1", ["lctr-t-1"],
-    );
-    expect(rows.rowCount).toBe(0);
+    try { await service.reverse(actor(TELLER, "teller"), "lctr-t-1", "teller-booking", BOOKING_ERROR_REASON); }
+    catch (error) { refused = error; }
+    expect(refused).toMatchObject({ code: "AUTHORIZATION_DENIED", message: TELLER_MSG });
+    expect(await cashOf("lctr-teller")).toBe("11000.00");
+    expect(await reversals("lctr-t-1")).toBe(0);
   });
 });

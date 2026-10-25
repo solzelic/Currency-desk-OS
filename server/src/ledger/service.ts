@@ -18,6 +18,7 @@ import {
 import { AU_V2_PACK_ID, australiaIdentification } from "./australia-rules.js";
 import {
   countryIdentification,
+  IN_REPORT_MESSAGE,
   isBookingErrorReason,
   type IdentificationDeal,
 } from "./canada-rules.js";
@@ -1722,6 +1723,20 @@ export class LedgerService {
           "REVERSAL_NOT_ALLOWED",
           "Reverse this cheque through POST /api/ledger/cheques/:chequeId/reversal.",
         );
+      /* Prepared is a draft filing. Filed is status filed. Refuse before any reversal row. */
+      if (isBookingErrorReason(reason)) {
+        const held = await client.query(
+          `SELECT 1 FROM ledger_transactions t
+             JOIN ledger_report_filings f
+               ON f.tenant_id = t.tenant_id AND f.legal_entity_id = t.legal_entity_id
+              AND upper(f.report_code) = 'LCTR' AND f.status IN ('draft', 'filed')
+              AND (f.subject_transaction_ids @> jsonb_build_array(t.transaction_ref)
+                OR f.subject_transaction_ids @> jsonb_build_array(t.transaction_id))
+            WHERE t.transaction_id = $1 AND t.tenant_id = $2 AND t.legal_entity_id = $3 LIMIT 1`,
+          [transactionId, actor.tenantId, actor.legalEntityId],
+        );
+        if (held.rowCount) throw new LedgerError("COMPLIANCE_BLOCKED", IN_REPORT_MESSAGE);
+      }
       const existing = await client.query(
         "SELECT reversal_id FROM ledger_reversals WHERE transaction_id=$1 FOR UPDATE",
         [transactionId],

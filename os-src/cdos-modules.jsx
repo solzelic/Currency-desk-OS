@@ -188,7 +188,7 @@
   function Stat({ label, value, mono, flag }) { return (<div className="px-5 py-3" style={{ borderRight: `1px solid ${CD.lineSoft}` }}><div className="text-[11px]" style={{ color: CD.mute }}>{label}</div><div className="text-lg font-semibold" style={{ color: flag ? CD.flag : CD.ink, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value}</div></div>); }
   function Kpi({ label, value, accent }) { return (<div className="px-4 py-3" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="text-[11px]" style={{ color: CD.mute }}>{label}</div><div className="text-xl font-semibold" style={{ color: accent || CD.ink, fontVariantNumeric: 'tabular-nums' }}>{value}</div></div>); }
   function Pill({ icon, c, bg, t }) { return (<span className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" style={{ background: bg, color: c }}><Ic n={icon} s={13} /> {t}</span>); }
-  function Tag({ c, bg, t, title }) { return (<span title={title} className="text-[10px] px-1 font-medium" style={{ background: bg, color: c }}>{t}</span>); }
+  function Tag({ c, bg, t, title, border }) { return (<span title={title} className="text-[10px] px-1 font-semibold inline-flex items-center" style={{ background: bg, color: c, borderRadius: 5, border: border ? `1px solid ${border}` : "none", lineHeight: "14px", minHeight: 16 }}>{t}</span>); }
   function Field({ label, children }) { return (<div><div className="text-[11px] mb-1" style={{ color: CD.mute }}>{label}</div>{children}</div>); }
   function Section({ title, sub, children }) { return (<div className="mb-5 p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="font-semibold" style={{ color: CD.ink }}>{title}</div>{sub && <div className="text-[11px] mt-0.5 mb-1" style={{ color: CD.mute }}>{sub}</div>}{children}</div>); }
   function BarCard({ title, data, fmtV }) { const max = Math.max(1, ...data.map(d => d[1])); return (<div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}` }}><div className="text-sm font-semibold mb-3" style={{ color: CD.ink }}>{title}</div>{data.map(([k, v]) => (<div key={k} className="mb-2"><div className="flex justify-between text-[11px] mb-0.5"><span style={{ color: CD.text }}>{k}</span><span style={{ color: CD.mute, fontVariantNumeric: 'tabular-nums' }}>{fmtV(v)}</span></div><div className="h-2" style={{ background: CD.lineSoft }}><div className="h-2" style={{ width: `${(v / max) * 100}%`, background: CD.ink }} /></div></div>))}</div>); }
@@ -495,6 +495,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime
+    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime, Tag
   });
 })();

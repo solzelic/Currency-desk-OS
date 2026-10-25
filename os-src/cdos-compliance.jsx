@@ -616,38 +616,55 @@
       id: r.id, ref: r.ref, date: r.date, time: r.time, t: dt(r),
       amt: cashIn(r), customer: r.customer, beneficiary: r.beneficiary,
       onBehalfOf: (r.capture && r.capture.thirdPartyName) || r.thirdPartyName || '',
+      status: r.status, voidReason: r.voidReason || '',
     };
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function countsForLctr(row) {
-    if (!row || row.status !== 'void') return true;
     const rule = window.CDOS.lctrReversal;
-    return !!(rule && rule.countsTowardLctr(row.voidReason));
+    return !row || row.status !== 'void' || !!(rule && rule.countsTowardLctr(row.voidReason));
+  }
+  function noticeOf(r, rule, zone, settings) {
+    const name = rule.staffDisplayName(r.voidBy, (settings && settings.employees) || [], r.voidByName);
+    const raw = r.voidAt == null ? '' : String(r.voidAt);
+    let clock = raw.trim();
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && window.CDOS.deskStamp) {
+      const when = new Date(raw);
+      clock = isNaN(when.getTime()) ? '' : window.CDOS.deskStamp(when, '12h', zone);
+    }
+    return { line: rule.LEFT_OUT_LINE, by: name, at: clock, setBy: name && clock ? rule.setByLine(name, clock) : '', ref: r.ref };
+  }
+  /* A booking error in the 24 hours before a kept deal, even when no cluster remains. */
+  function lctrLeftOut(rows, regime, settings) {
+    const rule = window.CDOS.lctrReversal;
+    if (!rule || (regime && regime.aggregate === false)) return [];
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    const wall = window.CDOS.wallInstant;
+    const inside = window.CDOS.inRollingWindow;
+    const atOf = (row) => (wall && row.date ? wall(row.date, row.time || '00:00', zone) : null);
+    const kept = (rows || []).filter(row => countsForLctr(row) && cashIn(row) > 0);
+    return (rows || []).filter(row => row.status === 'void' && rule.isBookingErrorReason(row.voidReason) && cashIn(row) > 0).filter(row => {
+      const at = atOf(row);
+      return !!at && kept.some(k => {
+        const end = atOf(k);
+        return (k.customer || '') === (row.customer || '') && end && inside && inside(at, end, 24);
+      });
+    }).map(row => noticeOf(row, rule, zone, settings));
   }
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
-    const rule = window.CDOS.lctrReversal;
     const events = (rows || []).filter(r => countsForLctr(r) && cashIn(r) > 0).map(eventFromRow);
     const clusters = aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
-    const dropped = (rows || []).filter(r => r.status === 'void' && rule && rule.isBookingErrorReason(r.voidReason));
+    const notices = lctrLeftOut(rows, regime, settings);
     const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
     clusters.forEach(c => {
-      const start = Date.parse(c.windowStart);
-      const end = Date.parse(c.windowEnd);
-      c.leftOut = dropped.filter(r => {
-        const who = c.basis === 'beneficiary' ? r.beneficiary
-          : c.basis === 'on_behalf_of' ? ((r.capture && r.capture.thirdPartyName) || r.thirdPartyName || '')
-          : r.customer;
-        if (who !== c.subject) return false;
-        const at = window.CDOS.wallInstant && r.date ? window.CDOS.wallInstant(r.date, r.time || '00:00', zone) : null;
-        const t = at ? at.getTime() : NaN;
-        return t >= start && t <= end;
-      }).map(r => ({
-        line: rule.LEFT_OUT_LINE,
-        by: r.voidBy || '',
-        at: r.voidAt || '',
-        ref: r.ref,
-      }));
+      const start = Date.parse(c.windowStart), end = Date.parse(c.windowEnd);
+      c.leftOut = notices.filter(item => {
+        const row = (rows || []).find(r => r.ref === item.ref);
+        if (!row || (c.basis === 'beneficiary' ? row.beneficiary : c.basis === 'on_behalf_of' ? ((row.capture && row.capture.thirdPartyName) || row.thirdPartyName || '') : row.customer) !== c.subject) return false;
+        const at = window.CDOS.wallInstant && row.date ? window.CDOS.wallInstant(row.date, row.time || '00:00', zone) : null;
+        return !!at && at.getTime() >= start && at.getTime() <= end;
+      });
     });
     return clusters;
   }
@@ -690,7 +707,7 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, screeningNote, NOT_CONNECTED },
+    _compliance: { REGIMES, getRegime, WATCHLISTS, LIST_TONE, screen, STAT, aggClusters, lctrLeftOut, aggClustersEFT, aggClustersVc, includeAllCoveredRefs, largePolicy, cadIn, cashIn, dt, setFingerprint, sanctionsListShips, screeningNote, NOT_CONNECTED },
     getRegime,
     jurisdictionViolations,
     jurisdictionPosture,

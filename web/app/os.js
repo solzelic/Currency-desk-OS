@@ -3034,21 +3034,49 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   var BOOKING_ERROR_REASON = "booking error, cash not received";
   var LEFT_OUT_LINE = "left out: booking error, cash not received";
+  var IN_REPORT_MESSAGE = "This deal is already in a report. Ask your compliance officer.";
 
   function isBookingErrorReason(reason) {
     return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
   }
 
-  /* Null is no reversal. Any other reason still counts as cash received. */
   function countsTowardLctr(reason) {
     return !isBookingErrorReason(reason);
+  }
+
+  function reversedTag(row) {
+    if (!row || row.status !== "void" || !countsTowardLctr(row.voidReason)) return "";
+    return "reversed";
+  }
+
+  function staffDisplayName(actorId, people, actorName) {
+    var named = String(actorName == null ? "" : actorName).trim();
+    if (named) return named;
+    var id = String(actorId == null ? "" : actorId);
+    var list = people || [];
+    for (var i = 0; i < list.length; i++) {
+      var person = list[i];
+      if (!person) continue;
+      if (person.code !== id && person.id !== id) continue;
+      var name = String(person.name || "").trim();
+      if (name) return name;
+    }
+    return "";
+  }
+
+  function setByLine(name, clock) {
+    return "Set by " + String(name || "").trim() + ". " + String(clock || "").trim() + ".";
   }
 
   return {
     BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
     LEFT_OUT_LINE: LEFT_OUT_LINE,
+    IN_REPORT_MESSAGE: IN_REPORT_MESSAGE,
     isBookingErrorReason: isBookingErrorReason,
     countsTowardLctr: countsTowardLctr,
+    reversedTag: reversedTag,
+    staffDisplayName: staffDisplayName,
+    setByLine: setByLine,
   };
 });
 
@@ -3253,8 +3281,11 @@
       createdAt: transaction.postedAt,
       status: reversal ? "void" : "posted",
       voidReason: reversal ? reversal.reason : "",
-      voidBy: reversal && reversal.actorId ? reversal.actorId : "",
-      voidAt: reversal ? reversal.postedAt : "",
+      voidBy: reversal && window.CDOS.lctrReversal
+        ? window.CDOS.lctrReversal.staffDisplayName(reversal.actorId, [], reversal.actorName) : "",
+      voidByName: reversal && reversal.actorName ? reversal.actorName : "",
+      voidAt: reversal && reversal.postedAt && window.CDOS.deskStamp
+        ? window.CDOS.deskStamp(new Date(reversal.postedAt), "12h", zone) : "",
       thread: [],
       filed: false,
       filedInfo: null,
@@ -4623,14 +4654,19 @@ if (typeof window !== "undefined") {
     c,
     bg,
     t,
-    title
+    title,
+    border
   }) {
     return /*#__PURE__*/React.createElement("span", {
       title: title,
-      className: "text-[10px] px-1 font-medium",
+      className: "text-[10px] px-1 font-semibold inline-flex items-center",
       style: {
         background: bg,
-        color: c
+        color: c,
+        borderRadius: 5,
+        border: border ? `1px solid ${border}` : "none",
+        lineHeight: "14px",
+        minHeight: 16
       }
     }, t);
   }
@@ -6031,7 +6067,8 @@ if (typeof window !== "undefined") {
     Audit,
     Calc,
     ReceiptModal,
-    deskTime
+    deskTime,
+    Tag
   });
 })();
 
@@ -45151,37 +45188,64 @@ var CDOS_CHEQUE_FEE = (function () {
       amt: cashIn(r),
       customer: r.customer,
       beneficiary: r.beneficiary,
-      onBehalfOf: r.capture && r.capture.thirdPartyName || r.thirdPartyName || ''
+      onBehalfOf: r.capture && r.capture.thirdPartyName || r.thirdPartyName || '',
+      status: r.status,
+      voidReason: r.voidReason || ''
     };
   }
   // LCTR: cash received. The policy comes from the large-cash report.
   function countsForLctr(row) {
-    if (!row || row.status !== 'void') return true;
     const rule = window.CDOS.lctrReversal;
-    return !!(rule && rule.countsTowardLctr(row.voidReason));
+    return !row || row.status !== 'void' || !!(rule && rule.countsTowardLctr(row.voidReason));
+  }
+  function noticeOf(r, rule, zone, settings) {
+    const name = rule.staffDisplayName(r.voidBy, settings && settings.employees || [], r.voidByName);
+    const raw = r.voidAt == null ? '' : String(r.voidAt);
+    let clock = raw.trim();
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && window.CDOS.deskStamp) {
+      const when = new Date(raw);
+      clock = isNaN(when.getTime()) ? '' : window.CDOS.deskStamp(when, '12h', zone);
+    }
+    return {
+      line: rule.LEFT_OUT_LINE,
+      by: name,
+      at: clock,
+      setBy: name && clock ? rule.setByLine(name, clock) : '',
+      ref: r.ref
+    };
+  }
+  /* A booking error in the 24 hours before a kept deal, even when no cluster remains. */
+  function lctrLeftOut(rows, regime, settings) {
+    const rule = window.CDOS.lctrReversal;
+    if (!rule || regime && regime.aggregate === false) return [];
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    const wall = window.CDOS.wallInstant;
+    const inside = window.CDOS.inRollingWindow;
+    const atOf = row => wall && row.date ? wall(row.date, row.time || '00:00', zone) : null;
+    const kept = (rows || []).filter(row => countsForLctr(row) && cashIn(row) > 0);
+    return (rows || []).filter(row => row.status === 'void' && rule.isBookingErrorReason(row.voidReason) && cashIn(row) > 0).filter(row => {
+      const at = atOf(row);
+      return !!at && kept.some(k => {
+        const end = atOf(k);
+        return (k.customer || '') === (row.customer || '') && end && inside && inside(at, end, 24);
+      });
+    }).map(row => noticeOf(row, rule, zone, settings));
   }
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
-    const rule = window.CDOS.lctrReversal;
     const events = (rows || []).filter(r => countsForLctr(r) && cashIn(r) > 0).map(eventFromRow);
     const clusters = aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
-    const dropped = (rows || []).filter(r => r.status === 'void' && rule && rule.isBookingErrorReason(r.voidReason));
+    const notices = lctrLeftOut(rows, regime, settings);
     const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
     clusters.forEach(c => {
-      const start = Date.parse(c.windowStart);
-      const end = Date.parse(c.windowEnd);
-      c.leftOut = dropped.filter(r => {
-        const who = c.basis === 'beneficiary' ? r.beneficiary : c.basis === 'on_behalf_of' ? r.capture && r.capture.thirdPartyName || r.thirdPartyName || '' : r.customer;
-        if (who !== c.subject) return false;
-        const at = window.CDOS.wallInstant && r.date ? window.CDOS.wallInstant(r.date, r.time || '00:00', zone) : null;
-        const t = at ? at.getTime() : NaN;
-        return t >= start && t <= end;
-      }).map(r => ({
-        line: rule.LEFT_OUT_LINE,
-        by: r.voidBy || '',
-        at: r.voidAt || '',
-        ref: r.ref
-      }));
+      const start = Date.parse(c.windowStart),
+        end = Date.parse(c.windowEnd);
+      c.leftOut = notices.filter(item => {
+        const row = (rows || []).find(r => r.ref === item.ref);
+        if (!row || (c.basis === 'beneficiary' ? row.beneficiary : c.basis === 'on_behalf_of' ? row.capture && row.capture.thirdPartyName || row.thirdPartyName || '' : row.customer) !== c.subject) return false;
+        const at = window.CDOS.wallInstant && row.date ? window.CDOS.wallInstant(row.date, row.time || '00:00', zone) : null;
+        return !!at && at.getTime() >= start && at.getTime() <= end;
+      });
     });
     return clusters;
   }
@@ -45247,6 +45311,7 @@ var CDOS_CHEQUE_FEE = (function () {
       screen,
       STAT,
       aggClusters,
+      lctrLeftOut,
       aggClustersEFT,
       aggClustersVc,
       includeAllCoveredRefs,
@@ -46687,7 +46752,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     Ic,
     fmt,
     num,
-    TODAY
+    TODAY,
+    Tag
   } = window.CDOS;
   const C = window.CDOS._compliance;
   const {
@@ -47109,6 +47175,14 @@ ${(filing.map || []).map(blockHTML).join('')}
   }) {
     const regime = getRegime(settings);
     const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const strayLeftOut = useMemo(() => {
+      const all = C.lctrLeftOut ? C.lctrLeftOut(rows, regime, settings) : [];
+      const seen = {};
+      clusters.forEach(c => (c.leftOut || []).forEach(item => {
+        seen[item.ref] = true;
+      }));
+      return all.filter(item => !seen[item.ref]);
+    }, [clusters, rows, settings, regime]);
     /* Australia reports each threshold transaction on its own. Saying
        "the 24-hour rule" here would be the old, wrong rule. */
     if (regime.aggregate === false) {
@@ -47448,6 +47522,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         className: "flex flex-wrap gap-1.5"
       }, c.txs.map(t => {
         const done = cov.refs.has(t.ref);
+        const tag = window.CDOS.lctrReversal && window.CDOS.lctrReversal.reversedTag(t);
         return /*#__PURE__*/React.createElement("button", {
           key: t.id,
           onClick: e => {
@@ -47459,7 +47534,7 @@ ${(filing.map || []).map(blockHTML).join('')}
             }
           },
           title: done ? 'Already named on an earlier filing' : isEft ? 'Open in Transfers' : 'Open this record in the Ledger',
-          className: "text-[10.5px] px-2 py-0.5",
+          className: "text-[10.5px] px-2 py-1 inline-flex items-center gap-1",
           style: {
             background: done ? CD.greenSoft : 'var(--cd-chip)',
             borderRadius: 6,
@@ -47468,16 +47543,29 @@ ${(filing.map || []).map(blockHTML).join('')}
             cursor: 'pointer',
             border: 'none'
           }
-        }, done ? '✓ ' : '', t.ref, " \xB7 ", num(t.amt), " ", settings.baseCurrency || regime.currency, " \xB7 ", t.time, c.basis === 'beneficiary' ? ' · ' + t.customer : '');
+        }, done ? '✓ ' : '', t.ref, " \xB7 ", num(t.amt), " ", settings.baseCurrency || regime.currency, " \xB7 ", t.time, c.basis === 'beneficiary' ? ' · ' + t.customer : '', tag ? /*#__PURE__*/React.createElement(Tag, {
+          c: CD.ink,
+          bg: CD.chip,
+          border: CD.line,
+          t: tag,
+          title: "This reversal still counts in the total"
+        }) : null);
       })), c.leftOut && c.leftOut.length ? /*#__PURE__*/React.createElement("div", {
-        className: "mt-2 text-[11px]",
+        className: "mt-2 text-[12px]",
         style: {
           color: CD.mute
         }
       }, c.leftOut.map(item => /*#__PURE__*/React.createElement("div", {
         key: item.ref
-      }, item.line, ". ", item.by, ". ", item.at, "."))) : null);
-    }), !clusters.length && /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("div", null, item.line, "."), item.setBy ? /*#__PURE__*/React.createElement("div", null, item.setBy) : null))) : null);
+    }), strayLeftOut.length ? /*#__PURE__*/React.createElement("div", {
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, strayLeftOut.map(item => /*#__PURE__*/React.createElement("div", {
+      key: item.ref
+    }, /*#__PURE__*/React.createElement("div", null, item.line, "."), item.setBy ? /*#__PURE__*/React.createElement("div", null, item.setBy) : null))) : null, !clusters.length && /*#__PURE__*/React.createElement("div", {
       className: "text-center py-12",
       style: {
         border: `1px dashed ${CD.line}`,
