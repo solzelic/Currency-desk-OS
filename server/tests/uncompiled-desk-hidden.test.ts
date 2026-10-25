@@ -29,7 +29,7 @@ const asStyle = { "sec-fetch-dest": "style", accept: "text/css" };
 
 /* A real source file the Babel shell loads, and the two shells themselves.
    The stylesheet the compiled page still links is asserted separately. */
-const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js"] as const;
+const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js", "/shared/counter-cash.js"] as const;
 
 /* Markers that only the uncompiled desk carries. A 200 from the marketing
    page is not a leak; a body with any of these is the source. */
@@ -60,6 +60,7 @@ const UNCOMPILED_FILES: Record<string, string> = {
   "os-src/cdos-base.jsx": "/* the uncompiled source */",
   "os-src/york-os.css": "/* the uncompiled stylesheet */",
   "shared/id-document-types.js": "/* the uncompiled catalogue */",
+  "shared/counter-cash.js": "/* the uncompiled cash rule */",
   "shared/not-listed.js": "/* not on the allow-list */",
 };
 
@@ -215,6 +216,9 @@ describe("compiled shells absent: the fallback shells are still served", () => {
       const catalogue = await bare.inject({ method: "GET", url: "/shared/id-document-types.js", headers: asScript });
       expect(catalogue.statusCode).toBe(200);
       expect(catalogue.body).toContain("the uncompiled catalogue");
+      const cashRule = await bare.inject({ method: "GET", url: "/shared/counter-cash.js", headers: asScript });
+      expect(cashRule.statusCode).toBe(200);
+      expect(cashRule.body).toContain("the uncompiled cash rule");
       const other = await bare.inject({ method: "GET", url: "/shared/not-listed.js", headers: asScript });
       expect(other.statusCode).toBe(404);
       expect(other.body).not.toContain("not on the allow-list");

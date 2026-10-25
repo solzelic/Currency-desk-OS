@@ -298,6 +298,68 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(stored).toMatchObject({ paidOut: "200.80", net: "-200.80" });
   });
 
+  /* A cashed cheque hands the desk a piece of paper and pays cash out.
+     The face is the input amount. Counting it as cash received makes the
+     drawer look like it took in money it never held. The cash that left
+     is the net paid to the customer. A cash exchange in the same window
+     still counts, so the cheque is left out rather than the whole total. */
+  it("counts cash paid out on a cheque, and does not count the face as cash in", async () => {
+    const at = new Date().toISOString();
+    const book = (id: string, from: string, to: string, input: string, output: string, kind: string, received: string, disbursed: string) =>
+      pool.query(
+        `INSERT INTO ledger_transactions
+           (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
+            workspace_id, till_id, customer_id, actor_id, from_currency, to_currency,
+            input_amount, output_amount, rate, fee_cad, spread_cad, purpose,
+            source_of_funds, posted_at, deal_kind, received_instrument, disbursed_instrument,
+            jurisdiction_pack_id, jurisdiction_pack_version, home_currency)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, 'customer-demo', $3||':r.haddad',
+            $8, $9, $10, $11, 1, 0, 0, 'travel', 'salary', $12,
+            $13, $14, $15, 'pack-ca-v1', 1, 'CAD')`,
+        [id, `ref-${id}`, ...scope, from, to, input, output, at, kind, received, disbursed],
+      );
+    await book("chq-face", "CAD", "CAD", "1000.00", "965.00", "cheque_cashing", "cheque", "cash");
+    await book("fx-cash", "CAD", "USD", "100.00", "70.00", "exchange", "cash", "cash");
+    const bookSummary = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const cad = bookSummary.movement.find((row: { currency: string }) => row.currency === "CAD");
+    const usd = bookSummary.movement.find((row: { currency: string }) => row.currency === "USD");
+    expect(cad).toMatchObject({ received: "100.00", paidOut: "965.00", net: "-865.00" });
+    expect(usd).toMatchObject({ received: "0.00", paidOut: "70.00", net: "-70.00" });
+  });
+
+  /* remittanceReceive sets the incoming leg to electronic_funds_transfer.
+     12,000 of that is not cash in. Canada counts cash received, so 0.00 is not an LCTR. */
+  it("posts a 12000 electronic transfer remittance with no cash in and no LCTR", async () => {
+    await tillHolds("CAD", 20000);
+    const posted = await app.inject({
+      method: "POST", url: "/api/ledger/remittances/receive", cookies: await cookie(),
+      payload: {
+        idempotencyKey: "rmt-eft-12000", customerId: "customer-demo", reference: "TR-EFT-12000",
+        sentCurrency: "CAD", sentAmount: "12000.00", payoutAmount: "12000.00", feeAmount: "0.00",
+        corridor: "US", partner: "Wire partner", purpose: "Family support", sourceOfFunds: "Salary",
+      },
+    });
+    expect(posted.statusCode).toBe(201);
+    expect(posted.json()).toMatchObject({
+      dealKind: "remittance_receive", inputAmount: "12000.00", cashDirection: "out", cashAmountHome: "12000.00",
+    });
+    const bookSummary = await summary(
+      `?from=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}`,
+    );
+    const cad = bookSummary.movement.find((row: { currency: string }) => row.currency === "CAD");
+    expect(cad).toMatchObject({ received: "0.00", paidOut: "12000.00", net: "-12000.00" });
+    const stored = (await pool.query(
+      "SELECT received_instrument, input_amount, cash_in_home FROM ledger_transactions WHERE transaction_id=$1",
+      [posted.json().transactionId],
+    )).rows[0];
+    expect(stored).toMatchObject({
+      received_instrument: "electronic_funds_transfer", input_amount: "12000.00", cash_in_home: "0.00",
+    });
+  });
+
   it("shows a stored yen balance as stored", async () => {
     await tillHolds("JPY", 200.8);
     const held = await position();

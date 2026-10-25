@@ -34,7 +34,7 @@ const BASELINE: Record<string, number> = {
   "design/site/CurrencyDesk Site.dc.html": 0,
   "os-src/cdos-apps.jsx": 7,
   "os-src/cdos-backend.js": 3,
-  "os-src/cdos-base.jsx": 9,
+  "os-src/cdos-base.jsx": 7,
   "os-src/cdos-branches.jsx": 31,
   "os-src/cdos-cheques-app.jsx": 2,
   "os-src/cdos-cheques.jsx": 10,

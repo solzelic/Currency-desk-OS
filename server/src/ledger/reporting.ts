@@ -30,9 +30,16 @@
 
    See docs/ABSENT_FIGURES.md.
    ============================================================ */
+import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import type pg from "pg";
 import { SETTLEMENT_DEAL_KINDS_SQL } from "./cheques.js";
+
+const require = createRequire(import.meta.url);
+type CashLeg = { amount: unknown; ccy: unknown } | null;
+const { cashLegs } = require("../../../shared/counter-cash.js") as {
+  cashLegs: (row: Record<string, unknown>) => { in: CashLeg; out: CashLeg };
+};
 import { euAmlrNotice, loadEuAppliesFrom } from "./eu-amlr.js";
 import {
   BASELINE_NOTICE,
@@ -424,28 +431,55 @@ export class LedgerReportingService {
           ORDER BY t.to_currency`,
         [...tillScope(actor), home, window.from ?? null, window.to ?? null, openFrom],
       );
-      /* Same open-day rule as units sold, on each leg of the deal. */
-      const movement = await client.query(
-        `SELECT trim(currency) AS currency,
-                sum(CASE WHEN side = 'in' THEN amount ELSE 0 END) AS received,
-                sum(CASE WHEN side = 'out' THEN amount ELSE 0 END) AS paid_out
-           FROM (
-             SELECT leg.side, leg.currency,
-                    CASE WHEN $8::timestamptz IS NOT NULL AND t.posted_at >= $8
-                         THEN round(leg.amount, ${minorPlaceSql("leg.currency")})
-                         ELSE leg.amount END AS amount
-               FROM ledger_transactions t
-               LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
-               CROSS JOIN LATERAL (VALUES ('in', t.from_currency, t.input_amount),
-                 ('out', t.to_currency, t.output_amount)) AS leg(side, currency, amount)
-              WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
-                AND t.workspace_id=$4 AND t.till_id=$5 AND r.reversal_id IS NULL
-                AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
-                AND ($6::timestamptz IS NULL OR t.posted_at >= $6)
-                AND ($7::timestamptz IS NULL OR t.posted_at < $7)
-           ) legs GROUP BY trim(currency) ORDER BY 1`,
+      /* Same open-day rule as units sold, on each leg, before the
+         shared cash rule drops a leg that never crossed as cash.
+         A cheque face is the input amount and it is not cash in. */
+      const legs = await client.query(
+        `SELECT t.deal_kind,
+                trim(t.from_currency) AS from_currency,
+                trim(t.to_currency) AS to_currency,
+                CASE WHEN $8::timestamptz IS NOT NULL AND t.posted_at >= $8
+                     THEN round(t.input_amount, ${minorPlaceSql("t.from_currency")})
+                     ELSE t.input_amount END AS input_amount,
+                CASE WHEN $8::timestamptz IS NOT NULL AND t.posted_at >= $8
+                     THEN round(t.output_amount, ${minorPlaceSql("t.to_currency")})
+                     ELSE t.output_amount END AS output_amount,
+                t.received_instrument,
+                t.disbursed_instrument
+           FROM ledger_transactions t
+           LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+          WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
+            AND t.workspace_id=$4 AND t.till_id=$5 AND r.reversal_id IS NULL
+            AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
+            AND ($6::timestamptz IS NULL OR t.posted_at >= $6)
+            AND ($7::timestamptz IS NULL OR t.posted_at < $7)`,
         [...tillScope(actor), window.from ?? null, window.to ?? null, openFrom],
       );
+      const cashTotals = new Map<string, { received: Decimal; paidOut: Decimal }>();
+      const addLeg = (leg: CashLeg, side: "received" | "paidOut") => {
+        if (!leg || leg.ccy == null || String(leg.ccy).trim() === "") return;
+        const currency = String(leg.ccy).trim();
+        const bucket = cashTotals.get(currency) ?? { received: new Decimal(0), paidOut: new Decimal(0) };
+        bucket[side] = bucket[side].add(new Decimal(String(leg.amount ?? 0)));
+        cashTotals.set(currency, bucket);
+      };
+      for (const item of legs.rows) {
+        const cash = cashLegs(item);
+        addLeg(cash.in, "received");
+        addLeg(cash.out, "paidOut");
+      }
+      const movementRows = [...cashTotals.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([currency, bucket]) => {
+          const received = money(bucket.received);
+          const paidOut = money(bucket.paidOut);
+          return {
+            currency,
+            received,
+            paidOut,
+            net: money(new Decimal(received).sub(paidOut)),
+          };
+        });
       await client.query("COMMIT");
 
       const posted = Number(row.posted);
@@ -513,11 +547,7 @@ export class LedgerReportingService {
             item.realized_home == null ? null : money(item.realized_home),
           pricedDeals: Number(item.priced),
         })),
-        movement: movement.rows.map((item) => {
-          const received = money(item.received ?? 0);
-          const paidOut = money(item.paid_out ?? 0);
-          return { currency: String(item.currency).trim(), received, paidOut, net: money(new Decimal(received).sub(paidOut)) };
-        }),
+        movement: movementRows,
       });
     } catch (error) {
       await client.query("ROLLBACK");

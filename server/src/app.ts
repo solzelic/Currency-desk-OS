@@ -86,17 +86,22 @@ const isPhone = (ua: string | undefined): boolean =>
    it. That stylesheet stays public either way.
 
    shared/id-document-types.js is the ID-type catalogue the server also
-   reads. The uncompiled shell loads it as a script, so it is on the list
-   for that fallback and hidden with os-src once the compiled desk, which
-   carries it inside os.js, is on disk. Nothing else under shared/ is. */
-const UNCOMPILED_SHARED = "/shared/id-document-types.js";
+   reads. shared/counter-cash.js is the cash-leg rule the till summary
+   uses. The uncompiled shell loads both as scripts, so they are on the
+   list for that fallback and hidden with os-src once the compiled desk,
+   which carries them inside os.js, is on disk. Nothing else under
+   shared/ is. */
+const UNCOMPILED_SHARED = new Set([
+  "/shared/id-document-types.js",
+  "/shared/counter-cash.js",
+]);
 const retiredUncompiledDesk = (
   pathname: string,
   compiled: { os: boolean; admin: boolean },
 ): boolean => {
   const file = pathname.startsWith("/") ? pathname : `/${pathname}`;
   if (file === "/os-src/york-os.css") return false;
-  if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/") || file === UNCOMPILED_SHARED)) {
+  if (compiled.os && (file === "/CurrencyDesk OS.html" || file.startsWith("/os-src/") || UNCOMPILED_SHARED.has(file))) {
     return true;
   }
   if (compiled.admin && file === "/admin.html") return true;
@@ -115,7 +120,7 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
     file === "/yorkfx-converter.js" ||
     file.startsWith("/assets/") ||
     file.startsWith("/os-src/") ||
-    file === UNCOMPILED_SHARED ||
+    UNCOMPILED_SHARED.has(file) ||
     /* The Rate Board, which the OS embeds in an iframe, and the storefront
        pages beside it. Public design content — no server source, no config.
        Without this the iframe asks for a file the static handler refuses and
