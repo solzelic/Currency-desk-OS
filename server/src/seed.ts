@@ -57,6 +57,11 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     { staffId: "a.singh", name: "A. Singh", role: "supervisor" as const },
     { staffId: "m.costa", name: "M. Costa", role: "teller" as const },
     { staffId: "s.iqbal", name: "S. Iqbal", role: "teller" as const },
+    /* administrator, branch manager, supervisor, and teller were the
+       whole demo directory. These two complete it. Same first-boot
+       insert: an existing row, including its password, is left alone. */
+    { staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer" as const },
+    { staffId: "l.berg", name: "L. Berg", role: "auditor" as const },
   ];
   // initial rate board publication — factory rates from the prototype's
   // converter (yorkfx-converter.js CUR list). perCad = units per 1 CAD;
