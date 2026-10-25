@@ -619,10 +619,37 @@
     };
   }
   // LCTR: cash received. The policy comes from the large-cash report.
+  function countsForLctr(row) {
+    if (!row || row.status !== 'void') return true;
+    const rule = window.CDOS.lctrReversal;
+    return !!(rule && rule.countsTowardLctr(row.voidReason));
+  }
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
-    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
-    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const rule = window.CDOS.lctrReversal;
+    const events = (rows || []).filter(r => countsForLctr(r) && cashIn(r) > 0).map(eventFromRow);
+    const clusters = aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const dropped = (rows || []).filter(r => r.status === 'void' && rule && rule.isBookingErrorReason(r.voidReason));
+    const zone = (window.CDOS.branchZone && window.CDOS.branchZone()) || 'America/Toronto';
+    clusters.forEach(c => {
+      const start = Date.parse(c.windowStart);
+      const end = Date.parse(c.windowEnd);
+      c.leftOut = dropped.filter(r => {
+        const who = c.basis === 'beneficiary' ? r.beneficiary
+          : c.basis === 'on_behalf_of' ? ((r.capture && r.capture.thirdPartyName) || r.thirdPartyName || '')
+          : r.customer;
+        if (who !== c.subject) return false;
+        const at = window.CDOS.wallInstant && r.date ? window.CDOS.wallInstant(r.date, r.time || '00:00', zone) : null;
+        const t = at ? at.getTime() : NaN;
+        return t >= start && t <= end;
+      }).map(r => ({
+        line: rule.LEFT_OUT_LINE,
+        by: r.voidBy || '',
+        at: r.voidAt || '',
+        ref: r.ref,
+      }));
+    });
+    return clusters;
   }
   /* Receipts already inside an include-all cluster are not also filed
      as their own large-cash report. A lone receipt at the line is not

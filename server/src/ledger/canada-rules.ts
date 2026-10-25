@@ -36,6 +36,17 @@ const require = createRequire(import.meta.url);
 const { rollingWindow } = require("../../../shared/rolling-24h.js") as {
   rollingWindow: (at: Date, hours?: number) => { start: Date; end: Date } | null;
 };
+const {
+  BOOKING_ERROR_REASON,
+  LEFT_OUT_LINE,
+  isBookingErrorReason,
+} = require("../../../shared/lctr-reversal.js") as {
+  BOOKING_ERROR_REASON: string;
+  LEFT_OUT_LINE: string;
+  isBookingErrorReason: (reason: unknown) => boolean;
+};
+
+export { BOOKING_ERROR_REASON, LEFT_OUT_LINE, isBookingErrorReason };
 
 export type IdentificationDeal = {
   kind: string;
@@ -329,10 +340,13 @@ async function cashReceived(
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
            LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
           WHERE t.legal_entity_id = $1
-            /* Start inclusive, end exclusive. The deal is not posted yet. */
+            /* Start inclusive, end exclusive. The deal is not posted yet.
+               A later reversal still counts. Only the booking-error
+               reason leaves the cash out. The reversal itself is not
+               a receipt, so it is not in this sum. */
             AND t.posted_at >= $2
             AND t.posted_at < $3
-            AND r.reversal_id IS NULL
+            AND lower(btrim(COALESCE(r.reason, ''))) <> lower(btrim($6::text))
             AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})
             AND (
               ($4 = 'conductor' AND t.customer_id = $5)
@@ -342,7 +356,7 @@ async function cashReceived(
           ORDER BY t.transaction_id
        ) AS received
       WHERE amount IS NOT NULL AND amount > 0`,
-    [legalEntityId, window.start, window.end, axis, key],
+    [legalEntityId, window.start, window.end, axis, key, BOOKING_ERROR_REASON],
   );
   return new Decimal(String(found.rows[0]?.total ?? "0"));
 }
@@ -523,4 +537,78 @@ export function deadlineDate(
 
 export function isoDay(day: Date): string {
   return day.toISOString().slice(0, 10);
+}
+
+export type LctrLeftOut = {
+  transactionId: string;
+  line: string;
+  by: string;
+  at: string;
+};
+
+/* The cluster ending at `at`, inclusive of that instant. The same
+   booking-error exception as cashReceived. A filed report is not
+   deleted here. Filings stay sealed. */
+export async function lctrCluster(
+  client: pg.PoolClient,
+  args: { legalEntityId: string; customerId: string; at: Date },
+): Promise<{ total: string; count: number; cluster: boolean; leftOut: LctrLeftOut[] }> {
+  const window = rollingWindow(args.at, 24);
+  if (!window) return { total: "0.00", count: 0, cluster: false, leftOut: [] };
+  const found = await client.query(
+    `SELECT DISTINCT ON (t.transaction_id)
+            t.transaction_id,
+            CASE
+              WHEN t.cash_in_home IS NOT NULL THEN t.cash_in_home
+              WHEN t.deal_kind = 'exchange'
+               AND upper(btrim(t.from_currency::text))
+                   = upper(btrim(COALESCE(t.home_currency::text, '')))
+                THEN t.input_amount
+              ELSE NULL
+            END AS amount,
+            r.reason,
+            r.actor_id,
+            r.posted_at AS reversed_at
+       FROM ledger_transactions t
+       LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+      WHERE t.legal_entity_id = $1
+        AND t.customer_id = $2
+        AND t.posted_at >= $3
+        AND t.posted_at <= $4
+        AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})
+      ORDER BY t.transaction_id`,
+    [args.legalEntityId, args.customerId, window.start, args.at],
+  );
+  let total = new Decimal(0);
+  let count = 0;
+  const leftOut: LctrLeftOut[] = [];
+  for (const row of found.rows) {
+    if (row.amount == null) continue;
+    const amount = new Decimal(String(row.amount));
+    if (!amount.gt(0)) continue;
+    if (isBookingErrorReason(row.reason)) {
+      const when = row.reversed_at instanceof Date ? row.reversed_at : new Date(String(row.reversed_at));
+      leftOut.push({
+        transactionId: String(row.transaction_id),
+        line: LEFT_OUT_LINE,
+        by: String(row.actor_id ?? ""),
+        at: when.toISOString(),
+      });
+      continue;
+    }
+    total = total.add(amount);
+    count += 1;
+  }
+  const pack = await client.query(
+    `SELECT jurisdiction_pack_id FROM legal_entities WHERE id = $1`,
+    [args.legalEntityId],
+  );
+  const rule = await largeCashRule(client, String(pack.rows[0]?.jurisdiction_pack_id ?? ""));
+  const trigger = rule?.trigger ?? new Decimal("10000");
+  return {
+    total: total.toDecimalPlaces(2).toFixed(2),
+    count,
+    cluster: count >= 2 && total.gte(trigger),
+    leftOut,
+  };
 }

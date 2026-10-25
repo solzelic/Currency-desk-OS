@@ -197,7 +197,7 @@
       createdAt: transaction.postedAt,
       status: reversal ? "void" : "posted",
       voidReason: reversal ? reversal.reason : "",
-      voidBy: "",
+      voidBy: reversal && reversal.actorId ? reversal.actorId : "",
       voidAt: reversal ? reversal.postedAt : "",
       thread: [],
       filed: false,

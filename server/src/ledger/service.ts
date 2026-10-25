@@ -18,6 +18,7 @@ import {
 import { AU_V2_PACK_ID, australiaIdentification } from "./australia-rules.js";
 import {
   countryIdentification,
+  isBookingErrorReason,
   type IdentificationDeal,
 } from "./canada-rules.js";
 import {
@@ -1640,6 +1641,21 @@ export class LedgerService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      if (isBookingErrorReason(reason)) {
+        const found = await client.query(
+          `SELECT role FROM ledger_principals
+            WHERE user_id=$1 AND tenant_id=$2 AND legal_entity_id=$3
+              AND branch_id=$4 AND workspace_id=$5 AND till_id=$6`,
+          [actor.userId, ...scope(actor)],
+        );
+        const role = String(found.rows[0]?.role ?? "");
+        if (!hasBackendPermission(role, "transaction:reverse")) {
+          throw new LedgerError(
+            "AUTHORIZATION_DENIED",
+            "Only a supervisor, branch manager, or administrator can record a booking error. Nothing was reversed.",
+          );
+        }
+      }
       await this.principal(client, actor, "transaction:reverse");
       const replay = await client.query(
         "SELECT response FROM ledger_idempotency WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5 AND operation='reverse' AND idempotency_key=$6 FOR UPDATE",

@@ -3019,6 +3019,40 @@
 });
 
 
+/* ---- shared/lctr-reversal.js ---- */
+/* A reversal leaves the cash in the LCTR total.
+   The one exception is a booking error: no cash was received.
+   Only a role with transaction:reverse may record that reason.
+   The server requires this file. The desk shell loads it too. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.lctrReversal = api;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  var BOOKING_ERROR_REASON = "booking error, cash not received";
+  var LEFT_OUT_LINE = "left out: booking error, cash not received";
+
+  function isBookingErrorReason(reason) {
+    return String(reason == null ? "" : reason).trim().toLowerCase() === BOOKING_ERROR_REASON;
+  }
+
+  /* Null is no reversal. Any other reason still counts as cash received. */
+  function countsTowardLctr(reason) {
+    return !isBookingErrorReason(reason);
+  }
+
+  return {
+    BOOKING_ERROR_REASON: BOOKING_ERROR_REASON,
+    LEFT_OUT_LINE: LEFT_OUT_LINE,
+    isBookingErrorReason: isBookingErrorReason,
+    countsTowardLctr: countsTowardLctr,
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -3219,7 +3253,7 @@
       createdAt: transaction.postedAt,
       status: reversal ? "void" : "posted",
       voidReason: reversal ? reversal.reason : "",
-      voidBy: "",
+      voidBy: reversal && reversal.actorId ? reversal.actorId : "",
       voidAt: reversal ? reversal.postedAt : "",
       thread: [],
       filed: false,
@@ -4332,7 +4366,10 @@ if (typeof window !== "undefined") {
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const live = rows.filter(r => r.status !== 'void'); /* voided records leave the books */
+    const lctrRule = window.CDOS.lctrReversal;
+    const countsForLctr = r => r.status !== 'void' || lctrRule && lctrRule.countsTowardLctr(r.voidReason);
+    const posted = rows.filter(r => r.status !== 'void');
+    const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
         The LINE itself comes from reportingLimit(), which is one answer for
@@ -4389,7 +4426,7 @@ if (typeof window !== "undefined") {
     const aggregate = regime.aggregate !== false;
     const dt = r => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void') {
+      if (row.status === 'void' && !(lctrRule && lctrRule.countsTowardLctr(row.voidReason))) {
         map[row.id] = {
           void: true,
           single: false,
@@ -4405,7 +4442,7 @@ if (typeof window !== "undefined") {
       const above = regime && regime.comparator === 'gt' ? n => n > TH : n => n >= TH;
       const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
+      const agg = posted.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays).reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
       // ending at this deal at the line ⇒ a single REPORTABLE aggregated transaction.
@@ -4425,7 +4462,8 @@ if (typeof window !== "undefined") {
         return dt(o);
       };
       const endAt = atOf(row);
-      const cluster = hours == null ? [] : live.filter(o => {
+      const inTotal = regime.largeCode === 'LCTR' ? lctrRows : posted;
+      const cluster = hours == null ? [] : inTotal.filter(o => {
         if (!o.customer || o.customer !== row.customer) return false;
         if (inside) return inside(atOf(o), endAt, hours);
         const h = (end - dt(o)) / 3600000;
@@ -4434,7 +4472,7 @@ if (typeof window !== "undefined") {
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => {
+      const isClusterEnd = hours != null && !inTotal.some(o => {
         if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
         const later = atOf(o);
         if (!(later > endAt)) return false;
@@ -45117,10 +45155,35 @@ var CDOS_CHEQUE_FEE = (function () {
     };
   }
   // LCTR: cash received. The policy comes from the large-cash report.
+  function countsForLctr(row) {
+    if (!row || row.status !== 'void') return true;
+    const rule = window.CDOS.lctrReversal;
+    return !!(rule && rule.countsTowardLctr(row.voidReason));
+  }
   function aggClusters(rows, regime, settings) {
     if (regime && regime.aggregate === false) return [];
-    const events = (rows || []).filter(r => r.status !== 'void' && cashIn(r) > 0).map(eventFromRow);
-    return aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const rule = window.CDOS.lctrReversal;
+    const events = (rows || []).filter(r => countsForLctr(r) && cashIn(r) > 0).map(eventFromRow);
+    const clusters = aggregateEvents(events, regime, settings, regime.largeCode, largePolicy(regime));
+    const dropped = (rows || []).filter(r => r.status === 'void' && rule && rule.isBookingErrorReason(r.voidReason));
+    const zone = window.CDOS.branchZone && window.CDOS.branchZone() || 'America/Toronto';
+    clusters.forEach(c => {
+      const start = Date.parse(c.windowStart);
+      const end = Date.parse(c.windowEnd);
+      c.leftOut = dropped.filter(r => {
+        const who = c.basis === 'beneficiary' ? r.beneficiary : c.basis === 'on_behalf_of' ? r.capture && r.capture.thirdPartyName || r.thirdPartyName || '' : r.customer;
+        if (who !== c.subject) return false;
+        const at = window.CDOS.wallInstant && r.date ? window.CDOS.wallInstant(r.date, r.time || '00:00', zone) : null;
+        const t = at ? at.getTime() : NaN;
+        return t >= start && t <= end;
+      }).map(r => ({
+        line: rule.LEFT_OUT_LINE,
+        by: r.voidBy || '',
+        at: r.voidAt || '',
+        ref: r.ref
+      }));
+    });
+    return clusters;
   }
   /* Receipts already inside an include-all cluster are not also filed
      as their own large-cash report. A lone receipt at the line is not
@@ -46852,7 +46915,7 @@ ${(filing.map || []).map(blockHTML).join('')}
        Filing it again on its own would be the second copy FINTRAC says
        not to send. A lone receipt at the line is not in a cluster. */
     const covered = new Set(includeAllCoveredRefs ? includeAllCoveredRefs(rows, regime, settings) : []);
-    rows.filter(r => r.status !== 'void').forEach(r => {
+    rows.filter(r => r.status !== 'void' || window.CDOS.lctrReversal && window.CDOS.lctrReversal.countsTowardLctr(r.voidReason)).forEach(r => {
       const f = flags[r.id] || {};
       if (f.single && !covered.has(r.ref)) out.push({
         id: 'L-' + r.ref,
@@ -47406,7 +47469,14 @@ ${(filing.map || []).map(blockHTML).join('')}
             border: 'none'
           }
         }, done ? '✓ ' : '', t.ref, " \xB7 ", num(t.amt), " ", settings.baseCurrency || regime.currency, " \xB7 ", t.time, c.basis === 'beneficiary' ? ' · ' + t.customer : '');
-      })));
+      })), c.leftOut && c.leftOut.length ? /*#__PURE__*/React.createElement("div", {
+        className: "mt-2 text-[11px]",
+        style: {
+          color: CD.mute
+        }
+      }, c.leftOut.map(item => /*#__PURE__*/React.createElement("div", {
+        key: item.ref
+      }, item.line, ". ", item.by, ". ", item.at, "."))) : null);
     }), !clusters.length && /*#__PURE__*/React.createElement("div", {
       className: "text-center py-12",
       style: {

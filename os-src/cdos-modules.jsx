@@ -24,7 +24,10 @@
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
   function computeFlags(rows, clients, settings) {
     const map = {};
-    const live = rows.filter(r => r.status !== 'void');   /* voided records leave the books */
+    const lctrRule = window.CDOS.lctrReversal;
+    const countsForLctr = (r) => r.status !== 'void' || (lctrRule && lctrRule.countsTowardLctr(r.voidReason));
+    const posted = rows.filter(r => r.status !== 'void');
+    const lctrRows = rows.filter(countsForLctr);
     /* The 24h window comes from the active jurisdiction pack (regime) so the
        same engine serves FINTRAC, FinCEN, … — see window.CDOS.getRegime.
 
@@ -68,7 +71,10 @@
     const aggregate = regime.aggregate !== false;
     const dt = (r) => new Date(r.date + 'T' + (r.time || '00:00'));
     rows.forEach(row => {
-      if (row.status === 'void') { map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 }; return; }
+      if (row.status === 'void' && !(lctrRule && lctrRule.countsTowardLctr(row.voidReason))) {
+        map[row.id] = { void: true, single: false, str: false, agg24: false, kyc: 'ok', agg: 0 };
+        return;
+      }
       const monthCash = regime && regime.windowKind === 'calendar_month';
       const bankingDay = regime && regime.windowKind === 'banking_day';
       const above = regime && regime.comparator === 'gt'
@@ -76,7 +82,7 @@
         : (n) => n >= TH;
       const single = TH != null && above(cashForReport(row));
       // structuring SUSPICION — many just-under deals over the longer window (a watch)
-      const agg = live.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
+      const agg = posted.filter(o => o.customer && o.customer === row.customer && dDiff(o.date, row.date) >= 0 && dDiff(o.date, row.date) <= settings.structuringDays)
         .reduce((s, o) => s + cashForReport(o), 0);
       const str = TH != null && !single && above(agg);
       // TRUE rolling-24h aggregation RULE — same person, cash within aggHours
@@ -98,7 +104,8 @@
         return dt(o);
       };
       const endAt = atOf(row);
-      const cluster = hours == null ? [] : live.filter(o => {
+      const inTotal = regime.largeCode === 'LCTR' ? lctrRows : posted;
+      const cluster = hours == null ? [] : inTotal.filter(o => {
         if (!o.customer || o.customer !== row.customer) return false;
         if (inside) return inside(atOf(o), endAt, hours);
         const h = (end - dt(o)) / 3600000;
@@ -107,7 +114,7 @@
       const agg24Sum = cluster.reduce((s, o) => s + cashForReport(o), 0);
       // the aggregate is reported once, at the deal that crosses the line (the latest
       // in the window with no later deal still inside the same window pushing it on)
-      const isClusterEnd = hours != null && !live.some(o => {
+      const isClusterEnd = hours != null && !inTotal.some(o => {
         if (o.customer !== row.customer || !(cashForReport(o) >= 0)) return false;
         const later = atOf(o);
         if (!(later > endAt)) return false;
