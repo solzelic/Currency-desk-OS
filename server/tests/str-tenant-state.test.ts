@@ -8,7 +8,8 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { keepStrSnapshot, presentStrSnapshot } from "../src/state/str-snapshot.js";
+import { runMigrations } from "../src/db/migrations.js";
+import { keepStrSnapshot, presentStrSnapshot, suspiciousCodes } from "../src/state/str-snapshot.js";
 
 const gate = createRequire(import.meta.url)("../../shared/str-role.js") as {
   canSeeStr: (role: string) => boolean;
@@ -177,5 +178,16 @@ describe("tenant state STR and acknowledgement", () => {
     expect(held.subs["STR-Nora Quinn-NEW"]).toBeUndefined();
     expect(body.state.deskNote).toBe("teller-add");
     expect(held.subs["STR-Nora Quinn-AB12"]!.kind).toBe("SMR");
+  });
+  it("parsed suspicious codes match jurisdiction_reports", async () => {
+    const db = (handle.db as unknown as { $client: { query: (text: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, string>> }>; exec: (text: string) => Promise<unknown> } }).$client;
+    const q = async (text: string, params?: unknown[]) => {
+      if (!params) { await db.exec(text); return { rows: [], rowCount: 0 }; }
+      const result = await db.query(text, params); return { rows: result.rows, rowCount: result.rows.length };
+    };
+    await runMigrations({ query: q, connect: async () => ({ query: q, release() {} }) } as never);
+    const cols = await db.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'jurisdiction_reports' AND column_name IN ('kind', 'category')");
+    const found = await db.query("SELECT DISTINCT code FROM jurisdiction_reports WHERE " + cols.rows.map((row) => String(row.column_name) + " = 'suspicious'").join(" OR "));
+    expect([...suspiciousCodes()].sort()).toEqual(found.rows.map((row) => String(row.code).toUpperCase()).sort());
   });
 });

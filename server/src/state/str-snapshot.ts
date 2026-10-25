@@ -40,6 +40,7 @@ function loadStrCodes(): Set<string> {
 }
 
 const CODES = loadStrCodes();
+export function suspiciousCodes(): ReadonlySet<string> { return CODES; }
 
 function plain(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
