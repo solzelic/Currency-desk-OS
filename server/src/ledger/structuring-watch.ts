@@ -1,9 +1,11 @@
 /* The structuring watch is a list the server computes.
    Supervisor and the three STR roles may read it and acknowledge
-   one customer. A teller is refused before any row is written.
+   one customer. Each acknowledgement is a new row. Update and
+   delete are refused. A teller is refused before any row is written.
    The role set is shared/str-role.js. Cash under the reporting
    line, same customer, not reversed, inside seven days, two or
-   more, summing to the line or more. No line: an empty list. */
+   more, summing to the line or more. No line: an empty list.
+   The deal read and the watch list use the latest row. */
 import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import type pg from "pg";
@@ -24,6 +26,8 @@ export type WatchItem = {
   count: number;
   total: string;
   acknowledged: boolean;
+  actorId: string | null;
+  acknowledgedAt: string | null;
 };
 
 export type DealMark = {
@@ -32,6 +36,8 @@ export type DealMark = {
   structuring: boolean;
   structuringTotal: string | null;
   ackStr: boolean;
+  ackActor: string | null;
+  ackAt: string | null;
 };
 
 function refsOf(value: unknown): string[] {
@@ -43,14 +49,23 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
   const line = await resolveReportThreshold(client, actor.legalEntityId);
   if (!line) return [];
   const found = await client.query(
-    `SELECT t.customer_id, c.name AS customer_name, t.cash_in_home::text AS cash,
-            (a.customer_id IS NOT NULL) AS acknowledged
+    `SELECT t.customer_id, c.name AS customer_name,
+            t.cash_in_home::text AS cash,
+            (a.ack_id IS NOT NULL) AS acknowledged,
+            a.actor_id, a.acknowledged_at
        FROM ledger_transactions t
        JOIN ledger_customers c ON c.customer_id = t.customer_id
        LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
-       LEFT JOIN ledger_structuring_acks a
-         ON a.tenant_id = t.tenant_id AND a.legal_entity_id = t.legal_entity_id
-        AND a.branch_id = t.branch_id AND a.customer_id = t.customer_id
+       LEFT JOIN LATERAL (
+         SELECT ack_id, actor_id, acknowledged_at
+           FROM ledger_structuring_acks
+          WHERE tenant_id = t.tenant_id
+            AND legal_entity_id = t.legal_entity_id
+            AND branch_id = t.branch_id
+            AND customer_id = t.customer_id
+          ORDER BY acknowledged_at DESC, ack_id DESC
+          LIMIT 1
+       ) a ON true
       WHERE t.tenant_id = $1 AND t.legal_entity_id = $2 AND t.branch_id = $3
         AND t.posted_at >= now() - make_interval(days => $4::int)
         AND r.reversal_id IS NULL
@@ -58,7 +73,13 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
         AND t.cash_in_home > 0`,
     [actor.tenantId, actor.legalEntityId, actor.branchId, WINDOW_DAYS],
   );
-  const grouped = new Map<string, { name: string; cash: Decimal[]; acknowledged: boolean }>();
+  const grouped = new Map<string, {
+    name: string;
+    cash: Decimal[];
+    acknowledged: boolean;
+    actorId: string | null;
+    acknowledgedAt: string | null;
+  }>();
   for (const row of found.rows) {
     const cash = new Decimal(String(row.cash));
     if (!cash.gt(0) || !cash.lt(line)) continue;
@@ -66,6 +87,10 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
       name: String(row.customer_name),
       cash: [],
       acknowledged: Boolean(row.acknowledged),
+      actorId: row.actor_id == null ? null : String(row.actor_id),
+      acknowledgedAt: row.acknowledged_at
+        ? new Date(row.acknowledged_at).toISOString()
+        : null,
     };
     current.cash.push(cash);
     grouped.set(String(row.customer_id), current);
@@ -81,6 +106,8 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
       count: group.cash.length,
       total: total.toFixed(2),
       acknowledged: group.acknowledged,
+      actorId: group.actorId,
+      acknowledgedAt: group.acknowledgedAt,
     });
   }
   return items;
@@ -119,6 +146,8 @@ export async function dealMarks(
       structuring: Boolean(seen),
       structuringTotal: seen ? seen.total : null,
       ackStr: seen ? seen.acknowledged : false,
+      ackActor: seen?.actorId ?? null,
+      ackAt: seen?.acknowledgedAt ?? null,
     });
   }
   return { marks, items };
@@ -155,10 +184,8 @@ export class StructuringWatchService {
       requireWatch(await authorizeLedgerActor(client, actor, "ledger:view"));
       await client.query(
         `INSERT INTO ledger_structuring_acks
-           (tenant_id, legal_entity_id, branch_id, customer_id, actor_id, acknowledged_at)
-         VALUES ($1,$2,$3,$4,$5,now())
-         ON CONFLICT (tenant_id, legal_entity_id, branch_id, customer_id)
-         DO UPDATE SET actor_id = EXCLUDED.actor_id, acknowledged_at = now()`,
+           (tenant_id, legal_entity_id, branch_id, customer_id, actor_id)
+         VALUES ($1, $2, $3, $4, $5)`,
         [actor.tenantId, actor.legalEntityId, actor.branchId, customerId, actor.userId],
       );
       await client.query("COMMIT");

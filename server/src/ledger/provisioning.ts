@@ -20,6 +20,11 @@ const scope = (actor: LedgerActor) => [
   actor.tillId,
 ];
 
+function ackInfo(mark: { ackActor: string | null; ackAt: string | null } | undefined) {
+  if (!mark?.ackActor) return null;
+  return { by: mark.ackActor, at: mark.ackAt };
+}
+
 /* STR tag, STR link, and the structuring watch come from dealMarks.
    That helper skips the watch query unless this role may see it.
    presentDeal then drops the keys this role may not see. */
@@ -366,7 +371,7 @@ export class LedgerProvisioningService {
           structuring: marks.get(row.transaction_ref)?.structuring ?? false,
           structuringTotal: marks.get(row.transaction_ref)?.structuringTotal ?? null,
           ackStr: marks.get(row.transaction_ref)?.ackStr ?? false,
-          ackStrInfo: null,
+          ackStrInfo: ackInfo(marks.get(row.transaction_ref)),
         })),
       });
     } catch (error) {

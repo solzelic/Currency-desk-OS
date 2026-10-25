@@ -326,6 +326,73 @@ postgres("str filing and the transaction field strip", () => {
     expect(still.rows[0].n).toBe(1);
   });
 
+  it("a second acknowledge of the same customer adds a row and the read shows the newest", async () => {
+    const newestId = `${DEMO.tenantId}:j.masri`;
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/ledger/structuring-watch/acknowledge",
+      cookies: await asRole("supervisor"),
+      payload: { customerId: "cust-watch" },
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/ledger/structuring-watch/acknowledge",
+      cookies: await cookie("j.masri"),
+      payload: { customerId: "cust-watch" },
+    });
+    expect(second.statusCode, second.body).toBe(200);
+    const rows = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_structuring_acks WHERE customer_id = $1",
+      ["cust-watch"],
+    );
+    expect(rows.rows[0].n).toBe(2);
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/ledger/structuring-watch",
+      cookies: await asRole("supervisor"),
+    });
+    expect(list.statusCode, list.body).toBe(200);
+    const item = list.json().items.find(
+      (row: { customerId: string }) => row.customerId === "cust-watch",
+    );
+    expect(item.count).toBe(2);
+    expect(item.total).toBe("12000.00");
+    expect(item.actorId).toBe(newestId);
+    expect(item.acknowledged).toBe(true);
+    const deals = await app.inject({
+      method: "GET",
+      url: "/api/ledger/transactions",
+      cookies: await asRole("supervisor"),
+    });
+    expect(deals.statusCode, deals.body).toBe(200);
+    const deal = deals.json().transactions.find(
+      (row: { transactionRef: string }) => row.transactionRef === "YFX-STR-1",
+    );
+    expect(deal.ackStr).toBe(true);
+    expect(deal.ackStrInfo.by).toBe(newestId);
+  });
+
+  it("refuses an update or a delete of a structuring acknowledgement", async () => {
+    const saved = await app.inject({
+      method: "POST",
+      url: "/api/ledger/structuring-watch/acknowledge",
+      cookies: await asRole("supervisor"),
+      payload: { customerId: "cust-watch" },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await expect(
+      pool.query("UPDATE ledger_structuring_acks SET actor_id = actor_id"),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      pool.query("DELETE FROM ledger_structuring_acks"),
+    ).rejects.toThrow(/append-only/);
+    const kept = await pool.query(
+      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
+    );
+    expect(kept.rows[0].n).toBe(1);
+  });
+
   it("runs no watch query for a teller or an auditor, and returns no watch keys", async () => {
     for (const role of ["teller", "auditor"] as const) {
       const seen = await captureSql(async () => {
