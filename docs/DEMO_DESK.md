@@ -74,6 +74,8 @@ The banner reads "Staging. Demo data only. Never enter a real customer." and sta
 
 `isStagingRuntime` in `server/src/auth/staging-runtime.ts` is the flag-plus-host check. A follow-up can reuse it to force sandbox mode for email, SMS, and identity checks. Those calls are not changed here. They live in `server/src/routes/onboarding-public.ts` (verify send), `server/src/onboarding/pipeline.ts` (invite and review mail), `server/src/routes/signup.ts` (signup mail), `server/src/email.ts`, `server/src/sms.ts`, and `server/src/idv/` (identity checks).
 
+If Resend, Twilio, ElevenLabs, Persona or Stripe is ever added to staging with a live key, the one-click staging sign-in must be turned off first (unset STAGING) until Compliance re-checks.
+
 ## What this is not
 
 - Not platform admin (`admin@…` / `/admin`).
