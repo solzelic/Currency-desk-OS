@@ -113,18 +113,22 @@ function sentVersion(body: Record<string, unknown> | null): number | undefined {
   return version;
 }
 
-function stateConflict(row: { state: unknown; version: number } | undefined) {
+function stateConflict(role: string, row: { state: unknown; version: number } | undefined) {
   /* A copy. The browser merges this reply into local storage. A PIN on
-     that copy is not sent back. The stored row is not written. */
-  if (row?.state && typeof row.state === "object" && !Array.isArray(row.state)) {
-    const copy = structuredClone(row.state as Record<string, unknown>);
+     that copy is not sent back. The stored row is not written. A role
+     outside the set does not receive an STR or an acknowledgement. */
+  let state = row?.state ?? null;
+  if (state && typeof state === "object" && !Array.isArray(state)) {
+    const copy = structuredClone(state as Record<string, unknown>);
     stripSnapshotPins(copy);
-    row = { ...row, state: copy };
+    state = scrubHealthNumbers(presentStrSnapshot(role, copy));
+  } else {
+    state = scrubHealthNumbers(state);
   }
   return {
     error: "state_conflict",
     detail: "Somebody else saved this desk while you were working. Merging.",
-    state: scrubHealthNumbers(row?.state ?? null),
+    state,
     version: row?.version ?? 0,
   };
 }
@@ -279,8 +283,8 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     /* A snapshot saved before health cards were refused can still hold a
        health number. It is not sent, so the next save cannot carry it
        back. The stored row is cleaned by the next save, not here.
-       STR and the structuring watch are removed for a role outside
-       those sets. The watch is not computed for that role. */
+       A suspicious report and its acknowledgement are removed for a
+       role outside those sets. */
     return { state: scrubHealthNumbers(presentStrSnapshot(who.role, readable)), updatedAt: row.updatedAt, version: row.version, settingsRows };
   });
 
@@ -302,11 +306,11 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
        is not a permission refusal. A save with no version that would change the fee is that same 409, and it writes no refusal row. */
     const sent = sentVersion(raw);
     if (sent !== undefined && (current?.version ?? 0) !== sent) {
-      return reply.code(409).send(stateConflict(current));
+      return reply.code(409).send(stateConflict(who.role, current));
     }
     const mayWriteFees = canWriteSetting(who.role, CHEQUE_FEE_SCHEDULE_KEY);
     const changingFees = chequeScheduleWrite(asRecord(current?.state), asRecord(raw?.state));
-    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(current));
+    if (changingFees && raw?.version == null) return reply.code(409).send(stateConflict(who.role, current));
     if (changingFees && !mayWriteFees) {
       await audit(db, {
         tenantId: who.tenantId,
@@ -352,7 +356,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
     if (expected === undefined) {
       req.log.warn({ tenantId: who.tenantId }, "desk state saved without a version — an old client is still open");
     } else if ((current?.version ?? 0) !== expected) {
-      return reply.code(409).send(stateConflict(current));
+      return reply.code(409).send(stateConflict(who.role, current));
     }
     /* A teller's document carries a copy of the fee key. That copy is
        not the price. The stored key is. */
@@ -493,7 +497,7 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
         .returning();
     if (!written.length) {
       const fresh = (await db.select().from(schema.tenantState).where(eq(schema.tenantState.tenantId, who.tenantId)).limit(1))[0];
-      return reply.code(409).send(stateConflict(fresh));
+      return reply.code(409).send(stateConflict(who.role, fresh));
     }
     /* A till PIN this save dropped. The count and the staff ids, no digits. */
     if (ignoredPins.count > 0) {
