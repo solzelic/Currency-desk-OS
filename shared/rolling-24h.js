@@ -1,5 +1,5 @@
 /* ============================================================
-   The 24 consecutive hours before a deal.
+   The rolling 24 hours before a deal.
 
    The server requires this file. The desk shell loads the same
    file as a plain script. A large cash total uses this lookback

@@ -787,6 +787,193 @@ postgres("cheque cashing on the ledger", () => {
     expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
   });
 
+  /* A closed session is the day close. A close count on that session is
+     the signed close-out. Neither may take a reversal or a return. */
+  const dayClosedRefusal =
+    "This day is closed. Reversals and returns can't be posted to it.";
+  const dayClosedReversalNext =
+    "Open a new session on the till that paid this cheque out. A supervisor or manager then posts the reversal there.";
+  const dayClosedReturnNext =
+    "Open a new session on the till that paid this cheque out. Then post the return there.";
+
+  function dayClosedBody(leg: "reversal" | "return") {
+    return {
+      code: "CHEQUE_DAY_CLOSED",
+      message: dayClosedRefusal,
+      next: leg === "reversal" ? dayClosedReversalNext : dayClosedReturnNext,
+    };
+  }
+
+  async function bookSnapshot() {
+    return {
+      reversals: await rowCount("ledger_reversals"),
+      entries: await rowCount("ledger_reversal_entries"),
+      movements: await rowCount("ledger_till_movements"),
+      journals: await rowCount("ledger_journal_entries"),
+      transactions: await rowCount("ledger_transactions"),
+      events: await rowCount("ledger_cheque_events"),
+      audits: await rowCount("ledger_audit_events"),
+      keys: await rowCount("ledger_idempotency"),
+      cheques: await rowCount("ledger_cheques"),
+    };
+  }
+
+  async function closePayingDay(signedOff: boolean) {
+    const who = `${DEMO.tenantId}:a.singh`;
+    await pool.query(
+      `UPDATE ledger_till_sessions
+          SET status='closed', closed_by=$1, closed_at=now()
+        WHERE session_id='chq-session-1'`,
+      [who],
+    );
+    if (!signedOff) return;
+    await pool.query(
+      `INSERT INTO ledger_till_count_batches
+        (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+         till_id,count_kind,actor_id,idempotency_key,counted_at)
+       VALUES ('chq-signoff-1','chq-session-1',$1,$2,$3,$4,$5,'close',$6,'chq-signoff-key',now())`,
+      [...scope, who],
+    );
+  }
+
+  async function expectDayRefused(leg: "reversal" | "return", signedOff: boolean) {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    const till = await tillCad();
+    await closePayingDay(signedOff);
+    const before = await bookSnapshot();
+    const refused = await settle(cookies, cashed.cheque.chequeId, leg, {
+      reason: leg === "return" ? "NSF" : "Wrong day",
+      ...(leg === "return" ? { nsf: true } : {}),
+    });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json()).toEqual(dayClosedBody(leg));
+    expect(await tillCad()).toBe(till);
+    expect(await chequeStatus(cashed.cheque.chequeId)).toBe("held");
+    expect(await chequeEventStatuses(cashed.cheque.chequeId)).toEqual(["held"]);
+    expect(await bookSnapshot()).toEqual(before);
+    expect(imbalance(await journalOf(cashed.transactionId))).toBe(0);
+  }
+
+  it("refuses a reversal on a closed day and leaves the till where it was", async () => {
+    await expectDayRefused("reversal", false);
+  });
+
+  it("names a supervisor or manager when a reversal is refused on a closed day", async () => {
+    await expectDayRefused("reversal", false);
+  });
+
+  it("refuses a return on a closed day and leaves the cheque held", async () => {
+    await expectDayRefused("return", false);
+  });
+
+  it("refuses a reversal on a signed-off day and leaves the till where it was", async () => {
+    await expectDayRefused("reversal", true);
+  });
+
+  it("refuses a return on a signed-off day and leaves the cheque held", async () => {
+    await expectDayRefused("return", true);
+  });
+
+  it("still reverses into the till that paid the cheque while the day is open", async () => {
+    const cookies = await cookie();
+    const cashed = await heldCheque(cookies);
+    expect(await tillCad()).toBe("4035.00");
+    const undone = await settle(cookies, cashed.cheque.chequeId, "reversal", {
+      reason: "Open day",
+    });
+    expect(undone.statusCode, undone.body).toBe(201);
+    expect(undone.json().status).toBe("reversed");
+    expect(await tillCad()).toBe("5000.00");
+    expect(undone.json().balances.CAD).toBe("5000.00");
+  });
+
+  /* Guard. A cheque cashed on a day that was later closed and signed
+     off may still be reversed, or returned, once a new session is open.
+     The post lands in that open session. The closed day's sealed rows
+     stay as they were. */
+  it("posts a past cheque into the new open session and leaves the signed-off day unchanged", async () => {
+    const cookies = await cookie();
+    const who = `${DEMO.tenantId}:a.singh`;
+    const toReverse = await heldCheque(cookies, { chequeNumber: "004821" });
+    const toReturn = await heldCheque(cookies, { chequeNumber: "004822" });
+    expect(await tillCad()).toBe("3070.00");
+
+    await pool.query(
+      `UPDATE ledger_till_sessions
+          SET status='closed', closed_by=$1, closed_at=now(), close_note='Signed off'
+        WHERE session_id='chq-session-1'`,
+      [who],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_count_batches
+        (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+         till_id,count_kind,actor_id,idempotency_key,counted_at)
+       VALUES ('chq-day1-close','chq-session-1',$1,$2,$3,$4,$5,'close',$6,'chq-day1-close-key',now())`,
+      [...scope, who],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_counts
+        (batch_id,currency,expected_amount,counted_amount,variance_amount,stored_expected_amount)
+       VALUES ('chq-day1-close','CAD',3070.00,3070.00,0.00,3070.00)`,
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_sessions
+        (session_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,
+         session_number,business_date,status,opened_by,opened_at)
+       VALUES ('chq-session-2',$1,$2,$3,$4,$5,2,DATE '2026-06-19','open',$6,now())`,
+      [...scope, who],
+    );
+
+    const cashingIds = [toReverse.transactionId, toReturn.transactionId];
+    const sealed = async (sql: string, params: unknown[] = []) =>
+      (await pool.query(sql, params)).rows.map((row) => String(row.snapshot));
+    /* Day 1's sealed close, and the journals written that day. The
+       live drawer is day 2's and is allowed to move. The day's
+       summary is not part of this check. */
+    const dayOne = async () => ({
+      closeCount: await sealed(
+        `SELECT row_to_json(x)::text AS snapshot FROM (
+           SELECT b.batch_id, b.session_id, b.count_kind, b.actor_id, b.idempotency_key,
+                  c.count_id, c.currency, c.expected_amount, c.counted_amount,
+                  c.variance_amount, c.stored_expected_amount
+             FROM ledger_till_count_batches b
+             JOIN ledger_till_counts c ON c.batch_id = b.batch_id
+            WHERE b.session_id = 'chq-session-1'
+            ORDER BY b.batch_id, c.count_id
+         ) x`,
+      ),
+      journals: await sealed(
+        `SELECT row_to_json(j)::text AS snapshot
+           FROM ledger_journal_entries j
+          WHERE transaction_id = ANY($1::text[])
+          ORDER BY entry_id`,
+        [cashingIds],
+      ),
+    });
+
+    const before = await dayOne();
+
+    const reversed = await settle(cookies, toReverse.cheque.chequeId, "reversal", {
+      reason: "Next day",
+    });
+    expect(reversed.statusCode, reversed.body).toBe(201);
+    expect(reversed.json().status).toBe("reversed");
+    expect(await tillCad()).toBe("4035.00");
+    expect(reversed.json().balances.CAD).toBe("4035.00");
+    expect(await dayOne()).toEqual(before);
+
+    const returned = await settle(cookies, toReturn.cheque.chequeId, "return", {
+      reason: "NSF",
+      nsf: true,
+    });
+    expect(returned.statusCode, returned.body).toBe(201);
+    expect(returned.json().status).toBe("returned");
+    expect(await tillCad()).toBe("4035.00");
+    expect(returned.json().balances.CAD).toBe("4035.00");
+    expect(await dayOne()).toEqual(before);
+  });
+
   it("keeps a reversal and an NSF on separate paths", async () => {
     const cookies = await cookie();
     const bounced = await heldCheque(cookies, { chequeNumber: "A" });

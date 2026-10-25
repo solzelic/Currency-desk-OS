@@ -406,7 +406,12 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
                 error.code === "PACK_OPT_IN_REFUSED" ||
                 error.code === "JURISDICTION_PACK_CONFLICT" ? 409
               : 422;
-    return reply.code(status).send({ code: error.code, message: error.message });
+    const body: { code: string; message: string; next?: string } = {
+      code: error.code,
+      message: error.message,
+    };
+    if (error.next) body.next = error.next;
+    return reply.code(status).send(body);
   }
 
   async function actorOrReply(
