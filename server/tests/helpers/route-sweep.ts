@@ -4,6 +4,8 @@
    fillRoute puts those fixture ids into every :param. */
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+import { hashPassword } from "../../src/auth/password.js";
+import { schema, type Db } from "../../src/db/index.js";
 import { DEMO } from "../../src/seed.js";
 
 export const SWEEP_CUSTOMER = "Nora Quinn";
@@ -73,11 +75,11 @@ export function fillRoute(route: string, ids: SweepIds): string {
   return url;
 }
 
-async function session(app: FastifyInstance, staffId: string) {
+async function session(app: FastifyInstance, staffId: string, tenantId: string) {
   const login = await app.inject({
     method: "POST",
     url: "/api/auth/login",
-    payload: { staffId, password: DEMO.password, tenantId: DEMO.tenantId },
+    payload: { staffId, password: DEMO.password, tenantId },
   });
   if (login.statusCode !== 200) throw new Error("login " + staffId + " " + login.statusCode + " " + login.body);
   const value = login.cookies.find((item) => item.name === "cdos_session")?.value;
@@ -89,11 +91,64 @@ function expectStatus(res: { statusCode: number; body: string }, status: number,
   if (res.statusCode !== status) throw new Error(what + " expected " + status + ", got " + res.statusCode + " " + res.body);
 }
 
-/* The caller has already provisioned the ledger and published a rate
-   board. This opens the client, the two deals, the quote, and the STR. */
-export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool): Promise<SweepIds> {
-  const teller = await session(app, "m.costa");
-  const owner = await session(app, "j.masri");
+/* A new tenant id on every run, so a sealed filing left behind cannot
+   land on a tenant another test counts. */
+export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool, db: Db): Promise<SweepIds> {
+  const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const tenantId = "tnt-sweep-" + suffix;
+  const legalEntityId = "le-sweep-" + suffix;
+  const branchId = "br-sweep-" + suffix;
+  const workspaceId = "ws-sweep-" + suffix;
+  const passwordHash = await hashPassword(DEMO.password);
+  await db.insert(schema.tenants).values({ id: tenantId, name: "Sweep" });
+  await db.insert(schema.legalEntities).values({
+    id: legalEntityId,
+    tenantId,
+    name: "Sweep",
+    jurisdiction: "FINTRAC",
+    homeCurrency: "CAD",
+    jurisdictionPackId: "pack-ca-v1",
+    jurisdictionPackVersion: 1,
+  });
+  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Sweep" });
+  await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" });
+  for (const [staffId, name, role] of [
+    ["m.costa", "M. Costa", "teller"],
+    ["j.masri", "J. Masri", "administrator"],
+  ] as const) {
+    await db.insert(schema.staffUsers).values({
+      id: tenantId + ":" + staffId,
+      tenantId,
+      legalEntityId,
+      branchId,
+      staffId,
+      name,
+      role,
+      authorizedBranchIds: [branchId],
+      passwordHash,
+    });
+  }
+  await pool.query("INSERT INTO tenants (id, name) VALUES ($1, 'Sweep')", [tenantId]);
+  await pool.query(
+    `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
+     VALUES ($1, $2, 'Sweep', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)`,
+    [legalEntityId, tenantId],
+  );
+  await pool.query(
+    "INSERT INTO branches (id, tenant_id, legal_entity_id, name) VALUES ($1, $2, $3, 'Sweep')",
+    [branchId, tenantId, legalEntityId],
+  );
+  await pool.query(
+    "INSERT INTO market_rates (id, provider, mids, fetched_at) VALUES ($1, 'test', '{\"USD\":1.4}', now())",
+    ["snap-" + suffix],
+  );
+  await pool.query(
+    `INSERT INTO rate_boards (id, tenant_id, legal_entity_id, branch_id, buy_margin, sell_margin, board_rows, market_snapshot_id, published_by, published_at)
+     VALUES ($1, $2, $3, $4, 0.02, 0.03, '{"USD":{"mid":1.4,"show":true}}', $5, 'seed', now())`,
+    ["board-" + suffix, tenantId, legalEntityId, branchId, "snap-" + suffix],
+  );
+  const teller = await session(app, "m.costa", tenantId);
+  const owner = await session(app, "j.masri", tenantId);
   const created = await app.inject({
     method: "POST",
     url: "/api/clients",
@@ -112,7 +167,7 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool): Pro
   const transactionRef = "YFX-SWEEP-" + mark;
   const otherId = "tx-sweep-b-" + mark;
   const otherRef = "YFX-SWEEP-B-" + mark;
-  const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
+  const scope = [tenantId, legalEntityId, branchId, workspaceId, "till-01"];
   for (const [tx, ref] of [[transactionId, transactionRef], [otherId, otherRef]] as const) {
     await pool.query(
       `INSERT INTO ledger_transactions
@@ -121,7 +176,7 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool): Pro
           deal_kind, received_instrument, disbursed_instrument, cash_in_home)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'CAD', 'USD', 6000, 4400, 0.73, 0, 0, 'Travel money', 'Employment income', now(),
                'exchange', 'cash', 'cash', 6000)`,
-      [tx, ref, ...scope, customerId, DEMO.tenantId + ":j.masri"],
+      [tx, ref, ...scope, customerId, tenantId + ":j.masri"],
     );
   }
 
@@ -177,8 +232,8 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool): Pro
     slug: "yorkfx",
     code: "yorkfx",
     ref: "CD-WALKTHRU",
-    tenantId: DEMO.tenantId,
+    tenantId,
     enquiryId: "enq-walkthrough",
-    staffId: DEMO.tenantId + ":m.costa",
+    staffId: tenantId + ":m.costa",
   };
 }

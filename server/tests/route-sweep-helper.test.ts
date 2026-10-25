@@ -9,7 +9,6 @@ import { buildApp } from "../src/app.js";
 import { fillRoute, listGetRoutes, seedSweepFixture, SWEEP_CUSTOMER, type SweepIds } from "./helpers/route-sweep.js";
 
 const MIN_GET_ROUTES = 64;
-const TELLER_ID = DEMO.tenantId + ":m.costa";
 const ledgerUrl = process.env.TEST_DATABASE_URL;
 
 let handle: DbHandle;
@@ -20,11 +19,11 @@ let priorPglite: string | undefined;
 let priorSeed: string | undefined;
 let capturedEnv = false;
 
-async function session(staffId: string) {
+async function session(staffId: string, tenantId: string) {
   const login = await app.inject({
     method: "POST",
     url: "/api/auth/login",
-    payload: { staffId, password: DEMO.password, tenantId: DEMO.tenantId },
+    payload: { staffId, password: DEMO.password, tenantId },
   });
   expect(login.statusCode, login.body).toBe(200);
   return { cdos_session: login.cookies.find((item) => item.name === "cdos_session")!.value };
@@ -41,34 +40,15 @@ beforeAll(async () => {
   handle = await createDb();
   await seed(handle.db);
   pool = await provisionPostgres(ledgerUrl!);
-  await pool.query("INSERT INTO tenants (id, name) VALUES ($1, 'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
-  await pool.query(
-    `INSERT INTO legal_entities (id, tenant_id, name, jurisdiction, home_currency, jurisdiction_pack_id, jurisdiction_pack_version)
-     VALUES ($1, $2, 'York FX', 'FINTRAC', 'CAD', 'pack-ca-v1', 1)
-     ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id = 'pack-ca-v1', home_currency = 'CAD', jurisdiction_pack_version = 1`,
-    [DEMO.legalEntityId, DEMO.tenantId],
-  );
-  await pool.query(
-    "INSERT INTO branches (id, tenant_id, legal_entity_id, name) VALUES ($1, $2, $3, 'Yorkville') ON CONFLICT DO NOTHING",
-    [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
-  );
-  await pool.query(
-    "INSERT INTO market_rates (id, provider, mids, fetched_at) VALUES ('sweep-snap', 'test', '{\"USD\":1.4}', now()) ON CONFLICT (id) DO UPDATE SET fetched_at = now()",
-  );
-  await pool.query(
-    `INSERT INTO rate_boards (id, tenant_id, legal_entity_id, branch_id, buy_margin, sell_margin, board_rows, market_snapshot_id, published_by, published_at)
-     VALUES ('sweep-board', $1, $2, $3, 0.02, 0.03, '{"USD":{"mid":1.4,"show":true}}', 'sweep-snap', 'seed', now())
-     ON CONFLICT (id) DO UPDATE SET published_at = now(), board_rows = EXCLUDED.board_rows`,
-    [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId],
-  );
   app = await buildApp(handle.db);
 }, 60_000);
 
 afterAll(async () => {
-  /* The sealed filing stays. DELETE raises "filed report is sealed"
-     once status is not draft. The two deals stay. DELETE on
-     ledger_transactions raises "append-only ledger record".
-     Closing the handle drops the in-memory PGlite. */
+  /* The sealed STR filing, the 2 deals and their audit row stay in the
+     disposable test DB by design, because the append-only and sealed
+     guards block deletes, and option A (a fresh schema per run) is
+     tracked in #371
+     https://github.com/solzelic/Currency-desk-OS/issues/371 */
   try {
     if (pool && seeded) {
       await pool.query("DELETE FROM quote_events WHERE quote_id = $1", [seeded.quoteId]);
@@ -84,10 +64,6 @@ afterAll(async () => {
       );
       expect(left.rows[0]?.clients, "client removed").toBe(0);
       expect(left.rows[0]?.quotes, "quote removed").toBe(0);
-    }
-    if (pool) {
-      await pool.query("DELETE FROM rate_boards WHERE id = 'sweep-board'");
-      await pool.query("DELETE FROM market_rates WHERE id = 'sweep-snap'");
     }
   } finally {
     try {
@@ -116,15 +92,17 @@ describe("route sweep helper", () => {
     );
     expect(routes.length, "GET routes").toBeGreaterThanOrEqual(MIN_GET_ROUTES);
 
-    const ids: SweepIds = await seedSweepFixture(app, pool);
+    const ids: SweepIds = await seedSweepFixture(app, pool, handle.db);
     seeded = ids;
-    const admin = await session("j.masri");
+    const tellerId = ids.tenantId + ":m.costa";
+    expect(ids.staffId, "teller id").toBe(tellerId);
+    const admin = await session("j.masri", ids.tenantId);
     const client = await app.inject({ method: "GET", url: "/api/clients/" + ids.clientId, cookies: admin });
     expect(client.statusCode, client.body).toBe(200);
     expect(client.json().legalName).toBe(SWEEP_CUSTOMER);
-    expect(client.json().createdBy, "client creator").toBe(TELLER_ID);
+    expect(client.json().createdBy, "client creator").toBe(tellerId);
     const quoteRow = await pool.query("SELECT created_by FROM quotes WHERE quote_id = $1", [ids.quoteId]);
-    expect(quoteRow.rows[0]?.created_by, "quote creator").toBe(TELLER_ID);
+    expect(quoteRow.rows[0]?.created_by, "quote creator").toBe(tellerId);
 
     const deals = await app.inject({
       method: "GET",
