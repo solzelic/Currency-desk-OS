@@ -112,6 +112,8 @@ The deal route mirrors the journal and the till and inserts
 a cheque event. Once it has reversed a cashing, the cheque route
 answers `REVERSAL_ALREADY_EXISTS` and the cheque stays `held`.
 
+The day summary dates that reversal on the day it posts. The cashing stays in its own day's totals, including a day that was closed and signed off. The reversal day shows the negative volume and fee, and the cash back in the till. A reversal on the same day still takes the cashing out of that day's money. A return does not rewrite the cashing day, and the face is not cash in on the return day.
+
 Only a cheque the desk is still carrying can be cleared, returned or
 reversed. A cheque that has already cleared cannot be reversed: the bank
 has paid, and unwinding the cashing now would take cash into the drawer

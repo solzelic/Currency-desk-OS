@@ -68,6 +68,24 @@ const tillScope = (actor: LedgerActor) => [
 
 const money = (value: Decimal.Value) =>
   new Decimal(value).toDecimalPlaces(2).toFixed(2);
+
+/* A reversal drops its deal only when the reversal was posted in this
+   same window. `$from` and `$to` are the query's window parameters. */
+const reversalPostedInWindow = (fromRef: string, toRef: string) =>
+  `r.reversal_id IS NOT NULL AND (${fromRef}::timestamptz IS NULL OR r.posted_at >= ${fromRef}) AND (${toRef}::timestamptz IS NULL OR r.posted_at < ${toRef})`;
+
+const addDec = (current: Decimal | null, value: unknown): Decimal | null => {
+  if (value == null) return current;
+  return (current ?? new Decimal(0)).add(String(value));
+};
+
+/* Null stays null when this window has nothing to undo. A later
+   reversal with no deal of its own in the window is a real negative. */
+const subtractFigure = (current: unknown, delta: Decimal | null): string | null => {
+  if (delta == null) return current == null ? null : money(current as Decimal.Value);
+  const base = current == null ? new Decimal(0) : new Decimal(String(current));
+  return money(base.sub(delta));
+};
 /* The same exception table, so a total can round each row in SQL.
    Postgres rounds a numeric half away from zero, which is half up
    for the positive amounts a payout is. */
@@ -286,10 +304,11 @@ export class LedgerReportingService {
    * carries the business date and `branches.timezone`. The desk turns that
    * date into midnight in that zone, and that is the window it asks for.
    *
-   * Reversed transactions are excluded from every total and counted
-   * separately. A void is not a deal that earned nothing; it is a deal
-   * that did not happen, and rolling it in as a zero would let a busy
-   * morning of mistakes read as a busy morning.
+   * A reversal counts on the day it posts. The original deal stays in
+   * its own day, including after that day is signed off. The reversal
+   * day carries it as a negative line, and the cash comes back. A
+   * reversal inside the same window still leaves that window with
+   * nothing to total. The void stays in the tally.
    */
   async summary(actor: LedgerActor, window: SummaryWindow) {
     const client = await this.pool.connect();
@@ -321,7 +340,7 @@ export class LedgerReportingService {
              LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
             WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
               AND t.workspace_id=$4 AND t.till_id=$5
-              AND r.reversal_id IS NULL
+              AND NOT (${reversalPostedInWindow("$7", "$8")})
               AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
               AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
               AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
@@ -333,8 +352,8 @@ export class LedgerReportingService {
              WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
                AND t.workspace_id=$4 AND t.till_id=$5
                AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
-               AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
-               AND ($8::timestamptz IS NULL OR t.posted_at <  $8)) AS reversed,
+               AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+               AND ($8::timestamptz IS NULL OR r.posted_at <  $8)) AS reversed,
            (SELECT sum(volume_home) FROM live) AS volume_home,
            (SELECT count(*)::int FROM live WHERE volume_home IS NULL) AS unvalued,
            (SELECT sum(fee_home) FROM live) AS fees_home,
@@ -385,7 +404,7 @@ export class LedgerReportingService {
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
-            AND r.reversal_id IS NULL
+            AND NOT (${reversalPostedInWindow("$7", "$8")})
             AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
             AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
             AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
@@ -423,7 +442,7 @@ export class LedgerReportingService {
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
             AND t.workspace_id=$4 AND t.till_id=$5
-            AND r.reversal_id IS NULL
+            AND NOT (${reversalPostedInWindow("$7", "$8")})
             AND t.to_currency <> $6
             AND ($7::timestamptz IS NULL OR t.posted_at >= $7)
             AND ($8::timestamptz IS NULL OR t.posted_at <  $8)
@@ -449,7 +468,8 @@ export class LedgerReportingService {
            FROM ledger_transactions t
            LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
           WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
-            AND t.workspace_id=$4 AND t.till_id=$5 AND r.reversal_id IS NULL
+            AND t.workspace_id=$4 AND t.till_id=$5
+            AND NOT (${reversalPostedInWindow("$6", "$7")})
             AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
             AND ($6::timestamptz IS NULL OR t.posted_at >= $6)
             AND ($7::timestamptz IS NULL OR t.posted_at < $7)`,
@@ -468,6 +488,66 @@ export class LedgerReportingService {
         addLeg(cash.in, "received");
         addLeg(cash.out, "paidOut");
       }
+      /* Reversals whose deal posted outside this window. The deal stayed
+         on its own day. Here it is the negative line, and the cash legs
+         swap so what left the drawer comes back in. */
+      const undone = await client.query(
+        `SELECT t.actor_id,
+                trim(t.from_currency) AS from_currency,
+                trim(t.to_currency) AS to_currency,
+                t.input_amount, t.output_amount,
+                t.received_instrument, t.disbursed_instrument,
+                COALESCE(t.fee_amount, t.fee_cad) AS fee_home,
+                t.realized_pnl_home, t.cost_of_sale_home,
+                CASE WHEN t.from_currency = $6 THEN t.input_amount
+                     WHEN t.to_currency = $6 THEN t.output_amount
+                     ELSE NULL END AS volume_home
+           FROM ledger_transactions t
+           JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+          WHERE t.tenant_id=$1 AND t.legal_entity_id=$2 AND t.branch_id=$3
+            AND t.workspace_id=$4 AND t.till_id=$5
+            AND t.deal_kind NOT IN (${SETTLEMENT_DEAL_KINDS_SQL})
+            AND ($7::timestamptz IS NULL OR r.posted_at >= $7)
+            AND ($8::timestamptz IS NULL OR r.posted_at < $8)
+            AND (($7::timestamptz IS NOT NULL AND t.posted_at < $7)
+              OR ($8::timestamptz IS NOT NULL AND t.posted_at >= $8))`,
+        [...tillScope(actor), home, window.from ?? null, window.to ?? null],
+      );
+      type MoneyUndo = {
+        volume: Decimal | null;
+        fees: Decimal | null;
+        realized: Decimal | null;
+        cost: Decimal | null;
+        sold: Decimal | null;
+      };
+      const blankUndo = (): MoneyUndo => ({
+        volume: null, fees: null, realized: null, cost: null, sold: null,
+      });
+      const totalsUndo = blankUndo();
+      const actorUndo = new Map<string, MoneyUndo>();
+      const currencyUndo = new Map<string, MoneyUndo>();
+      for (const item of undone.rows) {
+        totalsUndo.volume = addDec(totalsUndo.volume, item.volume_home);
+        totalsUndo.fees = addDec(totalsUndo.fees, item.fee_home);
+        totalsUndo.realized = addDec(totalsUndo.realized, item.realized_pnl_home);
+        totalsUndo.cost = addDec(totalsUndo.cost, item.cost_of_sale_home);
+        const actorId = String(item.actor_id);
+        const actorBucket = actorUndo.get(actorId) ?? blankUndo();
+        actorBucket.volume = addDec(actorBucket.volume, item.volume_home);
+        actorBucket.fees = addDec(actorBucket.fees, item.fee_home);
+        actorBucket.realized = addDec(actorBucket.realized, item.realized_pnl_home);
+        actorUndo.set(actorId, actorBucket);
+        const soldCurrency = String(item.to_currency ?? "").trim();
+        if (soldCurrency && soldCurrency !== home) {
+          const soldBucket = currencyUndo.get(soldCurrency) ?? blankUndo();
+          soldBucket.sold = addDec(soldBucket.sold, item.output_amount);
+          soldBucket.realized = addDec(soldBucket.realized, item.realized_pnl_home);
+          currencyUndo.set(soldCurrency, soldBucket);
+        }
+        const cash = cashLegs(item);
+        addLeg(cash.out, "received");
+        addLeg(cash.in, "paidOut");
+      }
       const movementRows = [...cashTotals.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([currency, bucket]) => {
@@ -483,8 +563,47 @@ export class LedgerReportingService {
       await client.query("COMMIT");
 
       const posted = Number(row.posted);
-      const fees = row.fees_home == null ? null : money(row.fees_home);
-      const realized = row.realized_home == null ? null : money(row.realized_home);
+      const fees = subtractFigure(row.fees_home, totalsUndo.fees);
+      const realized = subtractFigure(row.realized_home, totalsUndo.realized);
+      const volumeHome = subtractFigure(row.volume_home, totalsUndo.volume);
+      const costOfSaleHome = subtractFigure(row.cost_of_sale_home, totalsUndo.cost);
+      const actorRows = byActor.rows.map((item) => ({ ...item }));
+      for (const [actorId, undo] of actorUndo) {
+        const item = actorRows.find((row) => String(row.actor_id) === actorId);
+        if (item) {
+          item.volume_home = subtractFigure(item.volume_home, undo.volume);
+          item.fees_home = subtractFigure(item.fees_home, undo.fees);
+          item.realized_home = subtractFigure(item.realized_home, undo.realized);
+        } else {
+          actorRows.push({
+            actor_id: actorId,
+            deals: 0,
+            volume_home: subtractFigure(null, undo.volume),
+            fees_home: subtractFigure(null, undo.fees),
+            realized_home: subtractFigure(null, undo.realized),
+            priced: 0,
+          });
+        }
+      }
+      actorRows.sort((left, right) => String(left.actor_id).localeCompare(String(right.actor_id)));
+      const currencyRows = byCurrency.rows.map((item) => ({ ...item }));
+      for (const [currency, undo] of currencyUndo) {
+        const item = currencyRows.find((row) => String(row.currency).trim() === currency);
+        if (item) {
+          item.sold = subtractFigure(item.sold, undo.sold);
+          item.realized_home = subtractFigure(item.realized_home, undo.realized);
+        } else {
+          currencyRows.push({
+            currency,
+            deals: 0,
+            sold: subtractFigure(null, undo.sold),
+            realized_home: subtractFigure(null, undo.realized),
+            priced: 0,
+          });
+        }
+      }
+      currencyRows.sort((left, right) =>
+        String(left.currency).trim().localeCompare(String(right.currency).trim()));
       return redactDeskEarnings(role, {
         homeCurrency: home,
         tillId: actor.tillId,
@@ -496,7 +615,7 @@ export class LedgerReportingService {
            confident $0.00 beside a busy one. */
         posted,
         reversed: Number(row.reversed),
-        volumeHome: row.volume_home == null ? null : money(row.volume_home),
+        volumeHome,
         /* Deals in the window whose size this book cannot state in home
            currency — a foreign-to-foreign cross. Shown, not hidden: a
            volume figure that silently omits deals is worse than one that
@@ -508,8 +627,7 @@ export class LedgerReportingService {
            null, so a day of nothing but buying reports no profit rather
            than a profit of zero. */
         realizedPnlHome: realized,
-        costOfSaleHome:
-          row.cost_of_sale_home == null ? null : money(row.cost_of_sale_home),
+        costOfSaleHome,
         /* Fees are revenue and realized P&L is margin; the desk's take is
            both, and it is null unless at least one of them exists. */
         earningsHome:
@@ -522,7 +640,7 @@ export class LedgerReportingService {
         pricedDeals: Number(row.priced),
         firstPostedAt: row.first_at ? new Date(row.first_at).toISOString() : null,
         lastPostedAt: row.last_at ? new Date(row.last_at).toISOString() : null,
-        byActor: byActor.rows.map((item) => {
+        byActor: actorRows.map((item) => {
           const actorFees = item.fees_home == null ? null : money(item.fees_home);
           const actorRealized =
             item.realized_home == null ? null : money(item.realized_home);
@@ -539,7 +657,7 @@ export class LedgerReportingService {
             pricedDeals: Number(item.priced),
           };
         }),
-        byCurrency: byCurrency.rows.map((item) => ({
+        byCurrency: currencyRows.map((item) => ({
           currency: String(item.currency).trim(),
           deals: Number(item.deals),
           sold: money(item.sold ?? 0),
