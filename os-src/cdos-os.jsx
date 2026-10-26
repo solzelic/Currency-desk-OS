@@ -120,9 +120,10 @@
       const move = (ev) => {
         const dx = ev.clientX - s.sx, dy = ev.clientY - s.sy;
         const box = {};
-        if (dir.indexOf('e') >= 0) box.w = Math.max(300, s.ow + dx);
+        const floor = String(win.id).split('~')[0] === 'till' ? 420 : 300;
+        if (dir.indexOf('e') >= 0) box.w = Math.max(floor, s.ow + dx);
         if (dir.indexOf('s') >= 0) box.h = Math.max(200, s.oh + dy);
-        if (dir.indexOf('w') >= 0) { const nw = Math.max(300, s.ow - dx); box.w = nw; box.x = Math.max(0, s.ox + (s.ow - nw)); }
+        if (dir.indexOf('w') >= 0) { const nw = Math.max(floor, s.ow - dx); box.w = nw; box.x = Math.max(0, s.ox + (s.ow - nw)); }
         onResize(win.id, box);
       };
       const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
@@ -1453,7 +1454,8 @@
         const dh = deskEl ? deskEl.clientHeight : (window.innerHeight - 96);
         setWins(ws => ws.map(w => {
           if (w.max) return (w.w === dw && w.h === dh && w.x === 0 && w.y === 0) ? w : { ...w, w: dw, h: dh, x: 0, y: 0 };
-          const W = Math.max(320, Math.min(w.w, dw - 16));
+          const floor = String(w.id).split('~')[0] === 'till' && dw >= 1280 ? 420 : 320;
+          const W = Math.max(floor, Math.min(w.w, dw - 16));
           const H = Math.max(240, Math.min(w.h, dh - 16));
           const X = Math.max(8, Math.min(w.x, dw - W - 8));
           const Y = Math.max(8, Math.min(w.y, dh - H - 8));
@@ -2273,7 +2275,7 @@
         localStorage.setItem('cdos_submissions_v1', '{}');
         if (oneBranches) localStorage.setItem(_ST.SKEY, JSON.stringify(oneBranches));
         if (oneStation) localStorage.setItem('cdos_station_v1', JSON.stringify(oneStation));
-        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1', 'cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
       } catch (e) {}
       // mirror into React state so the desktop shows the clean desk immediately
       setRows([]); setClients({}); setSettings(nextSettings);
@@ -2318,6 +2320,7 @@
     function logout() {
       setStagingOn(false);
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+      try { ['cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       try { window.CDOS_PERSIST.end(); } catch (e) {}
       hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
@@ -2428,6 +2431,7 @@
     const storeLocked = orderedApps.filter(id => !planAllows(id)).map(mkApp);
 
     function renderApp(id) {
+      window.CDOS.serverRole = (srvUser && srvUser.role) || '';
       switch (baseApp(id)) {
         case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
@@ -2439,7 +2443,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} subs={subs} beneficiaries={beneficiaries} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} canCountTill={!!(srvUser && { teller: 1, supervisor: 1, branch_manager: 1, administrator: 1 }[srvUser.role])} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} canCountTill={!!(window.CDOS.Backend && window.CDOS.Backend.canCountTill(srvUser && srvUser.role))} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;

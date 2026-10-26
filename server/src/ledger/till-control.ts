@@ -369,9 +369,10 @@ export class TillControlService {
           AND a.prior_session_id = $1
           AND a.tenant_id = $2 AND a.legal_entity_id = $3
           AND a.branch_id = $4 AND a.workspace_id = $5
+          AND a.target_id = $6
         ORDER BY a.created_at DESC
         LIMIT 1`,
-      [sessionId, ...scope(actor).slice(0, 4)],
+      [sessionId, ...scope(actor).slice(0, 4), actor.tillId],
     );
     if (!found.rowCount) return null;
     const name = pinDeskName(String(found.rows[0].name ?? ""));

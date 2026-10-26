@@ -119,6 +119,12 @@
     return !!(mine && theirs && mine === theirs);
   }
 
+  /* Same people the server grants till:count. One list for the drawer
+     and the deal sheet, so a role cannot grow a second copy. */
+  function canCountTill(role) {
+    return role === "teller" || role === "supervisor" || role === "branch_manager" || role === "administrator";
+  }
+
   function customerPayload(name, record) {
     record = record || {};
     var riskText = String(record.risk || record.riskRating || "").toLowerCase();
@@ -276,6 +282,7 @@
       },
       tillOccupant: tillOccupant,
       holdsTill: holdsTill,
+      canCountTill: canCountTill,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       previewQuote: function (payload) {

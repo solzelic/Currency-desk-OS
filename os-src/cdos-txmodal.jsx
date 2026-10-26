@@ -506,8 +506,9 @@
       setServerCode((error && error.code) || '');
       setHolderName((error && error.holderName) || '');
     };
-    const takeOverTill = serverCode === 'TILL_HELD' ? (
-      <button type="button" onClick={() => { onClose(); if (window.CDOS.openTakeover) window.CDOS.openTakeover(); }} title={holderName ? ('Take over this till from ' + holderName) : 'Take over this till'} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Take over this till</button>
+    const mayCountTill = !!(window.CDOS.Backend && window.CDOS.Backend.canCountTill && window.CDOS.Backend.canCountTill(window.CDOS.serverRole));
+    const takeOverTill = serverCode === 'TILL_HELD' && mayCountTill ? (
+      <button type="button" data-takeover="deal" onClick={() => { onClose(); if (window.CDOS.openTakeover) window.CDOS.openTakeover(); }} title={holderName ? ('Take over this till from ' + holderName) : 'Take over this till'} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Take over this till</button>
     ) : null;
 
     /* Anything the teller put on this ticket. Closing from the phone is
