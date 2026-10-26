@@ -443,7 +443,7 @@ export async function provisionDesk(
     role: "administrator",
     authorizedBranchIds: [branchId],
     passwordHash,
-    mustChangePassword: false,
+    mustChangePassword: spec.isTestShop === true,
     passwordUpdatedAt: new Date(),
   }).onConflictDoNothing();
 

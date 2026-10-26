@@ -31,8 +31,31 @@ export function resetFreshShopThrottle(): void {
   recent.clear();
 }
 
-export function isStagingFreshShop(email: string, slug: string): boolean {
+export function isStagingFreshShop(
+  email: string,
+  slug: string,
+  headers?: StagingDoorHeaders,
+): boolean {
+  if (headers !== undefined && !stagingDoorOpen(headers)) return false;
   return slug.startsWith("stg-") && email.endsWith(STAGING_OWNER_DOMAIN);
+}
+
+/** Staging door, test-shop row, and an @staging.invalid owner.
+    The sign-in code may be shown. Any other account is emailed. */
+export async function stagingTestOwnerOnScreen(
+  db: Db,
+  headers: StagingDoorHeaders,
+  staffId: string,
+  tenantId: string,
+): Promise<boolean> {
+  if (!stagingDoorOpen(headers)) return false;
+  if (!staffId.toLowerCase().endsWith(STAGING_OWNER_DOMAIN)) return false;
+  const row = await db
+    .select({ isTestShop: schema.tenants.isTestShop })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.id, tenantId))
+    .limit(1);
+  return row[0]?.isTestShop === true;
 }
 
 function allow(ip: string): boolean {

@@ -227,7 +227,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
        Dropping the column default is a later migration. */
     const regulator = typeof onb.regulator === "string" ? onb.regulator.trim() : "";
     const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
-    const stagingTestShop = isStagingFreshShop(email, p.slug);
+    const stagingTestShop = isStagingFreshShop(email, p.slug, req.headers);
 
     forgetClaimedCount();
     const { tenantId, legalEntityId, branchId, ownerId } = await provisionDesk(
@@ -264,7 +264,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     // resolved by tenantPlan (trial → premium-level access during the trial)
     const plan = await tenantPlan(db, tenantId);
     return reply.code(201).send({
-      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: false, plan },
+      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: stagingTestShop, plan },
       tenant: { id: tenantId, name: p.businessName, slug: p.slug, plan, setup: p.onboarding ?? null },
     });
   });

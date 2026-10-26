@@ -24,7 +24,8 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import { isStagingRuntime } from "../auth/staging-runtime.js";
+import { isStagingRuntime, type StagingDoorHeaders } from "../auth/staging-runtime.js";
+import { stagingTestOwnerOnScreen } from "./staging-fresh-shop.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
 import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
@@ -318,18 +319,31 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
 
     const code = makeCode();
     const proof = await createLoginProof(db, user.id, hashCode(code));
-    const mail = loginCodeEmail(code, user.name);
-    const sent = await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html });
-    if (sent === "failed") {
-      await deleteLoginProof(db, proof.tokenHash);
-      return reply.code(503).send({
-        error: "email_unavailable",
-        detail: "We couldn't send a sign-in code. Try again in a moment.",
-      });
+    /* A staging test owner has no inbox. The same code step still runs.
+       The code is in this response only. Live keeps emailing and does
+       not receive the code field. */
+    const onScreen = await stagingTestOwnerOnScreen(db, req.headers as StagingDoorHeaders, user.staffId, user.tenantId);
+    if (!onScreen) {
+      const mail = loginCodeEmail(code, user.name);
+      const sent = await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html });
+      if (sent === "failed") {
+        await deleteLoginProof(db, proof.tokenHash);
+        return reply.code(503).send({
+          error: "email_unavailable",
+          detail: "We couldn't send a sign-in code. Try again in a moment.",
+        });
+      }
     }
     markSent("login:" + user.id);
     reply.setCookie(LOGIN_PROOF_COOKIE, proof.token, { ...cookieOpts, expires: proof.expiresAt });
-    return { ok: true, needsCode: true, maskedEmail: maskEmail(recipient), user: { id: user.staffId, name: user.name, role: user.role, tenantId: user.tenantId, mustChangePassword: user.mustChangePassword } };
+    const shown = {
+      ok: true as const,
+      needsCode: true as const,
+      maskedEmail: maskEmail(recipient),
+      user: { id: user.staffId, name: user.name, role: user.role, tenantId: user.tenantId, mustChangePassword: user.mustChangePassword },
+    };
+    if (onScreen) return { ...shown, code };
+    return shown;
   });
 
   /* Step 2. The code is compared only when the password marker is present.

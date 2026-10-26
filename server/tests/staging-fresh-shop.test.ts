@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { verifyPassword } from "../src/auth/password.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { codeMatches } from "../src/email.js";
 import { seed } from "../src/seed.js";
@@ -231,13 +232,14 @@ describe("fresh-shop creation", () => {
       expect(JSON.stringify(verified.json())).not.toContain(opened.code);
       const tenantId = `tnt-${opened.slug}`;
       expect(verified.json().user.tenantId).toBe(tenantId);
+      expect(verified.json().user.mustChangePassword).toBe(true);
 
       const tenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)))[0];
       expect(tenant).toMatchObject({ siteSlug: opened.slug, plan: "trial", isTestShop: true });
       const entity = (await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, tenantId)))[0];
       expect(entity!.jurisdiction).toBe("");
       const owner = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, opened.email)))[0];
-      expect(owner).toMatchObject({ role: "administrator", tenantId });
+      expect(owner).toMatchObject({ role: "administrator", tenantId, mustChangePassword: true });
       expect(owner!.passwordHash).not.toContain(opened.password);
       expect(await verifyPassword(opened.password, owner!.passwordHash)).toBe(true);
       expect((await handle.db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, opened.email))).length).toBe(0);
@@ -247,6 +249,40 @@ describe("fresh-shop creation", () => {
       expect(created[0]).toMatchObject({ tenantId });
       expect(JSON.stringify(created[0]!.detail)).not.toContain(opened.password);
       expect(JSON.stringify(created[0]!.detail)).not.toContain(opened.code);
+
+      const passwordOnly = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        headers: freshHeaders,
+        payload: { staffId: opened.email, password: opened.password },
+      });
+      expect(passwordOnly.statusCode).toBe(403);
+      expect(passwordOnly.json().error).toBe("code_required");
+      expect(passwordOnly.json()).not.toHaveProperty("code");
+
+      const start = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        headers: freshHeaders,
+        payload: { staffId: opened.email, password: opened.password },
+      });
+      expect(start.statusCode).toBe(200);
+      const started = start.json() as { needsCode: boolean; code: string; user: { mustChangePassword: boolean; tenantId: string } };
+      expect(started.needsCode).toBe(true);
+      expect(started.code).toMatch(/^\d{6}$/);
+      expect(started.user.mustChangePassword).toBe(true);
+      expect(start.json()).not.toHaveProperty("password");
+      const proof = start.cookies.find((cookie) => cookie.name === "cdos_login_proof")?.value;
+      expect(proof).toBeTruthy();
+      const signedIn = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/verify",
+        headers: freshHeaders,
+        cookies: { cdos_login_proof: proof! },
+        payload: { staffId: opened.email, code: started.code },
+      });
+      expect(signedIn.statusCode).toBe(200);
+      expect(signedIn.json().user).toMatchObject({ tenantId, mustChangePassword: true });
 
       const second = await app.inject({
         method: "POST",
@@ -268,11 +304,26 @@ describe("fresh-shop creation", () => {
       expect(secondTenant).toMatchObject({ isTestShop: true, plan: "trial", siteSlug: other.slug });
       expect(secondTenant!.id).not.toBe(tenantId);
 
+      const held = await app.inject({ method: "POST", url: "/api/staging/fresh-shop", headers: freshHeaders });
+      expect(held.statusCode).toBe(201);
+      const parked = held.json() as { email: string; slug: string; code: string; password: string };
+      const liveVerify = await app.inject({
+        method: "POST",
+        url: "/api/signup/verify",
+        headers: { host: "www.currencydeskos.com", "x-forwarded-host": STAGING_HOST, forwarded: `host=${STAGING_HOST}` },
+        payload: { email: parked.email, code: parked.code, isTestShop: true, is_test_shop: true, testShop: true },
+      });
+      expect(liveVerify.statusCode).toBe(201);
+      const parkedTenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, `tnt-${parked.slug}`)))[0];
+      expect(parkedTenant).toMatchObject({ isTestShop: false, plan: "trial" });
+      const parkedOwner = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, parked.email)))[0];
+      expect(parkedOwner!.mustChangePassword).toBe(false);
+
       expect(await yorkSnapshot(handle)).toEqual(beforeYork);
 
       resetFreshShopThrottle();
       const slugs = new Set<string>();
-      const secrets = [opened.code, opened.password, other.code, other.password];
+      const secrets = [opened.code, opened.password, other.code, other.password, parked.code, parked.password, started.code];
       for (let i = 0; i < FRESH_SHOP_IP_MAX; i++) {
         const res = await app.inject({ method: "POST", url: "/api/staging/fresh-shop", headers: freshHeaders });
         expect(res.statusCode, `call ${i}`).toBe(201);
@@ -298,9 +349,70 @@ describe("fresh-shop creation", () => {
         expect(leaked, "secret reached a log").toBe(false);
       }
       expect(haystack).not.toContain("[email simulated] to=owner+");
+
+      forgetCooldown("login:" + owner!.id);
+      const liveStart = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        headers: { host: "www.currencydeskos.com", "x-forwarded-host": STAGING_HOST, forwarded: `host=${STAGING_HOST}` },
+        payload: { staffId: opened.email, password: opened.password },
+      });
+      expect(liveStart.statusCode).toBe(200);
+      expect(liveStart.json().needsCode).toBe(true);
+      expect(liveStart.json()).not.toHaveProperty("code");
+      const liveCode = [...consoleLines].reverse().join("\n").match(/(\d{6}) is your CurrencyDesk sign-in code/)?.[1];
+      expect(liveCode).toMatch(/^\d{6}$/);
+      expect(JSON.stringify(liveStart.json())).not.toContain(liveCode!);
     } finally {
       await app.close();
       await handle.close();
     }
   }, 90_000);
+
+  it("a live signup body cannot set is_test_shop", async () => {
+    const { app, handle } = await boot("1", STAGING_HOST);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    });
+    process.env.EARLY_ACCESS_OPEN = "1";
+    try {
+      const email = "ada@livedesk-flag.example";
+      const signup = await app.inject({
+        method: "POST",
+        url: "/api/signup",
+        headers: { host: "www.currencydeskos.com" },
+        payload: {
+          businessName: "Live Desk",
+          ownerName: "Ada",
+          email,
+          password: "a-strong-pass",
+          slug: "livedesk-flag",
+          isTestShop: true,
+          is_test_shop: true,
+          testShop: true,
+          onboarding: { isTestShop: true, is_test_shop: true, testShop: true, plan: "trial" },
+        },
+      });
+      expect(signup.statusCode).toBe(201);
+      expect(signup.json()).not.toHaveProperty("code");
+      expect(signup.json()).not.toHaveProperty("isTestShop");
+      const code = [...lines].reverse().join("\n").match(/(\d{6}) is your/)?.[1];
+      expect(code).toMatch(/^\d{6}$/);
+      const verified = await app.inject({
+        method: "POST",
+        url: "/api/signup/verify",
+        headers: { host: "currencydeskos.com", "x-forwarded-host": STAGING_HOST, forwarded: `host=${STAGING_HOST}` },
+        payload: { email, code, isTestShop: true, is_test_shop: true, testShop: true },
+      });
+      expect(verified.statusCode).toBe(201);
+      expect(verified.json().user.mustChangePassword).toBe(false);
+      const tenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-livedesk-flag")))[0];
+      expect(tenant!.isTestShop).toBe(false);
+      expect(tenant!.plan).toBe("trial");
+    } finally {
+      await app.close();
+      await handle.close();
+    }
+  }, 60_000);
 });
