@@ -76,6 +76,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `runMigrations` logs `opening database` before its first query and one
   `migration applied: <id>` line for each migration it applies. A later
   run logs no applied line for a migration already stored.
+- Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
+  it once. Saving or clearing a domain, and deleting a desk that had one,
+  reload it. A safety reload runs every 30 minutes, or longer when
+  `SITE_DOMAIN_REFRESH_MINUTES` is higher. Anything under 30 is 30. An
+  unknown Host does not query the database.
 - Ledger tables: raw SQL — `server/src/ledger/migration.sql` registered as
   migration `001_ledger`, then `server/src/db/migrations/002…`. Append-only
   book. Invariants: `docs/CASH_OWNERSHIP_INVARIANTS.md`.

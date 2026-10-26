@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { siteDomainRefreshCount } from "../src/sites.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -204,5 +205,48 @@ describe("the public site", () => {
     const res = await app.inject({ method: "GET", url: "/", headers: { host: "yorkfx.ca" } });
     // no mapping → falls through to the CurrencyDesk front door, not the storefront
     expect(res.body).toContain("more trades, less paperwork");
+  });
+});
+
+describe("domain map freshness", () => {
+  it("serves a domain saved on this request, and an unknown host does not reload the map", async () => {
+    const admin = await login("j.masri");
+    const before = siteDomainRefreshCount();
+    const saved = await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: cookieOf(admin),
+      payload: { siteDomain: "immediate.example" },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(siteDomainRefreshCount()).toBe(before + 1);
+
+    const home = await app.inject({ method: "GET", url: "/", headers: { host: "immediate.example" } });
+    expect(home.statusCode).toBe(200);
+    expect(home.body).toContain("York");
+
+    const www = await app.inject({
+      method: "GET",
+      url: "/YorkFX%20Rates.html",
+      headers: { host: "www.immediate.example" },
+    });
+    expect(www.statusCode).toBe(200);
+
+    for (const host of ["unknown.example", "also-unknown.example", "currencydesk.onrender.com", "immediate.example"]) {
+      await app.inject({ method: "GET", url: "/", headers: { host } });
+    }
+    expect(siteDomainRefreshCount()).toBe(before + 1);
+
+    const off = await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: cookieOf(admin),
+      payload: { siteDomain: null },
+    });
+    expect(off.statusCode).toBe(200);
+    expect(siteDomainRefreshCount()).toBe(before + 2);
+    const gone = await app.inject({ method: "GET", url: "/", headers: { host: "immediate.example" } });
+    expect(gone.body).toContain("more trades, less paperwork");
+    expect(siteDomainRefreshCount()).toBe(before + 2);
   });
 });

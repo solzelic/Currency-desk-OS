@@ -98,6 +98,8 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
     if (parsed.data.siteDomain !== undefined) {
       const domain = parsed.data.siteDomain === null ? null : parsed.data.siteDomain.toLowerCase().replace(/^www\./, "");
       await db.update(schema.tenants).set({ siteDomain: domain }).where(eq(schema.tenants.id, who.tenantId));
+      // Reload before the reply. The safety timer is half an hour, so a
+      // saved or cleared domain has to land in the map on this request.
       await refreshSiteDomains(db);
       await audit(db, { ...scope, action: "tenant.site_domain_changed", detail: { domain } });
     }

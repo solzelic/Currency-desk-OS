@@ -28,8 +28,26 @@ export const SITES: Record<string, { dir: string; index: string }> = {
 
 // host (lowercase, no www, no port) → slug. Refreshed from the DB.
 const siteDomains = new Map<string, string>();
+let siteDomainRefreshes = 0;
+
+/** Safety reload. Neon suspends after 5 minutes with no queries, so this
+    stays at half an hour or longer. A shorter setting is raised to the floor. */
+export const SITE_DOMAIN_REFRESH_MIN_MS = 30 * 60 * 1000;
+
+/** How many times the map has been loaded from the database. */
+export function siteDomainRefreshCount(): number {
+  return siteDomainRefreshes;
+}
+
+/** `SITE_DOMAIN_REFRESH_MINUTES`. Missing, junk, or below 30 becomes 30 minutes. */
+export function siteDomainRefreshIntervalMs(rawMinutes: string | undefined): number {
+  const minutes = Number(rawMinutes);
+  if (!Number.isFinite(minutes)) return SITE_DOMAIN_REFRESH_MIN_MS;
+  return Math.max(30, Math.trunc(minutes)) * 60_000;
+}
 
 export async function refreshSiteDomains(db: Db): Promise<void> {
+  siteDomainRefreshes += 1;
   const rows = await db
     .select({ slug: schema.tenants.siteSlug, domain: schema.tenants.siteDomain })
     .from(schema.tenants)
@@ -40,7 +58,24 @@ export async function refreshSiteDomains(db: Db): Promise<void> {
   }
 }
 
-/* which site does this Host header belong to? (custom-domain visitors) */
+/** Periodic safety reload. `intervalMs` below the floor is raised to it,
+    so a 60 second timer cannot be installed. */
+export function startSiteDomainRefresh(db: Db, intervalMs: number): () => void {
+  const requested = Number.isFinite(intervalMs) ? Math.trunc(intervalMs) : SITE_DOMAIN_REFRESH_MIN_MS;
+  const ms = Math.max(SITE_DOMAIN_REFRESH_MIN_MS, requested);
+  const timer = setInterval(() => {
+    void refreshSiteDomains(db).catch(() => {});
+  }, ms);
+  if (typeof (timer as { unref?: unknown }).unref === "function") {
+    (timer as { unref: () => void }).unref();
+  }
+  return () => clearInterval(timer);
+}
+
+/* which site does this Host header belong to? (custom-domain visitors)
+   Memory only. An unknown host must not query the database: the platform
+   host is unknown on every page view, and a query a minute would keep
+   Neon from suspending. */
 export function siteSlugForHost(host: string | undefined): string | null {
   if (!host) return null;
   return siteDomains.get(host.toLowerCase().split(":")[0]!.replace(/^www\./, "")) ?? null;
