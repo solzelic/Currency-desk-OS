@@ -28,21 +28,21 @@ afterEach(() => {
 
 describe("how old a board may be", () => {
   it("outlasts the refresh that keeps it fresh", () => {
-    // the shipped defaults, which is the case that was broken
-    expect(boardMaxAgeSeconds()).toBeGreaterThan(60 * 60);
+    // the shipped defaults: one hour, plus ten minutes of headroom
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
   });
 
   it("tracks the sync interval rather than a number chosen beside it", () => {
     process.env.RATES_SYNC_MINUTES = "15";
-    const quarterly = boardMaxAgeSeconds();
-    expect(quarterly).toBeGreaterThan(15 * 60);
+    const atFloor = boardMaxAgeSeconds();
+    // Under an hour stays on the hourly floor. A shorter window would refuse quotes between pulls.
+    expect(atFloor).toBe(70 * 60);
 
-    /* A desk that pulls rates four times a day must not inherit a tolerance
-       set for one that pulls every fifteen minutes. This is the whole point
-       of deriving it: the two cannot drift apart again. */
+    /* A desk that pulls four times a day must not inherit the hourly floor.
+       The tolerance comes from the same clamped gap. */
     process.env.RATES_SYNC_MINUTES = "360";
-    expect(boardMaxAgeSeconds()).toBeGreaterThan(360 * 60);
-    expect(boardMaxAgeSeconds()).toBeGreaterThan(quarterly);
+    expect(boardMaxAgeSeconds()).toBe(360 * 60 + 10 * 60);
+    expect(boardMaxAgeSeconds()).toBeGreaterThan(atFloor);
   });
 
   it("gives a manually published board the working day", () => {

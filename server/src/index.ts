@@ -18,7 +18,8 @@ import {
 } from "./demo-desk.js";
 import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
-import { syncMarketRatesIfStale } from "./rates/market.js";
+import { ratesSyncIntervalMs } from "./rates/sync-interval.js";
+import { startRatesSync } from "./rates/sync-schedule.js";
 import { refreshSiteDomains } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
 
@@ -135,26 +136,13 @@ export async function listenServer(app: FastifyInstance, db: Db): Promise<void> 
   await app.listen({ port, host });
   console.log(`currencydesk-server on http://${host}:${port}`);
 
-  // live market rates: pull the provider at most once per RATES_SYNC_MINUTES
-  // (default 60 → 24/day), decided by the age of the newest snapshot in the
-  // database. Because the gate is in the DB, not process memory, restarts don't
-  // re-pull — a Render free-tier instance that sleeps and cold-starts all day
-  // still pulls ~24 times, not once per wake. RATES_SYNC=off disables it.
+  // Live market rates. The gap is 60 minutes to 24 hours
+  // (RATES_SYNC_MINUTES). The first check runs now. A fresh snapshot
+  // waits until it is actually due, so this does not query every 15
+  // minutes, and a restart does not wait a second full gap.
+  // RATES_SYNC=off disables it.
   if (process.env.RATES_SYNC !== "off") {
-    const minutes = Math.max(1, Number(process.env.RATES_SYNC_MINUTES ?? 60));
-    const gapMs = minutes * 60 * 1000;
-    // a small grace so the on-the-hour check reliably clears the gate instead of
-    // just missing it and waiting a whole extra cycle
-    const gateMs = Math.max(gapMs - 60 * 1000, gapMs * 0.5);
-    // check often enough to pull promptly after a cold start, but the DB gate
-    // caps actual provider calls at one per gap regardless of check frequency
-    const checkMs = Math.min(gapMs, 15 * 60 * 1000);
-    const run = async () => {
-      const r = await syncMarketRatesIfStale(db, DEMO.branchId, gateMs);
-      console.log(`[rates-sync] ${r.skipped ? "skip" : r.ok ? "ok" : "FAILED"} — ${r.detail}`);
-    };
-    void run();
-    setInterval(run, checkMs).unref();
+    startRatesSync(db, DEMO.branchId, ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES));
   }
 }
 

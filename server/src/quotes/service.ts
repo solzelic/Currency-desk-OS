@@ -17,6 +17,7 @@ import {
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
+import { RATES_SYNC_HEADROOM_SECONDS, ratesSyncIntervalMs } from "../rates/sync-interval.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -64,13 +65,23 @@ const fixed = (v: Decimal, p = 2) => v.toDecimalPlaces(p).toFixed(p);
  *
  * RATE_BOARD_MAX_AGE_SECONDS overrides all of it, and a desk that genuinely
  * wants a five-minute tolerance can still say so.
+ *
+ * RATES_SYNC_MINUTES cannot shorten that cycle below 60 minutes or stretch
+ * it past 24 hours. Junk clamps to 60 minutes. Infinity and a huge value
+ * clamp to 24 hours. The window uses that same clamped cycle.
  */
 export function boardMaxAgeSeconds(): number {
   const stated = process.env.RATE_BOARD_MAX_AGE_SECONDS;
   if (stated != null && stated !== "") return Number(stated);
   if (process.env.RATES_SYNC === "off") return 12 * 60 * 60;
-  const syncMinutes = Math.max(1, Number(process.env.RATES_SYNC_MINUTES ?? 60));
-  return syncMinutes * 60 + 10 * 60;
+  const syncMinutes = ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES) / 60_000;
+  return syncMinutes * 60 + RATES_SYNC_HEADROOM_SECONDS;
+}
+
+/** The check preview and create share. Older than the window is stale. */
+export function ratePublicationIsStale(publishedAtMs: number, nowMs = Date.now()): boolean {
+  const maxAge = boardMaxAgeSeconds();
+  return !Number.isFinite(maxAge) || maxAge < 1 || nowMs - publishedAtMs > maxAge * 1000;
 }
 const complianceFact = (value: string, label: string) => {
   if (typeof value !== "string" || !value.trim() || value.trim().length > 500)
@@ -207,8 +218,7 @@ export class QuoteService {
       const boards = await client.query("SELECT * FROM rate_boards WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 ORDER BY published_at DESC LIMIT 1", scope(actor).slice(0, 3));
       if (!boards.rowCount) throw new LedgerError("RATE_NOT_AVAILABLE", "No published branch board.");
       const board = boards.rows[0];
-      const maxAge = boardMaxAgeSeconds();
-      if (!Number.isFinite(maxAge) || maxAge < 1 || Date.now() - new Date(board.published_at).getTime() > maxAge * 1000) throw new LedgerError("RATE_PUBLICATION_STALE", "Rate publication is stale.");
+      if (ratePublicationIsStale(new Date(board.published_at).getTime())) throw new LedgerError("RATE_PUBLICATION_STALE", "Rate publication is stale.");
       const leg = (currency: string, sell: boolean) => {
         const row = board.board_rows[currency];
         if (!row || row.show === false) throw new LedgerError("RATE_NOT_AVAILABLE", "Currency is not published.");
@@ -299,13 +309,8 @@ export class QuoteService {
           "RATE_NOT_AVAILABLE",
           "No published branch board.",
         );
-      const board = boards.rows[0],
-        maxAge = boardMaxAgeSeconds();
-      if (
-        !Number.isFinite(maxAge) ||
-        maxAge < 1 ||
-        Date.now() - new Date(board.published_at).getTime() > maxAge * 1000
-      )
+      const board = boards.rows[0];
+      if (ratePublicationIsStale(new Date(board.published_at).getTime()))
         throw new LedgerError(
           "RATE_PUBLICATION_STALE",
           "Rate publication is stale.",
