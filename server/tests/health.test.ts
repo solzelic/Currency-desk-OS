@@ -91,6 +91,22 @@ describe("GET /api/health", () => {
       execute.mockRestore();
     }
   });
+
+  it("returns lastMigration null when the pool cannot connect", async () => {
+    const session = handle.db as unknown as { session: { client: { connect?: () => Promise<never> } } };
+    const client = session.session.client;
+    client.connect = () => Promise.reject(new Error("connect refused"));
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/health" });
+      expect(res.statusCode).not.toBe(500);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.lastMigration).toBeNull();
+      expect(res.body).not.toMatch(/connect refused/);
+    } finally {
+      delete client.connect;
+    }
+  });
 });
 
 describe("GET /api/health when the database is gone", () => {

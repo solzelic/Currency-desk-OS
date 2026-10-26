@@ -62,7 +62,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
-| `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. The body adds `commit` (7-character `RENDER_GIT_COMMIT`, or `unknown`) and `lastMigration` (newest `schema_migrations` id, or null). On Postgres that read sets `statement_timeout` to 1000 ms, so the server cancels it and frees the connection. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
+| `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. The body adds `commit` (7-character `RENDER_GIT_COMMIT`, or `unknown`) and `lastMigration` (newest `schema_migrations` id, or null when that read fails, including a connect failure). On Postgres that read sets `statement_timeout` to 1000 ms, so the server cancels it and frees the connection. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
 | `GET /api/staging/signin`, `POST /api/staging/enter` | Registered only when `STAGING` is exactly `1`. Each request passes the Host header into `isStagingRuntime` and requires the demo shop `tnt-yorkfx`. A live host is 404. The flag is not in `render.yaml`. |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 

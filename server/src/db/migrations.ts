@@ -111,8 +111,8 @@ async function newestFromReader(db: MigrationReader): Promise<string | null> {
   }
 }
 
-/* Newest applied id, or null when the table is missing, the read fails,
-   or Postgres cancels it. Names only. */
+/* Newest applied id, or null when the table is missing, the read fails
+   (including a connect failure), or Postgres cancels it. Names only. */
 export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
   const pool = postgresPool(db);
   if (pool) return newestFromPostgres(pool);
@@ -154,8 +154,9 @@ export async function runMigrations(
    runner's transaction, so this read must not sit above that one.
    Own transaction so SET LOCAL dies with it. Always release the client. */
 async function newestFromPostgres(pool: pg.Pool): Promise<string | null> {
-  const client = await pool.connect();
+  let client: pg.PoolClient | undefined;
   try {
+    client = await pool.connect();
     await client.query("BEGIN");
     await client.query("SET LOCAL statement_timeout = 1000");
     const found = await client.query(
@@ -165,9 +166,9 @@ async function newestFromPostgres(pool: pg.Pool): Promise<string | null> {
     const id = found.rows[0]?.migration_id;
     return typeof id === "string" && id.length > 0 ? id : null;
   } catch {
-    try { await client.query("ROLLBACK"); } catch { /* the server already aborted it */ }
+    try { await client?.query("ROLLBACK"); } catch { /* the server already aborted it */ }
     return null;
   } finally {
-    client.release();
+    client?.release();
   }
 }

@@ -789,7 +789,7 @@ error: "database" }` when that read fails. A reachable database also
 returns `commit` (the first 7 characters of `RENDER_GIT_COMMIT`, or
 `unknown` when that variable is unset) and `lastMigration` (the id of
 the newest applied row in `schema_migrations`, or null when that read
-fails or Postgres cancels it). The Postgres read sets `statement_timeout`
+fails, including a connect failure, or Postgres cancels it). The Postgres read sets `statement_timeout`
 to 1000 ms, so the server cancels it and frees the connection. PGlite
 stops waiting after 1 second in the process. The tenant read on this
 route is unchanged. When the database is not
@@ -813,7 +813,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-26**, public health names the deploy. `GET /api/health` still answers from the tenant read: 200 when it works, 503 `{ ok: false, error: "database" }` when it does not. The body adds `commit` and `lastMigration`. `commit` is the first 7 characters of `RENDER_GIT_COMMIT`, or `unknown` when unset. `lastMigration` is the newest applied id in `schema_migrations`, or null when that read fails, Postgres cancels it, or the database is down. On Postgres the read sets `statement_timeout` to 1000 ms so the server cancels it and frees the connection. PGlite stops waiting after 1 second in the process. The tenant read on this route is unchanged. `runMigrations` logs `opening database` before its first query and one `migration applied: <id>` line each time it applies a migration. A second run logs no applied line. No migration was added.
+**2026-10-26**, public health names the deploy. `GET /api/health` still answers from the tenant read: 200 when it works, 503 `{ ok: false, error: "database" }` when it does not. The body adds `commit` and `lastMigration`. `commit` is the first 7 characters of `RENDER_GIT_COMMIT`, or `unknown` when unset. `lastMigration` is the newest applied id in `schema_migrations`, or null when that read fails, including a connect failure, Postgres cancels it, or the database is down. On Postgres the read sets `statement_timeout` to 1000 ms so the server cancels it and frees the connection. PGlite stops waiting after 1 second in the process. The tenant read on this route is unchanged. `runMigrations` logs `opening database` before its first query and one `migration applied: <id>` line each time it applies a migration. A second run logs no applied line. No migration was added.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only `PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`. A field left out of PUT stays as stored. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 
