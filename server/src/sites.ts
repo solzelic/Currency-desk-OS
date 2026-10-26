@@ -28,8 +28,47 @@ export const SITES: Record<string, { dir: string; index: string }> = {
 
 // host (lowercase, no www, no port) → slug. Refreshed from the DB.
 const siteDomains = new Map<string, string>();
+let siteDomainRefreshes = 0;
+
+/** Safety reload. Neon suspends after 5 minutes with no queries.
+    The gap stays between 30 minutes and 24 hours. setInterval stores the
+    delay in a 32-bit signed integer, so a larger value fires in 1 ms. */
+export const SITE_DOMAIN_REFRESH_MIN_MS = 30 * 60 * 1000;
+export const SITE_DOMAIN_REFRESH_MAX_MS = 24 * 60 * 60 * 1000;
+const SITE_DOMAIN_REFRESH_MIN_MINUTES = 30;
+const SITE_DOMAIN_REFRESH_MAX_MINUTES = 24 * 60;
+
+/** How many times the map has been loaded from the database. */
+export function siteDomainRefreshCount(): number {
+  return siteDomainRefreshes;
+}
+
+/** `SITE_DOMAIN_REFRESH_MINUTES`. Missing or junk becomes 30 minutes.
+    Below 30 becomes 30. Above 1440, or Infinity, becomes 24 hours. */
+export function siteDomainRefreshIntervalMs(rawMinutes: string | undefined): number {
+  const minutes = Number(rawMinutes);
+  if (minutes === Number.POSITIVE_INFINITY) return SITE_DOMAIN_REFRESH_MAX_MS;
+  if (!Number.isFinite(minutes)) return SITE_DOMAIN_REFRESH_MIN_MS;
+  const clamped = Math.min(SITE_DOMAIN_REFRESH_MAX_MINUTES, Math.max(SITE_DOMAIN_REFRESH_MIN_MINUTES, Math.trunc(minutes)));
+  return clamped * 60_000;
+}
+
+export function warnSiteDomainRefreshFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : "unknown error";
+  console.warn(`[site-domains] refresh failed: ${message}`);
+}
+
+function clampSiteDomainRefreshMs(intervalMs: number): number {
+  if (intervalMs === Number.POSITIVE_INFINITY) return SITE_DOMAIN_REFRESH_MAX_MS;
+  if (!Number.isFinite(intervalMs)) return SITE_DOMAIN_REFRESH_MIN_MS;
+  const ms = Math.trunc(intervalMs);
+  if (ms > SITE_DOMAIN_REFRESH_MAX_MS) return SITE_DOMAIN_REFRESH_MAX_MS;
+  if (ms < SITE_DOMAIN_REFRESH_MIN_MS) return SITE_DOMAIN_REFRESH_MIN_MS;
+  return ms;
+}
 
 export async function refreshSiteDomains(db: Db): Promise<void> {
+  siteDomainRefreshes += 1;
   const rows = await db
     .select({ slug: schema.tenants.siteSlug, domain: schema.tenants.siteDomain })
     .from(schema.tenants)
@@ -40,17 +79,40 @@ export async function refreshSiteDomains(db: Db): Promise<void> {
   }
 }
 
-/* which site does this Host header belong to? (custom-domain visitors) */
+/** Periodic safety reload. Values outside 30 minutes to 24 hours are clamped,
+    so a 60 second timer cannot be installed and a huge delay cannot overflow. */
+export function startSiteDomainRefresh(db: Db, intervalMs: number): () => void {
+  const ms = clampSiteDomainRefreshMs(intervalMs);
+  const timer = setInterval(() => {
+    void refreshSiteDomains(db).catch(warnSiteDomainRefreshFailure);
+  }, ms);
+  if (typeof (timer as { unref?: unknown }).unref === "function") {
+    (timer as { unref: () => void }).unref();
+  }
+  return () => clearInterval(timer);
+}
+
+/* Host without port, one trailing dot, or a leading www. A DNS name is
+   sometimes sent with the root dot still on it. */
+function bareSiteHost(host: string): string {
+  const withoutPort = host.toLowerCase().split(":")[0]!;
+  const withoutDot = withoutPort.endsWith(".") ? withoutPort.slice(0, -1) : withoutPort;
+  return withoutDot.replace(/^www\./, "");
+}
+
+/* which site does this Host header belong to? (custom-domain visitors)
+   Memory only. An unknown host must not query the database: the platform
+   host is unknown on every page view, and a query a minute would keep
+   Neon from suspending. */
 export function siteSlugForHost(host: string | undefined): string | null {
   if (!host) return null;
-  return siteDomains.get(host.toLowerCase().split(":")[0]!.replace(/^www\./, "")) ?? null;
+  return siteDomains.get(bareSiteHost(host)) ?? null;
 }
 
 /* sync — used by Fastify's rewriteUrl, which runs before routing */
 export function rewriteHostToSite(host: string | undefined, url: string): string {
   if (!host) return url;
-  const bare = host.toLowerCase().split(":")[0]!.replace(/^www\./, "");
-  const slug = siteDomains.get(bare);
+  const slug = siteDomains.get(bareSiteHost(host));
   if (!slug) return url;
   // the customer's domain serves ONLY their site; API calls pass through
   // so the rate-board embed on their pages keeps working
