@@ -58,6 +58,29 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A 0-decimal count. Dropping a separator and keeping the digits
+     after it turns 1500.7 into 15007. The separator stops the count.
+     The next single digit, the one the field appends once the
+     separator is gone, is not kept. A longer replacement is a new
+     amount. Three-decimal currencies never come through here. */
+  function wholeUnitInput(previous, incoming, armed) {
+    var prev = String(previous == null ? "" : previous).replace(/\D/g, "");
+    var raw = String(incoming == null ? "" : incoming);
+    if (/[.,]/.test(raw)) {
+      return { text: raw.split(/[.,]/)[0].replace(/\D/g, ""), warn: true, armed: true };
+    }
+    var digits = raw.replace(/\D/g, "");
+    if (armed && digits.length === prev.length + 1 && digits.slice(0, prev.length) === prev) {
+      return { text: prev, warn: true, armed: true };
+    }
+    return { text: digits, warn: false, armed: false };
+  }
+
+  function countAmountText(places, previous, incoming, armed) {
+    if (places === 0) return wholeUnitInput(previous, incoming, armed);
+    return { text: String(incoming == null ? "" : incoming).replace(/[^0-9.]/g, ""), warn: false, armed: false };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -70,5 +93,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText };
 });

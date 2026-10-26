@@ -53,6 +53,32 @@ it("subtracts whole-unit expected, and names a stored fraction", () => {
   expect(C.storedRoundNote(99.85, "JPY")).toContain("99.85 JPY");
 });
 
+it("stops a whole-number count at the separator, typed or pasted", () => {
+  const step = (text: string, arm: boolean, key: string) => {
+    if (key === "." || key === ",") return { text, warn: true, armed: true };
+    return C.countAmountText(0, text, text + key, arm);
+  };
+  let text = "";
+  let armed = false;
+  for (const key of ["1", "5", "0", "0", ".", "7"]) {
+    const next = step(text, armed, key);
+    text = next.text;
+    armed = next.armed;
+  }
+  expect(text).toBe("1500");
+  expect(text).not.toBe("15007");
+  const pasted = C.countAmountText(0, "", "1500,7", false);
+  expect(pasted.text).toBe(text);
+  expect(pasted.warn).toBe(true);
+  expect(pasted.text).not.toContain(".");
+  const replaced = C.countAmountText(0, pasted.text, "150000", pasted.armed);
+  expect(replaced.text).toBe("150000");
+  expect(replaced.text).toBe(replaced.text.replace(/[^\d]/g, ""));
+  expect(C.countAmountText(3, "", "10.500", false).text).toBe("10.500");
+  expect(C.countAmountText(3, "10", "10.5", false).text).toBe("10.5");
+  expect(till).toContain("countAmountText");
+});
+
 it("keeps two decimals on a whole count, and yen stays whole", () => {
   expect(C.unitText(20000, "CAD")).toBe("20,000.00");
   expect(C.unitText(5000, "USD")).toBe("5,000.00");

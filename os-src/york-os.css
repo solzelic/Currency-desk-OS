@@ -1771,6 +1771,10 @@ html[data-cdtheme="dark"] {
 html[data-cdtheme="dark"] [data-tour="till"] .till-tabwrap::after {
   background: linear-gradient(90deg, rgba(30,29,26,0), #1e1d1a 78%);
 }
+/* Takeover refusal. Light is #A93226 on #F7E1DD (5.29:1). Dark is
+   #F7E1DD on #4E2420 (10.50:1). The shared flag token stays as it is. */
+.till-refusal { background: #F7E1DD; color: #A93226; }
+html[data-cdtheme="dark"] .till-refusal { background: #4E2420; color: #F7E1DD; }
 .till-screen {
   width: 100%;
   max-width: 100%;

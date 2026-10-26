@@ -231,7 +231,28 @@
      does not show those amounts. Saving calls the handover route. */
   function TakeoverSheet({ currencies, holder, busy, error, onClose, onSubmit }) {
     const [raw, setRaw] = useState({});
+    const [fraction, setFraction] = useState(false);
+    const shown = useRef({});
+    const armed = useRef({});
+    const warned = useRef({});
     const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    const onAmount = (c, value) => {
+      const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
+      const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
+      shown.current[c] = next.text;
+      armed.current[c] = next.armed;
+      if (next.warn) warned.current[c] = true; else delete warned.current[c];
+      setFraction(Object.keys(warned.current).length > 0);
+      setRaw(o => ({ ...o, [c]: next.text }));
+    };
+    const refuseSeparator = (c, event) => {
+      if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
+      if (event.key !== '.' && event.key !== ',') return;
+      event.preventDefault();
+      armed.current[c] = true;
+      warned.current[c] = true;
+      setFraction(true);
+    };
     return ReactDOM.createPortal(
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
         <div role="dialog" aria-label="Take over till" onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 460, maxHeight: 'calc(100vh - 40px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -241,22 +262,23 @@
               <div className="font-semibold leading-tight" style={{ color: CD.ink }}>Take over till</div>
               <div className="text-[13px]" data-held-by="" style={{ color: CD.mute, fontSize: 13 }}>{`Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`}</div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
+            <button type="button" onClick={onClose} aria-label="Close" className="grid place-items-center flex-none" style={{ width: 44, height: 44 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
           <div className="px-5 py-4 overflow-auto">
             <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden' }}>
               {currencies.map((c, i) => (
                 <div key={c} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                   <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
-                  <input data-takeover="amount" value={raw[c] || ''} onChange={e => { const whole = (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0; const next = whole ? String(e.target.value).replace(/[^\d.]/g, '').split('.')[0] : String(e.target.value).replace(/[^0-9.]/g, ''); setRaw(o => ({ ...o, [c]: next })); }} inputMode={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal'} placeholder={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                  <input data-takeover="amount" value={raw[c] || ''} onKeyDown={e => refuseSeparator(c, e)} onChange={e => onAmount(c, e.target.value)} inputMode={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal'} placeholder={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
                 </div>
               ))}
             </div>
-            {error ? <div role="alert" className="text-[12px] mt-3 px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}>{error}</div> : null}
+            {fraction ? <div className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>Whole numbers only. The fraction was not counted.</div> : null}
+            {error ? <div role="alert" className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{error}</div> : null}
           </div>
           <div className="px-5 py-3.5 flex items-center justify-end gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <button type="button" onClick={onClose} className="text-[13px] px-3 py-2 font-medium" style={{ color: CD.mute }}>Cancel</button>
-            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(raw)} className="flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9 }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
+            <button type="button" onClick={onClose} className="text-[13px] font-medium" style={{ color: CD.mute, minHeight: 44, padding: '0 12px' }}>Cancel</button>
+            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(raw)} className="flex items-center gap-1.5 text-[13px] font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, minHeight: 44, padding: '0 16px' }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
           </div>
         </div>
       </div>, document.body);
@@ -1143,7 +1165,7 @@
           </div>
         )}
         {serverSession && sessionOpen && (
-          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
+          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: reconGreen, flex: 'none' }}></span>
             <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {serverSession.holderName || 'Unknown'} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
             <span className="ml-auto flex-none" style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
@@ -1156,7 +1178,7 @@
           </div>
         )}
         {sessionClosed && (
-          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
+          <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]" style={{ background: CD.greenSoft, borderBottom: `1px solid ${CD.line}`, color: '#3a7a56' }}>
             <Ic n="lock" s={12} c="#3a7a56" />
             <span>Session <b style={{ fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> closed by {personOf(serverSession.closedBy)} at {clockOf(new Date(serverSession.closedAt).getTime())}{serverSession.closeNote ? ` · ${serverSession.closeNote}` : ''}</span>
           </div>
@@ -1187,10 +1209,10 @@
       {stripOpen ? (
       <div className="till-operator flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? initialsOf(current.operator) : '—'}</span>
+          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 12 }}>{current ? initialsOf(current.operator) : '—'}</span>
           <div className="min-w-0 leading-tight">
-            <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: reconInk }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: reconInk }}> · {current.role}</span> : null}</div>
-            <div className="text-[10.5px]" style={{ color: reconInk }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
+            <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: reconInk }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[12px]" style={{ color: reconInk }}> · {current.role}</span> : null}</div>
+            <div className="text-[12px]" style={{ color: reconInk }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
@@ -1199,12 +1221,12 @@
               ? <button type="button" data-takeover="strip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Take over till</button>
               : null)
             : <button onClick={() => setHandoffOpen(true)} title={serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session. Close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator'} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>}
-          <button onClick={() => setStripOpen(false)} title="Hide operator bar" className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${CD.line}`, background: CD.panel, color: CD.mute }}><Ic n="x" s={13} c={CD.mute} /></button>
+          <button onClick={() => setStripOpen(false)} title="Hide operator bar" className="grid place-items-center" style={{ width: 44, height: 44, borderRadius: 8, border: `1px solid ${CD.line}`, background: CD.panel, color: CD.mute }}><Ic n="x" s={13} c={CD.mute} /></button>
         </div>
       </div>
       ) : (
       <div className="till-operator flex items-center gap-2 flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
-        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? initialsOf(current.operator) : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
+        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 24, height: 24, borderRadius: 6, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 12 }}>{current ? initialsOf(current.operator) : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
         {heldByOther && canCountTill && <button type="button" data-takeover="chip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[13px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.ink, background: CD.panel }}><Ic n="users" s={12} c={CD.mute} /> Take over till</button>}
       </div>
       )}

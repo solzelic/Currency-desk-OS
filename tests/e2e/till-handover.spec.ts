@@ -128,6 +128,19 @@ function channels(color: string): number[] {
   return (color.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
 }
 
+function textSizes(el: Element): number[] {
+  const sizes: number[] = [];
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE && (node.textContent || "").trim()) {
+      const parent = (node as Text).parentElement;
+      if (parent) sizes.push(parseFloat(getComputedStyle(parent).fontSize));
+    }
+    node.childNodes.forEach(walk);
+  };
+  walk(el);
+  return sizes;
+}
+
 function atLeastAsLight(color: string, floor: string): boolean {
   const L = (c: number[]) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
   return L(channels(color)) + 0.001 >= L(channels(floor));
@@ -172,10 +185,21 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await expect(take).toBeVisible({ timeout: 20_000 });
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect.poll(async () => take.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  const hide = page.getByTitle("Hide operator bar");
+  await expect.poll(async () => hide.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => hide.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);
+  const stripType = await page.locator(".till-operator").evaluate(textSizes);
+  expect(Math.min(...stripType)).toBeGreaterThanOrEqual(12);
+  const sessionType = await page.locator(".till-sessionline").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(sessionType).toBeGreaterThanOrEqual(12);
+  await shoot(page, "strip", page.locator(".till-operator"));
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByTitle("Hide operator bar").click();
   const chip = page.locator('[data-takeover="chip"]');
   await expect(chip).toBeVisible();
   await expect.poll(async () => chip.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  const chipType = await page.locator(".till-operator").evaluate(textSizes);
+  expect(Math.min(...chipType)).toBeGreaterThanOrEqual(12);
   await expect(page.locator("[data-count-gate]")).toHaveText("Only the person on this till can count it.");
   await expect(page.locator(".till-step")).toHaveCount(0);
   await chip.click();
@@ -196,9 +220,27 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await expect(yen).toHaveAttribute("placeholder", "0");
   await expect(yen).toHaveAttribute("inputmode", "numeric");
   await expect.poll(async () => yen.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  const close = sheet.getByRole("button", { name: "Close" });
+  await expect.poll(async () => close.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => close.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(44);
+  const cancel = sheet.getByRole("button", { name: "Cancel" });
+  const submit = sheet.getByRole("button", { name: "Take over till" });
+  await expect.poll(async () => cancel.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await yen.fill("1500.7");
+  await expect(yen).toHaveValue("1500");
+  await expect(yen).not.toHaveValue("15007");
   await expect(yen).not.toHaveValue("1501");
   expect(await yen.inputValue()).not.toContain(".");
+  await expect(sheet.getByText("Whole numbers only. The fraction was not counted.")).toBeVisible();
+  await yen.fill("");
+  await yen.pressSequentially("1500.7");
+  await expect(yen).toHaveValue("1500");
+  await expect(yen).not.toHaveValue("15007");
+  const cad = sheet.getByLabel("CAD counted");
+  await cad.pressSequentially("10.5");
+  expect(await cad.inputValue()).toContain(".");
+  await shoot(page, "sheet", sheet);
   const others = sheet.locator("input");
   const count = await others.count();
   for (let i = 0; i < count; i++) {
@@ -241,6 +283,18 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   });
   expect(openedBy.endsWith("a.singh")).toBe(true);
   await expect(page.locator(".till-sessionline")).toContainText(/opened by A\.\s*Singh/);
+  const ink = async () => alert.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { color: style.color, background: style.backgroundColor };
+  });
+  await page.evaluate(() => {
+    (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+  });
+  await expect.poll(ink).toEqual({ color: "rgb(169, 50, 38)", background: "rgb(247, 225, 221)" });
+  await page.evaluate(() => {
+    (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("dark");
+  });
+  await expect.poll(ink).toEqual({ color: "rgb(247, 225, 221)", background: "rgb(78, 36, 32)" });
   await shoot(page, "refusal", alert);
 
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -224,6 +224,29 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A 0-decimal count. Dropping a separator and keeping the digits
+     after it turns 1500.7 into 15007. The separator stops the count.
+     The next single digit, the one the field appends once the
+     separator is gone, is not kept. A longer replacement is a new
+     amount. Three-decimal currencies never come through here. */
+  function wholeUnitInput(previous, incoming, armed) {
+    var prev = String(previous == null ? "" : previous).replace(/\D/g, "");
+    var raw = String(incoming == null ? "" : incoming);
+    if (/[.,]/.test(raw)) {
+      return { text: raw.split(/[.,]/)[0].replace(/\D/g, ""), warn: true, armed: true };
+    }
+    var digits = raw.replace(/\D/g, "");
+    if (armed && digits.length === prev.length + 1 && digits.slice(0, prev.length) === prev) {
+      return { text: prev, warn: true, armed: true };
+    }
+    return { text: digits, warn: false, armed: false };
+  }
+
+  function countAmountText(places, previous, incoming, armed) {
+    if (places === 0) return wholeUnitInput(previous, incoming, armed);
+    return { text: String(incoming == null ? "" : incoming).replace(/[^0-9.]/g, ""), warn: false, armed: false };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -236,7 +259,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText };
 });
 
 
@@ -15619,7 +15642,31 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onSubmit
   }) {
     const [raw, setRaw] = useState({});
+    const [fraction, setFraction] = useState(false);
+    const shown = useRef({});
+    const armed = useRef({});
+    const warned = useRef({});
     const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    const onAmount = (c, value) => {
+      const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
+      const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
+      shown.current[c] = next.text;
+      armed.current[c] = next.armed;
+      if (next.warn) warned.current[c] = true;else delete warned.current[c];
+      setFraction(Object.keys(warned.current).length > 0);
+      setRaw(o => ({
+        ...o,
+        [c]: next.text
+      }));
+    };
+    const refuseSeparator = (c, event) => {
+      if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
+      if (event.key !== '.' && event.key !== ',') return;
+      event.preventDefault();
+      armed.current[c] = true;
+      warned.current[c] = true;
+      setFraction(true);
+    };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -15677,7 +15724,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       type: "button",
       onClick: onClose,
       "aria-label": "Close",
-      className: "p-1.5"
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 44,
+        height: 44
+      }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
@@ -15708,14 +15759,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, c), /*#__PURE__*/React.createElement("input", {
       "data-takeover": "amount",
       value: raw[c] || '',
-      onChange: e => {
-        const whole = (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0;
-        const next = whole ? String(e.target.value).replace(/[^\d.]/g, '').split('.')[0] : String(e.target.value).replace(/[^0-9.]/g, '');
-        setRaw(o => ({
-          ...o,
-          [c]: next
-        }));
-      },
+      onKeyDown: e => refuseSeparator(c, e),
+      onChange: e => onAmount(c, e.target.value),
       inputMode: (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal',
       placeholder: (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00',
       "aria-label": `${c} counted`,
@@ -15726,12 +15771,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    })))), error ? /*#__PURE__*/React.createElement("div", {
-      role: "alert",
-      className: "text-[12px] mt-3 px-3 py-2",
+    })))), fraction ? /*#__PURE__*/React.createElement("div", {
+      className: "till-refusal text-[12px] mt-3 px-3 py-2",
       style: {
-        background: CD.flagSoft,
-        color: CD.flag,
+        borderRadius: 9
+      }
+    }, "Whole numbers only. The fraction was not counted.") : null, error ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "till-refusal text-[12px] mt-3 px-3 py-2",
+      style: {
         borderRadius: 9
       }
     }, error) : null), /*#__PURE__*/React.createElement("div", {
@@ -15743,18 +15791,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
-      className: "text-[13px] px-3 py-2 font-medium",
+      className: "text-[13px] font-medium",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        minHeight: 44,
+        padding: '0 12px'
       }
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       disabled: !ready || busy,
       onClick: () => ready && !busy && onSubmit(raw),
-      className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
+      className: "flex items-center gap-1.5 text-[13px] font-semibold text-white",
       style: {
         background: ready && !busy ? CD.ink : 'var(--cd-disabled)',
-        borderRadius: 9
+        borderRadius: 9,
+        minHeight: 44,
+        padding: '0 16px'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
@@ -17214,7 +17266,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: "var(--cd-on-ink)"
     }), " ", tillBusy === 'open' ? 'Opening…' : 'Open the till')), serverSession && sessionOpen && /*#__PURE__*/React.createElement("div", {
-      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`,
@@ -17251,7 +17303,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: CD.ink
     }), /*#__PURE__*/React.createElement("span", null, pendingTakeover.name + "'s takeover is waiting for a supervisor.")), sessionClosed && /*#__PURE__*/React.createElement("div", {
-      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]",
       style: {
         background: CD.greenSoft,
         borderBottom: `1px solid ${CD.line}`,
@@ -17320,7 +17372,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         background: CD.ink,
         color: 'var(--cd-on-ink)',
-        fontSize: 10.5
+        fontSize: 12
       }
     }, current ? initialsOf(current.operator) : '—'), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
@@ -17334,12 +17386,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: reconInk
       }
     }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.operator : '—'), current && current.role ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+      className: "text-[12px]",
       style: {
         color: reconInk
       }
     }, " \xB7 ", current.role) : null), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px]",
+      className: "text-[12px]",
       style: {
         color: reconInk
       }
@@ -17382,8 +17434,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Hide operator bar",
       className: "grid place-items-center",
       style: {
-        width: 28,
-        height: 28,
+        width: 44,
+        height: 44,
         borderRadius: 8,
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -17402,7 +17454,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setStripOpen(true),
       title: "Show who's on the drawer",
-      className: "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1",
+      className: "flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 999,
@@ -17412,12 +17464,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center flex-none font-semibold",
       style: {
-        width: 16,
-        height: 16,
-        borderRadius: 5,
+        width: 24,
+        height: 24,
+        borderRadius: 6,
         background: CD.ink,
         color: 'var(--cd-on-ink)',
-        fontSize: 8
+        fontSize: 12
       }
     }, current ? initialsOf(current.operator) : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && canCountTill && /*#__PURE__*/React.createElement("button", {
       type: "button",
