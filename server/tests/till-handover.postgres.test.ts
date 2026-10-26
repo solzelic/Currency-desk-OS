@@ -2,6 +2,7 @@
    over. Opening again does not move the hold. A mid-day count does
    not either. The handover is the write that closes the old session
    on a blind count and opens the next one for the person who counted. */
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -150,12 +151,21 @@ postgres("a second teller takes a held till by counting it", () => {
       "INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ($1,$2,$3,'Yorkville') ON CONFLICT DO NOTHING",
       [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
     );
+    /* Names are read on the ledger connection. Sign-in for this file
+       is the PGlite seed, so the ledger needs the same people. A new
+       row copies that seeded password and branch list. A conflict does
+       not replace either. seed() does not replace them either, so a
+       stub hash or an empty branch list would stay and a later file on
+       this database could not sign in. */
+    const [known] = await handle.db.select().from(staffUsers).where(eq(staffUsers.staffId, "a.singh")).limit(1);
+    if (!known) throw new Error("demo staff were not seeded");
+    const seededBranches = JSON.stringify(known.authorizedBranchIds);
     await pool.query(
       `INSERT INTO staff_users (id,tenant_id,legal_entity_id,branch_id,staff_id,name,role,authorized_branch_ids,password_hash)
-       VALUES ($1,$2,$3,$4,'a.singh','A. Singh','supervisor','[]'::jsonb,'x'),
-              ($5,$2,$3,$4,'m.costa','M. Costa','teller','[]'::jsonb,'x')
+       VALUES ($1,$2,$3,$4,'a.singh','A. Singh','supervisor',$7::jsonb,$6),
+              ($5,$2,$3,$4,'m.costa','M. Costa','teller',$7::jsonb,$6)
        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
-      [idOf("a.singh"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, idOf("m.costa")],
+      [idOf("a.singh"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, idOf("m.costa"), known.passwordHash, seededBranches],
     );
     await pool.query("UPDATE legal_entities SET home_currency='CAD' WHERE id=$1", [DEMO.legalEntityId]);
     const singhPin = await hashPin("1357");
@@ -164,16 +174,14 @@ postgres("a second teller takes a held till by counting it", () => {
     await pool.query(
       `INSERT INTO staff_users
         (id,tenant_id,legal_entity_id,branch_id,staff_id,name,role,authorized_branch_ids,password_hash,pin_hash)
-       VALUES ($1,$2,$3,$4,'j.masri','J. Masri','administrator','[]'::jsonb,'x',$5),
-              ($6,$2,$3,$4,'r.haddad','R. Haddad','branch_manager','[]'::jsonb,'x',NULL)
+       VALUES ($1,$2,$3,$4,'j.masri','J. Masri','administrator',$8::jsonb,$7,$5),
+              ($6,$2,$3,$4,'r.haddad','R. Haddad','branch_manager',$8::jsonb,$7,NULL)
        ON CONFLICT (id) DO UPDATE SET role=EXCLUDED.role, pin_hash=EXCLUDED.pin_hash, name=EXCLUDED.name`,
-      [idOf("j.masri"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, masriPin, idOf("r.haddad")],
+      [idOf("j.masri"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, masriPin, idOf("r.haddad"), known.passwordHash, seededBranches],
     );
     /* Compliance and audit sign in on a staging desk. This file's
        app database is not staging, so the two roles are written here
        with the same password as the rest of the demo staff. */
-    const [known] = await handle.db.select().from(staffUsers).where(eq(staffUsers.staffId, "a.singh")).limit(1);
-    if (!known) throw new Error("demo staff were not seeded");
     for (const person of [
       { staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer" as const },
       { staffId: "l.berg", name: "L. Berg", role: "auditor" as const },
@@ -755,6 +763,47 @@ postgres("a second teller takes a held till by counting it", () => {
   it("a branch manager has till:handover:approve", () => {
     expect(hasBackendPermission("branch_manager", "till:handover:approve")).toBe(true);
     expect(hasBackendPermission("teller", "till:handover:approve")).toBe(false);
+  });
+
+  it("two handover requests that differ only in the PIN share a hash, and the hash input has no PIN", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const counts: Record<string, string> = { CAD: "24970.00", USD: "12000.00" };
+    const pinA = "1357";
+    const pinB = "2468";
+    const first = await handover(costa, counts, "pin-hash-a", {
+      approverStaffId: "a.singh",
+      approverPin: pinA,
+    });
+    const second = await handover(costa, counts, "pin-hash-b", {
+      approverStaffId: "a.singh",
+      approverPin: pinB,
+    });
+    expect(first.statusCode, first.body).toBe(403);
+    expect(second.statusCode, second.body).toBe(403);
+    const stored = await pool.query(
+      `SELECT idempotency_key, request_hash
+         FROM ledger_idempotency
+        WHERE operation='till-handover' AND idempotency_key IN ('pin-hash-a','pin-hash-b')
+        ORDER BY idempotency_key`,
+    );
+    expect(stored.rows).toHaveLength(2);
+    expect(stored.rows[0].request_hash).toBe(stored.rows[1].request_hash);
+    const input = JSON.stringify({
+      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+      approverPresent: true,
+    });
+    for (const pin of [pinA, pinB]) expect(input).not.toContain(pin);
+    expect(input).not.toContain("approverPin");
+    const hash = createHash("sha256").update(input).digest("hex");
+    expect(stored.rows[0].request_hash).toBe(hash);
+    expect(stored.rows[1].request_hash).toBe(hash);
+    const withPin = createHash("sha256").update(JSON.stringify({
+      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+      approverStaffId: "a.singh",
+      approverPin: pinA,
+    })).digest("hex");
+    expect(withPin).not.toBe(stored.rows[0].request_hash);
   });
 
   it("an approver and a PIN are refused before the PIN is checked", async () => {

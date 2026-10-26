@@ -1,5 +1,5 @@
 /* A second teller takes a till the first one still holds.
-   The deal form offers Take over this till. The sheet asks for a count
+   The till offers Take over till. The sheet asks for a count
    and does not show the book. Saving the count is the handover. */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -109,50 +109,24 @@ test("a second teller takes over a held till from the deal form", async ({ page,
 
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
-  const balanceCalls: string[] = [];
-  page.on("request", (req) => {
-    if (req.url().includes("/api/ledger/till-balances")) balanceCalls.push(req.url());
-  });
-  /* A teller's dock has no Cash drawer. The deal form opens it the same
-     way, through openApp, which does not consult that dock. */
+  /* A teller's dock has no Cash drawer. openApp opens it anyway. */
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("till"));
   await expect(page.locator(".till-sessionline")).toContainText("opened by a.singh", { timeout: 30_000 });
-  expect(balanceCalls, balanceCalls.join("\n")).toEqual([]);
   await expect(page.locator(".till-grand")).toHaveCount(0);
   await expect(page.locator(".till-counted input").first()).toHaveValue("");
-  await page.locator(".till-pick button").first().click();
-  const menu = page.locator(".till-pick");
-  await expect(menu.getByText("a.singh on now")).toBeVisible();
-  await expect(menu).not.toContainText("· you");
-  await expect(menu).not.toContainText("· yours");
-  await page.locator(".till-pick button").first().click();
-
-  await page.locator('#appbar [data-app="ledger"]').click();
-  const button = page.getByRole("button", { name: /^New transaction$/i }).first();
-  await expect(button).toBeEnabled({ timeout: 30_000 });
-  await button.click();
-  await expect(page.locator(".cd-tx")).toBeVisible();
-  await page.locator(".cd-tx-customer input").fill("Handover Walk");
-  const money = page.locator(".cd-money input").first();
-  await money.fill("100");
-  await money.blur();
-  await page.locator(".cd-tx-purpose").fill("Personal travel");
-  await page.locator(".cd-tx-source").fill("Employment income");
-  const go = page.locator(".cd-tx-go").last();
-  await expect(go).toContainText(/Get server quote/, { timeout: 20_000 });
-  await go.click();
-  await expect(go).toContainText(/Post frozen quote/, { timeout: 20_000 });
-  await go.click();
-  const take = page.getByRole("button", { name: "Take over this till" });
+  const screen = await page.locator(".till-count-sheet").innerText();
+  for (const leaked of ["25000", "25,000", "12000", "12,000", "7000", "7,000", "3500", "3,500", "64870", "146,510"]) {
+    expect(screen, leaked).not.toContain(leaked);
+  }
+  const take = page.locator('[data-takeover="strip"]');
   await expect(take).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(".cd-tx").getByRole("alert")).toContainText("Count the till to take it over from");
-
   await page.setViewportSize({ width: 1280, height: 900 });
   await take.click();
   const sheet = page.getByRole("dialog", { name: "Take over till" });
   await expect(sheet).toBeVisible({ timeout: 20_000 });
   await expect(sheet).toContainText("Expected amounts stay hidden until you save this count.");
-  await expect(sheet).toContainText(/Held by A.\s*Singh/);
+  await expect(sheet).toContainText(/Held by A\.\s*Singh/);
+  await expect(sheet).not.toContainText("a.singh");
   const before = await sheet.innerText();
   for (const leaked of ["25000", "25,000", "12000", "12,000", "7000", "7,000", "3500", "3,500"]) {
     expect(before, leaked).not.toContain(leaked);

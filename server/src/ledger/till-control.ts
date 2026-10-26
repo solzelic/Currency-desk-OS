@@ -9,8 +9,6 @@ import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable, parseMoney, roundTo } from "./currencies.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { hasBackendPermission } from "../auth/permissions.js";
-import { verifyPassword } from "../auth/password.js";
-import { clearPinAttempts, reservePinAttempt } from "../routes/pin.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -103,48 +101,15 @@ const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
 const HANDOVER_MISMATCH = "The count does not match. A supervisor must approve this takeover.";
 /* The approver sheet is not in this release. A request that names an
-   approver or a PIN is refused before the PIN is read. This is a
-   constant, not an environment variable. The call below stays so the
-   later change can turn it on. */
+   approver or a PIN is refused here, before the PIN is read. */
 const HANDOVER_APPROVAL_ENABLED: boolean = false;
 const handoverRequestHash = (
   counts: Counts,
   approval?: { staffId: string; pin: string },
 ) => createHash("sha256").update(JSON.stringify({
   counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-  approverStaffId: approval?.staffId ?? "",
-  approverPin: approval?.pin ?? "",
+  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "")),
 })).digest("hex");
-
-async function approverFor(
-  client: pg.PoolClient,
-  actor: LedgerActor,
-  staffId: string,
-  pin: string,
-) {
-  const found = await client.query(
-    `SELECT id, role, pin_hash FROM staff_users
-      WHERE tenant_id=$1 AND active AND (staff_id=$2 OR id=$2)
-      LIMIT 1`,
-    [actor.tenantId, staffId],
-  );
-  const who = found.rows[0] as { id: string; role: string; pin_hash: string | null } | undefined;
-  if (!who || who.id === actor.userId || !hasBackendPermission(who.role, "till:handover:approve")) {
-    throw new LedgerError(
-      "AUTHORIZATION_DENIED",
-      who && who.id === actor.userId
-        ? "You cannot approve your own takeover."
-        : "Missing till:handover:approve.",
-    );
-  }
-  if (!who.pin_hash) throw new LedgerError("AUTHORIZATION_DENIED", "No PIN is set for this person.");
-  if (!reservePinAttempt(who.id)) {
-    throw new LedgerError("PIN_LOCKED", "Too many wrong PINs. Try again in a few minutes.");
-  }
-  if (!(await verifyPassword(pin, who.pin_hash))) throw new LedgerError("WRONG_PIN", "Wrong PIN.");
-  clearPinAttempts(who.id);
-  return { id: String(who.id), role: String(who.role) };
-}
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
@@ -225,9 +190,11 @@ export class TillControlService {
             kind: row.count_kind,
             countedAt: new Date(row.counted_at).toISOString(),
           };
-          /* Counted figures and who entered them belong to the holder.
-             A non-holder gets the currency and the time, not the amount. */
-          if (openedBy === actor.userId) {
+          /* Counted figures and who entered them belong to the holder
+             while the session is open. A non-holder gets the currency
+             and the time, not the amount. A closed session is the record
+             the closer just wrote. */
+          if (String(session.rows[0].status) !== "open" || openedBy === actor.userId) {
             figure.counted = row.counted_amount;
             figure.actorId = row.actor_id;
           }
@@ -943,14 +910,7 @@ export class TillControlService {
         else if (mid) absCad = absCad.plus(gap.mul(mid));
         lines.push({ currency, expected, counted, variance, mid });
       }
-      let approver: { id: string; role: string } | null = null;
-      if (unpriced || absCad.gt(new Decimal("20"))) {
-        if (HANDOVER_APPROVAL_ENABLED && approval) {
-          approver = await approverFor(client, actor, approval.staffId, approval.pin);
-        } else {
-          await refuse();
-        }
-      }
+      if (unpriced || absCad.gt(new Decimal("20"))) await refuse();
       const opener = session.opened_by as string;
       const writeBatch = async (sessionId: string, kind: "close" | "handover") => {
         const id = `till_${kind}_${randomUUID()}`;
@@ -1026,8 +986,8 @@ export class TillControlService {
           batchId,
           role,
           opener,
-          approver?.id ?? null,
-          approver?.role ?? null,
+          null,
+          null,
           JSON.stringify(lines.map((line) => ({
             currency: line.currency,
             variance: line.variance,
