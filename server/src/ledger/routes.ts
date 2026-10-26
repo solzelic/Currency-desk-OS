@@ -31,6 +31,7 @@ import {
   type ChequeReturnInput,
 } from "./cheques.js";
 import { ReportFilingService, type FilingInput } from "./report-filings.js";
+import { StructuringWatchService } from "./structuring-watch.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
 
@@ -238,6 +239,9 @@ const filingBody = z.object({
 const filingQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
+const watchAckBody = z.object({
+  customerId: z.string().trim().min(1).max(200),
+}).strict();
 /* The window a summary covers, as two instants.
 
    The caller states them because a business day belongs to a branch's
@@ -334,6 +338,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
   const reportFilings = new ReportFilingService(pool);
+  const structuringWatch = new StructuringWatchService(pool);
   const cheques = new ChequeService(pool);
   const reporting = new LedgerReportingService(pool);
   app.addHook("onClose", async () => { await pool.end(); });
@@ -983,6 +988,31 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       const actor = await actorOrReply(req, reply);
       return actor
         ? reply.code(201).send(await reportFilings.file(actor, parsed.data as FilingInput))
+        : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* Just-under deals for one customer. Supervisor and the three STR
+     roles. The role set is shared/str-role.js. A teller is refused
+     before the list is read and before an acknowledgement is written. */
+  app.get("/api/ledger/structuring-watch", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await structuringWatch.list(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.post("/api/ledger/structuring-watch/acknowledge", async (req, reply) => {
+    const parsed = watchAckBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor
+        ? reply.send(await structuringWatch.acknowledge(actor, parsed.data.customerId))
         : undefined;
     } catch (error) {
       return failure(reply, error);

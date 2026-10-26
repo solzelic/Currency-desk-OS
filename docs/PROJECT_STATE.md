@@ -79,8 +79,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   reversed deal's tenant, entity, branch, and customer. A new deal
   does not take the lock. Two reversals for one customer run one
   after the other. The lock ends when that transaction commits or
-  rolls back. Nothing else calls the function. The structuring watch
-  acknowledgement (#392) will call it before reading the watch.
+  rolls back. An acknowledgement shares that legal entity row, then
+  calls this function, then reads the watch and inserts.
 
 - **Staging has a one-click sign-in.** `STAGING` must be exactly `1`, and `RENDER_EXTERNAL_HOSTNAME` must be `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` with `IS_PULL_REQUEST=true`. `GET /api/staging/signin` and `POST /api/staging/enter` pass the request Host into `isStagingRuntime`, and a missing Host counts as empty. A live host, a missing flag, or a shop other than `tnt-yorkfx` is 404. The enter body is JSON and only a role. The 21st call from one address is refused. The flag is not in `render.yaml`. The session lasts three days. A normal sign-in stays twelve hours and clears the staging marker. The login page shows six Enter as buttons only when the config answers `{enabled:true}`. The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and it stays up for that session. The demo seed inserts `c.adebayo` (compliance officer) and `l.berg` (auditor) only when `STAGING` is exactly `1`, including on a database that already has the other demo staff. An existing row is not overwritten. If `SEED_PASSWORD` is unset, those two get a random password.
 
@@ -95,12 +95,20 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   fields from a role that cannot see them. The two role sets are
   `shared/str-role.js`. The desk screens are not in this change. Issue #342.
 
-- **The structuring watch on a deal is the supervisor and the three STR roles.**
+- **The structuring watch is the supervisor and the three STR roles.**
   `GET /api/ledger/transactions` uses one helper, `dealMarks`. That helper
   runs the watch query only when `canSeeStructuringWatch` is true. A teller
   and an auditor get none of the watch fields, and the query does not run.
-  A supervisor sees the watch fields and not the STR fields. `ackStr` stays
-  false. `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in
+  A supervisor sees the watch fields and not the STR fields.
+  `GET /api/ledger/structuring-watch` and
+  `POST /api/ledger/structuring-watch/acknowledge` are those four roles.
+  A teller is refused before a row is written. Each acknowledgement inserts
+  a new row, stores the session role, and stores the deal ids it saw. The
+  customer stays acknowledged only while the current watch deals are that
+  set and the ack time is at or after the newest of them. Update, delete,
+  and truncate are refused by `ledger_append_only`. A customer who is not
+  on the watch is refused and nothing is written.
+  `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in
   `shared/str-role.js`. The desk screens are not gated here. Issue #342.
 
 - **Filings due share one count.** The Compliance header, the Needs filing list, the bell, the RPT tag, and the badges read `openReportables`. A prepared filing counts, including one whose deals are not loaded in this browser. A filed filing counts as zero due, including one that carries a booking-error flag. When the count is above zero, the header number is amber text on the tile. The menu-bar bell badge and the Ledger nav badge use that same amber, with on-ink text. The Ledger Reportable deals figure is amber when any deal is open. The Dashboard tile Reportable deals reads that same list, and its due number is amber on the panel. The Ledger chip reads that same list. The Ledger chip and the Ledger figure say Reportable deals, and that figure is amber on the panel. Issue #335.
