@@ -17,7 +17,7 @@ import {
 } from "../ledger/service.js";
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
-import { RATES_SYNC_HEADROOM_SECONDS, ratesSyncIntervalMs } from "../rates/sync-interval.js";
+import { RATES_SYNC_HEADROOM_SECONDS } from "../rates/sync-interval.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -45,37 +45,31 @@ const scope = (a: LedgerActor) => [
 ];
 const fixed = (v: Decimal, p = 2) => v.toDecimalPlaces(p).toFixed(p);
 
+/** A quote may use a board at most this old. The sync gap cannot raise it. */
+export const QUOTE_MAX_AGE_SECONDS = 70 * 60;
+
+function positiveFinite(raw: string | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value;
+}
+
 /**
  * How old a published board may be and still be quotable.
  *
- * This has to be DERIVED from how often the board is refreshed, not picked
- * independently, because the two settings shipped in contradiction: the
- * market sync republishes every RATES_SYNC_MINUTES (default 60) and this
- * tolerance defaulted to a flat 300 seconds. A desk on the defaults could
- * quote for five minutes an hour and was refused for the other fifty-five,
- * with "Rate publication is stale." and no way for a teller to act on it.
- * Any fixed number shorter than the refresh cadence guarantees a dead
- * window, so the default is one full cycle plus ten minutes of headroom
- * for a slow or missed provider pull.
- *
- * With the sync off, nothing refreshes the board but a person, and a
- * manager who publishes at open should be able to trade the shift on it —
- * so the fallback is a working day rather than five minutes. It is still a
- * ceiling: yesterday's board is refused, which is what the check is for.
- *
- * RATE_BOARD_MAX_AGE_SECONDS overrides all of it, and a desk that genuinely
- * wants a five-minute tolerance can still say so.
- *
- * RATES_SYNC_MINUTES cannot shorten that cycle below 60 minutes or stretch
- * it past 24 hours. Junk clamps to 60 minutes. Infinity and a huge value
- * clamp to 24 hours. The window uses that same clamped cycle.
+ * The cap is 70 minutes (4200 seconds). `RATES_SYNC_MINUTES` and
+ * `RATE_BOARD_MAX_AGE_SECONDS` can only shorten it. A missing, blank,
+ * negative, NaN, Infinity, or zero value is ignored. Turning the sync
+ * off does not raise the cap.
  */
 export function boardMaxAgeSeconds(): number {
-  const stated = process.env.RATE_BOARD_MAX_AGE_SECONDS;
-  if (stated != null && stated !== "") return Number(stated);
-  if (process.env.RATES_SYNC === "off") return 12 * 60 * 60;
-  const syncMinutes = ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES) / 60_000;
-  return syncMinutes * 60 + RATES_SYNC_HEADROOM_SECONDS;
+  let maxAge = QUOTE_MAX_AGE_SECONDS;
+  const stated = positiveFinite(process.env.RATE_BOARD_MAX_AGE_SECONDS);
+  if (stated != null) maxAge = Math.min(maxAge, stated);
+  const minutes = positiveFinite(process.env.RATES_SYNC_MINUTES);
+  if (minutes != null) maxAge = Math.min(maxAge, minutes * 60 + RATES_SYNC_HEADROOM_SECONDS);
+  return maxAge;
 }
 
 /** The check preview and create share. Older than the window is stale. */

@@ -1,20 +1,14 @@
-/* ============================================================
-   How stale a rate board may be before the desk stops quoting.
-
-   This check shipped in contradiction with the thing it depends on. The
-   market sync republishes the board every RATES_SYNC_MINUTES — 60 by
-   default — and the tolerance was a flat 300 seconds. On the shipped
-   defaults a desk could quote for five minutes an hour and was refused for
-   the other fifty-five, with "Rate publication is stale." and nothing a
-   teller could do about it.
-
-   Nothing tested it, which is how two numbers that must agree came to
-   disagree. The invariant is not a particular figure: it is that the
-   tolerance is never shorter than the refresh cadence, because any such
-   number guarantees a window in which no deal can be priced.
-   ============================================================ */
+/* How stale a rate board may be before the desk stops quoting.
+   The cap is 70 minutes (4200 seconds). It does not grow with the sync
+   gap. RATES_SYNC_MINUTES and RATE_BOARD_MAX_AGE_SECONDS can only
+   shorten it. Invalid, negative, NaN, Infinity, and 0 fall back to
+   70 minutes. */
 import { afterEach, describe, expect, it } from "vitest";
-import { boardMaxAgeSeconds } from "../src/quotes/service.js";
+import {
+  boardMaxAgeSeconds,
+  QUOTE_MAX_AGE_SECONDS,
+  ratePublicationIsStale,
+} from "../src/quotes/service.js";
 
 const KEYS = [
   "RATE_BOARD_MAX_AGE_SECONDS",
@@ -22,42 +16,69 @@ const KEYS = [
   "RATES_SYNC_MINUTES",
 ] as const;
 
+const NOW = 1_700_000_000_000;
+const MINUTE = 60 * 1000;
+
 afterEach(() => {
   for (const key of KEYS) delete process.env[key];
 });
 
 describe("how old a board may be", () => {
-  it("outlasts the refresh that keeps it fresh", () => {
-    // the shipped defaults: one hour, plus ten minutes of headroom
+  it("is 70 minutes when nothing is set", () => {
+    expect(QUOTE_MAX_AGE_SECONDS).toBe(70 * 60);
+    expect(boardMaxAgeSeconds()).toBe(QUOTE_MAX_AGE_SECONDS);
+    expect(ratePublicationIsStale(NOW - 70 * MINUTE, NOW)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW)).toBe(true);
+  });
+
+  it("refuses a 71 minute board when the sync gap is 24 hours", () => {
+    process.env.RATES_SYNC_MINUTES = "1440";
     expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW)).toBe(true);
   });
 
-  it("tracks the sync interval rather than a number chosen beside it", () => {
-    process.env.RATES_SYNC_MINUTES = "15";
-    const atFloor = boardMaxAgeSeconds();
-    // Under an hour stays on the hourly floor. A shorter window would refuse quotes between pulls.
-    expect(atFloor).toBe(70 * 60);
+  it("refuses a 71 minute board when RATE_BOARD_MAX_AGE_SECONDS is 1e12", () => {
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = "1e12";
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW)).toBe(true);
+  });
 
-    /* A desk that pulls four times a day must not inherit the hourly floor.
-       The tolerance comes from the same clamped gap. */
+  it("lets a shorter setting tighten the window", () => {
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = String(30 * 60);
+    expect(boardMaxAgeSeconds()).toBe(30 * 60);
+    expect(ratePublicationIsStale(NOW - 30 * MINUTE, NOW)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 30 * MINUTE - 1, NOW)).toBe(true);
+
+    delete process.env.RATE_BOARD_MAX_AGE_SECONDS;
+    process.env.RATES_SYNC_MINUTES = "30";
+    expect(boardMaxAgeSeconds()).toBe(30 * 60 + 10 * 60);
+    expect(boardMaxAgeSeconds()).toBeLessThan(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW)).toBe(true);
+  });
+
+  it("does not stretch when the sync is off or the gap is long", () => {
     process.env.RATES_SYNC_MINUTES = "360";
-    expect(boardMaxAgeSeconds()).toBe(360 * 60 + 10 * 60);
-    expect(boardMaxAgeSeconds()).toBeGreaterThan(atFloor);
-  });
-
-  it("gives a manually published board the working day", () => {
-    /* Nothing refreshes the board but a person. A manager who publishes at
-       open should be able to trade the shift on it — but not on
-       yesterday's, which is what the check exists to refuse. */
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    delete process.env.RATES_SYNC_MINUTES;
     process.env.RATES_SYNC = "off";
-    expect(boardMaxAgeSeconds()).toBeGreaterThanOrEqual(8 * 60 * 60);
-    expect(boardMaxAgeSeconds()).toBeLessThan(24 * 60 * 60);
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW)).toBe(true);
   });
 
-  it("still lets a desk say exactly what it wants", () => {
-    process.env.RATES_SYNC_MINUTES = "60";
+  it("falls back to 70 minutes for junk", () => {
+    for (const raw of ["0", "-1", "NaN", "Infinity", "nope"]) {
+      process.env.RATE_BOARD_MAX_AGE_SECONDS = raw;
+      expect(boardMaxAgeSeconds()).toBe(70 * 60);
+      delete process.env.RATE_BOARD_MAX_AGE_SECONDS;
+      process.env.RATES_SYNC_MINUTES = raw;
+      expect(boardMaxAgeSeconds()).toBe(70 * 60);
+      delete process.env.RATES_SYNC_MINUTES;
+    }
+  });
+
+  it("still lets a desk ask for five minutes", () => {
+    process.env.RATES_SYNC_MINUTES = "1440";
     process.env.RATE_BOARD_MAX_AGE_SECONDS = "300";
-    // a desk that genuinely wants five minutes gets five minutes
     expect(boardMaxAgeSeconds()).toBe(300);
   });
 });

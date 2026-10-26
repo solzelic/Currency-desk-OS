@@ -66,39 +66,37 @@ describe("rates sync gap", () => {
   });
 });
 
-describe("quote staleness follows the clamped gap", () => {
-  it("trips just past the window, including overflow", () => {
+describe("quote staleness stays inside 70 minutes", () => {
+  it("refuses a 71 minute board when the gap or the override is huge", () => {
     expect(boardMaxAgeSeconds()).toBe(70 * 60);
     expect(ratePublicationIsStale(NOW - windowMs(), NOW)).toBe(false);
-    expect(ratePublicationIsStale(NOW - windowMs() - 1, NOW)).toBe(true);
-
-    process.env.RATES_SYNC_MINUTES = "15";
-    expect(boardMaxAgeSeconds()).toBe(70 * 60);
-    expect(ratePublicationIsStale(NOW - windowMs() - 1, NOW)).toBe(true);
-
-    process.env.RATES_SYNC_MINUTES = "360";
-    expect(boardMaxAgeSeconds()).toBe(360 * 60 + 10 * 60);
-    expect(ratePublicationIsStale(NOW - windowMs(), NOW)).toBe(false);
-    expect(ratePublicationIsStale(NOW - windowMs() - 1, NOW)).toBe(true);
-
-    for (const raw of ["1e9", "1e20", "Infinity", "99999"]) {
-      process.env.RATES_SYNC_MINUTES = raw;
-      expect(boardMaxAgeSeconds()).toBe(1440 * 60 + 10 * 60);
-      expect(Number.isFinite(boardMaxAgeSeconds())).toBe(true);
-      expect(ratePublicationIsStale(NOW - windowMs() - 1, NOW)).toBe(true);
-    }
+    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
 
     process.env.RATES_SYNC_MINUTES = "1440";
-    process.env.RATE_BOARD_MAX_AGE_SECONDS = "300";
-    expect(boardMaxAgeSeconds()).toBe(300);
-    expect(ratePublicationIsStale(NOW - 300_001, NOW)).toBe(true);
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
+
+    delete process.env.RATES_SYNC_MINUTES;
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = "1e12";
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
+
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = String(30 * 60);
+    expect(boardMaxAgeSeconds()).toBe(30 * 60);
+    expect(ratePublicationIsStale(NOW - 30 * 60 * 1000, NOW)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 30 * 60 * 1000 - 1, NOW)).toBe(true);
 
     delete process.env.RATE_BOARD_MAX_AGE_SECONDS;
+    for (const raw of ["360", "1e9", "1e20", "Infinity", "99999", "0", "-4"]) {
+      process.env.RATES_SYNC_MINUTES = raw;
+      expect(boardMaxAgeSeconds()).toBeLessThanOrEqual(70 * 60);
+      expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
+    }
+
     process.env.RATES_SYNC = "off";
     process.env.RATES_SYNC_MINUTES = "1e9";
-    expect(boardMaxAgeSeconds()).toBe(12 * 60 * 60);
-    expect(ratePublicationIsStale(NOW - 12 * 60 * 60 * 1000 - 1, NOW)).toBe(true);
-    expect(ratePublicationIsStale(NOW - HOUR, NOW)).toBe(false);
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
   });
 });
 
