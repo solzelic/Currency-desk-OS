@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { sql as dbSql } from "drizzle-orm";
 import type pg from "pg";
 
 export type Migration = readonly [migrationId: string, path: string];
@@ -73,10 +74,32 @@ export const migrations: readonly Migration[] = [
   ["055_structuring_ack", "src/db/migrations/055_structuring_ack.sql"],
 ] as const;
 
+type MigrationReader = {
+  execute: (query: ReturnType<typeof dbSql>) => Promise<{ rows: ReadonlyArray<{ migration_id?: unknown }> }>;
+};
+
+/* Newest applied id, or null when the table is missing or the read fails.
+   Names only. The caller does not learn why the read failed. */
+export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
+  try {
+    const found = await db.execute(dbSql`
+      SELECT migration_id FROM schema_migrations
+      ORDER BY applied_at DESC, migration_id DESC
+      LIMIT 1
+    `);
+    const id = found.rows[0]?.migration_id;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function runMigrations(
   pool: pg.Pool,
   configuredMigrations: readonly Migration[] = migrations,
 ) {
+  /* Before the runner's first query. Name only: no connection string. */
+  console.log("opening database");
   const ordered = [...configuredMigrations].sort(([left], [right]) =>
     left.localeCompare(right),
   );
@@ -97,6 +120,7 @@ export async function runMigrations(
       await client.query(sql);
       await client.query("INSERT INTO schema_migrations (migration_id,checksum) VALUES ($1,$2)", [migrationId, checksum]);
       await client.query("COMMIT");
+      console.log(`migration applied: ${migrationId}`);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 }

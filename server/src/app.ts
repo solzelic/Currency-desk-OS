@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import { schema, type Db } from "./db/index.js";
+import { newestAppliedMigration } from "./db/migrations.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
 import { registerStaffRoutes } from "./routes/staff.js";
@@ -154,6 +155,14 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
    tightening: every browser sends at least Accept, so what is left is
    tooling and health checks, and the permissive answer is what this route
    has always given them. */
+/* First 7 characters of the deploy sha. Unset stays unknown.
+   This reads RENDER_GIT_COMMIT and nothing else. */
+function deployedCommit(): string {
+  const value = process.env.RENDER_GIT_COMMIT;
+  if (!value) return "unknown";
+  return value.slice(0, 7);
+}
+
 const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   const dest = req.headers["sec-fetch-dest"];
   if (typeof dest === "string") return dest === "document";
@@ -214,12 +223,24 @@ export async function buildApp(
      this is the dependency check load balancers see. Failure body is
      unauthenticated-safe: no exception text, no connection details. */
   app.get("/api/health", async (_req, reply) => {
+    const commit = deployedCommit();
     try {
       await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
     } catch {
-      return reply.code(503).send({ ok: false, service: "currencydesk-server", error: "database" });
+      return reply.code(503).send({
+        ok: false,
+        service: "currencydesk-server",
+        error: "database",
+        commit,
+        lastMigration: null,
+      });
     }
-    return { ok: true, service: "currencydesk-server" };
+    return {
+      ok: true,
+      service: "currencydesk-server",
+      commit,
+      lastMigration: await newestAppliedMigration(db),
+    };
   });
   registerAuthRoutes(app, db);
   /* The routes do not exist unless STAGING=1. Host and the demo

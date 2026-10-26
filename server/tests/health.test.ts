@@ -12,8 +12,10 @@ import { buildApp } from "../src/app.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
+const savedCommit = process.env.RENDER_GIT_COMMIT;
 
 beforeAll(async () => {
+  delete process.env.RENDER_GIT_COMMIT;
   process.env.PGLITE_MEMORY = "1";
   handle = await createDb();
   app = await buildApp(handle.db);
@@ -22,13 +24,20 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await handle.close();
+  if (savedCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+  else process.env.RENDER_GIT_COMMIT = savedCommit;
 });
 
 describe("GET /api/health", () => {
   it("is 200 when the database answers a trivial read", async () => {
     const res = await app.inject({ method: "GET", url: "/api/health" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, service: "currencydesk-server" });
+    expect(res.json()).toEqual({
+      ok: true,
+      service: "currencydesk-server",
+      commit: "unknown",
+      lastMigration: null,
+    });
   });
 
   it("is 503 when the database cannot answer, and leaks nothing", async () => {
@@ -42,6 +51,8 @@ describe("GET /api/health", () => {
         ok: false,
         service: "currencydesk-server",
         error: "database",
+        commit: "unknown",
+        lastMigration: null,
       });
       const body = res.body;
       expect(body).not.toMatch(/ECONNREFUSED|supersecret|password=|5432/i);
@@ -69,6 +80,8 @@ describe("GET /api/health when the database is gone", () => {
         ok: false,
         service: "currencydesk-server",
         error: "database",
+        commit: "unknown",
+        lastMigration: null,
       });
     } finally {
       await isolated.close();

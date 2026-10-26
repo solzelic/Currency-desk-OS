@@ -62,7 +62,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
-| `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
+| `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. The body adds `commit` (7-character `RENDER_GIT_COMMIT`, or `unknown`) and `lastMigration` (newest `schema_migrations` id, or null). Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
 | `GET /api/staging/signin`, `POST /api/staging/enter` | Registered only when `STAGING` is exactly `1`. Each request passes the Host header into `isStagingRuntime` and requires the demo shop `tnt-yorkfx`. A live host is 404. The flag is not in `render.yaml`. |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
@@ -71,7 +71,10 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 ## Databases
 
 - App tables: Drizzle; embedded PGlite (dev/test) or Postgres (`DATABASE_URL`).
-  Boot applies `DDL` + `runMigrations` — a fresh database self-provisions.
+  Boot applies `DDL` + `runMigrations`. A fresh database self-provisions.
+  `runMigrations` logs `opening database` before its first query and one
+  `migration applied: <id>` line for each migration it applies. A later
+  run logs no applied line for a migration already stored.
 - Ledger tables: raw SQL — `server/src/ledger/migration.sql` registered as
   migration `001_ledger`, then `server/src/db/migrations/002…`. Append-only
   book. Invariants: `docs/CASH_OWNERSHIP_INVARIANTS.md`.
