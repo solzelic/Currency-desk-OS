@@ -129,7 +129,7 @@ describe("site domain refresh interval", () => {
     expect(boot).not.toMatch(/refreshSiteDomains\([\s\S]{0,120}60\s*\*\s*1000/);
     expect(boot).not.toMatch(/setInterval\([\s\S]{0,160}60\s*\*\s*1000/);
     const listen = src.slice(src.indexOf("export async function listenServer"));
-    expect(listen).toContain("syncMarketRatesIfStale");
+    expect(listen).toContain("startRatesSync");
     expect(listen).not.toContain("refreshSiteDomains");
   });
 });

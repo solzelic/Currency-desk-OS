@@ -134,13 +134,13 @@ export async function syncMarketRatesIfStale(
   branchId: string,
   minGapMs: number,
   fetcher: () => Promise<MarketPull> = fetchMarketRates,
-): Promise<{ ok: boolean; skipped: boolean; detail: string }> {
+): Promise<{ ok: boolean; skipped: boolean; detail: string; ageMs: number }> {
   const ageMs = await msSinceLastPull(db);
   if (ageMs < minGapMs) {
-    return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago` };
+    return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago`, ageMs };
   }
   const r = await syncMarketRates(db, branchId, fetcher);
-  return { ...r, skipped: false };
+  return { ...r, skipped: false, ageMs };
 }
 
 /** One sync cycle: pull → snapshot → auto-publish. Never throws. */
