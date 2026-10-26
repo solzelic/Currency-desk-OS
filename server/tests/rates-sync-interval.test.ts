@@ -72,6 +72,10 @@ describe("quote staleness stays inside 70 minutes", () => {
     expect(ratePublicationIsStale(NOW - windowMs(), NOW)).toBe(false);
     expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
 
+    process.env.RATES_SYNC_MINUTES = "15";
+    expect(boardMaxAgeSeconds()).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 40 * 60 * 1000, NOW)).toBe(false);
+
     process.env.RATES_SYNC_MINUTES = "1440";
     expect(boardMaxAgeSeconds()).toBe(70 * 60);
     expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
@@ -95,8 +99,14 @@ describe("quote staleness stays inside 70 minutes", () => {
 
     process.env.RATES_SYNC = "off";
     process.env.RATES_SYNC_MINUTES = "1e9";
-    expect(boardMaxAgeSeconds()).toBe(70 * 60);
-    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = "1e12";
+    const manual = { publishedBy: "m.costa" };
+    const synced = { marketSnapshotId: "snap-1", publishedBy: "market-sync (test)" };
+    expect(boardMaxAgeSeconds(manual)).toBe(12 * 60 * 60);
+    expect(ratePublicationIsStale(NOW - 3 * 60 * 60 * 1000, NOW, manual)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 12 * 60 * 60 * 1000 - 5_000, NOW, manual)).toBe(true);
+    expect(boardMaxAgeSeconds(synced)).toBe(70 * 60);
+    expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW, synced)).toBe(true);
   });
 });
 
