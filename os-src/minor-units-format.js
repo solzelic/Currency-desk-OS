@@ -58,6 +58,43 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A takeover count. The field keeps every character the teller
+     typed or pasted. This only reads that text: trim the surrounding
+     spaces, apply NFKC, then accept a whole number or, for a currency
+     with a minor unit, a number of digits and one point. Empty is not
+     a count. The value is the string the handover sends. */
+  var WHOLE = /^\d+$/;
+  var THOUSANDS = /^\d{1,3}(,\d{3})+$/;
+  var GROUPED = /^\d{1,3}(,\d{3})+(\.\d*)?$/;
+
+  function canonicalWhole(raw) {
+    if (WHOLE.test(raw)) return raw;
+    if (THOUSANDS.test(raw)) return raw.replace(/,/g, "");
+    return null;
+  }
+
+  function decimalValue(raw, places) {
+    var body = GROUPED.test(raw) ? raw.replace(/,/g, "") : raw;
+    if (!/^\d*\.?\d*$/.test(body) || body === "" || body === ".") return null;
+    var amount = Number(body);
+    if (!isFinite(amount)) return null;
+    return amount.toFixed(places);
+  }
+
+  function parseCount(text, currency) {
+    var raw = String(text == null ? "" : text).trim().normalize("NFKC");
+    if (raw === "") return { ok: false };
+    var places = displayPlaces(currency);
+    if (places === 0) {
+      var whole = canonicalWhole(raw);
+      if (whole == null) return { ok: false };
+      return { ok: true, value: whole };
+    }
+    var value = decimalValue(raw, places);
+    if (value == null) return { ok: false };
+    return { ok: true, value: value };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -70,5 +107,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount };
 });

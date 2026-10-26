@@ -357,6 +357,28 @@ export class TillControlService {
     }
   }
 
+  /* The holder is told that a takeover is waiting. The count that was
+     refused stays off this answer. A person who does not hold the till
+     is not told here. */
+  async pendingTakeover(actor: LedgerActor, sessionId: string): Promise<{ name: string } | null> {
+    const found = await this.pool.query(
+      `SELECT u.name
+         FROM ledger_audit_events a
+         LEFT JOIN staff_users u ON u.id = a.actor_id
+        WHERE a.action = 'till.handover.refused'
+          AND a.prior_session_id = $1
+          AND a.tenant_id = $2 AND a.legal_entity_id = $3
+          AND a.branch_id = $4 AND a.workspace_id = $5
+          AND a.target_id = $6
+        ORDER BY a.created_at DESC
+        LIMIT 1`,
+      [sessionId, ...scope(actor).slice(0, 4), actor.tillId],
+    );
+    if (!found.rowCount) return null;
+    const name = pinDeskName(String(found.rows[0].name ?? ""));
+    return { name: name || "Unknown" };
+  }
+
   /* MOVING TO ANOTHER DRAWER, ON THE RECORD.
 
      The Cash Drawer's till switcher promises, in the confirmation modal,

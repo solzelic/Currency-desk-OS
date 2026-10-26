@@ -82,5 +82,6 @@ export function screen() {
     cashVariance: (counted: number, expected: number, ccy: string) => number;
     storedRoundNote: (n: number, ccy: string) => string;
     sumHomeMinor: (values: number[], places: number) => number;
+    parseCount: (text: string, currency: string) => { ok: true; value: string } | { ok: false };
   };
 }

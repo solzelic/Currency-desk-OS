@@ -86,6 +86,7 @@
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
+      if (typeof body.holderName === "string" && body.holderName) error.holderName = body.holderName;
       throw error;
     }
     return body;
@@ -103,6 +104,25 @@
   function tillOccupant(session) {
     if (!session || session.status !== "open") return "";
     return String(session.openedBy || "").split(":").pop() || "";
+  }
+
+  /* True only when this person holds the open session. A selected till is
+     not the same fact: the menu used to say "· you" for whichever drawer
+     was on screen. */
+  function holdsTill(session, myId) {
+    if (!session || session.status !== "open" || !myId) return false;
+    var opened = String(session.openedBy || "");
+    if (!opened) return false;
+    if (opened === String(myId)) return true;
+    var mine = String(myId).split(":").pop();
+    var theirs = opened.split(":").pop();
+    return !!(mine && theirs && mine === theirs);
+  }
+
+  /* Same people the server grants till:count. One list for the drawer
+     and the deal sheet, so a role cannot grow a second copy. */
+  function canCountTill(role) {
+    return role === "teller" || role === "supervisor" || role === "branch_manager" || role === "administrator";
   }
 
   function customerPayload(name, record) {
@@ -261,6 +281,8 @@
         });
       },
       tillOccupant: tillOccupant,
+      holdsTill: holdsTill,
+      canCountTill: canCountTill,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       previewQuote: function (payload) {
@@ -302,6 +324,7 @@
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
             currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
+            pendingTakeover: results[1].pendingTakeover || null,
           };
         });
       },
