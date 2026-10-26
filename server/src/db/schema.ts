@@ -38,8 +38,8 @@ export const tenants = pgTable("tenants", {
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
   suspended: boolean("suspended").notNull().default(false),
-  /* Staging test shop. Migration 056. False on every shop that
-     already exists. Nothing in this change sets it true. */
+  /* Staging test shop. Migration 056. False unless signup verify
+     is finishing a staging fresh shop. */
   isTestShop: boolean("is_test_shop").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

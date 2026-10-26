@@ -18,6 +18,7 @@ import { newestAppliedMigration } from "./db/migrations.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { stagingDoorOpen } from "./auth/staging-runtime.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
+import { registerStagingFreshShopRoutes } from "./routes/staging-fresh-shop.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
@@ -245,9 +246,13 @@ export async function buildApp(
   });
   registerAuthRoutes(app, db);
   /* The routes do not exist unless the shared staging door is open
-     for registration (STAGING exactly "1"). Host and the demo shop
-     are checked again on each request, inside the handler. */
-  if (stagingDoorOpen()) registerStagingSignInRoutes(app, db);
+     for registration (STAGING exactly "1"). Host is checked again
+     on each request. The role buttons also require the demo shop.
+     Fresh-shop does not. */
+  if (stagingDoorOpen()) {
+    registerStagingSignInRoutes(app, db);
+    registerStagingFreshShopRoutes(app, db);
+  }
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);
   registerEarlyAccessRoutes(app, db);
