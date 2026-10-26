@@ -93,6 +93,9 @@ export interface DeskSpec {
   team: TeamMember[];
   /* Staging fresh-shop verify only. Every other door leaves it false. */
   isTestShop?: boolean;
+  /* The one-time password from POST /api/staging/fresh-shop.
+     Onboarding sets the owner's own password, so it leaves this off. */
+  mustChangePassword?: boolean;
 }
 
 const str = (r: Record<string, Resolved>, id: string): string =>
@@ -443,7 +446,7 @@ export async function provisionDesk(
     role: "administrator",
     authorizedBranchIds: [branchId],
     passwordHash,
-    mustChangePassword: spec.isTestShop === true,
+    mustChangePassword: spec.mustChangePassword === true,
     passwordUpdatedAt: new Date(),
   }).onConflictDoNothing();
 

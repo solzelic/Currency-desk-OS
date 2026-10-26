@@ -150,6 +150,9 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
        it is recorded next to it rather than left for the caller to find
        out. */
     const kept: Record<string, unknown> = { ...(details ?? {}) };
+    /* stagingFresh is not an answer. The staging door writes its own row.
+       A public post cannot use this key to leave the founding count. */
+    delete kept.stagingFresh;
     const tel = normalizePhone(kept.phone);
     if (tel) {
       kept.phone = tel.phone;

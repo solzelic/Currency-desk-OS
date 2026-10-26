@@ -244,6 +244,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
         regulator,
         team: [],
         isTestShop: stagingTestShop,
+        mustChangePassword: stagingTestShop,
       },
       p.passwordHash,
       "signup",

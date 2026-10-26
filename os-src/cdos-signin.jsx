@@ -97,9 +97,10 @@
   });
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
-  function SignIn({ employees, onSignup, onComplete, onMustChange }) {
+  function SignIn({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem }) {
     const [step, setStep] = useState('id');            // id | password | code
     const [idInput, setIdInput] = useState('');
+    const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
     const [code, setCode] = useState('');
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
@@ -126,7 +127,7 @@
     const [locked, setLocked] = useState(false);
     const [lockUntil, setLockUntil] = useState('');
     const [lockAt, setLockAt] = useState(0);
-    const [quick, setQuick] = useState(false);
+    const [quick, setQuick] = useState(stagingOpen === true);
     const [night, setNight] = useState(() => document.documentElement.getAttribute('data-cdtheme') === 'dark');
     const sending = useRef(false);
     useEffect(() => {
@@ -225,6 +226,23 @@
       } catch (e2) {
         sending.current = false; setBusy(false);
         setErr('That door is closed.');
+      }
+    }
+    async function startFresh() {
+      if (sending.current) return;
+      sending.current = true;
+      setBusy(true); setFreshErr('');
+      try {
+        const res = await fetch('/api/staging/fresh-onboarding', { method: 'POST', credentials: 'same-origin' });
+        const data = await res.json().catch(() => null);
+        sending.current = false; setBusy(false);
+        if (!res.ok) { setFreshErr(window.CDOS.freshShopMessage(res.status)); return; }
+        const path = window.CDOS.freshShopEntry(data);
+        if (!path) { setFreshErr(window.CDOS.freshShopMessage(0)); return; }
+        window.location.assign(path);
+      } catch (e2) {
+        sending.current = false; setBusy(false);
+        setFreshErr(window.CDOS.freshShopMessage('network'));
       }
     }
 
@@ -464,6 +482,14 @@
               {b.label}
             </button>
           ))}
+          {window.CDOS.freshShopButton(true).map((b) => (
+            <button key="fresh-shop" type="button" data-fresh-shop="1" disabled={busy} onClick={startFresh}
+              style={{ width: '100%', height: 44, minHeight: 44, boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--si-mute)', background: 'var(--si-panel)', color: 'var(--si-ink)', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 15, fontWeight: 600, cursor: busy ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {b.label}
+              <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--si-mute)', border: '1px solid var(--si-mute)', borderRadius: 6, padding: '2px 6px', lineHeight: 1.2 }}>Staging</span>
+            </button>
+          ))}
+          {freshErr ? <div data-fresh-error="1" style={{ color: 'var(--si-flag)', fontSize: 13, lineHeight: 1.45 }}>{freshErr}</div> : null}
         </div>
       ) : null}
       {err && <div style={{ color: 'var(--si-flag)', fontSize: 12, marginTop: 12 }}>{err}</div>}
