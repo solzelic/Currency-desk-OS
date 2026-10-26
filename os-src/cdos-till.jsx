@@ -275,6 +275,7 @@
            currency that was not counted must never be sent.
        ------------------------------------------------------------------ */
     const [serverBalances, setServerBalances] = useState(null);
+    const [serverCurrencies, setServerCurrencies] = useState([]);
     /* The mark on the drawer when these expected figures were read.
        The close sends it back. If money moved, the mark no longer
        matches and the close is refused. */
@@ -370,6 +371,7 @@
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const applyBook = (result) => {
       setServerBalances((result && result.balances) || {});
+      if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
       /* A count in progress keeps the mark it started on. Adopting the
          generation just fetched would let a refresh, or any other
          reread, close against money that moved after the count began. */
@@ -389,6 +391,7 @@
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
         setServerBalances(null);
+        setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError('');
@@ -404,6 +407,7 @@
         .catch(error => {
           if (!active) return;
           setServerBalances(null);
+          setServerCurrencies([]);
           setBalanceGeneration(null);
           setServerSession(null);
           setServerBalanceError(error.message || 'Server balances unavailable');
@@ -661,7 +665,10 @@
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
-    const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    const serverCcys = useMemo(() => {
+      const named = Object.keys(serverBalances || {});
+      return (named.length ? named : serverCurrencies).slice().sort();
+    }, [serverBalances, serverCurrencies]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const iHold = mine(serverSession);

@@ -3408,6 +3408,7 @@
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
+            currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
           };
         });
       },
@@ -15786,6 +15787,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
            currency that was not counted must never be sent.
        ------------------------------------------------------------------ */
     const [serverBalances, setServerBalances] = useState(null);
+    const [serverCurrencies, setServerCurrencies] = useState([]);
     /* The mark on the drawer when these expected figures were read.
        The close sends it back. If money moved, the mark no longer
        matches and the close is refused. */
@@ -15923,6 +15925,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const applyBook = result => {
       setServerBalances(result && result.balances || {});
+      if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
       /* A count in progress keeps the mark it started on. Adopting the
          generation just fetched would let a refresh, or any other
          reread, close against money that moved after the count began. */
@@ -15940,6 +15943,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     useEffect(() => {
       if (!serverBacked || !window.CDOS.Backend) {
         setServerBalances(null);
+        setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError('');
@@ -15953,6 +15957,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }).catch(error => {
         if (!active) return;
         setServerBalances(null);
+        setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
         setServerBalanceError(error.message || 'Server balances unavailable');
@@ -16381,7 +16386,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
-    const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    const serverCcys = useMemo(() => {
+      const named = Object.keys(serverBalances || {});
+      return (named.length ? named : serverCurrencies).slice().sort();
+    }, [serverBalances, serverCurrencies]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const iHold = mine(serverSession);

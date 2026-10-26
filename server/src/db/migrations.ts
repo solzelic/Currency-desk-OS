@@ -75,6 +75,10 @@ export const migrations: readonly Migration[] = [
   /* 056 marks a tenant as a staging test shop. Nothing sets it yet.
      055 is on main, so this file is 056. */
   ["056_tenant_test_shop", "src/db/migrations/056_tenant_test_shop.sql"],
+  /* 057 is the handover audit fields. 056 is on main. */
+  ["057_handover_audit_fields", "src/db/migrations/057_handover_audit_fields.sql"],
+  /* 058 is the handover approver and the mid stored on the count. 057 is on this branch. */
+  ["058_handover_approver_and_variances", "src/db/migrations/058_handover_approver_and_variances.sql"],
 ] as const;
 
 type MigrationReader = {
