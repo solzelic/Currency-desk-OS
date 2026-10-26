@@ -3178,6 +3178,7 @@
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
+      if (typeof body.holderName === "string" && body.holderName) error.holderName = body.holderName;
       throw error;
     }
     return body;
@@ -3195,6 +3196,19 @@
   function tillOccupant(session) {
     if (!session || session.status !== "open") return "";
     return String(session.openedBy || "").split(":").pop() || "";
+  }
+
+  /* True only when this person holds the open session. A selected till is
+     not the same fact: the menu used to say "· you" for whichever drawer
+     was on screen. */
+  function holdsTill(session, myId) {
+    if (!session || session.status !== "open" || !myId) return false;
+    var opened = String(session.openedBy || "");
+    if (!opened) return false;
+    if (opened === String(myId)) return true;
+    var mine = String(myId).split(":").pop();
+    var theirs = opened.split(":").pop();
+    return !!(mine && theirs && mine === theirs);
   }
 
   function customerPayload(name, record) {
@@ -3353,6 +3367,7 @@
         });
       },
       tillOccupant: tillOccupant,
+      holdsTill: holdsTill,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       previewQuote: function (payload) {
@@ -3400,6 +3415,12 @@
         return request("/api/ledger/till-sessions/open", {
           method: "POST",
           body: "{}",
+        });
+      },
+      handoverTill: function (payload) {
+        return request("/api/ledger/till-sessions/handover", {
+          method: "POST",
+          body: JSON.stringify(payload),
         });
       },
       saveTillCount: function (payload) {
@@ -15576,6 +15597,154 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: "var(--cd-on-ink)"
     }), " ", anyEntered ? 'Confirm count & hand off' : 'Confirm as counted')))))), document.body);
   }
+
+  /* The incoming teller counts every currency the book holds. The sheet
+     does not show those amounts. Saving calls the handover route. */
+  function TakeoverSheet({
+    currencies,
+    holder,
+    busy,
+    error,
+    onClose,
+    onSubmit
+  }) {
+    const [raw, setRaw] = useState({});
+    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      className: "fixed inset-0 flex items-center justify-center p-4",
+      style: {
+        background: 'var(--cd-scrim)',
+        zIndex: 9400
+      },
+      onMouseDown: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": "Take over till",
+      onMouseDown: e => e.stopPropagation(),
+      className: "w-full flex flex-col",
+      style: {
+        maxWidth: 460,
+        maxHeight: 'calc(100vh - 40px)',
+        background: CD.paper,
+        border: `1px solid ${CD.ink}`,
+        borderRadius: 16,
+        boxShadow: '0 24px 70px var(--cd-scrim)',
+        overflow: 'hidden'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-3 px-5 py-3.5 flex-none",
+      style: {
+        borderBottom: `1px solid ${CD.line}`,
+        background: 'var(--cd-panel)'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "grid place-items-center",
+      style: {
+        width: 32,
+        height: 32,
+        background: CD.ink,
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 17,
+      c: "var(--cd-on-ink)"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 min-w-0"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "font-semibold leading-tight",
+      style: {
+        color: CD.ink
+      }
+    }, "Take over till"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      style: {
+        color: CD.mute
+      }
+    }, holder ? `Held by ${holder}. ` : '', "Count the cash in the drawer. The book keeps its figures hidden until this count is saved.")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      "aria-label": "Close",
+      className: "p-1.5"
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "x",
+      s: 18,
+      c: CD.mute
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "px-5 py-4 overflow-auto"
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 11,
+        overflow: 'hidden'
+      }
+    }, currencies.map((c, i) => /*#__PURE__*/React.createElement("div", {
+      key: c,
+      className: "flex items-center gap-2 px-3 py-2",
+      style: {
+        borderTop: i ? `1px solid ${CD.lineSoft}` : 'none',
+        background: 'var(--cd-panel)'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "font-semibold flex-none",
+      style: {
+        width: 42,
+        fontFamily: 'Space Mono, monospace',
+        fontSize: 12.5,
+        color: CD.ink
+      }
+    }, c), /*#__PURE__*/React.createElement("input", {
+      value: raw[c] || '',
+      onChange: e => setRaw(o => ({
+        ...o,
+        [c]: e.target.value
+      })),
+      inputMode: "decimal",
+      placeholder: "0.00",
+      "aria-label": `${c} counted`,
+      className: "flex-1 text-right outline-none text-[13px] px-2 py-1.5",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 7,
+        fontVariantNumeric: 'tabular-nums',
+        color: CD.ink
+      }
+    })))), error ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[12px] mt-3 px-3 py-2",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag,
+        borderRadius: 9
+      }
+    }, error) : null), /*#__PURE__*/React.createElement("div", {
+      className: "px-5 py-3.5 flex items-center justify-end gap-2 flex-none",
+      style: {
+        borderTop: `1px solid ${CD.line}`,
+        background: 'var(--cd-panel)'
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      className: "text-[13px] px-3 py-2 font-medium",
+      style: {
+        color: CD.mute
+      }
+    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: !ready || busy,
+      onClick: () => ready && !busy && onSubmit(raw),
+      className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
+      style: {
+        background: ready && !busy ? CD.ink : 'var(--cd-disabled)',
+        borderRadius: 9
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "check",
+      s: 15,
+      c: "var(--cd-on-ink)"
+    }), " ", busy ? 'Taking over…' : 'Take over till')))), document.body);
+  }
   function TillDrawer({
     rows: allRows,
     log,
@@ -15601,7 +15770,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     cashVersion,
     onSessionSync,
     ledgerScope,
-    onSelectLedgerTill
+    onSelectLedgerTill,
+    myId
   }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
@@ -15869,11 +16039,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        see tillOccupant in cdos-backend.js. */
     const onLedgerTills = !!(ledgerScope && (ledgerScope.workspaces || []).length && onSelectLedgerTill);
     const occupantOf = session => window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '';
+    const mine = session => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     const tillOptions = onLedgerTills ? ledgerScope.workspaces.map(w => ({
       key: w.workspaceId,
       name: w.tillId,
       occupant: occupantOf(w.session),
       note: w.session && w.session.status === 'open' ? '' : w.session ? 'not open' : 'never opened',
+      yours: mine(w.session),
       on: !!(ledgerTill && ledgerTill.workspaceId === w.workspaceId)
     })) : _tills.map(t => ({
       key: t.id,
@@ -15882,6 +16054,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // than as a live session this browser has no way to know about
       occupant: '',
       note: t.teller ? 'posted to ' + t.teller : '',
+      yours: false,
       on: !!(station && station.tillId === t.id)
     }));
     const activeOption = tillOptions.find(o => o.on) || null;
@@ -16004,6 +16177,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     });
     const [handoffOpen, setHandoffOpen] = useState(false);
+    const [takeoverOpen, setTakeoverOpen] = useState(false);
+    useEffect(() => {
+      const open = () => {
+        if (!window.CDOS._takeoverPending) return;
+        window.CDOS._takeoverPending = false;
+        setSessionErr('');
+        setTakeoverOpen(true);
+      };
+      open();
+      window.addEventListener('cdos-takeover', open);
+      return () => window.removeEventListener('cdos-takeover', open);
+    }, []);
     // the operator strip is usually the same person all day, so let it be dismissed
     // to a small chip; the owner can pop it back open when the drawer changes hands.
     const [stripOpen, setStripOpen] = useState(() => {
@@ -16199,6 +16384,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
+    const iHold = mine(serverSession);
+    const heldByOther = !!(serverBacked && sessionOpen && serverSession && myId && !iHold);
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
     // states and must not render the same. The OS marks the day closed when
@@ -16211,7 +16398,32 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        a desk running with no ledger at all, both have no expected float —
        and a count sheet that prints 0.00 there invites a teller to write a
        variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
-    const expectedOf = c => serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
+    const expectedOf = c => heldByOther ? null : serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
+    const doTakeover = async raw => {
+      if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
+      const counts = {};
+      serverCcys.forEach(c => {
+        counts[c] = Number(raw[c]).toFixed(2);
+      });
+      setTillBusy('handover');
+      setSessionErr('');
+      try {
+        const key = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'ho' + Date.now();
+        const result = await window.CDOS.Backend.handoverTill({
+          idempotencyKey: key,
+          counts
+        });
+        clearAllCounts();
+        applySession(result);
+        applyBook(await window.CDOS.Backend.loadTillBalances());
+        log && log('Till taken over', tillNm);
+        setTakeoverOpen(false);
+      } catch (error) {
+        setSessionErr(error.message || 'The server would not hand this till over.');
+      } finally {
+        setTillBusy('');
+      }
+    };
     // reveal + read out the expected float (audible cue for a blind / hands-busy count)
     const announceExpected = c => {
       try {
@@ -16699,7 +16911,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 12,
         color: CD.ink
       }
-    }, o.name, o.on ? /*#__PURE__*/React.createElement("span", {
+    }, o.name, o.yours ? /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -16760,7 +16972,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // server-backed, the drawer holds what the LEDGER says it holds —
       // the local rail figure is a demo store and would quietly disagree
       const _tc = serverBacked ? serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null : _tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null;
-      return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && /*#__PURE__*/React.createElement("span", {
+      return /*#__PURE__*/React.createElement(React.Fragment, null, _tc != null && !heldByOther && /*#__PURE__*/React.createElement("span", {
         className: "till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]",
         style: {
           border: `1px solid ${CD.lineSoft}`,
@@ -17036,9 +17248,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setHandoffOpen(true),
-      title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session — close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
+    }, heldByOther ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-takeover": "strip",
+      onClick: () => {
+        setSessionErr('');
+        setTakeoverOpen(true);
+      },
       className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
       style: {
         border: `1px solid ${CD.line}`,
@@ -17050,7 +17266,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "users",
       s: 13,
       c: CD.mute
-    }), " Hand off"), /*#__PURE__*/React.createElement("button", {
+    }), " Take over till") : !serverBacked ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setHandoffOpen(true),
+      title: "Hand the drawer to the next operator",
+      className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 13,
+      c: CD.mute
+    }), " Hand off") : null, /*#__PURE__*/React.createElement("button", {
       onClick: () => setStripOpen(false),
       title: "Hide operator bar",
       className: "grid place-items-center",
@@ -17067,7 +17298,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 13,
       c: CD.mute
     })))) : /*#__PURE__*/React.createElement("div", {
-      className: "till-operator flex-none px-4 py-1.5",
+      className: "till-operator flex items-center gap-2 flex-none px-4 py-1.5",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`
@@ -17092,7 +17323,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 8
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-takeover": "chip",
+      onClick: () => {
+        setSessionErr('');
+        setTakeoverOpen(true);
+      },
+      className: "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 999,
+        color: CD.ink,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 12,
+      c: CD.mute
+    }), " Take over till")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
@@ -17300,7 +17549,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         borderLeft: `1px solid ${CD.line}`
       }
-    }, ccy)), /*#__PURE__*/React.createElement("div", {
+    }, ccy)), !heldByOther && /*#__PURE__*/React.createElement("div", {
       className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
@@ -17400,7 +17649,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.faint
       }
-    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float."))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
+    }, heldByOther ? 'Counting denominations updates the total live. Or tap the counted figure to type it in directly.' : 'Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.'))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-reconcile",
       className: "p-5 flex flex-col",
       style: {
@@ -17831,7 +18080,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "till-recon-counted"
       }, unitText(r.counted, r.c))), /*#__PURE__*/React.createElement("div", {
         className: "till-recon-expected"
-      }, 'Expected ' + (r.expected == null ? '' : unitText(r.expected, r.c))), chip ? /*#__PURE__*/React.createElement("span", {
+      }, r.expected == null ? 'Expected not shown' : 'Expected ' + unitText(r.expected, r.c)), chip ? /*#__PURE__*/React.createElement("span", {
         className: 'till-recon-chip ' + chip.tone
       }, chip.text) : null)), note ? /*#__PURE__*/React.createElement("div", {
         className: "till-recon-note"
@@ -18341,7 +18590,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? 'not shown' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -18428,7 +18677,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "lock",
       s: 14,
       c: "var(--cd-on-ink)"
-    }), " Close day & lock book")))), handoffOpen && /*#__PURE__*/React.createElement(HandoffModal, {
+    }), " Close day & lock book")))), handoffOpen && !serverBacked && /*#__PURE__*/React.createElement(HandoffModal, {
       tillId: tillId,
       tillName: tillNm,
       current: current,
@@ -18441,6 +18690,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       })).filter(x => Math.abs(x.units || 0) > 0.005 || x.ccy === homeCcy),
       onClose: () => setHandoffOpen(false),
       onDone: doHandoff
+    }), takeoverOpen && /*#__PURE__*/React.createElement(TakeoverSheet, {
+      currencies: serverCcys,
+      holder: current && current.operator,
+      busy: tillBusy === 'handover',
+      error: sessionErr,
+      onClose: () => setTakeoverOpen(false),
+      onSubmit: doTakeover
     }));
   }
   function HistChart({
@@ -36135,6 +36391,32 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [preview, setPreview] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [serverCode, setServerCode] = useState('');
+    const [holderName, setHolderName] = useState('');
+    const clearServerError = () => {
+      setServerError('');
+      setServerCode('');
+      setHolderName('');
+    };
+    const showServerError = (error, fallback) => {
+      setServerError(error && error.message || fallback);
+      setServerCode(error && error.code || '');
+      setHolderName(error && error.holderName || '');
+    };
+    const takeOverTill = serverCode === 'TILL_HELD' ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        onClose();
+        if (window.CDOS.openTakeover) window.CDOS.openTakeover();
+      },
+      title: holderName ? 'Take over this till from ' + holderName : 'Take over this till',
+      className: "w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      style: {
+        borderRadius: 9,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)'
+      }
+    }, "Take over this till") : null;
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -36245,7 +36527,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const rateN = pricing.rate;
     useEffect(() => {
       setServerQuote(null);
-      setServerError('');
+      clearServerError();
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
     useEffect(() => {
       if (!isExchange || !(parseFloat(inAmt) > 0) || !window.CDOS.Backend || !window.CDOS.Backend.previewQuote) {
@@ -36683,7 +36965,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const getServerQuote = async () => {
       if (!canSave || !window.CDOS.Backend) return;
       setServerBusy(true);
-      setServerError('');
+      clearServerError();
       try {
         const synced = await window.CDOS.Backend.syncCustomer(customer, rec);
         setClients(list => ({
@@ -36713,7 +36995,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
         setServerQuote(quote);
       } catch (error) {
-        setServerError(error.message || 'The server quote could not be created.');
+        showServerError(error, 'The server quote could not be created.');
       } finally {
         setServerBusy(false);
       }
@@ -36721,7 +37003,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const postServerQuote = async () => {
       if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
       setServerBusy(true);
-      setServerError('');
+      clearServerError();
       try {
         const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
         const serbia = packId === 'pack-rs-v1';
@@ -36762,7 +37044,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         onDone && onDone(row.id);
       } catch (error) {
         if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-        setServerError(error.message || 'The transaction was not posted.');
+        showServerError(error, 'The transaction was not posted.');
       } finally {
         setServerBusy(false);
       }
@@ -36891,19 +37173,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const chequeOnLedger = serverBacked && isCheque && _K && _K.ledger();
       if (chequeOnLedger) {
         setServerBusy(true);
-        setServerError('');
+        clearServerError();
         try {
           posted = await postCheque();
           ref = posted.transactionRef;
         } catch (error) {
-          setServerError(error.message || 'The cheque was not cashed.');
+          showServerError(error, 'The cheque was not cashed.');
           setServerBusy(false);
           return;
         }
         setServerBusy(false);
       } else if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
         setServerBusy(true);
-        setServerError('');
+        clearServerError();
         try {
           posted = await postObligationDeal(ref);
           ref = posted.transactionRef;
@@ -36912,7 +37194,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
              docs/CASH_OWNERSHIP_INVARIANTS.md — so a deal the ledger
              refused is a deal that did not happen, and recording it here
              would be inventing money. */
-          setServerError(error.message || 'The transaction was not posted.');
+          showServerError(error, 'The transaction was not posted.');
           setServerBusy(false);
           return;
         }
@@ -38390,7 +38672,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), !isExchange && takeOverTill, serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -38409,7 +38691,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, serverError), phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
+    }, serverError), takeOverTill, phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: showMissing,
       disabled: quotePending,
@@ -67284,7 +67566,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             background: on ? 'var(--ink)' : 'rgba(255,255,255,0.55)',
             color: on ? '#fff' : 'var(--soft)'
           }
-        }, t.name.replace(/\s+—.*/, ''), rec && t.teller === rec.name ? ' · yours' : t.operator ? ' · ' + t.operator + ' on now' : t.teller ? ' · ' + t.teller : ' · free');
+        }, t.name.replace(/\s+—.*/, ''), t.operator ? ' · ' + t.operator + ' on now' : t.teller ? ' · ' + t.teller : ' · free');
       })));
     })), /*#__PURE__*/React.createElement("button", {
       className: "go",
@@ -67381,7 +67663,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     me,
     gate,
     ledgerScope,
-    onSelectLedgerTill
+    onSelectLedgerTill,
+    myId
   }) {
     const [open, setOpen] = useState(false);
     const [pending, setPending] = useState(null); // option key awaiting confirmation
@@ -67397,6 +67680,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
     const occupantOf = session => window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '';
+    const yours = session => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     /* One list, whichever book is in charge. `onLedger` says which, because a
        key from the local list must never be handed to the server as a
        workspace and a workspace id means nothing to the local station. */
@@ -67407,6 +67691,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       occupant: occupantOf(w.session),
       // no session on the ledger means the book cannot say who is there
       note: w.session && w.session.status === 'open' ? '' : w.session ? 'not open' : 'never opened',
+      yours: yours(w.session),
       on: !!(ledgerScope.active && ledgerScope.active.workspaceId === w.workspaceId)
     })) : (ab && ab.tills || []).filter(t => t.status !== 'closed').map(t => ({
       key: t.id,
@@ -67415,6 +67700,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       // as a live session — this browser cannot know who is sitting down
       occupant: '',
       note: t.teller ? 'posted to ' + t.teller : '',
+      yours: false,
       on: station.tillId === t.id
     }));
     const at = options.find(o => o.on) || null;
@@ -67544,7 +67830,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.faint
       }
-    }, o.on ? ' · you' : o.occupant ? ' · ' + o.occupant + ' on now' : o.note ? ' · ' + o.note : '')), o.on && /*#__PURE__*/React.createElement(Ic, {
+    }, o.yours ? ' · you' : o.occupant ? ' · ' + o.occupant + ' on now' : o.note ? ' · ' + o.note : '')), o.on && /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 13,
       c: CD.ink
@@ -69644,6 +69930,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
+    window.CDOS.openTakeover = () => {
+      window.CDOS._takeoverPending = true;
+      openApp('till');
+      window.dispatchEvent(new Event('cdos-takeover'));
+    };
     const closeWin = id => {
       if (id === 'store') setEditApps(false);
       setWins(ws => ws.filter(w => w.id !== id));
@@ -70853,6 +71144,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             onCloseDay: closeDay,
             onOpenNextDay: openNextDay,
             me: me,
+            myId: srvUser && srvUser.id,
             canCloseDay: can('canCloseDay'),
             baseline: baseline,
             setBaseline: setBaseline,
@@ -71538,6 +71830,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setStation: setStation,
       log: log,
       me: me,
+      myId: srvUser && srvUser.id,
       gate: tillGate,
       lockTill: (ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner',
       ledgerScope: ledgerScope,

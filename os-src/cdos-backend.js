@@ -86,6 +86,7 @@
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
+      if (typeof body.holderName === "string" && body.holderName) error.holderName = body.holderName;
       throw error;
     }
     return body;
@@ -103,6 +104,19 @@
   function tillOccupant(session) {
     if (!session || session.status !== "open") return "";
     return String(session.openedBy || "").split(":").pop() || "";
+  }
+
+  /* True only when this person holds the open session. A selected till is
+     not the same fact: the menu used to say "· you" for whichever drawer
+     was on screen. */
+  function holdsTill(session, myId) {
+    if (!session || session.status !== "open" || !myId) return false;
+    var opened = String(session.openedBy || "");
+    if (!opened) return false;
+    if (opened === String(myId)) return true;
+    var mine = String(myId).split(":").pop();
+    var theirs = opened.split(":").pop();
+    return !!(mine && theirs && mine === theirs);
   }
 
   function customerPayload(name, record) {
@@ -261,6 +275,7 @@
         });
       },
       tillOccupant: tillOccupant,
+      holdsTill: holdsTill,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       previewQuote: function (payload) {
@@ -308,6 +323,12 @@
         return request("/api/ledger/till-sessions/open", {
           method: "POST",
           body: "{}",
+        });
+      },
+      handoverTill: function (payload) {
+        return request("/api/ledger/till-sessions/handover", {
+          method: "POST",
+          body: JSON.stringify(payload),
         });
       },
       saveTillCount: function (payload) {

@@ -139,15 +139,18 @@ export type FrozenQuote = {
 export class LedgerError extends Error {
   readonly next?: string;
   readonly stays?: string;
+  readonly holderName?: string;
   constructor(
     readonly code: string,
     message: string,
     next?: string,
     stays?: string,
+    holderName?: string,
   ) {
     super(message);
     if (next) this.next = next;
     if (stays) this.stays = stays;
+    if (holderName) this.holderName = holderName;
   }
 }
 
@@ -208,6 +211,9 @@ export async function refuseTillHeld(client: pg.PoolClient, opener: string): Pro
   throw new LedgerError(
     "TILL_HELD",
     `Count the till to take it over from ${who || "the person who counted it"}.`,
+    undefined,
+    undefined,
+    who || undefined,
   );
 }
 
