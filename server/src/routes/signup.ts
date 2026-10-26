@@ -17,10 +17,12 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
+import { audit } from "../audit.js";
 import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
 import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
+import { isStagingFreshShop, STAGING_OWNER_DOMAIN } from "./staging-fresh-shop.js";
 import { tenantPlan } from "./tenant.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -137,6 +139,9 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const parsed = signupBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const b = parsed.data;
+    /* A staging fresh shop is the only writer of this domain. Live
+       must not hold one, and must not be handed a code in the body. */
+    if (b.email.endsWith(STAGING_OWNER_DOMAIN)) return reply.code(400).send({ error: "invalid_request" });
     if (RESERVED_SLUGS.has(b.slug)) return reply.code(409).send({ error: "slug_reserved", detail: "That desk address is reserved — pick another." });
     if (!allow("signup-ip:" + req.ip, signupIpMax()) || !allow("signup-email:" + b.email, 4)) {
       return reply.code(429).send({ error: "slow_down", detail: "Too many attempts — try again in a bit." });
@@ -183,7 +188,9 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     if (!allow("resend:" + parsed.data.email, 4)) return reply.code(429).send({ error: "slow_down", detail: "Hold on — wait before requesting another code." });
     const rows = await db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, parsed.data.email)).limit(1);
     const p = rows[0];
-    if (p) await issueCode(p.email, p.businessName);
+    /* Resend would email, and in dev it would log, a code that staging
+       already showed once. Leave the stored hash as it is. */
+    if (p && !p.email.endsWith(STAGING_OWNER_DOMAIN)) await issueCode(p.email, p.businessName);
     return { ok: true }; // uniform response — don't reveal whether a pending signup exists
   });
 
@@ -220,6 +227,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
        Dropping the column default is a later migration. */
     const regulator = typeof onb.regulator === "string" ? onb.regulator.trim() : "";
     const msbNumber = typeof onb.msbNumber === "string" ? onb.msbNumber : null;
+    const stagingTestShop = isStagingFreshShop(email, p.slug, req.headers);
 
     forgetClaimedCount();
     const { tenantId, legalEntityId, branchId, ownerId } = await provisionDesk(
@@ -235,10 +243,18 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
         msbNumber,
         regulator,
         team: [],
+        isTestShop: stagingTestShop,
       },
       p.passwordHash,
       "signup",
     );
+    if (stagingTestShop) {
+      await audit(db, {
+        tenantId, legalEntityId, branchId, actorId: ownerId,
+        action: "staging.fresh_shop_created",
+        detail: { slug: p.slug },
+      });
+    }
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, email));
     await closeApplication(db, { email }, tenantId, "signup", p.onboarding ?? {});
 
@@ -248,7 +264,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     // resolved by tenantPlan (trial → premium-level access during the trial)
     const plan = await tenantPlan(db, tenantId);
     return reply.code(201).send({
-      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: false, plan },
+      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: stagingTestShop, plan },
       tenant: { id: tenantId, name: p.businessName, slug: p.slug, plan, setup: p.onboarding ?? null },
     });
   });

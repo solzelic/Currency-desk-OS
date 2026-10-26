@@ -91,6 +91,8 @@ export interface DeskSpec {
   msbNumber: string | null;
   regulator: string;
   team: TeamMember[];
+  /* Staging fresh-shop verify only. Every other door leaves it false. */
+  isTestShop?: boolean;
 }
 
 const str = (r: Record<string, Resolved>, id: string): string =>
@@ -367,6 +369,7 @@ export async function provisionDesk(
   }
   await db.insert(schema.tenants).values({
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
+    isTestShop: spec.isTestShop === true,
   }).onConflictDoNothing();
   /* "When should the desk ask for ID?" — screen four of onboarding, and the
      answer used to land in `tenants.setup` and stop there. The browser read
@@ -440,7 +443,7 @@ export async function provisionDesk(
     role: "administrator",
     authorizedBranchIds: [branchId],
     passwordHash,
-    mustChangePassword: false,
+    mustChangePassword: spec.isTestShop === true,
     passwordUpdatedAt: new Date(),
   }).onConflictDoNothing();
 
