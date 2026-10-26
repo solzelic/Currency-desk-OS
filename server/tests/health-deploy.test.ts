@@ -1,6 +1,8 @@
-/* Deploy markers on the public probe, and the boot log from the
-   migration runner. The newest id comes from the migrations directory.
-   These tests read TEST_DATABASE_URL or use PGlite. */
+/* Deploy markers on the deep check, and the boot log from the
+   migration runner. The staging door is open here, which is how a
+   staging deploy is checked with no session. The newest id comes
+   from the migrations directory. These tests read TEST_DATABASE_URL
+   or use PGlite. */
 import { randomBytes } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -13,11 +15,28 @@ import { createDb, provisionPostgres, schema, type DbHandle } from "../src/db/in
 import { migrations, runMigrations } from "../src/db/migrations.js";
 
 const savedCommit = process.env.RENDER_GIT_COMMIT;
+const savedStaging = process.env.STAGING;
+const savedHost = process.env.RENDER_EXTERNAL_HOSTNAME;
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+const STAGING_HOST = "staging.currencydeskos.com";
+
+function putEnv(key: "STAGING" | "RENDER_EXTERNAL_HOSTNAME" | "RENDER_GIT_COMMIT", value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
+function deep(target: FastifyInstance) {
+  return target.inject({
+    method: "GET",
+    url: "/api/health/deep",
+    headers: { host: STAGING_HOST },
+  });
+}
 
 afterAll(() => {
-  if (savedCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
-  else process.env.RENDER_GIT_COMMIT = savedCommit;
+  putEnv("RENDER_GIT_COMMIT", savedCommit);
+  putEnv("STAGING", savedStaging);
+  putEnv("RENDER_EXTERNAL_HOSTNAME", savedHost);
 });
 
 async function newestMigrationId(): Promise<string> {
@@ -28,11 +47,13 @@ async function newestMigrationId(): Promise<string> {
   return file.slice(0, -4);
 }
 
-describe("GET /api/health deploy markers", () => {
+describe("GET /api/health/deep deploy markers", () => {
   let handle: DbHandle;
   let app: FastifyInstance;
 
   beforeAll(async () => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = STAGING_HOST;
     process.env.PGLITE_MEMORY = "1";
     handle = await createDb();
     app = await buildApp(handle.db);
@@ -44,7 +65,7 @@ describe("GET /api/health deploy markers", () => {
   });
 
   it("includes commit and lastMigration", async () => {
-    const body = (await app.inject({ method: "GET", url: "/api/health" })).json();
+    const body = (await deep(app)).json();
     expect(body.ok).toBe(true);
     expect(body.service).toBe("currencydesk-server");
     expect(body).toHaveProperty("commit");
@@ -53,10 +74,10 @@ describe("GET /api/health deploy markers", () => {
 
   it("uses unknown when RENDER_GIT_COMMIT is unset and a 7 character sha when set", async () => {
     delete process.env.RENDER_GIT_COMMIT;
-    const unset = (await app.inject({ method: "GET", url: "/api/health" })).json();
+    const unset = (await deep(app)).json();
     expect(unset.commit).toBe("unknown");
     process.env.RENDER_GIT_COMMIT = "abcdef1234567890dead";
-    const set = (await app.inject({ method: "GET", url: "/api/health" })).json();
+    const set = (await deep(app)).json();
     expect(set.commit).toBe("abcdef1");
     expect(set.commit).toHaveLength(7);
   });
@@ -79,6 +100,8 @@ live("fresh migrate markers", () => {
   });
 
   beforeAll(async () => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = STAGING_HOST;
     if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
     databaseName = `hd_${randomBytes(4).toString("hex")}`;
     const admin = new pg.Client({ connectionString: testDatabaseUrl });
@@ -109,7 +132,7 @@ live("fresh migrate markers", () => {
   });
 
   it("sets lastMigration to the newest migration file id", async () => {
-    const body = (await app.inject({ method: "GET", url: "/api/health" })).json();
+    const body = (await deep(app)).json();
     expect(body.ok).toBe(true);
     expect(body.lastMigration).toBe(await newestMigrationId());
   });
@@ -151,14 +174,14 @@ live("fresh migrate markers", () => {
       await locker.query("BEGIN");
       await locker.query("LOCK TABLE schema_migrations IN ACCESS EXCLUSIVE MODE");
       const blocked = await Promise.all(
-        Array.from({ length: 11 }, () => app.inject({ method: "GET", url: "/api/health" })),
+        Array.from({ length: 11 }, () => deep(app)),
       );
       for (const res of blocked) {
         expect(res.statusCode).toBe(200);
         expect(res.json().lastMigration).toBeNull();
       }
       const healthAt = Date.now();
-      const again = await app.inject({ method: "GET", url: "/api/health" });
+      const again = await deep(app);
       expect(Date.now() - healthAt).toBeLessThan(1500);
       expect(again.statusCode).toBe(200);
       const selectAt = Date.now();

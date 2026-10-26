@@ -33,6 +33,8 @@ import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/p
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
+import { stagingDoorOpen } from "../auth/staging-runtime.js";
+import { newestAppliedMigration } from "../db/migrations.js";
 import { resetWalkthrough, WALKTHROUGH_REF } from "../onboarding/walkthrough.js";
 import { describe as describeState } from "../state/shape.js";
 import { CODE_TTL_MS, issueCode as issueVerificationCode, loadOrCreateOnboarding } from "../onboarding/verify.js";
@@ -1085,6 +1087,56 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       action: "admin.walkthrough_reset", detail: { reference: WALKTHROUGH_REF },
     });
     return { ok: true, reference: WALKTHROUGH_REF };
+  });
+
+  /* First 7 characters of the deploy sha. Unset stays unknown.
+     This reads RENDER_GIT_COMMIT and nothing else. */
+  function deployedCommit(): string {
+    const value = process.env.RENDER_GIT_COMMIT;
+    if (!value) return "unknown";
+    return value.slice(0, 7);
+  }
+
+  /* A caller who is not through the door yet does not learn the sha,
+     including when the session read itself cannot reach the database. */
+  function databaseDown(commit: string | null) {
+    const body = {
+      ok: false as const,
+      service: "currencydesk-server",
+      error: "database" as const,
+    };
+    if (commit === null) return body;
+    return { ...body, commit, lastMigration: null };
+  }
+
+  /* Database read, commit, and last migration. Staging when the shared
+     door is open (STAGING exactly "1", staging host on the process and
+     on this request). Otherwise a platform admin. Live without that
+     session is refused. 503 when the tenant read fails. The body names
+     the failure and does not include the database error. */
+  app.get("/api/health/deep", async (req, reply) => {
+    const commit = deployedCommit();
+    if (!stagingDoorOpen({
+      host: req.headers.host,
+      "x-forwarded-host": req.headers["x-forwarded-host"],
+    })) {
+      try {
+        if (!(await gate(req, reply))) return;
+      } catch {
+        return reply.code(503).send(databaseDown(null));
+      }
+    }
+    try {
+      await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+    } catch {
+      return reply.code(503).send(databaseDown(commit));
+    }
+    return {
+      ok: true,
+      service: "currencydesk-server",
+      commit,
+      lastMigration: await newestAppliedMigration(db),
+    };
   });
 
   /* ---- is anything broken right now -------------------------------------

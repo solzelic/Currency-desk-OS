@@ -10,7 +10,8 @@ created by the Quote Service and posted through frozen quote terms.
 
 | Method | Path | Auth | Result |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | Readiness: 200 if a trivial database read succeeds, 503 `{ ok: false, error: "database" }` if it does not. |
+| `GET` | `/api/health` | none | Process up: 200 `{ ok: true, service }`. No database read. |
+| `GET` | `/api/health/deep` | platform admin session, or the staging door | Database read: 200 with `commit` and `lastMigration`, or 503 `{ ok: false, error: "database" }` when the read fails. Refused on live without a platform admin session. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
 | `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |

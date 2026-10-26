@@ -1,9 +1,9 @@
-/* Public health is the probe Render asks. It used to answer `{ ok: true }`
-   with no database read, so a Neon outage looked like a live shop until
-   a person opened /admin. These pin both sides: 200 when a trivial read
-   works, 503 with an unauthenticated-safe body when it does not.
+/* The deep check is where a database outage is still 503, and where
+   commit and lastMigration are read. These open the staging door, which
+   is how a staging deploy is checked with no session. The public probe
+   is covered in health-shallow.test.ts.
 
-   `/api/admin/health` is a different surface — the narrative dashboard —
+   `/api/admin/health` is a different surface, the narrative dashboard,
    and is not exercised here. */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -13,9 +13,27 @@ import { buildApp } from "../src/app.js";
 let handle: DbHandle;
 let app: FastifyInstance;
 const savedCommit = process.env.RENDER_GIT_COMMIT;
+const savedStaging = process.env.STAGING;
+const savedHost = process.env.RENDER_EXTERNAL_HOSTNAME;
+const STAGING_HOST = "staging.currencydeskos.com";
+
+function putEnv(key: "STAGING" | "RENDER_EXTERNAL_HOSTNAME" | "RENDER_GIT_COMMIT", value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
+function deep(target: FastifyInstance) {
+  return target.inject({
+    method: "GET",
+    url: "/api/health/deep",
+    headers: { host: STAGING_HOST },
+  });
+}
 
 beforeAll(async () => {
   delete process.env.RENDER_GIT_COMMIT;
+  process.env.STAGING = "1";
+  process.env.RENDER_EXTERNAL_HOSTNAME = STAGING_HOST;
   process.env.PGLITE_MEMORY = "1";
   handle = await createDb();
   app = await buildApp(handle.db);
@@ -24,13 +42,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await handle.close();
-  if (savedCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
-  else process.env.RENDER_GIT_COMMIT = savedCommit;
+  putEnv("RENDER_GIT_COMMIT", savedCommit);
+  putEnv("STAGING", savedStaging);
+  putEnv("RENDER_EXTERNAL_HOSTNAME", savedHost);
 });
 
-describe("GET /api/health", () => {
+describe("GET /api/health/deep on staging", () => {
   it("is 200 when the database answers a trivial read", async () => {
-    const res = await app.inject({ method: "GET", url: "/api/health" });
+    const res = await deep(app);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       ok: true,
@@ -45,7 +64,7 @@ describe("GET /api/health", () => {
       throw new Error("connect ECONNREFUSED 127.0.0.1:5432 password=supersecret");
     });
     try {
-      const res = await app.inject({ method: "GET", url: "/api/health" });
+      const res = await deep(app);
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({
         ok: false,
@@ -62,7 +81,7 @@ describe("GET /api/health", () => {
   });
 
   it("needs no session", async () => {
-    const res = await app.inject({ method: "GET", url: "/api/health" });
+    const res = await deep(app);
     expect(res.statusCode).toBe(200);
   });
 
@@ -71,7 +90,7 @@ describe("GET /api/health", () => {
     const gate = new Promise<{ rows: [] }>((resolve) => { release = resolve; });
     const execute = vi.spyOn(handle.db, "execute").mockImplementation(() => gate as never);
     const started = Date.now();
-    const pending = app.inject({ method: "GET", url: "/api/health" });
+    const pending = deep(app);
     const winner = await Promise.race([
       pending.then((res) => ({ kind: "response" as const, res })),
       new Promise<{ kind: "hung" }>((resolve) => setTimeout(() => resolve({ kind: "hung" }), 1500)),
@@ -97,7 +116,7 @@ describe("GET /api/health", () => {
     const client = session.session.client;
     client.connect = () => Promise.reject(new Error("connect refused"));
     try {
-      const res = await app.inject({ method: "GET", url: "/api/health" });
+      const res = await deep(app);
       expect(res.statusCode).not.toBe(500);
       const body = res.json();
       expect(body.ok).toBe(true);
@@ -109,14 +128,14 @@ describe("GET /api/health", () => {
   });
 });
 
-describe("GET /api/health when the database is gone", () => {
+describe("GET /api/health/deep when the database is gone", () => {
   it("is 503 after the connection is closed", async () => {
     process.env.PGLITE_MEMORY = "1";
     const closed = await createDb();
     const isolated = await buildApp(closed.db);
     await closed.close();
     try {
-      const res = await isolated.inject({ method: "GET", url: "/api/health" });
+      const res = await deep(isolated);
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({
         ok: false,
