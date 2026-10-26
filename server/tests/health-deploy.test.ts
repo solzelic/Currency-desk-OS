@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { FastifyInstance } from "fastify";
@@ -68,7 +68,15 @@ live("fresh migrate markers", () => {
   let pool: pg.Pool;
   let app: FastifyInstance;
   let databaseName = "";
+  let freshUrl = "";
   let bootLog: string[] = [];
+  let unlock: (() => Promise<void>) | null = null;
+
+  afterEach(async () => {
+    const release = unlock;
+    unlock = null;
+    if (release) await release();
+  });
 
   beforeAll(async () => {
     if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -79,6 +87,7 @@ live("fresh migrate markers", () => {
     await admin.end();
     const fresh = new URL(testDatabaseUrl);
     fresh.pathname = `/${databaseName}`;
+    freshUrl = fresh.toString();
     const orig = console.log;
     console.log = (...args: unknown[]) => { bootLog.push(args.map(String).join(" ")); };
     try {
@@ -123,4 +132,40 @@ live("fresh migrate markers", () => {
     }
     expect(again.filter((line) => line.startsWith("migration applied:"))).toEqual([]);
   });
+
+  /* More calls than the pool (10). A vitest timeout makes a stuck pool
+     fail the run instead of hanging it. The lock is dropped in afterEach
+     when that timeout abandons this body. */
+  it("answers health and SELECT 1 while schema_migrations stays locked", async () => {
+    const locker = new pg.Client({ connectionString: freshUrl });
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      try { await locker.query("ROLLBACK"); } catch { /* already closed */ }
+      try { await locker.end(); } catch { /* already closed */ }
+    };
+    unlock = release;
+    await locker.connect();
+    try {
+      await locker.query("BEGIN");
+      await locker.query("LOCK TABLE schema_migrations IN ACCESS EXCLUSIVE MODE");
+      const blocked = await Promise.all(
+        Array.from({ length: 11 }, () => app.inject({ method: "GET", url: "/api/health" })),
+      );
+      for (const res of blocked) {
+        expect(res.statusCode).toBe(200);
+        expect(res.json().lastMigration).toBeNull();
+      }
+      const healthAt = Date.now();
+      const again = await app.inject({ method: "GET", url: "/api/health" });
+      expect(Date.now() - healthAt).toBeLessThan(1500);
+      expect(again.statusCode).toBe(200);
+      const selectAt = Date.now();
+      await pool.query("SELECT 1");
+      expect(Date.now() - selectAt).toBeLessThan(1500);
+    } finally {
+      await release();
+    }
+  }, 12_000);
 });

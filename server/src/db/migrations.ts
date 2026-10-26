@@ -78,12 +78,17 @@ type MigrationReader = {
   execute: (query: ReturnType<typeof dbSql>) => Promise<{ rows: ReadonlyArray<{ migration_id?: unknown }> }>;
 };
 
-/* Health must not wait on a stuck read. One second, then null. */
+/* Health must not keep a pooled connection. Postgres cancels the read.
+   PGlite has no statement_timeout, so that path stops waiting in process. */
 const MIGRATION_READ_TIMEOUT_MS = 1000;
 
-/* Newest applied id, or null when the table is missing, the read fails,
-   or it takes longer than MIGRATION_READ_TIMEOUT_MS. Names only. */
-export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
+function postgresPool(db: MigrationReader): pg.Pool | null {
+  const client = (db as { session?: { client?: pg.Pool } }).session?.client;
+  if (client && typeof client.connect === "function") return client;
+  return null;
+}
+
+async function newestFromReader(db: MigrationReader): Promise<string | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const found = await Promise.race([
@@ -104,6 +109,14 @@ export async function newestAppliedMigration(db: MigrationReader): Promise<strin
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/* Newest applied id, or null when the table is missing, the read fails,
+   or Postgres cancels it. Names only. */
+export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
+  const pool = postgresPool(db);
+  if (pool) return newestFromPostgres(pool);
+  return newestFromReader(db);
 }
 
 export async function runMigrations(
@@ -134,5 +147,27 @@ export async function runMigrations(
       await client.query("COMMIT");
       console.log(`migration applied: ${migrationId}`);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  }
+}
+
+/* Below the runner. A pack test takes the first BEGIN in this file as the
+   runner's transaction, so this read must not sit above that one.
+   Own transaction so SET LOCAL dies with it. Always release the client. */
+async function newestFromPostgres(pool: pg.Pool): Promise<string | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 1000");
+    const found = await client.query(
+      "SELECT migration_id FROM schema_migrations ORDER BY applied_at DESC, migration_id DESC LIMIT 1",
+    );
+    await client.query("COMMIT");
+    const id = found.rows[0]?.migration_id;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch {
+    try { await client.query("ROLLBACK"); } catch { /* the server already aborted it */ }
+    return null;
+  } finally {
+    client.release();
   }
 }
