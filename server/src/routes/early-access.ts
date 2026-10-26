@@ -42,11 +42,12 @@ let cached: { at: number; claimed: number } | null = null;
 export async function claimedCount(db: Db): Promise<number> {
   const applications = (await db.select().from(schema.enquiries)).filter(
     // never the walkthrough: practising must not tell the site a place has gone
-    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo,
+    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo
+      && (e.details as { stagingFresh?: boolean } | null)?.stagingFresh !== true,
   );
   const spokenFor = new Set(applications.map((a) => a.tenantId).filter(Boolean) as string[]);
   const desks = (await db.select().from(schema.tenants)).filter(
-    (t) => t.id !== PLATFORM_TENANT && !spokenFor.has(t.id),
+    (t) => t.id !== PLATFORM_TENANT && t.isTestShop !== true && !spokenFor.has(t.id),
   );
   return applications.length + desks.length;
 }

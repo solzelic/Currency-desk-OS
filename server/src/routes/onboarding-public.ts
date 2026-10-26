@@ -23,7 +23,9 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword } from "../auth/password.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { audit } from "../audit.js";
 import { codeMatches, hashCode, makeCode, sendEmail, verificationEmail } from "../email.js";
+import { stagingOnboardingMark } from "./staging-fresh-shop.js";
 import { normalizePhone, sendSms } from "../sms.js";
 import { details, placesEnabled, suggest } from "../places.js";
 import { forgetClaimedCount } from "./early-access.js";
@@ -519,6 +521,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     const code = makeCode();
     const to = VERIFY_CHANNEL === "phone" ? String(resolved.phone?.value ?? "") : email;
+    const onScreen = stagingOnboardingMark(a.email, a.details, req.headers);
     await issueCode(a.id, code, to);
 
     /* The rehearsal still issues a real code and still has to be typed —
@@ -526,6 +529,9 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
        one. It just goes to the log instead of to somebody's inbox. */
     if (a.isDemo) {
       console.log(`[walkthrough] confirmation code for ${a.reference} is ${code}`);
+    } else if (onScreen) {
+      /* Already on the confirm screen. The code is in this response.
+         Nothing is emailed and nothing is written to the log. */
     } else if (VERIFY_CHANNEL === "phone") {
       const num = normalizePhone(to);
       if (!num) return reply.code(400).send({ error: "bad_phone", detail: "That mobile number doesn't look right." });
@@ -545,6 +551,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       }
     }
     markSent("onb:" + a.reference);
+    if (onScreen) return { ok: true, channel: VERIFY_CHANNEL, sentTo: to, code };
     return { ok: true, channel: VERIFY_CHANNEL, sentTo: to };
   });
 
@@ -609,6 +616,11 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     }
 
     const spec = specFromAnswers(resolved, a);
+    const stagingSlug = stagingOnboardingMark(a.email, a.details, req.headers);
+    if (stagingSlug) {
+      spec.isTestShop = true;
+      spec.slug = stagingSlug;
+    }
     if (!spec.email || !spec.businessName) {
       return reply.code(409).send({ error: "not_ready", detail: "We still need the shop name and the owner's email." });
     }
@@ -619,6 +631,13 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
 
     forgetClaimedCount();
     const made = await provisionDesk(db, spec, await hashPassword(password), "onboarding");
+    if (stagingSlug) {
+      await audit(db, {
+        tenantId: made.tenantId, legalEntityId: made.legalEntityId, branchId: made.branchId, actorId: made.ownerId,
+        action: "staging.fresh_shop_created",
+        detail: { slug: made.slug },
+      });
+    }
     await db.delete(schema.pendingSignups).where(eq(schema.pendingSignups.email, spec.email));
     await db
       .update(schema.onboarding)

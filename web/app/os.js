@@ -61873,10 +61873,9 @@ ${snap}`;
 
 /* ---- os-src/staging-fresh-shop.js ---- */
 /* Staging "Start a fresh shop" on the sign-in page.
-   Absent unless the door is open. The staff id and the one-time
-   password stay on the card only. Continuing keeps the email and
-   the signup code for the real code screen, and drops the password.
-   Nothing here is written to storage, the address bar, or the log. */
+   Absent unless the door is open. The button opens the existing
+   desk setup at /onboarding/CD-... Nothing here is written to
+   storage, the address bar, or the log. */
 (function (root, factory) {
   var api = factory();
   if (typeof module === "object" && module && module.exports) module.exports = api;
@@ -61884,15 +61883,10 @@ ${snap}`;
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.freshShopButton = api.freshShopButton;
     cdos.freshShopMessage = api.freshShopMessage;
-    cdos.freshShopNotice = api.freshShopNotice;
-    cdos.acceptFreshShop = api.acceptFreshShop;
-    cdos.leaveFreshCard = api.leaveFreshCard;
-    cdos.freshShopCode = api.freshShopCode;
-    cdos.afterFreshVerify = api.afterFreshVerify;
+    cdos.freshShopEntry = api.freshShopEntry;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  var NOTICE = "Shown once. Write it down.";
-  var CODE_LINE = "Type this code. It is shown here.";
+  var REF = /^CD-[2-9A-HJ-NP-Z]{6,12}$/;
 
   function freshShopButton(enabled) {
     return enabled === true ? [{ label: "Start a fresh shop" }] : [];
@@ -61904,45 +61898,19 @@ ${snap}`;
     return "Something went wrong. Try again.";
   }
 
-  function six(code) {
-    return typeof code === "string" && /^[0-9]{6}$/.test(code);
-  }
-
-  function acceptFreshShop(body) {
-    var staffId = body && typeof body.email === "string" ? body.email.trim() : "";
-    var password = body && typeof body.password === "string" ? body.password : "";
-    var code = body && typeof body.code === "string" ? body.code.trim() : "";
-    if (!staffId || !password || !six(code)) return null;
-    return { staffId: staffId, password: password, code: code };
-  }
-
-  /* The password is not on the next screen. The caller shows the code
-     and then throws this object away. */
-  function leaveFreshCard(held) {
-    if (!held || !held.staffId || !six(held.code)) return null;
-    return { email: held.staffId, code: held.code };
-  }
-
-  function freshShopCode(code) {
-    var value = typeof code === "string" ? code.trim() : "";
-    if (!six(value)) return null;
-    return { code: value, line: CODE_LINE };
-  }
-
-  /* A fresh shop owner has to sign in and replace the one-time password.
-     Any other verify still opens the desk the way it does today. */
-  function afterFreshVerify(user) {
-    return user && user.mustChangePassword === true ? "signin" : "desk";
+  /* The same address the invite link uses. A password or a code
+     is not a reference, so those bodies do not open a page. */
+  function freshShopEntry(body) {
+    var ref = body && typeof body.reference === "string" ? body.reference.trim().toUpperCase() : "";
+    if (!REF.test(ref)) return null;
+    if (body.password || body.code) return null;
+    return "/onboarding/" + ref;
   }
 
   return {
     freshShopButton: freshShopButton,
     freshShopMessage: freshShopMessage,
-    freshShopNotice: NOTICE,
-    acceptFreshShop: acceptFreshShop,
-    leaveFreshCard: leaveFreshCard,
-    freshShopCode: freshShopCode,
-    afterFreshVerify: afterFreshVerify,
+    freshShopEntry: freshShopEntry,
   };
 });
 
@@ -62175,18 +62143,12 @@ ${snap}`;
     onSignup,
     onComplete,
     onMustChange,
-    onFreshShop,
     stagingOpen,
-    freshStart,
-    freshProblem,
-    openingId
+    freshProblem
   }) {
-    const [step, setStep] = useState(freshStart ? 'fresh' : 'id'); // id | password | code | fresh
-    const [idInput, setIdInput] = useState(openingId || '');
-    const [fresh, setFresh] = useState(freshStart || null);
+    const [step, setStep] = useState('id'); // id | password | code
+    const [idInput, setIdInput] = useState('');
     const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
-    const [copied, setCopied] = useState('');
-    const [screenCode, setScreenCode] = useState('');
     const [pw, setPw] = useState('');
     const [showPw, setShowPw] = useState(false);
     const [code, setCode] = useState('');
@@ -62353,24 +62315,13 @@ ${snap}`;
         setErr('That door is closed.');
       }
     }
-    async function copyValue(value, which) {
-      try {
-        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(value);
-        }
-        setCopied(which);
-      } catch (_) {
-        setCopied('');
-      }
-    }
     async function startFresh() {
       if (sending.current) return;
       sending.current = true;
       setBusy(true);
-      setErr('');
       setFreshErr('');
       try {
-        const res = await fetch('/api/staging/fresh-shop', {
+        const res = await fetch('/api/staging/fresh-onboarding', {
           method: 'POST',
           credentials: 'same-origin'
         });
@@ -62381,15 +62332,13 @@ ${snap}`;
           setFreshErr(window.CDOS.freshShopMessage(res.status));
           return;
         }
-        const held = window.CDOS.acceptFreshShop(data);
-        if (!held) {
+        const path = window.CDOS.freshShopEntry(data);
+        if (!path) {
           setFreshErr(window.CDOS.freshShopMessage(0));
           return;
         }
-        setFresh(held);
-        setCopied('');
-        setStep('fresh');
-      } catch (_) {
+        window.location.assign(path);
+      } catch (e2) {
         sending.current = false;
         setBusy(false);
         setFreshErr(window.CDOS.freshShopMessage('network'));
@@ -62483,28 +62432,24 @@ ${snap}`;
         sending.current = false;
         setBusy(false);
         setErr('');
-        const needsCode = !(data && data.needsCode === false);
-        if (!needsCode) {
-          if (u && u.mustChangePassword) {
-            onMustChange(rec, {
-              current: pw
-            }, srvPlan, u);
-            return;
-          }
-          onComplete(rec, srvPlan, u);
+        if (u && u.mustChangePassword) {
+          onMustChange(rec, {
+            current: pw
+          }, srvPlan, u);
           return;
         }
-        const visible = window.CDOS.freshShopCode && window.CDOS.freshShopCode(data && data.code);
         authRef.current = {
           rec,
           srvPlan,
           srvUser: u,
           staffId,
           tenantId: u && u.tenantId || undefined,
-          maskedEmail: data && data.maskedEmail,
-          mustChange: !!(u && u.mustChangePassword)
+          maskedEmail: data && data.maskedEmail
         };
-        setScreenCode(visible ? visible.code : '');
+        if (data && data.needsCode === false) {
+          onComplete(rec, srvPlan, u);
+          return;
+        } // password-only (no email on file)
         setCode('');
         setStep('code');
         startCooldown(120);
@@ -62663,13 +62608,6 @@ ${snap}`;
           return;
         }
         const u = data && data.user || a.srvUser;
-        setScreenCode('');
-        if (a.mustChange || u && u.mustChangePassword) {
-          onMustChange(a.rec, {
-            current: pw
-          }, u && u.plan || a.srvPlan, u);
-          return;
-        }
         onComplete(a.rec, u && u.plan || a.srvPlan, u);
       } catch (_) {
         setVerifying(false);
@@ -62707,9 +62645,7 @@ ${snap}`;
           setNote(d && d.detail || 'A code went out moments ago.');
           return;
         }
-        const visible = window.CDOS.freshShopCode && window.CDOS.freshShopCode(d && d.code);
-        setScreenCode(visible ? visible.code : '');
-        setNote(visible ? 'Type the code on this screen.' : 'A new code is on its way.');
+        setNote('A new code is on its way.');
         setCode('');
         startCooldown(120);
       } catch (_) {
@@ -62790,87 +62726,6 @@ ${snap}`;
         color: 'var(--si-mute)'
       }
     }, "OS")), children);
-    if (step === 'fresh' && fresh) {
-      const row = (label, value, which) => /*#__PURE__*/React.createElement("div", {
-        style: {
-          marginTop: 12
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontFamily: MONO,
-          fontSize: 10,
-          letterSpacing: '0.14em',
-          color: 'var(--si-mute)',
-          marginBottom: 6
-        }
-      }, label), /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: 'flex',
-          gap: 8,
-          alignItems: 'stretch'
-        }
-      }, /*#__PURE__*/React.createElement("div", {
-        "data-fresh": which,
-        style: {
-          flex: 1,
-          minWidth: 0,
-          overflowWrap: 'anywhere',
-          fontFamily: MONO,
-          fontSize: 15,
-          fontWeight: 700,
-          lineHeight: 1.35,
-          padding: '12px',
-          borderRadius: 11,
-          border: '1px solid var(--si-line)',
-          background: 'var(--si-panel)'
-        }
-      }, value), /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        onClick: () => copyValue(value, which),
-        style: {
-          minWidth: 72,
-          minHeight: 44,
-          borderRadius: 11,
-          border: '1px solid var(--si-line)',
-          background: 'var(--si-panel)',
-          color: 'var(--si-ink)',
-          fontFamily: 'Archivo, system-ui, sans-serif',
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer'
-        }
-      }, copied === which ? 'Copied' : 'Copy')));
-      return shell(card(/*#__PURE__*/React.createElement("div", {
-        "data-fresh-card": "1"
-      }, /*#__PURE__*/React.createElement("h1", {
-        style: {
-          textAlign: 'center',
-          fontSize: 23,
-          fontWeight: 800,
-          letterSpacing: '-0.01em',
-          margin: '0 0 8px'
-        }
-      }, "Your new shop"), /*#__PURE__*/React.createElement("div", {
-        style: {
-          textAlign: 'center',
-          fontSize: 14,
-          lineHeight: 1.45
-        }
-      }, window.CDOS.freshShopNotice), row('STAFF ID', fresh.staffId, 'id'), row('ONE-TIME PASSWORD', fresh.password, 'password'), /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        onClick: () => {
-          const next = window.CDOS.leaveFreshCard(fresh);
-          setFresh(null);
-          setCopied('');
-          setStep('id');
-          if (onFreshShop && next) onFreshShop(next);
-        },
-        style: {
-          ...primaryBtn(true),
-          marginTop: 16
-        }
-      }, "Continue"))));
-    }
 
     // ---- A1 · CurrencyDesk ID -----------------------------------------
     if (step === 'id') return shell(card(/*#__PURE__*/React.createElement("form", {
@@ -62912,16 +62767,9 @@ ${snap}`;
         fontSize: 10.5,
         letterSpacing: '0.18em',
         color: 'var(--si-mute)',
-        marginBottom: openingId ? 10 : 18
+        marginBottom: 18
       }
-    }, "CURRENCYDESK OS"), openingId ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        textAlign: 'center',
-        fontSize: 14,
-        lineHeight: 1.45,
-        marginBottom: 14
-      }
-    }, "Shop is open. Sign in with this staff id and the password you wrote down.") : null, /*#__PURE__*/React.createElement("div", {
+    }, "CURRENCYDESK OS"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: MONO,
         fontSize: 10,
@@ -63634,26 +63482,17 @@ ${snap}`;
         letterSpacing: '-0.01em',
         margin: '0 0 4px'
       }
-    }, screenCode ? 'Enter your code' : 'Check your email'), /*#__PURE__*/React.createElement("div", {
+    }, "Check your email"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13.5,
         color: 'var(--si-mute)',
-        marginBottom: screenCode ? 8 : 16
+        marginBottom: 16
       }
-    }, screenCode ? window.CDOS.freshShopCode(screenCode).line : /*#__PURE__*/React.createElement(React.Fragment, null, "A fresh 6-digit code just went to ", /*#__PURE__*/React.createElement("b", {
+    }, "A fresh 6-digit code just went to ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: 'var(--si-ink)'
       }
-    }, maskedEmail), ".")), screenCode ? /*#__PURE__*/React.createElement("div", {
-      "data-signin-code": "1",
-      style: {
-        fontFamily: MONO,
-        fontSize: 28,
-        fontWeight: 700,
-        letterSpacing: '0.28em',
-        margin: '4px 0 14px'
-      }
-    }, screenCode) : null, /*#__PURE__*/React.createElement("div", {
+    }, maskedEmail), "."), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -63707,7 +63546,6 @@ ${snap}`;
       onClick: () => {
         setStep('password');
         setCode('');
-        setScreenCode('');
       },
       style: {
         background: 'none',
@@ -67108,14 +66946,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   function VerifySignup({
     email,
     onVerified,
-    onBack,
-    shownCode
+    onBack
   }) {
     const [code, setCode] = useState('');
     const [err, setErr] = useState('');
     const [busy, setBusy] = useState(false);
     const [note, setNote] = useState('');
-    const shown = window.CDOS.freshShopCode ? window.CDOS.freshShopCode(shownCode) : null;
     const submit = async e => {
       e.preventDefault();
       if (code.trim().length < 4) {
@@ -67150,10 +66986,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     };
     const resend = async () => {
-      if (shown) {
-        setNote('Use the code on this screen.');
-        return;
-      }
       setNote('Sending\u2026');
       try {
         await fetch('/api/signup/resend', {
@@ -67183,20 +67015,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "sub"
     }, "Verify your email")), /*#__PURE__*/React.createElement("h1", null, "Enter your code"), /*#__PURE__*/React.createElement("div", {
       className: "station"
-    }, shown ? shown.line : /*#__PURE__*/React.createElement(React.Fragment, null, "We emailed a 6-digit code to ", /*#__PURE__*/React.createElement("b", {
+    }, "We emailed a 6-digit code to ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: 'var(--ink)'
       }
-    }, email), ". It expires in 10 minutes.")), shown ? /*#__PURE__*/React.createElement("div", {
-      "data-signup-code": "1",
-      style: {
-        fontFamily: 'var(--f-mono)',
-        fontSize: 28,
-        fontWeight: 700,
-        letterSpacing: '0.28em',
-        margin: '0 0 16px'
-      }
-    }, shown.code) : null, /*#__PURE__*/React.createElement("form", {
+    }, email), ". It expires in 10 minutes."), /*#__PURE__*/React.createElement("form", {
       onSubmit: submit
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("input", {
       value: code,
@@ -67962,7 +67785,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [authRec, setAuthRec] = useState(null); // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null); // {current} while a temporary password must be replaced
     const [signup, setSignup] = useState(null); // { email } while verifying a new-desk signup
-    const [openingId, setOpeningId] = useState('');
     const [newDesk, setNewDesk] = useState(null); // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null); // server user (carries tenantId) — drives per-tenant persistence
     const [stagingOn, setStagingOn] = useState(false);
@@ -70632,16 +70454,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     };
     if (stage === 'lock') return /*#__PURE__*/React.createElement(SignIn, {
       employees: settings.employees || [],
-      openingId: openingId,
       onSignup: () => setStage('signup'),
-      onFreshShop: next => {
-        setSignup({
-          email: next.email,
-          code: next.code,
-          fresh: true
-        });
-        setStage('verify');
-      },
       onMustChange: (rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({
           ...s,
@@ -70696,26 +70509,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     });
     if (stage === 'verify') return /*#__PURE__*/React.createElement(VerifySignup, {
       email: signup && signup.email,
-      shownCode: signup && signup.code,
-      onBack: () => {
-        const backToShop = signup && signup.fresh;
-        setSignup(null);
-        setStage(backToShop ? 'lock' : 'signup');
-      },
-      onVerified: async d => {
-        if (signup && signup.fresh && window.CDOS.afterFreshVerify(d && d.user) === 'signin') {
-          try {
-            await fetch('/api/auth/logout', {
-              method: 'POST',
-              credentials: 'same-origin'
-            });
-          } catch (_) {}
-          const email = signup.email;
-          setSignup(null);
-          setOpeningId(email || '');
-          setStage('lock');
-          return;
-        }
+      onBack: () => setStage('signup'),
+      onVerified: d => {
         setNewDesk(d);
         setStage('created');
       }
@@ -71946,7 +71741,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }));
   }
   window.CDOS_App = App;
-  window.CDOS.VerifySignup = VerifySignup;
 })();
 
 /* ---- inline ---- */

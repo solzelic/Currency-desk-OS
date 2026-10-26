@@ -56,7 +56,7 @@
        here, because it is the thing that actually sends. Today that is
        email; when a phone provider exists it becomes "phone" server-side
        and every word on this screen follows without a rebuild. */
-    verify: { channel: "email", sentTo: "" },
+    verify: { channel: "email", sentTo: "", code: "" },
     err: "",
 
     /* Which codes the server has confirmed, and which it has denied. The
@@ -144,6 +144,15 @@
           fixTail: "\u2014 you\u2019ll need this number every time you sign in.",
         };
       }
+      var shown = CD.verify && /^[0-9]{6}$/.test(CD.verify.code || "") ? CD.verify.code : "";
+      if (shown) {
+        return {
+          q: "Confirm your email.",
+          help: "Type this code. It is shown here. " + shown,
+          resend: "No email yet?", fixLead: "Wrong address?",
+          fixTail: "\u2014 you\u2019ll need this address every time you sign in.",
+        };
+      }
       return {
         q: "Confirm your email.",
         help: "We\u2019ve emailed a 6-digit code to " + (to || "your email address") +
@@ -161,7 +170,8 @@
       CD.err = "";
       return api("/verify/send", { data: d }).then(function (r) {
         if (r.status === 200 && r.body.ok) {
-          CD.verify = { channel: r.body.channel || "email", sentTo: r.body.sentTo || "" };
+          var code = typeof r.body.code === "string" && /^[0-9]{6}$/.test(r.body.code) ? r.body.code : "";
+          CD.verify = { channel: r.body.channel || "email", sentTo: r.body.sentTo || "", code: code };
           return true;
         }
         CD.err = r.body.detail || "We couldn\u2019t send that code just now.";

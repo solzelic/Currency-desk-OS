@@ -97,13 +97,10 @@
   });
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
-  function SignIn({ employees, onSignup, onComplete, onMustChange, onFreshShop, stagingOpen, freshStart, freshProblem, openingId }) {
-    const [step, setStep] = useState(freshStart ? 'fresh' : 'id'); // id | password | code | fresh
-    const [idInput, setIdInput] = useState(openingId || '');
-    const [fresh, setFresh] = useState(freshStart || null);
+  function SignIn({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem }) {
+    const [step, setStep] = useState('id');            // id | password | code
+    const [idInput, setIdInput] = useState('');
     const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
-    const [copied, setCopied] = useState('');
-    const [screenCode, setScreenCode] = useState('');
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
     const [code, setCode] = useState('');
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
@@ -231,27 +228,19 @@
         setErr('That door is closed.');
       }
     }
-    async function copyValue(value, which) {
-      try {
-        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(value);
-        }
-        setCopied(which);
-      } catch (_) { setCopied(''); }
-    }
     async function startFresh() {
       if (sending.current) return;
       sending.current = true;
-      setBusy(true); setErr(''); setFreshErr('');
+      setBusy(true); setFreshErr('');
       try {
-        const res = await fetch('/api/staging/fresh-shop', { method: 'POST', credentials: 'same-origin' });
+        const res = await fetch('/api/staging/fresh-onboarding', { method: 'POST', credentials: 'same-origin' });
         const data = await res.json().catch(() => null);
         sending.current = false; setBusy(false);
         if (!res.ok) { setFreshErr(window.CDOS.freshShopMessage(res.status)); return; }
-        const held = window.CDOS.acceptFreshShop(data);
-        if (!held) { setFreshErr(window.CDOS.freshShopMessage(0)); return; }
-        setFresh(held); setCopied(''); setStep('fresh');
-      } catch (_) {
+        const path = window.CDOS.freshShopEntry(data);
+        if (!path) { setFreshErr(window.CDOS.freshShopMessage(0)); return; }
+        window.location.assign(path);
+      } catch (e2) {
         sending.current = false; setBusy(false);
         setFreshErr(window.CDOS.freshShopMessage('network'));
       }
@@ -299,14 +288,9 @@
         const srvPlan = (u && u.plan) || null;
         if (!rec && u) rec = adopt(u, null);
         sending.current = false; setBusy(false); setErr('');
-        const needsCode = !(data && data.needsCode === false);
-        if (!needsCode) {
-          if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
-          onComplete(rec, srvPlan, u); return;
-        }
-        const visible = window.CDOS.freshShopCode && window.CDOS.freshShopCode(data && data.code);
-        authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail, mustChange: !!(u && u.mustChangePassword) };
-        setScreenCode(visible ? visible.code : '');
+        if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
+        authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail };
+        if (data && data.needsCode === false) { onComplete(rec, srvPlan, u); return; } // password-only (no email on file)
         setCode(''); setStep('code'); startCooldown(120);
       } catch (_) {
         // A static local prototype can still demonstrate the flow. A deployed
@@ -392,8 +376,6 @@
         const data = await res.json().catch(() => null);
         if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn\'t right. Check your email.'); return; }
         const u = (data && data.user) || a.srvUser;
-        setScreenCode('');
-        if (a.mustChange || (u && u.mustChangePassword)) { onMustChange(a.rec, { current: pw }, (u && u.plan) || a.srvPlan, u); return; }
         onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
       } catch (_) { setVerifying(false); setErr('Network error — try again.'); }
     }
@@ -417,9 +399,7 @@
           setNote((d && d.detail) || 'A code went out moments ago.');
           return;
         }
-        const visible = window.CDOS.freshShopCode && window.CDOS.freshShopCode(d && d.code);
-        setScreenCode(visible ? visible.code : '');
-        setNote(visible ? 'Type the code on this screen.' : 'A new code is on its way.'); setCode(''); startCooldown(120);
+        setNote('A new code is on its way.'); setCode(''); startCooldown(120);
       } catch (_) { setNote('Couldn’t resend — try again.'); }
       finally { sending.current = false; }
     }
@@ -460,38 +440,12 @@
       </div>
     );
 
-    if (step === 'fresh' && fresh) {
-      const row = (label, value, which) => (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>{label}</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-            <div data-fresh={which} style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontFamily: MONO, fontSize: 15, fontWeight: 700, lineHeight: 1.35, padding: '12px', borderRadius: 11, border: '1px solid var(--si-line)', background: 'var(--si-panel)' }}>{value}</div>
-            <button type="button" onClick={() => copyValue(value, which)} style={{ minWidth: 72, minHeight: 44, borderRadius: 11, border: '1px solid var(--si-line)', background: 'var(--si-panel)', color: 'var(--si-ink)', fontFamily: 'Archivo, system-ui, sans-serif', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>{copied === which ? 'Copied' : 'Copy'}</button>
-          </div>
-        </div>
-      );
-      return shell(card(
-        <div data-fresh-card="1">
-          <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 8px' }}>Your new shop</h1>
-          <div style={{ textAlign: 'center', fontSize: 14, lineHeight: 1.45 }}>{window.CDOS.freshShopNotice}</div>
-          {row('STAFF ID', fresh.staffId, 'id')}
-          {row('ONE-TIME PASSWORD', fresh.password, 'password')}
-          <button type="button" onClick={() => {
-            const next = window.CDOS.leaveFreshCard(fresh);
-            setFresh(null); setCopied(''); setStep('id');
-            if (onFreshShop && next) onFreshShop(next);
-          }} style={{ ...primaryBtn(true), marginTop: 16 }}>Continue</button>
-        </div>
-      ));
-    }
-
     // ---- A1 · CurrencyDesk ID -----------------------------------------
     if (step === 'id') return shell(card(<form onSubmit={e => { e.preventDefault(); goPassword(); }}>
       <div style={{ display: 'grid', placeItems: 'center', marginBottom: 4 }}><Mark w={44} h={31} cut={night ? '#23221e' : 'rgba(255,255,255,0.55)'} /></div>
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.34em', color: 'var(--si-primary)', margin: '8px 0 6px' }}>FAIR EXCHANGE</div>
       <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 2px' }}>Sign in</h1>
-      <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.18em', color: 'var(--si-mute)', marginBottom: openingId ? 10 : 18 }}>CURRENCYDESK OS</div>
-      {openingId ? <div style={{ textAlign: 'center', fontSize: 14, lineHeight: 1.45, marginBottom: 14 }}>Shop is open. Sign in with this staff id and the password you wrote down.</div> : null}
+      <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.18em', color: 'var(--si-mute)', marginBottom: 18 }}>CURRENCYDESK OS</div>
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>CURRENCYDESK ID</div>
       <input value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); }} autoFocus placeholder="your-staff-id"
         style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontFamily: MONO, fontSize: 18, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
@@ -665,9 +619,8 @@
     // ---- A3 · Email code (keypad) -------------------------------------
     return shell(card(<div style={{ textAlign: 'center' }}>
       <MailGlyph />
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{screenCode ? 'Enter your code' : 'Check your email'}</h1>
-      <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: screenCode ? 8 : 16 }}>{screenCode ? window.CDOS.freshShopCode(screenCode).line : <>A fresh 6-digit code just went to <b style={{ color: 'var(--si-ink)' }}>{maskedEmail}</b>.</>}</div>
-      {screenCode ? <div data-signin-code="1" style={{ fontFamily: MONO, fontSize: 28, fontWeight: 700, letterSpacing: '0.28em', margin: '4px 0 14px' }}>{screenCode}</div> : null}
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>Check your email</h1>
+      <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 16 }}>A fresh 6-digit code just went to <b style={{ color: 'var(--si-ink)' }}>{maskedEmail}</b>.</div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         {[0, 1, 2, 3, 4, 5].map(i => {
           const filled = i < code.length, active = i === code.length && !verifying;
@@ -679,7 +632,7 @@
       <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit}
         leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying} />
       <div style={{ fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11, fontWeight: note && note.indexOf('Too many tries.') === 0 ? 800 : 400, color: note && note.indexOf('Too many tries.') === 0 ? 'var(--si-ink)' : 'var(--si-faint)', marginTop: 16, lineHeight: 1.35 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
-      <button type="button" onClick={() => { setStep('password'); setCode(''); setScreenCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
+      <button type="button" onClick={() => { setStep('password'); setCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
     </div>));
   }
 

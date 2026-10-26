@@ -1,8 +1,7 @@
 /* Staging "Start a fresh shop" on the sign-in page.
-   Absent unless the door is open. The staff id and the one-time
-   password stay on the card only. Continuing keeps the email and
-   the signup code for the real code screen, and drops the password.
-   Nothing here is written to storage, the address bar, or the log. */
+   Absent unless the door is open. The button opens the existing
+   desk setup at /onboarding/CD-... Nothing here is written to
+   storage, the address bar, or the log. */
 (function (root, factory) {
   var api = factory();
   if (typeof module === "object" && module && module.exports) module.exports = api;
@@ -10,15 +9,10 @@
     var cdos = root.CDOS || (root.CDOS = {});
     cdos.freshShopButton = api.freshShopButton;
     cdos.freshShopMessage = api.freshShopMessage;
-    cdos.freshShopNotice = api.freshShopNotice;
-    cdos.acceptFreshShop = api.acceptFreshShop;
-    cdos.leaveFreshCard = api.leaveFreshCard;
-    cdos.freshShopCode = api.freshShopCode;
-    cdos.afterFreshVerify = api.afterFreshVerify;
+    cdos.freshShopEntry = api.freshShopEntry;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  var NOTICE = "Shown once. Write it down.";
-  var CODE_LINE = "Type this code. It is shown here.";
+  var REF = /^CD-[2-9A-HJ-NP-Z]{6,12}$/;
 
   function freshShopButton(enabled) {
     return enabled === true ? [{ label: "Start a fresh shop" }] : [];
@@ -30,44 +24,18 @@
     return "Something went wrong. Try again.";
   }
 
-  function six(code) {
-    return typeof code === "string" && /^[0-9]{6}$/.test(code);
-  }
-
-  function acceptFreshShop(body) {
-    var staffId = body && typeof body.email === "string" ? body.email.trim() : "";
-    var password = body && typeof body.password === "string" ? body.password : "";
-    var code = body && typeof body.code === "string" ? body.code.trim() : "";
-    if (!staffId || !password || !six(code)) return null;
-    return { staffId: staffId, password: password, code: code };
-  }
-
-  /* The password is not on the next screen. The caller shows the code
-     and then throws this object away. */
-  function leaveFreshCard(held) {
-    if (!held || !held.staffId || !six(held.code)) return null;
-    return { email: held.staffId, code: held.code };
-  }
-
-  function freshShopCode(code) {
-    var value = typeof code === "string" ? code.trim() : "";
-    if (!six(value)) return null;
-    return { code: value, line: CODE_LINE };
-  }
-
-  /* A fresh shop owner has to sign in and replace the one-time password.
-     Any other verify still opens the desk the way it does today. */
-  function afterFreshVerify(user) {
-    return user && user.mustChangePassword === true ? "signin" : "desk";
+  /* The same address the invite link uses. A password or a code
+     is not a reference, so those bodies do not open a page. */
+  function freshShopEntry(body) {
+    var ref = body && typeof body.reference === "string" ? body.reference.trim().toUpperCase() : "";
+    if (!REF.test(ref)) return null;
+    if (body.password || body.code) return null;
+    return "/onboarding/" + ref;
   }
 
   return {
     freshShopButton: freshShopButton,
     freshShopMessage: freshShopMessage,
-    freshShopNotice: NOTICE,
-    acceptFreshShop: acceptFreshShop,
-    leaveFreshCard: leaveFreshCard,
-    freshShopCode: freshShopCode,
-    afterFreshVerify: afterFreshVerify,
+    freshShopEntry: freshShopEntry,
   };
 });
