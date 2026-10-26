@@ -15644,7 +15644,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, holder ? `Held by ${holder}. ` : '', "Count the cash in the drawer. The book keeps its figures hidden until this count is saved.")), /*#__PURE__*/React.createElement("button", {
+    }, `Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       "aria-label": "Close",
@@ -15963,7 +15963,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const session = applySession(await window.CDOS.Backend.openTillSession());
         const balances = await window.CDOS.Backend.loadTillBalances();
         applyBook(balances);
-        log && log('Till opened', `Session ${session ? session.sessionNumber : '—'} · ${tillNm}`);
+        log && log('Till opened', `Session ${session ? session.sessionNumber : 'Unknown'} · ${tillNm}`);
       } catch (error) {
         setSessionErr(error.message || 'The server would not open this till.');
       } finally {
@@ -16397,7 +16397,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         log && log('Till taken over', tillNm);
         setTakeoverOpen(false);
       } catch (error) {
-        setSessionErr(error.message || 'The server would not hand this till over.');
+        setSessionErr(error.message || 'This till could not be handed over. Try again or call a supervisor.');
       } finally {
         setTillBusy('');
       }
@@ -16958,7 +16958,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           background: 'var(--cd-chip)',
           color: reconInk
         },
-        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'
+        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail. Floats are issued and returned at the vault'
       }, serverBacked ? 'In drawer · ledger' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink,
@@ -17246,7 +17246,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: CD.mute
     }), " Take over till") : /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
-      title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session — close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
+      title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session. Close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
       className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
       style: {
         border: `1px solid ${CD.line}`,
@@ -17515,7 +17515,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? 'Hide expected. Keep the count blind.' : 'Reveal & read out the expected float',
       className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
@@ -18651,7 +18651,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       onDone: doHandoff
     }), takeoverOpen && /*#__PURE__*/React.createElement(TakeoverSheet, {
       currencies: serverCcys,
-      holder: current && current.operator,
+      holder: serverSession && serverSession.holderName || 'Unknown',
       busy: tillBusy === 'handover',
       error: sessionErr,
       onClose: () => setTakeoverOpen(false),

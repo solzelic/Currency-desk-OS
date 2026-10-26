@@ -2,6 +2,7 @@
    over. Opening again does not move the hold. A mid-day count does
    not either. The handover is the write that closes the old session
    on a blind count and opens the next one for the person who counted. */
+import { createHash } from "node:crypto";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -755,6 +756,47 @@ postgres("a second teller takes a held till by counting it", () => {
   it("a branch manager has till:handover:approve", () => {
     expect(hasBackendPermission("branch_manager", "till:handover:approve")).toBe(true);
     expect(hasBackendPermission("teller", "till:handover:approve")).toBe(false);
+  });
+
+  it("two handover requests that differ only in the PIN share a hash, and the hash input has no PIN", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const counts: Record<string, string> = { CAD: "24970.00", USD: "12000.00" };
+    const pinA = "1357";
+    const pinB = "2468";
+    const first = await handover(costa, counts, "pin-hash-a", {
+      approverStaffId: "a.singh",
+      approverPin: pinA,
+    });
+    const second = await handover(costa, counts, "pin-hash-b", {
+      approverStaffId: "a.singh",
+      approverPin: pinB,
+    });
+    expect(first.statusCode, first.body).toBe(403);
+    expect(second.statusCode, second.body).toBe(403);
+    const stored = await pool.query(
+      `SELECT idempotency_key, request_hash
+         FROM ledger_idempotency
+        WHERE operation='till-handover' AND idempotency_key IN ('pin-hash-a','pin-hash-b')
+        ORDER BY idempotency_key`,
+    );
+    expect(stored.rows).toHaveLength(2);
+    expect(stored.rows[0].request_hash).toBe(stored.rows[1].request_hash);
+    const input = JSON.stringify({
+      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+      approverPresent: true,
+    });
+    for (const pin of [pinA, pinB]) expect(input).not.toContain(pin);
+    expect(input).not.toContain("approverPin");
+    const hash = createHash("sha256").update(input).digest("hex");
+    expect(stored.rows[0].request_hash).toBe(hash);
+    expect(stored.rows[1].request_hash).toBe(hash);
+    const withPin = createHash("sha256").update(JSON.stringify({
+      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+      approverStaffId: "a.singh",
+      approverPin: pinA,
+    })).digest("hex");
+    expect(withPin).not.toBe(stored.rows[0].request_hash);
   });
 
   it("an approver and a PIN are refused before the PIN is checked", async () => {

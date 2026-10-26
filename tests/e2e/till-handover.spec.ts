@@ -124,7 +124,9 @@ test("a second teller takes over a held till from the deal form", async ({ page,
   await take.click();
   const sheet = page.getByRole("dialog", { name: "Take over till" });
   await expect(sheet).toBeVisible({ timeout: 20_000 });
-  await expect(sheet).not.toContainText(/expected/i);
+  await expect(sheet).toContainText("Expected amounts stay hidden until you save this count.");
+  await expect(sheet).toContainText(/Held by A\.\s*Singh/);
+  await expect(sheet).not.toContainText("a.singh");
   const before = await sheet.innerText();
   for (const leaked of ["25000", "25,000", "12000", "12,000", "7000", "7,000", "3500", "3,500"]) {
     expect(before, leaked).not.toContain(leaked);

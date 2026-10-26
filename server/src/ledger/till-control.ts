@@ -108,8 +108,7 @@ const handoverRequestHash = (
   approval?: { staffId: string; pin: string },
 ) => createHash("sha256").update(JSON.stringify({
   counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-  approverStaffId: approval?.staffId ?? "",
-  approverPin: approval?.pin ?? "",
+  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "")),
 })).digest("hex");
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
