@@ -6,11 +6,12 @@
 import { randomBytes } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
+import { clearDeepHealthCache } from "../src/routes/admin.js";
 import { createDb, provisionPostgres, schema, type DbHandle } from "../src/db/index.js";
 import { migrations, runMigrations } from "../src/db/migrations.js";
 
@@ -24,6 +25,8 @@ function putEnv(key: "STAGING" | "RENDER_EXTERNAL_HOSTNAME" | "RENDER_GIT_COMMIT
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+beforeEach(() => { clearDeepHealthCache(); });
 
 function deep(target: FastifyInstance) {
   return target.inject({

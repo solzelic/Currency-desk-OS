@@ -311,6 +311,11 @@ function platformSession(resolved: SessionState) {
     : { ...resolved.user, suspendedDesk: resolved.state === "suspended" };
 }
 
+let deepHealthCache: { at: number; commit: string; status: number; body: Record<string, unknown> } | null = null;
+export function clearDeepHealthCache(): void {
+  deepHealthCache = null;
+}
+
 export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // resolve the session and confirm platform-admin; returns the user or null
   // (having already sent 401/403).
@@ -318,12 +323,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
      more than one, and every one of them has to hold. Omitting it means
      "any member of the platform team", which is right for the read-only
      shell and wrong for a write. */
-  async function gate(req: any, reply: any, need?: Permission | readonly Permission[]) {
-    const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
-    if (!who) {
-      reply.code(401).send({ error: "unauthenticated" });
+  async function gate(req: any, reply: any, need?: Permission | readonly Permission[], plain = false) {
+    const deny = (code: number, error: string, detail?: string) => {
+      reply.code(code).send(plain || detail == null ? { error } : { error, detail });
       return null;
-    }
+    };
+    const who = platformSession(await resolveSessionState(db, req.cookies[SESSION_COOKIE]));
+    if (!who) return deny(401, "unauthenticated");
     const me = await member(db, who.staffId);
     /* Suspension is checked on the way past every request, and a platform
        operator's own staff account sits on some tenant like anybody else's.
@@ -334,30 +340,22 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
        Without this an operator who blocks the desk their own account lives
        on locks themselves out of the panel and cannot unblock it, which is
        a support call to somebody with database access. */
-    if (!me && who.suspendedDesk) {
-      reply.code(401).send({ error: "unauthenticated" });
-      return null;
-    }
+    if (!me && who.suspendedDesk) return deny(401, "unauthenticated");
     if (me) memberCache.set(me.email, me.role as PlatformRole);
     else memberCache.delete((who.staffId ?? "").toLowerCase());
-    if (!me) {
-      reply.code(403).send({ error: "forbidden", detail: "Platform team only." });
-      return null;
-    }
+    if (!me) return deny(403, "forbidden", "Platform team only.");
     /* Until the operator enrolls, a password session still opens the API.
        That is the window in which an existing account can set an
        authenticator up instead of being locked out. Once totp_enrolled_at
        is set, a desk session — password, or the emailed code — is not
        enough. The panel's own sign-in is what stamps platform_mfa_at. */
     if ((await platformMfaEnrolled(db, me.email)) && !(await sessionHasPlatformMfa(db, req.cookies[SESSION_COOKIE]))) {
-      reply.code(401).send({ error: "mfa_required", detail: "Enter the code from your authenticator." });
-      return null;
+      return deny(401, "mfa_required", "Enter the code from your authenticator.");
     }
     const needs: readonly Permission[] = need == null ? [] : typeof need === "string" ? [need] : need;
     for (const n of needs) {
       if (!can(me.role as PlatformRole, n)) {
-        reply.code(403).send({ error: "permission_denied", detail: `Your role (${me.role}) cannot ${n.replace(":", " ")}.` });
-        return null;
+        return deny(403, "permission_denied", `Your role (${me.role}) cannot ${n.replace(":", " ")}.`);
       }
     }
     (who as any).platform = me;
@@ -1089,54 +1087,41 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     return { ok: true, reference: WALKTHROUGH_REF };
   });
 
-  /* First 7 characters of the deploy sha. Unset stays unknown.
-     This reads RENDER_GIT_COMMIT and nothing else. */
-  function deployedCommit(): string {
-    const value = process.env.RENDER_GIT_COMMIT;
-    if (!value) return "unknown";
-    return value.slice(0, 7);
-  }
-
-  /* A caller who is not through the door yet does not learn the sha,
-     including when the session read itself cannot reach the database. */
-  function databaseDown(commit: string | null) {
-    const body = {
-      ok: false as const,
-      service: "currencydesk-server",
-      error: "database" as const,
-    };
-    if (commit === null) return body;
-    return { ...body, commit, lastMigration: null };
-  }
-
-  /* Database read, commit, and last migration. Staging when the shared
-     door is open (STAGING exactly "1", staging host on the process and
-     on this request). Otherwise a platform admin. Live without that
-     session is refused. 503 when the tenant read fails. The body names
-     the failure and does not include the database error. */
-  app.get("/api/health/deep", async (req, reply) => {
-    const commit = deployedCommit();
-    if (!stagingDoorOpen({
-      host: req.headers.host,
-      "x-forwarded-host": req.headers["x-forwarded-host"],
-    })) {
-      try {
-        if (!(await gate(req, reply))) return;
-      } catch {
-        return reply.code(503).send(databaseDown(null));
-      }
-    }
+  const deployedCommit = () => (process.env.RENDER_GIT_COMMIT || "unknown").slice(0, 7);
+  const DEEP_TTL_MS = 30_000;
+  async function loadDeep(commit: string) {
+    const now = Date.now();
+    const cached = deepHealthCache;
+    if (cached && cached.commit === commit && now - cached.at < DEEP_TTL_MS) return cached;
+    const service = "currencydesk-server";
+    let status = 200;
+    let body: Record<string, unknown>;
     try {
       await db.select({ id: schema.tenants.id }).from(schema.tenants).limit(1);
+      body = { ok: true, service, commit, lastMigration: await newestAppliedMigration(db) };
     } catch {
-      return reply.code(503).send(databaseDown(commit));
+      status = 503;
+      body = { ok: false, service, error: "database", commit, lastMigration: null };
     }
-    return {
-      ok: true,
-      service: "currencydesk-server",
-      commit,
-      lastMigration: await newestAppliedMigration(db),
-    };
+    deepHealthCache = { at: now, commit, status, body };
+    return deepHealthCache;
+  }
+
+  app.get("/api/health/deep", async (req, reply) => {
+    const staging = stagingDoorOpen({
+      host: req.headers.host,
+      "x-forwarded-host": req.headers["x-forwarded-host"],
+    });
+    if (!staging) {
+      if (!req.cookies[SESSION_COOKIE]) return reply.code(401).send({ error: "unauthenticated" });
+      try {
+        if (!(await gate(req, reply, "team:manage", true))) return;
+      } catch {
+        return reply.code(503).send({ ok: false, service: "currencydesk-server", error: "database" });
+      }
+    }
+    const found = await loadDeep(deployedCommit());
+    return reply.code(found.status).send(found.body);
   });
 
   /* ---- is anything broken right now -------------------------------------

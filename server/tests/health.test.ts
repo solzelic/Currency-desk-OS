@@ -5,10 +5,11 @@
 
    `/api/admin/health` is a different surface, the narrative dashboard,
    and is not exercised here. */
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
+import { clearDeepHealthCache } from "../src/routes/admin.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -29,6 +30,8 @@ function deep(target: FastifyInstance) {
     headers: { host: STAGING_HOST },
   });
 }
+
+beforeEach(() => { clearDeepHealthCache(); });
 
 beforeAll(async () => {
   delete process.env.RENDER_GIT_COMMIT;

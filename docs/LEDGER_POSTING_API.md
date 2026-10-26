@@ -11,7 +11,7 @@ created by the Quote Service and posted through frozen quote terms.
 | Method | Path | Auth | Result |
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | Process up: 200 `{ ok: true, service }`. No database read. |
-| `GET` | `/api/health/deep` | platform admin session, or the staging door | Database read: 200 with `commit` and `lastMigration`, or 503 `{ ok: false, error: "database" }` when the read fails. Refused on live without a platform admin session. |
+| `GET` | `/api/health/deep` | owner (`team:manage`), or the staging door | Database read, cached 30 seconds: 200 with `commit` and `lastMigration`, or 503 `{ ok: false, error: "database" }` when the read fails. On live, no cookie is 401 before a session lookup. A 401 or 403 is `{error}` only, with no commit or migration fields. |
 | `GET` | `/api/ledger/readiness` | session cookie + `ledger:view` | Reports whether the active workspace has customers and till balances. |
 | `GET` | `/api/ledger/customers` | session cookie + `customer:view` | Lists relational customers in the active workspace. |
 | `POST` | `/api/ledger/customers` | session cookie + `customer:write` | Creates or syncs a customer; `externalRef` makes synchronization idempotent. |

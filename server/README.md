@@ -109,7 +109,7 @@ safe to run before startup but is not a competing migration system.
 3. Run `npm run ledger:migrate` if an explicit preflight is desired.
 4. Run `npm run ledger:seed` only for an empty demo or staging database.
 5. Start the application; startup verifies the tracked migration ledger.
-6. Check `GET /api/health` for process up. Commit and the last migration are `GET /api/health/deep` (open on staging when the staging door is open, or with a platform admin session on live). Then run rate sync and a scoped quote smoke test.
+6. Check `GET /api/health` for process up. Commit and the last migration are `GET /api/health/deep` (open on staging when the staging door is open, or with an owner session, permission `team:manage`, on live). Then run rate sync and a scoped quote smoke test.
 
 The Canadian pilot requires CAD to be exactly one exchange leg. It is current
 configuration, not a universal CurrencyDesk rule. `feeCad` is separate CAD
