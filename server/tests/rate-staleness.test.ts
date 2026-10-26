@@ -1,8 +1,8 @@
 /* How stale a rate board may be before the desk stops quoting.
-   A market-sync board is capped at 70 minutes. The window uses the
-   clamped sync gap, so RATES_SYNC_MINUTES=15 does not close it at 25
-   minutes. A hand-published board while the sync is off is capped at
-   12 hours. Env can only shorten either cap. */
+   The cap is 70 minutes. The window uses the clamped sync gap, so
+   RATES_SYNC_MINUTES=15 does not close it at 25 minutes. The 12 hour
+   window is only when a lookup has confirmed published_by is staff on
+   that tenant, and only while the sync is off. */
 import { afterEach, describe, expect, it } from "vitest";
 import {
   boardMaxAgeSeconds,
@@ -63,18 +63,22 @@ describe("how old a board may be", () => {
     expect(ratePublicationIsStale(NOW - 40 * MINUTE, NOW)).toBe(false);
   });
 
-  it("keeps a hand published board for 12 hours when sync is off", () => {
+  it("keeps a confirmed staff board for 12 hours when sync is off", () => {
     process.env.RATES_SYNC = "off";
-    const manual = { publishedBy: "m.costa" };
+    const staff = { staffPublish: true };
     expect(MANUAL_BOARD_MAX_AGE_SECONDS).toBe(12 * 60 * 60);
-    expect(boardMaxAgeSeconds(manual)).toBe(MANUAL_BOARD_MAX_AGE_SECONDS);
-    expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, manual)).toBe(false);
-    expect(ratePublicationIsStale(NOW - 12 * 60 * MINUTE - 5_000, NOW, manual)).toBe(true);
-    const synced = { marketSnapshotId: "snap-1", publishedBy: "market-sync (test)" };
-    expect(boardMaxAgeSeconds(synced)).toBe(70 * 60);
-    expect(boardMaxAgeSeconds({ published_by: "market-sync (open-er-api)" })).toBe(70 * 60);
-    expect(boardMaxAgeSeconds({ market_snapshot_id: "snap-1" })).toBe(70 * 60);
-    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW, synced)).toBe(true);
+    expect(boardMaxAgeSeconds(staff)).toBe(MANUAL_BOARD_MAX_AGE_SECONDS);
+    expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, staff)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 12 * 60 * MINUTE - 5_000, NOW, staff)).toBe(true);
+    for (const board of [
+      { publishedBy: "m.costa" },
+      { publishedBy: "seed" },
+      { publishedBy: "system:provisioning" },
+      { marketSnapshotId: "snap-1", publishedBy: "market-sync (test)" },
+    ]) {
+      expect(boardMaxAgeSeconds(board)).toBe(70 * 60);
+      expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW, board)).toBe(true);
+    }
   });
 
   it("holds both caps when RATE_BOARD_MAX_AGE_SECONDS is 1e12", () => {
@@ -83,10 +87,11 @@ describe("how old a board may be", () => {
     expect(boardMaxAgeSeconds(synced)).toBe(70 * 60);
     expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW, synced)).toBe(true);
     process.env.RATES_SYNC = "off";
-    const manual = { publishedBy: "m.costa" };
-    expect(boardMaxAgeSeconds(manual)).toBe(12 * 60 * 60);
-    expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, manual)).toBe(false);
-    expect(ratePublicationIsStale(NOW - 12 * 60 * MINUTE - 5_000, NOW, manual)).toBe(true);
+    const staff = { staffPublish: true };
+    expect(boardMaxAgeSeconds(staff)).toBe(12 * 60 * 60);
+    expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, staff)).toBe(false);
+    expect(ratePublicationIsStale(NOW - 12 * 60 * MINUTE - 5_000, NOW, staff)).toBe(true);
+    expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW, { publishedBy: "seed" })).toBe(true);
     expect(ratePublicationIsStale(NOW - 71 * MINUTE, NOW, synced)).toBe(true);
   });
 
@@ -106,6 +111,20 @@ describe("how old a board may be", () => {
     process.env.RATE_BOARD_MAX_AGE_SECONDS = "300";
     expect(boardMaxAgeSeconds()).toBe(300);
     process.env.RATES_SYNC = "off";
-    expect(boardMaxAgeSeconds({ publishedBy: "m.costa" })).toBe(300);
+    expect(boardMaxAgeSeconds({ staffPublish: true })).toBe(300);
+  });
+
+  it("shortens a staff board to the stated age and never raises the 12 hour cap", () => {
+    process.env.RATES_SYNC = "off";
+    const staff = { staffPublish: true };
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = "3600";
+    expect(boardMaxAgeSeconds(staff)).toBe(3600);
+    expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, staff)).toBe(true);
+    for (const raw of ["1e12", "NaN", "-5"]) {
+      process.env.RATE_BOARD_MAX_AGE_SECONDS = raw;
+      expect(boardMaxAgeSeconds(staff)).toBe(MANUAL_BOARD_MAX_AGE_SECONDS);
+      expect(ratePublicationIsStale(NOW - 3 * 60 * MINUTE, NOW, staff)).toBe(false);
+      expect(ratePublicationIsStale(NOW - 12 * 60 * MINUTE - 5_000, NOW, staff)).toBe(true);
+    }
   });
 });

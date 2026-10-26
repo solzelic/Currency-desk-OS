@@ -78,10 +78,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   run logs no applied line for a migration already stored.
 - Market rates: `listenServer` reads the newest `market_rates` row and,
   when it is older than the gap, inserts one snapshot and publishes one
-  board for the demo branch. The gap is 60 minutes, or longer when
-  `RATES_SYNC_MINUTES` is set, and never longer than 24 hours. Anything
-  under 60 is 60. Anything above 1440 is 1440. Junk is 60. The timer does
-  not query every 15 minutes. `RATES_SYNC=off` does not start it.
+  board for the demo branch. The gap is exactly 60 minutes.
+  `RATES_SYNC_MINUTES` is clamped to 60, lower and higher. A value other
+  than 60 logs one boot warning and is ignored. After a fresh snapshot
+  the timer waits the full 60 minutes. A snapshot that is already part
+  way through that hour waits only the remainder. The timer does not
+  query every 15 minutes. `RATES_SYNC=off` does not start it.
 - Ledger tables: raw SQL — `server/src/ledger/migration.sql` registered as
   migration `001_ledger`, then `server/src/db/migrations/002…`. Append-only
   book. Invariants: `docs/CASH_OWNERSHIP_INVARIANTS.md`.

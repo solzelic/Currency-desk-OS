@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import pg from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
@@ -125,6 +125,10 @@ postgres("quote service against real PostgreSQL", () => {
     delete process.env.LEDGER_DATABASE_URL;
   });
   beforeEach(reset);
+  afterEach(() => {
+    delete process.env.RATES_SYNC;
+    delete process.env.RATE_BOARD_MAX_AGE_SECONDS;
+  });
   /* The quote door used to be a four-way enum after the ledger dropped
      that ceiling. Every assertion here fails against
      `z.enum(["CAD","USD","EUR","GBP"])` — that is the point. Pair and
@@ -618,5 +622,64 @@ postgres("quote service against real PostgreSQL", () => {
     await expect(new LedgerService(pool).postFrozenQuote(actor, frozen, "other-publication")).rejects.toMatchObject({ code: "QUOTE_MISMATCH" });
     await expect(new LedgerService(pool).postFrozenQuote({ ...actor, branchId: "br-quote-isolation", workspaceId: "ws-other", tillId: "till-other", authorizedBranchIds: ["br-quote-isolation"] }, { ...frozen, rateBoardPublicationId: made.rateBoardPublicationId, marketSnapshotId: made.marketSnapshotId }, "other-branch")).rejects.toMatchObject({ code: "SCOPE_DENIED" });
     expect((await pool.query("SELECT count(*) FROM ledger_transactions WHERE quote_id=$1", [made.quoteId])).rows[0].count).toBe("0");
+  });
+
+  async function quoteOn(publishedBy: string, age: string) {
+    process.env.RATES_SYNC = "off";
+    await pool.query(
+      `UPDATE rate_boards
+          SET published_by=$1,
+              market_snapshot_id=NULL,
+              published_at=now() - $2::interval
+        WHERE id='board-1'`,
+      [publishedBy, age],
+    );
+    return app.inject({
+      method: "POST",
+      url: "/api/quotes",
+      cookies: await cookie(),
+      payload: body,
+    });
+  }
+
+  it("refuses a provisioning board at 71 minutes when sync is off", async () => {
+    const refused = await quoteOn("system:provisioning", "71 minutes");
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("RATE_PUBLICATION_STALE");
+  });
+
+  it("refuses a seed board at 71 minutes when sync is off", async () => {
+    const refused = await quoteOn("seed", "71 minutes");
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("RATE_PUBLICATION_STALE");
+  });
+
+  it("accepts a staff board at 71 minutes when sync is off", async () => {
+    const quoted = await quoteOn("m.costa", "71 minutes");
+    expect(quoted.statusCode).toBe(201);
+  });
+
+  it("refuses a staff board at 12 hours 1 minute when sync is off", async () => {
+    const refused = await quoteOn("m.costa", "12 hours 1 minute");
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("RATE_PUBLICATION_STALE");
+  });
+
+  it("refuses a staff board at 3 hours when the manual cap is 3600 seconds", async () => {
+    process.env.RATE_BOARD_MAX_AGE_SECONDS = "3600";
+    const refused = await quoteOn("m.costa", "3 hours");
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().code).toBe("RATE_PUBLICATION_STALE");
+  });
+
+  it("keeps the 12 hour staff cap when the manual age cannot be raised", async () => {
+    for (const raw of ["1e12", "NaN", "-5"]) {
+      process.env.RATE_BOARD_MAX_AGE_SECONDS = raw;
+      const quoted = await quoteOn("m.costa", "3 hours");
+      expect(quoted.statusCode, raw).toBe(201);
+      const refused = await quoteOn("m.costa", "12 hours 1 minute");
+      expect(refused.statusCode, raw).toBe(422);
+      expect(refused.json().code).toBe("RATE_PUBLICATION_STALE");
+    }
   });
 });

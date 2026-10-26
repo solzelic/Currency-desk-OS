@@ -18,7 +18,7 @@ import {
 } from "./demo-desk.js";
 import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
-import { ratesSyncIntervalMs } from "./rates/sync-interval.js";
+import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval.js";
 import { startRatesSync } from "./rates/sync-schedule.js";
 import { refreshSiteDomains } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
@@ -136,12 +136,14 @@ export async function listenServer(app: FastifyInstance, db: Db): Promise<void> 
   await app.listen({ port, host });
   console.log(`currencydesk-server on http://${host}:${port}`);
 
-  // Live market rates. The gap is 60 minutes to 24 hours
-  // (RATES_SYNC_MINUTES). The first check runs now. A fresh snapshot
-  // waits until it is actually due, so this does not query every 15
-  // minutes, and a restart does not wait a second full gap.
+  // Live market rates. The gap is exactly 60 minutes.
+  // RATES_SYNC_MINUTES cannot change it. A different value logs one
+  // warning here and is ignored. The first check runs now. A fresh
+  // snapshot waits out the rest of that hour, so this does not query
+  // every 15 minutes, and a restart does not wait a second full hour.
   // RATES_SYNC=off disables it.
   if (process.env.RATES_SYNC !== "off") {
+    warnRatesSyncMinutes(process.env.RATES_SYNC_MINUTES);
     startRatesSync(db, DEMO.branchId, ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES));
   }
 }

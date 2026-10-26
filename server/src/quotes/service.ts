@@ -51,12 +51,14 @@ export const QUOTE_MAX_AGE_SECONDS = 70 * 60;
 /** A hand-published board, while the sync is off. Env cannot raise it. */
 export const MANUAL_BOARD_MAX_AGE_SECONDS = 12 * 60 * 60;
 
-/** The columns already on `rate_boards`. No new column. */
+/** The columns already on `rate_boards`. No new column.
+    `staffPublish` is set only after `staff_users` has that id on this tenant. */
 export type RateBoardSource = {
   marketSnapshotId?: string | null;
   publishedBy?: string | null;
   market_snapshot_id?: string | null;
   published_by?: string | null;
+  staffPublish?: boolean;
 };
 
 function positiveFinite(raw: string | undefined): number | null {
@@ -66,36 +68,32 @@ function positiveFinite(raw: string | undefined): number | null {
   return value;
 }
 
-/** A sync publish stores a snapshot id and `published_by` of `market-sync (...)`. */
-export function boardIsMarketSync(board?: RateBoardSource | null): boolean {
-  if (!board) return false;
-  const snapshot = board.marketSnapshotId ?? board.market_snapshot_id;
-  if (typeof snapshot === "string" && snapshot !== "") return true;
-  const by = board.publishedBy ?? board.published_by ?? "";
-  return by.startsWith("market-sync");
-}
-
 /**
  * How old a published board may be and still be quotable.
  *
- * A market-sync board is capped at 70 minutes. `RATES_SYNC_MINUTES` is
- * read through the same clamp as the timer, so 15 minutes stays on the
- * 60 minute gap and does not close the window early. A hand-published
- * board while `RATES_SYNC` is off is capped at 12 hours. Either env value
- * can only shorten its cap. A missing, blank, negative, NaN, Infinity, or
- * zero value leaves the cap as it is.
+ * A synced board is capped at 70 minutes. `RATES_SYNC_MINUTES` is read
+ * through the same clamp as the timer, so every setting stays on the
+ * 60 minute gap and the window stays 70 minutes unless a shorter age
+ * is set. The 12 hour window is only for a board whose `published_by`
+ * is a staff id on that same tenant, and only while `RATES_SYNC` is
+ * off. That window is `min(12 hours, a positive finite
+ * RATE_BOARD_MAX_AGE_SECONDS, or 12 hours when that value is missing)`.
+ * Provisioning, seed, market sync, an unknown publisher, and a lookup
+ * that fails stay at 70 minutes. Neither cap can be raised.
  */
 export function boardMaxAgeSeconds(board?: RateBoardSource | null): number {
-  const manualHold = process.env.RATES_SYNC === "off" && !boardIsMarketSync(board);
-  let maxAge = manualHold ? MANUAL_BOARD_MAX_AGE_SECONDS : QUOTE_MAX_AGE_SECONDS;
+  const manualHold = process.env.RATES_SYNC === "off" && board?.staffPublish === true;
+  if (manualHold) {
+    const stated = positiveFinite(process.env.RATE_BOARD_MAX_AGE_SECONDS);
+    return Math.min(MANUAL_BOARD_MAX_AGE_SECONDS, stated ?? MANUAL_BOARD_MAX_AGE_SECONDS);
+  }
+  let maxAge = QUOTE_MAX_AGE_SECONDS;
   const stated = positiveFinite(process.env.RATE_BOARD_MAX_AGE_SECONDS);
   if (stated != null) maxAge = Math.min(maxAge, stated);
-  if (!manualHold) {
-    const raw = process.env.RATES_SYNC_MINUTES;
-    if (raw != null && raw !== "") {
-      const gapSeconds = ratesSyncIntervalMs(raw) / 1000;
-      maxAge = Math.min(maxAge, gapSeconds + RATES_SYNC_HEADROOM_SECONDS);
-    }
+  const raw = process.env.RATES_SYNC_MINUTES;
+  if (raw != null && raw !== "") {
+    const gapSeconds = ratesSyncIntervalMs(raw) / 1000;
+    maxAge = Math.min(maxAge, gapSeconds + RATES_SYNC_HEADROOM_SECONDS);
   }
   return maxAge;
 }
@@ -119,7 +117,19 @@ export class QuoteService {
   constructor(
     private readonly pool: pg.Pool,
     private readonly ledger = new LedgerService(pool),
+    private readonly staffPublished: (tenantId: string, staffId: string) => Promise<boolean> = async () => false,
   ) {}
+  /** True only when the lookup says this publisher is staff on this tenant. */
+  private async staffPublish(board: { tenant_id?: string | null; published_by?: string | null }): Promise<boolean> {
+    const tenantId = typeof board.tenant_id === "string" ? board.tenant_id : "";
+    const staffId = typeof board.published_by === "string" ? board.published_by : "";
+    if (!tenantId || !staffId) return false;
+    try {
+      return (await this.staffPublished(tenantId, staffId)) === true;
+    } catch {
+      return false;
+    }
+  }
   private async principal(
     client: pg.PoolClient,
     actor: LedgerActor,
@@ -244,7 +254,7 @@ export class QuoteService {
       const boards = await client.query("SELECT * FROM rate_boards WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 ORDER BY published_at DESC LIMIT 1", scope(actor).slice(0, 3));
       if (!boards.rowCount) throw new LedgerError("RATE_NOT_AVAILABLE", "No published branch board.");
       const board = boards.rows[0];
-      if (ratePublicationIsStale(new Date(board.published_at).getTime(), Date.now(), board)) throw new LedgerError("RATE_PUBLICATION_STALE", "Rate publication is stale.");
+      if (ratePublicationIsStale(new Date(board.published_at).getTime(), Date.now(), { staffPublish: await this.staffPublish(board) })) throw new LedgerError("RATE_PUBLICATION_STALE", "Rate publication is stale.");
       const leg = (currency: string, sell: boolean) => {
         const row = board.board_rows[currency];
         if (!row || row.show === false) throw new LedgerError("RATE_NOT_AVAILABLE", "Currency is not published.");
@@ -336,7 +346,7 @@ export class QuoteService {
           "No published branch board.",
         );
       const board = boards.rows[0];
-      if (ratePublicationIsStale(new Date(board.published_at).getTime(), Date.now(), board))
+      if (ratePublicationIsStale(new Date(board.published_at).getTime(), Date.now(), { staffPublish: await this.staffPublish(board) }))
         throw new LedgerError(
           "RATE_PUBLICATION_STALE",
           "Rate publication is stale.",

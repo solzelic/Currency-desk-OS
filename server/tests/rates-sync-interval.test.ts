@@ -1,7 +1,7 @@
 /* The background rates check used to read market_rates every 15 minutes.
-   The gap is 60 minutes to 24 hours. RATES_SYNC_MINUTES can only lengthen
-   it. Junk, Infinity, and a huge value clamp. A delay past the 32-bit
-   timer limit must not become 1 ms. */
+   The gap is exactly 60 minutes. Every RATES_SYNC_MINUTES value is 60.
+   A different value logs one boot warning. The cycle is 60 minutes, not
+   59. A delay past the 32-bit timer limit must not become 1 ms. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import type { Db } from "../src/db/index.js";
@@ -10,7 +10,9 @@ import {
   nextRatesSyncDelayMs,
   ratesSyncGateMs,
   ratesSyncIntervalMs,
+  ratesSyncMinutesNeedsWarning,
   ratesSyncTimerDelayMs,
+  warnRatesSyncMinutes,
   RATES_SYNC_FAILURE_RETRY_MS,
   RATES_SYNC_MAX_MS,
   RATES_SYNC_MIN_MS,
@@ -36,19 +38,15 @@ function windowMs() {
 }
 
 describe("rates sync gap", () => {
-  it("lengthens from 60 minutes and clamps junk, Infinity, and overflow", () => {
+  it("is exactly 60 minutes for every setting, and a huge delay stays under the timer limit", () => {
     expect(RATES_SYNC_MIN_MS).toBe(HOUR);
     expect(RATES_SYNC_MAX_MS).toBe(DAY);
     expect(RATES_SYNC_MAX_MS).toBeLessThanOrEqual(LIMIT);
-    for (const raw of [undefined, "", "nope", "0", "1", "15", "59", "-4"]) {
+    for (const raw of [
+      undefined, "", "nope", "0", "1", "15", "59", "-4", "60", "61", "90.9",
+      "120", "360", "1440", "1441", "1e9", "1e20", "1e309", "Infinity", "99999",
+    ]) {
       expect(ratesSyncIntervalMs(raw)).toBe(HOUR);
-    }
-    expect(ratesSyncIntervalMs("60")).toBe(HOUR);
-    expect(ratesSyncIntervalMs("61")).toBe(61 * 60 * 1000);
-    expect(ratesSyncIntervalMs("90.9")).toBe(90 * 60 * 1000);
-    expect(ratesSyncIntervalMs("360")).toBe(6 * HOUR);
-    for (const raw of ["1440", "1441", "1e9", "1e20", "1e309", "Infinity", "99999"]) {
-      expect(ratesSyncIntervalMs(raw)).toBe(DAY);
     }
     expect(ratesSyncTimerDelayMs(1e12)).toBe(DAY);
     expect(ratesSyncTimerDelayMs(Number.POSITIVE_INFINITY)).toBe(DAY);
@@ -56,13 +54,32 @@ describe("rates sync gap", () => {
     expect(ratesSyncTimerDelayMs(0)).toBe(HOUR);
     expect(ratesSyncTimerDelayMs(10 * 60 * 1000)).toBe(10 * 60 * 1000);
     expect(ratesSyncTimerDelayMs(1e12)).toBeLessThanOrEqual(LIMIT);
-    expect(ratesSyncGateMs(HOUR)).toBe(HOUR - 60_000);
-    expect(nextRatesSyncDelayMs(0, HOUR)).toBe(HOUR - 60_000);
-    expect(nextRatesSyncDelayMs(30 * 60 * 1000, HOUR)).toBe(29 * 60 * 1000);
+    expect(ratesSyncGateMs(HOUR)).toBe(HOUR);
+    expect(nextRatesSyncDelayMs(0, HOUR)).toBe(HOUR);
+    expect(nextRatesSyncDelayMs(30 * 60 * 1000, HOUR)).toBe(30 * 60 * 1000);
     expect(nextRatesSyncDelayMs(HOUR, HOUR)).toBe(HOUR);
     expect(nextRatesSyncDelayMs(Number.POSITIVE_INFINITY, HOUR)).toBe(HOUR);
-    expect(nextRatesSyncDelayMs(0, 15 * 60 * 1000)).toBe(HOUR - 60_000);
+    expect(nextRatesSyncDelayMs(0, 15 * 60 * 1000)).toBe(HOUR);
     expect(RATES_SYNC_FAILURE_RETRY_MS).toBe(10 * 60 * 1000);
+  });
+
+  it("warns once when the env asks for something other than 60", () => {
+    expect(ratesSyncMinutesNeedsWarning(undefined)).toBe(false);
+    expect(ratesSyncMinutesNeedsWarning("")).toBe(false);
+    expect(ratesSyncMinutesNeedsWarning("60")).toBe(false);
+    const warn = vi.fn();
+    warnRatesSyncMinutes(undefined, warn);
+    warnRatesSyncMinutes("", warn);
+    warnRatesSyncMinutes("60", warn);
+    expect(warn).not.toHaveBeenCalled();
+    for (const raw of ["15", "120", "1440"]) {
+      warnRatesSyncMinutes(raw, warn);
+    }
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn.mock.calls[0][0]).toContain("15");
+    expect(warn.mock.calls[1][0]).toContain("120");
+    expect(warn.mock.calls[2][0]).toContain("1440");
+    expect(String(warn.mock.calls[0][0])).not.toMatch(/\u2014|\u2013/);
   });
 });
 
@@ -79,6 +96,7 @@ describe("quote staleness stays inside 70 minutes", () => {
     process.env.RATES_SYNC_MINUTES = "1440";
     expect(boardMaxAgeSeconds()).toBe(70 * 60);
     expect(ratePublicationIsStale(NOW - 71 * 60 * 1000, NOW)).toBe(true);
+    expect(ratePublicationIsStale(NOW - (69 * 60 + 55) * 1000, NOW)).toBe(false);
 
     delete process.env.RATES_SYNC_MINUTES;
     process.env.RATE_BOARD_MAX_AGE_SECONDS = "1e12";
@@ -100,7 +118,7 @@ describe("quote staleness stays inside 70 minutes", () => {
     process.env.RATES_SYNC = "off";
     process.env.RATES_SYNC_MINUTES = "1e9";
     process.env.RATE_BOARD_MAX_AGE_SECONDS = "1e12";
-    const manual = { publishedBy: "m.costa" };
+    const manual = { staffPublish: true };
     const synced = { marketSnapshotId: "snap-1", publishedBy: "market-sync (test)" };
     expect(boardMaxAgeSeconds(manual)).toBe(12 * 60 * 60);
     expect(ratePublicationIsStale(NOW - 3 * 60 * 60 * 1000, NOW, manual)).toBe(false);
@@ -245,8 +263,38 @@ describe("rates sync timer", () => {
     const src = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
     const listen = src.slice(src.indexOf("export async function listenServer"));
     expect(listen).toContain("startRatesSync");
+    expect(listen).toContain("warnRatesSyncMinutes");
     expect(listen).toContain('RATES_SYNC !== "off"');
     expect(listen).not.toMatch(/15\s*\*\s*60\s*\*\s*1000/);
     expect(listen).not.toContain("setInterval");
+  });
+
+  it("schedules 15, 120, and 1440 at 60 minutes and quotes a 69m55s board", async () => {
+    const age = (69 * 60 + 55) * 1000;
+    for (const raw of ["15", "120", "1440"]) {
+      expect(ratesSyncIntervalMs(raw)).toBe(HOUR);
+      process.env.RATES_SYNC_MINUTES = raw;
+      expect(boardMaxAgeSeconds()).toBe(70 * 60);
+      expect(ratePublicationIsStale(NOW - age, NOW)).toBe(false);
+      delete process.env.RATES_SYNC_MINUTES;
+    }
+    vi.useFakeTimers();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    for (const raw of ["15", "120", "1440"]) {
+      let calls = 0;
+      const sync = async () => {
+        calls += 1;
+        return { ok: true, skipped: false, detail: "board published", ageMs: 0 };
+      };
+      const stop = startRatesSync({} as Db, "br-yorkville", ratesSyncIntervalMs(raw), undefined, sync);
+      stops.push(stop);
+      await boot();
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(HOUR - 1);
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(2);
+      stop();
+    }
   });
 });

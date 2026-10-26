@@ -2,8 +2,8 @@
 
     Neon suspends after 5 minutes with no queries. setTimeout stores the
     delay in a 32-bit signed integer, and a larger value fires in 1 ms.
-    The gap stays between 60 minutes and 24 hours. A setting can only
-    lengthen it. */
+    The gap is exactly 60 minutes. RATES_SYNC_MINUTES cannot change it.
+    A delay past that integer limit is capped at 24 hours. */
 
 const MINUTE_MS = 60_000;
 
@@ -16,17 +16,25 @@ export const RATES_SYNC_MAX_MS = RATES_SYNC_MAX_MINUTES * MINUTE_MS;
 export const RATES_SYNC_HEADROOM_SECONDS = 10 * 60;
 export const RATES_SYNC_FAILURE_RETRY_MS = RATES_SYNC_HEADROOM_SECONDS * 1000;
 
-/** `RATES_SYNC_MINUTES`. Missing or junk becomes 60 minutes.
-    Below 60 becomes 60. Above 1440, or Infinity, becomes 24 hours. */
-export function ratesSyncIntervalMs(rawMinutes: string | undefined): number {
-  const minutes = Number(rawMinutes);
-  if (minutes === Number.POSITIVE_INFINITY) return RATES_SYNC_MAX_MS;
-  if (!Number.isFinite(minutes)) return RATES_SYNC_MIN_MS;
-  const clamped = Math.min(
-    RATES_SYNC_MAX_MINUTES,
-    Math.max(RATES_SYNC_MIN_MINUTES, Math.trunc(minutes)),
-  );
-  return clamped * MINUTE_MS;
+/** `RATES_SYNC_MINUTES`. Every value is 60 minutes. */
+export function ratesSyncIntervalMs(_rawMinutes?: string): number {
+  return RATES_SYNC_MIN_MS;
+}
+
+/** True when a set value is not exactly 60. Unset is the 60 minute default. */
+export function ratesSyncMinutesNeedsWarning(raw: string | undefined): boolean {
+  if (raw == null || raw === "") return false;
+  const minutes = Number(raw);
+  return !(Number.isFinite(minutes) && minutes === 60);
+}
+
+/** One boot line when the env asks for a gap other than 60 minutes. */
+export function warnRatesSyncMinutes(
+  raw: string | undefined,
+  warn: (message: string) => void = console.warn,
+): void {
+  if (!ratesSyncMinutesNeedsWarning(raw)) return;
+  warn(`[rates-sync] RATES_SYNC_MINUTES=${raw} is ignored. The gap is 60 minutes.`);
 }
 
 /** A gap passed straight in. 15 minutes becomes 60. 1e12 becomes 24 hours. */
@@ -39,14 +47,14 @@ export function clampRatesSyncGapMs(gapMs: number): number {
   return ms;
 }
 
-/** One minute inside the gap, and never under half of it. */
+/** The snapshot is due at the full gap. The cycle is that gap,
+    not one minute short of it. */
 export function ratesSyncGateMs(gapMs: number): number {
-  const gap = clampRatesSyncGapMs(gapMs);
-  return Math.max(gap - MINUTE_MS, gap * 0.5);
+  return clampRatesSyncGapMs(gapMs);
 }
 
-/** Wait after a fresh snapshot: until the gate, not a second full gap
-    and not a fixed 15 minutes. A due snapshot waits one full gap. */
+/** Wait after a fresh snapshot: the remainder of the gap, not a second
+    full gap and not a fixed 15 minutes. A due snapshot waits one full gap. */
 export function nextRatesSyncDelayMs(ageMs: number, gapMs: number): number {
   const gap = clampRatesSyncGapMs(gapMs);
   const gate = ratesSyncGateMs(gap);
