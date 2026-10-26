@@ -6,6 +6,7 @@
    Both are real Postgres, so the queries never fork; only the managed
    path runs migrations (see the note above desk_clients).
    ============================================================ */
+import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -41,7 +42,6 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
-ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_test_shop boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -724,6 +724,12 @@ export async function createDb(): Promise<DbHandle> {
     await client.exec(ENUM_DDL);
   }
   await client.exec(DDL);
+  /* PGlite does not run SQL migrations. Postgres adds is_test_shop
+     only in 056, so this file is applied here and not in the shared
+     DDL. A leftover of the wrong shape raises, same as on Postgres. */
+  await client.exec(
+    await readFile(new URL("./migrations/056_tenant_test_shop.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }

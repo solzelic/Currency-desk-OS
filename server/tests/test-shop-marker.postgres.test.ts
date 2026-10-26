@@ -1,7 +1,6 @@
 /* Migration 056 on a database that is already at 055, and on a fresh one.
-   Boot DDL adds the column for PGlite, so the upgrade drops it first
-   and then lets the runner apply 056. A fresh boot runs that DDL and
-   then the same file. */
+   The shared boot DDL does not add is_test_shop. A leftover column of
+   the wrong shape raises and is not adopted. */
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
@@ -81,11 +80,22 @@ describe("migration 056 is registered after 055", () => {
     expect(migrations.at(-1)?.[0]).toBe(ID);
     expect(migrations.some(([id]) => id === "055_structuring_ack")).toBe(true);
     const sql = await readFile(new URL(`../src/db/migrations/${ID}.sql`, import.meta.url), "utf8");
-    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS is_test_shop boolean NOT NULL DEFAULT false/);
+    expect(sql).toMatch(/ADD COLUMN is_test_shop boolean NOT NULL DEFAULT false/);
+    expect(sql).not.toMatch(/if not exists/i);
+    expect(sql).toMatch(/RAISE EXCEPTION/);
     expect(sql).not.toMatch(/create\s+table/i);
     expect(sql).not.toMatch(/drop\s+trigger/i);
     expect(sql).not.toMatch(/create\s+(or\s+replace\s+)?function/i);
     expect(sql).not.toMatch(/ledger_append_only/i);
+  });
+
+  it("does not add is_test_shop in the shared boot DDL", async () => {
+    const src = await readFile(new URL("../src/db/index.ts", import.meta.url), "utf8");
+    const start = src.indexOf("const DDL = `");
+    const end = src.indexOf("\n`;", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(src.slice(start, end)).not.toMatch(/is_test_shop/);
   });
 });
 
@@ -135,5 +145,55 @@ postgres("migration 056 upgrades 055 and a fresh database", () => {
     const freshLocks = await immutability(fresh);
     expect(freshLocks.triggers.map((row) => row.tgname)).toEqual(TRIGGERS);
     expect(freshLocks.def).toMatch(/append-only ledger record/);
+  }, 180_000);
+
+  async function stoppedAt055(name: string) {
+    const prior = migrations.filter(([id]) => id !== ID);
+    const pool = hold(await provisionPostgres(await makeDb(name), prior));
+    expect(await recorded(pool, "055_structuring_ack")).toBe(1);
+    expect(await recorded(pool, ID)).toBe(0);
+    await pool.query("ALTER TABLE tenants DROP COLUMN IF EXISTS is_test_shop");
+    expect(await marker(pool)).toBeUndefined();
+    return pool;
+  }
+
+  async function refusesLeftover(name: string, addColumn: string, planted: string, kept: unknown) {
+    const pool = await stoppedAt055(name);
+    await pool.query(`ALTER TABLE tenants ${addColumn}`);
+    await pool.query(
+      "INSERT INTO tenants (id, name, is_test_shop) VALUES ('tnt-yorkfx', 'York FX', " + planted + ")",
+    );
+    await expect(runMigrations(pool)).rejects.toThrow(/is_test_shop/);
+    expect(await recorded(pool, ID)).toBe(0);
+    const row = await pool.query("SELECT is_test_shop FROM tenants WHERE id = 'tnt-yorkfx'");
+    expect(row.rows[0]?.is_test_shop).toEqual(kept);
+    expect(await marker(pool)).not.toEqual({ is_nullable: "NO", column_default: "false" });
+  }
+
+  it("refuses a text is_test_shop left on a database at 055", async () => {
+    await refusesLeftover(
+      "currencydesk_shop056_text",
+      "ADD COLUMN is_test_shop text",
+      "'leftover'",
+      "leftover",
+    );
+  }, 180_000);
+
+  it("refuses a nullable boolean is_test_shop left on a database at 055", async () => {
+    await refusesLeftover(
+      "currencydesk_shop056_null",
+      "ADD COLUMN is_test_shop boolean",
+      "true",
+      true,
+    );
+  }, 180_000);
+
+  it("refuses a boolean is_test_shop whose default is true on a database at 055", async () => {
+    await refusesLeftover(
+      "currencydesk_shop056_true",
+      "ADD COLUMN is_test_shop boolean NOT NULL DEFAULT true",
+      "DEFAULT",
+      true,
+    );
   }, 180_000);
 });

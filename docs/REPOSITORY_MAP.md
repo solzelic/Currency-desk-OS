@@ -161,10 +161,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   An insert into `ledger_reversals` calls it for the reversed deal.
   A new deal does not take the lock. 053 is on main, so this file is 054.
 - Migration `056_tenant_test_shop` adds `tenants.is_test_shop`
-  (`boolean not null default false`). The column is also in the boot
-  DDL and the Drizzle schema, because PGlite does not run the SQL
-  migrations. Every existing shop stays false. Nothing sets it true.
-  055 is on main, so this file is 056. Issue #412.
+  (`boolean not null default false`). The shared boot DDL does not
+  add the column. Postgres adds it only here, and raises when a
+  leftover column has any other shape. PGlite runs this same file
+  after DDL, because PGlite does not run the SQL migrations. The
+  Drizzle schema includes the column. Every existing shop stays
+  false. Nothing sets it true. 055 is on main, so this file is 056.
+  Issue #412.
 
 ## Test commands
 
