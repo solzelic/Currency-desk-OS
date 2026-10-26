@@ -88,5 +88,6 @@ export function screen() {
       incoming: string,
       armed: boolean,
     ) => { text: string; warn: boolean; armed: boolean };
+    wholeUnitSubmit: (text: string) => string | null;
   };
 }

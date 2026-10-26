@@ -224,22 +224,39 @@
     }).format(roundMinor(n, places));
   }
 
-  /* A 0-decimal count. Dropping a separator and keeping the digits
-     after it turns 1500.7 into 15007. The separator stops the count.
-     The next single digit, the one the field appends once the
-     separator is gone, is not kept. A longer replacement is a new
-     amount. Three-decimal currencies never come through here. */
+  /* A 0-decimal count. NFKC, then digits, or thousands commas.
+     Anything else is refused whole. Cutting "1,500.7" down to 1
+     is a different amount, and the book cannot see that it happened.
+     The digit typed after a refused mark is refused too. A longer
+     replacement is a new amount. Three-decimal currencies never
+     come through here. */
+  var WHOLE = /^\d+$/;
+  var THOUSANDS = /^\d{1,3}(,\d{3})+$/;
+
+  function canonicalWhole(raw) {
+    if (WHOLE.test(raw)) return raw;
+    if (THOUSANDS.test(raw)) return raw.replace(/,/g, "");
+    return null;
+  }
+
   function wholeUnitInput(previous, incoming, armed) {
-    var prev = String(previous == null ? "" : previous).replace(/\D/g, "");
-    var raw = String(incoming == null ? "" : incoming);
-    if (/[.,]/.test(raw)) {
-      return { text: raw.split(/[.,]/)[0].replace(/\D/g, ""), warn: true, armed: true };
+    var prev = String(previous == null ? "" : previous);
+    var raw = String(incoming == null ? "" : incoming).normalize("NFKC");
+    if (raw === "") return { text: "", warn: false, armed: false };
+    var accepted = canonicalWhole(raw);
+    if (accepted != null) {
+      if (armed && accepted.length === prev.length + 1 && accepted.indexOf(prev) === 0) {
+        return { text: prev, warn: true, armed: true };
+      }
+      return { text: accepted, warn: false, armed: false };
     }
-    var digits = raw.replace(/\D/g, "");
-    if (armed && digits.length === prev.length + 1 && digits.slice(0, prev.length) === prev) {
-      return { text: prev, warn: true, armed: true };
-    }
-    return { text: digits, warn: false, armed: false };
+    return { text: prev, warn: true, armed: !/^[\d,]+$/.test(raw) };
+  }
+
+  function wholeUnitSubmit(text) {
+    var raw = String(text == null ? "" : text).normalize("NFKC").trim();
+    if (raw === "") return "0";
+    return canonicalWhole(raw);
   }
 
   function countAmountText(places, previous, incoming, armed) {
@@ -259,7 +276,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText, wholeUnitSubmit: wholeUnitSubmit };
 });
 
 
@@ -15154,6 +15171,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     if (UNIT_PLURAL[last]) return UNIT_PLURAL[last];
     return last + 's';
   };
+  const noDecimalNote = c => {
+    const last = (nameOf(c) || '').split(' ').pop() || c;
+    const name = last.charAt(0).toUpperCase() + last.slice(1);
+    return name + ' has no decimals. Nothing was changed.';
+  };
   const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy) ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.' : '';
   const denLabel = v => v >= 1 ? Number.isInteger(v) ? String(v) : v.toFixed(2) : Math.round(v * 100) + '¢';
   /* `cadOf` stood here — a module-level conversion into Canadian dollars,
@@ -15642,18 +15664,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onSubmit
   }) {
     const [raw, setRaw] = useState({});
-    const [fraction, setFraction] = useState(false);
+    const [bad, setBad] = useState({});
     const shown = useRef({});
     const armed = useRef({});
-    const warned = useRef({});
     const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
     const onAmount = (c, value) => {
       const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
       const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
       shown.current[c] = next.text;
       armed.current[c] = next.armed;
-      if (next.warn) warned.current[c] = true;else delete warned.current[c];
-      setFraction(Object.keys(warned.current).length > 0);
+      setBad(o => {
+        const n = {
+          ...o
+        };
+        if (next.warn) n[c] = true;else delete n[c];
+        return n;
+      });
       setRaw(o => ({
         ...o,
         [c]: next.text
@@ -15661,11 +15687,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const refuseSeparator = (c, event) => {
       if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
-      if (event.key !== '.' && event.key !== ',') return;
+      if (event.key !== '.' && event.key !== '．') return;
       event.preventDefault();
       armed.current[c] = true;
-      warned.current[c] = true;
-      setFraction(true);
+      setBad(o => ({
+        ...o,
+        [c]: true
+      }));
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
@@ -15771,12 +15799,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    })))), fraction ? /*#__PURE__*/React.createElement("div", {
+    })))), Object.keys(bad).map(c => /*#__PURE__*/React.createElement("div", {
+      key: c,
       className: "till-refusal text-[12px] mt-3 px-3 py-2",
       style: {
         borderRadius: 9
       }
-    }, "Whole numbers only. The fraction was not counted.") : null, error ? /*#__PURE__*/React.createElement("div", {
+    }, noDecimalNote(c))), error ? /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "till-refusal text-[12px] mt-3 px-3 py-2",
       style: {
@@ -16523,11 +16552,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const c = serverCcys[i];
         const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
         const text = String(raw[c] ?? '').trim();
-        if (places === 0 && text.indexOf('.') >= 0) {
-          setSessionErr('A whole-number currency cannot be rounded.');
-          return;
-        }
-        counts[c] = places === 0 ? text.replace(/[^\d]/g, '') || '0' : Number(text).toFixed(places);
+        if (places === 0) {
+          const accepted = window.CDOS.wholeUnitSubmit(text);
+          if (accepted == null) {
+            setSessionErr(noDecimalNote(c));
+            return;
+          }
+          counts[c] = accepted;
+        } else counts[c] = Number(text).toFixed(places);
       }
       const body = JSON.stringify(counts);
       if (takeoverKey.current.body !== body || !takeoverKey.current.key) {
@@ -17454,7 +17486,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setStripOpen(true),
       title: "Show who's on the drawer",
-      className: "flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1",
+      className: "till-operator-chip flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 999,

@@ -42,6 +42,11 @@
     if (UNIT_PLURAL[last]) return UNIT_PLURAL[last];
     return last + 's';
   };
+  const noDecimalNote = (c) => {
+    const last = ((nameOf(c) || '').split(' ').pop() || c);
+    const name = last.charAt(0).toUpperCase() + last.slice(1);
+    return name + ' has no decimals. Nothing was changed.';
+  };
   const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy)
     ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.'
     : '';
@@ -231,27 +236,24 @@
      does not show those amounts. Saving calls the handover route. */
   function TakeoverSheet({ currencies, holder, busy, error, onClose, onSubmit }) {
     const [raw, setRaw] = useState({});
-    const [fraction, setFraction] = useState(false);
+    const [bad, setBad] = useState({});
     const shown = useRef({});
     const armed = useRef({});
-    const warned = useRef({});
     const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
     const onAmount = (c, value) => {
       const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
       const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
       shown.current[c] = next.text;
       armed.current[c] = next.armed;
-      if (next.warn) warned.current[c] = true; else delete warned.current[c];
-      setFraction(Object.keys(warned.current).length > 0);
+      setBad(o => { const n = { ...o }; if (next.warn) n[c] = true; else delete n[c]; return n; });
       setRaw(o => ({ ...o, [c]: next.text }));
     };
     const refuseSeparator = (c, event) => {
       if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
-      if (event.key !== '.' && event.key !== ',') return;
+      if (event.key !== '.' && event.key !== '．') return;
       event.preventDefault();
       armed.current[c] = true;
-      warned.current[c] = true;
-      setFraction(true);
+      setBad(o => ({ ...o, [c]: true }));
     };
     return ReactDOM.createPortal(
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
@@ -273,7 +275,7 @@
                 </div>
               ))}
             </div>
-            {fraction ? <div className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>Whole numbers only. The fraction was not counted.</div> : null}
+            {Object.keys(bad).map(c => <div key={c} className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{noDecimalNote(c)}</div>)}
             {error ? <div role="alert" className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{error}</div> : null}
           </div>
           <div className="px-5 py-3.5 flex items-center justify-end gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -755,11 +757,14 @@
         const c = serverCcys[i];
         const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
         const text = String(raw[c] ?? '').trim();
-        if (places === 0 && text.indexOf('.') >= 0) {
-          setSessionErr('A whole-number currency cannot be rounded.');
-          return;
-        }
-        counts[c] = places === 0 ? (text.replace(/[^\d]/g, '') || '0') : Number(text).toFixed(places);
+        if (places === 0) {
+          const accepted = window.CDOS.wholeUnitSubmit(text);
+          if (accepted == null) {
+            setSessionErr(noDecimalNote(c));
+            return;
+          }
+          counts[c] = accepted;
+        } else counts[c] = Number(text).toFixed(places);
       }
       const body = JSON.stringify(counts);
       if (takeoverKey.current.body !== body || !takeoverKey.current.key) {
@@ -1226,7 +1231,7 @@
       </div>
       ) : (
       <div className="till-operator flex items-center gap-2 flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
-        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 24, height: 24, borderRadius: 6, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 12 }}>{current ? initialsOf(current.operator) : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
+        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="till-operator-chip flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 24, height: 24, borderRadius: 6, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 12 }}>{current ? initialsOf(current.operator) : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
         {heldByOther && canCountTill && <button type="button" data-takeover="chip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[13px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.ink, background: CD.panel }}><Ic n="users" s={12} c={CD.mute} /> Take over till</button>}
       </div>
       )}

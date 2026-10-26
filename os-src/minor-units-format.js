@@ -58,22 +58,39 @@
     }).format(roundMinor(n, places));
   }
 
-  /* A 0-decimal count. Dropping a separator and keeping the digits
-     after it turns 1500.7 into 15007. The separator stops the count.
-     The next single digit, the one the field appends once the
-     separator is gone, is not kept. A longer replacement is a new
-     amount. Three-decimal currencies never come through here. */
+  /* A 0-decimal count. NFKC, then digits, or thousands commas.
+     Anything else is refused whole. Cutting "1,500.7" down to 1
+     is a different amount, and the book cannot see that it happened.
+     The digit typed after a refused mark is refused too. A longer
+     replacement is a new amount. Three-decimal currencies never
+     come through here. */
+  var WHOLE = /^\d+$/;
+  var THOUSANDS = /^\d{1,3}(,\d{3})+$/;
+
+  function canonicalWhole(raw) {
+    if (WHOLE.test(raw)) return raw;
+    if (THOUSANDS.test(raw)) return raw.replace(/,/g, "");
+    return null;
+  }
+
   function wholeUnitInput(previous, incoming, armed) {
-    var prev = String(previous == null ? "" : previous).replace(/\D/g, "");
-    var raw = String(incoming == null ? "" : incoming);
-    if (/[.,]/.test(raw)) {
-      return { text: raw.split(/[.,]/)[0].replace(/\D/g, ""), warn: true, armed: true };
+    var prev = String(previous == null ? "" : previous);
+    var raw = String(incoming == null ? "" : incoming).normalize("NFKC");
+    if (raw === "") return { text: "", warn: false, armed: false };
+    var accepted = canonicalWhole(raw);
+    if (accepted != null) {
+      if (armed && accepted.length === prev.length + 1 && accepted.indexOf(prev) === 0) {
+        return { text: prev, warn: true, armed: true };
+      }
+      return { text: accepted, warn: false, armed: false };
     }
-    var digits = raw.replace(/\D/g, "");
-    if (armed && digits.length === prev.length + 1 && digits.slice(0, prev.length) === prev) {
-      return { text: prev, warn: true, armed: true };
-    }
-    return { text: digits, warn: false, armed: false };
+    return { text: prev, warn: true, armed: !/^[\d,]+$/.test(raw) };
+  }
+
+  function wholeUnitSubmit(text) {
+    var raw = String(text == null ? "" : text).normalize("NFKC").trim();
+    if (raw === "") return "0";
+    return canonicalWhole(raw);
   }
 
   function countAmountText(places, previous, incoming, armed) {
@@ -93,5 +110,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText, wholeUnitSubmit: wholeUnitSubmit };
 });

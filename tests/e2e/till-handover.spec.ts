@@ -200,6 +200,10 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await expect.poll(async () => chip.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   const chipType = await page.locator(".till-operator").evaluate(textSizes);
   expect(Math.min(...chipType)).toBeGreaterThanOrEqual(12);
+  const drawerChip = page.getByTitle("Show who's on the drawer");
+  await expect.poll(async () => drawerChip.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await shoot(page, "chip", drawerChip);
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator("[data-count-gate]")).toHaveText("Only the person on this till can count it.");
   await expect(page.locator(".till-step")).toHaveCount(0);
   await chip.click();
@@ -227,19 +231,28 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const submit = sheet.getByRole("button", { name: "Take over till" });
   await expect.poll(async () => cancel.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await expect.poll(async () => submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
-  await yen.fill("1500.7");
+  const note = "Yen has no decimals. Nothing was changed.";
+  await yen.fill("1500");
   await expect(yen).toHaveValue("1500");
+  for (const bad of ["1,500.7", "1500.7", "1e3", "-1500", "1500．7"]) {
+    await yen.fill(bad);
+    await expect(yen, bad).toHaveValue("1500");
+  }
+  await expect(yen).not.toHaveValue("1");
   await expect(yen).not.toHaveValue("15007");
-  await expect(yen).not.toHaveValue("1501");
-  expect(await yen.inputValue()).not.toContain(".");
-  await expect(sheet.getByText("Whole numbers only. The fraction was not counted.")).toBeVisible();
+  await expect(sheet.getByText(note)).toBeVisible();
+  await shoot(page, "note", sheet.getByText(note));
+  await page.setViewportSize({ width: 1280, height: 900 });
   await yen.fill("");
   await yen.pressSequentially("1500.7");
   await expect(yen).toHaveValue("1500");
   await expect(yen).not.toHaveValue("15007");
+  await expect(sheet.getByText(note)).toBeVisible();
   const cad = sheet.getByLabel("CAD counted");
   await cad.pressSequentially("10.5");
   expect(await cad.inputValue()).toContain(".");
+  await yen.fill("1,500");
+  await expect(yen).toHaveValue("1500");
   await shoot(page, "sheet", sheet);
   const others = sheet.locator("input");
   const count = await others.count();

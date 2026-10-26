@@ -1756,6 +1756,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 #desktop .win:has(.till-screen) { min-width: 420px; }
 [data-takeover="chip"],
 [data-takeover="strip"] { min-height: 44px; box-sizing: border-box; }
+.till-operator-chip { min-height: 44px; box-sizing: border-box; }
 .till-count-input,
 [data-takeover="amount"] { min-height: 44px; box-sizing: border-box; }
 .till-waiting { background: #E8F1FB; }

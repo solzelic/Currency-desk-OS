@@ -53,30 +53,45 @@ it("subtracts whole-unit expected, and names a stored fraction", () => {
   expect(C.storedRoundNote(99.85, "JPY")).toContain("99.85 JPY");
 });
 
-it("stops a whole-number count at the separator, typed or pasted", () => {
-  const step = (text: string, arm: boolean, key: string) => {
-    if (key === "." || key === ",") return { text, warn: true, armed: true };
-    return C.countAmountText(0, text, text + key, arm);
-  };
+it("accepts a whole-number count, and refuses anything else unchanged", () => {
+  const edit = (previous: string, incoming: string) => C.countAmountText(0, previous, incoming, false);
+  expect(edit("", "1500")).toMatchObject({ text: "1500", warn: false });
+  expect(edit("", "1,500")).toMatchObject({ text: "1500", warn: false });
+  expect(edit("42", "１５００")).toMatchObject({ text: "1500", warn: false });
+  for (const bad of ["1500.7", "1,500.7", "1e3", "-1500", "1500．7"]) {
+    const next = edit("42", bad);
+    expect(next.text, bad).toBe("42");
+    expect(next.warn, bad).toBe(true);
+  }
   let text = "";
   let armed = false;
   for (const key of ["1", "5", "0", "0", ".", "7"]) {
-    const next = step(text, armed, key);
+    const next = C.countAmountText(0, text, text + key, armed);
     text = next.text;
     armed = next.armed;
   }
   expect(text).toBe("1500");
   expect(text).not.toBe("15007");
-  const pasted = C.countAmountText(0, "", "1500,7", false);
-  expect(pasted.text).toBe(text);
-  expect(pasted.warn).toBe(true);
-  expect(pasted.text).not.toContain(".");
-  const replaced = C.countAmountText(0, pasted.text, "150000", pasted.armed);
-  expect(replaced.text).toBe("150000");
-  expect(replaced.text).toBe(replaced.text.replace(/[^\d]/g, ""));
+  expect(C.countAmountText(0, "1500", "1500.7", false).text).toBe("1500");
+  expect(C.countAmountText(0, "1500", "1,500.7", false).text).toBe("1500");
   expect(C.countAmountText(3, "", "10.500", false).text).toBe("10.500");
   expect(C.countAmountText(3, "10", "10.5", false).text).toBe("10.5");
-  expect(till).toContain("countAmountText");
+  expect(C.countAmountText(3, "", "1.500", false).text).toBe("1.500");
+});
+
+it("does not submit a zero-unit count that is not a whole number", () => {
+  expect(C.wholeUnitSubmit("1500")).toBe("1500");
+  expect(C.wholeUnitSubmit("1,500")).toBe("1500");
+  expect(C.wholeUnitSubmit("１５００")).toBe("1500");
+  expect(C.wholeUnitSubmit("")).toBe("0");
+  for (const bad of ["1500.7", "1,500.7", "1e3", "-1500", "1500．7"]) {
+    expect(C.wholeUnitSubmit(bad), bad).toBeNull();
+  }
+  expect(till).toContain("wholeUnitSubmit");
+  expect(till).toContain("has no decimals. Nothing was changed.");
+  expect(till).not.toContain("Whole numbers only");
+  expect(till).not.toContain("text.replace(/[^\\d]/g, '')");
+  expect(till).not.toContain("text.indexOf('.')");
 });
 
 it("keeps two decimals on a whole count, and yen stays whole", () => {
