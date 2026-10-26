@@ -450,8 +450,9 @@
     </div></div>);
   }
 
-  function VerifySignup({ email, onVerified, onBack }) {
+  function VerifySignup({ email, onVerified, onBack, shownCode }) {
     const [code, setCode] = useState(''); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false); const [note, setNote] = useState('');
+    const shown = window.CDOS.freshShopCode ? window.CDOS.freshShopCode(shownCode) : null;
     const submit = async (e) => {
       e.preventDefault();
       if (code.trim().length < 4) { setErr('Enter the code from your email.'); return; }
@@ -463,11 +464,15 @@
         setErr(''); onVerified(d);
       } catch (_) { setErr('Network error \u2014 try again.'); setBusy(false); }
     };
-    const resend = async () => { setNote('Sending\u2026'); try { await fetch('/api/signup/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email }) }); setNote('A new code is on its way.'); } catch (_) { setNote('Couldn\u2019t resend \u2014 try again.'); } };
+    const resend = async () => {
+      if (shown) { setNote('Use the code on this screen.'); return; }
+      setNote('Sending\u2026'); try { await fetch('/api/signup/resend', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email }) }); setNote('A new code is on its way.'); } catch (_) { setNote('Couldn\u2019t resend \u2014 try again.'); }
+    };
     return (<div id="lock"><div className="lock-card">
       <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Verify your email</span></div>
       <h1>Enter your code</h1>
-      <div className="station">We emailed a 6-digit code to <b style={{ color: 'var(--ink)' }}>{email}</b>. It expires in 10 minutes.</div>
+      <div className="station">{shown ? shown.line : <>We emailed a 6-digit code to <b style={{ color: 'var(--ink)' }}>{email}</b>. It expires in 10 minutes.</>}</div>
+      {shown ? <div data-signup-code="1" style={{ fontFamily: 'var(--f-mono)', fontSize: 28, fontWeight: 700, letterSpacing: '0.28em', margin: '0 0 16px' }}>{shown.code}</div> : null}
       <form onSubmit={submit}>
         <div><input value={code} onChange={e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} inputMode="numeric" placeholder="000000" autoFocus style={{ textAlign: 'center', letterSpacing: '0.4em', fontFamily: 'var(--f-mono)', fontSize: 22 }} /></div>
         <div className="lock-err">{err}</div>
@@ -793,6 +798,7 @@
     const [authRec, setAuthRec] = useState(null);   // employee record resolved at the lock screen
     const [pwTemp, setPwTemp] = useState(null);     // {current} while a temporary password must be replaced
     const [signup, setSignup] = useState(null);     // { email } while verifying a new-desk signup
+    const [openingId, setOpeningId] = useState('');
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
     const [stagingOn, setStagingOn] = useState(false); const [stagingDoor, setStagingDoor] = useState(false);
@@ -2316,7 +2322,9 @@
 
     if (stage === 'lock') return <SignIn
       employees={settings.employees || []}
+      openingId={openingId}
       onSignup={() => setStage('signup')}
+      onFreshShop={(next) => { setSignup({ email: next.email, code: next.code, fresh: true }); setStage('verify'); }}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
@@ -2335,7 +2343,17 @@
       }}
     />;
     if (stage === 'signup') return <OnboardWizard plan={ENTRY.plan} onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
-    if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
+    if (stage === 'verify') return <VerifySignup email={signup && signup.email} shownCode={signup && signup.code} onBack={() => { const backToShop = signup && signup.fresh; setSignup(null); setStage(backToShop ? 'lock' : 'signup'); }} onVerified={async (d) => {
+      if (signup && signup.fresh && window.CDOS.afterFreshVerify(d && d.user) === 'signin') {
+        try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {}
+        const email = signup.email;
+        setSignup(null);
+        setOpeningId(email || '');
+        setStage('lock');
+        return;
+      }
+      setNewDesk(d); setStage('created');
+    }} />;
     if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={async () => {
       // adopt the new owner locally, then hydrate their brand-new (clean) desk
       // from the server before routing in — so the OS opens as THEIR instance.
@@ -2752,4 +2770,5 @@
   }
 
   window.CDOS_App = App;
+  window.CDOS.VerifySignup = VerifySignup;
 })();
