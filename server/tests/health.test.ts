@@ -65,6 +65,32 @@ describe("GET /api/health", () => {
     const res = await app.inject({ method: "GET", url: "/api/health" });
     expect(res.statusCode).toBe(200);
   });
+
+  it("returns lastMigration null when the migration read never resolves", async () => {
+    let release: (value: { rows: [] }) => void = () => {};
+    const gate = new Promise<{ rows: [] }>((resolve) => { release = resolve; });
+    const execute = vi.spyOn(handle.db, "execute").mockImplementation(() => gate as never);
+    const started = Date.now();
+    const pending = app.inject({ method: "GET", url: "/api/health" });
+    const winner = await Promise.race([
+      pending.then((res) => ({ kind: "response" as const, res })),
+      new Promise<{ kind: "hung" }>((resolve) => setTimeout(() => resolve({ kind: "hung" }), 1500)),
+    ]);
+    release({ rows: [] });
+    if (winner.kind === "hung") await pending;
+    try {
+      expect(winner.kind).toBe("response");
+      if (winner.kind !== "response") return;
+      expect(Date.now() - started).toBeLessThan(1500);
+      expect(winner.res.statusCode).toBe(200);
+      const body = winner.res.json();
+      expect(body.ok).toBe(true);
+      expect(body.service).toBe("currencydesk-server");
+      expect(body.lastMigration).toBeNull();
+    } finally {
+      execute.mockRestore();
+    }
+  });
 });
 
 describe("GET /api/health when the database is gone", () => {

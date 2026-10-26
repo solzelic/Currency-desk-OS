@@ -78,19 +78,31 @@ type MigrationReader = {
   execute: (query: ReturnType<typeof dbSql>) => Promise<{ rows: ReadonlyArray<{ migration_id?: unknown }> }>;
 };
 
-/* Newest applied id, or null when the table is missing or the read fails.
-   Names only. The caller does not learn why the read failed. */
+/* Health must not wait on a stuck read. One second, then null. */
+const MIGRATION_READ_TIMEOUT_MS = 1000;
+
+/* Newest applied id, or null when the table is missing, the read fails,
+   or it takes longer than MIGRATION_READ_TIMEOUT_MS. Names only. */
 export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const found = await db.execute(dbSql`
-      SELECT migration_id FROM schema_migrations
-      ORDER BY applied_at DESC, migration_id DESC
-      LIMIT 1
-    `);
+    const found = await Promise.race([
+      db.execute(dbSql`
+        SELECT migration_id FROM schema_migrations
+        ORDER BY applied_at DESC, migration_id DESC
+        LIMIT 1
+      `),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), MIGRATION_READ_TIMEOUT_MS);
+        timer.unref();
+      }),
+    ]);
     const id = found.rows[0]?.migration_id;
     return typeof id === "string" && id.length > 0 ? id : null;
   } catch {
     return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
