@@ -498,17 +498,6 @@
     const [preview, setPreview] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
-    const [serverCode, setServerCode] = useState('');
-    const [holderName, setHolderName] = useState('');
-    const clearServerError = () => { setServerError(''); setServerCode(''); setHolderName(''); };
-    const showServerError = (error, fallback) => {
-      setServerError((error && error.message) || fallback);
-      setServerCode((error && error.code) || '');
-      setHolderName((error && error.holderName) || '');
-    };
-    const takeOverTill = serverCode === 'TILL_HELD' ? (
-      <button type="button" onClick={() => { onClose(); if (window.CDOS.openTakeover) window.CDOS.openTakeover(); }} title={holderName ? ('Take over this till from ' + holderName) : 'Take over this till'} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Take over this till</button>
-    ) : null;
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -602,7 +591,7 @@
     const rateN = pricing.rate;
     useEffect(() => {
       setServerQuote(null);
-      clearServerError();
+      setServerError('');
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
     useEffect(() => {
       if (!isExchange || !(parseFloat(inAmt) > 0) || !window.CDOS.Backend || !window.CDOS.Backend.previewQuote) {
@@ -848,7 +837,7 @@
     const getServerQuote = async () => {
       if (!canSave || !window.CDOS.Backend) return;
       setServerBusy(true);
-      clearServerError();
+      setServerError('');
       try {
         const synced = await window.CDOS.Backend.syncCustomer(customer, rec);
         setClients(list => ({ ...list, [customer]: { ...(list[customer] || {}), ledgerCustomerId: synced.customerId, ledgerExternalRef: synced.externalRef } }));
@@ -871,7 +860,7 @@
         }
         setServerQuote(quote);
       } catch (error) {
-        showServerError(error, 'The server quote could not be created.');
+        setServerError(error.message || 'The server quote could not be created.');
       } finally {
         setServerBusy(false);
       }
@@ -880,7 +869,7 @@
     const postServerQuote = async () => {
       if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
       setServerBusy(true);
-      clearServerError();
+      setServerError('');
       try {
         const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
         const serbia = packId === 'pack-rs-v1';
@@ -910,7 +899,7 @@
         onDone && onDone(row.id);
       } catch (error) {
         if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-        showServerError(error, 'The transaction was not posted.');
+        setServerError(error.message || 'The transaction was not posted.');
       } finally {
         setServerBusy(false);
       }
@@ -1022,19 +1011,19 @@
       const chequeOnLedger = serverBacked && isCheque && _K && _K.ledger();
       if (chequeOnLedger) {
         setServerBusy(true);
-        clearServerError();
+        setServerError('');
         try {
           posted = await postCheque();
           ref = posted.transactionRef;
         } catch (error) {
-          showServerError(error, 'The cheque was not cashed.');
+          setServerError(error.message || 'The cheque was not cashed.');
           setServerBusy(false);
           return;
         }
         setServerBusy(false);
       } else if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
         setServerBusy(true);
-        clearServerError();
+        setServerError('');
         try {
           posted = await postObligationDeal(ref);
           ref = posted.transactionRef;
@@ -1043,7 +1032,7 @@
              docs/CASH_OWNERSHIP_INVARIANTS.md — so a deal the ledger
              refused is a deal that did not happen, and recording it here
              would be inventing money. */
-          showServerError(error, 'The transaction was not posted.');
+          setServerError(error.message || 'The transaction was not posted.');
           setServerBusy(false);
           return;
         }
@@ -1446,13 +1435,11 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
-                {!isExchange && takeOverTill}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
-                  {takeOverTill}
                   {phoneSheet && !allGreen
                     ? <button type="button" onClick={showMissing} disabled={quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: quotePending ? CD.line : CD.ink, color: quotePending ? CD.faint : 'var(--cd-on-ink)' }}><Ic n="lock" s={15} c="currentColor" /> {stepsLabel}</button>
                     : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy || quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy || quotePending) ? CD.line : CD.ink, color: (!canSave || serverBusy || quotePending) ? CD.faint : 'var(--cd-on-ink)' }}>

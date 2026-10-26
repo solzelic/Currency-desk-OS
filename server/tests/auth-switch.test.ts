@@ -418,7 +418,6 @@ postgres("a switched session is the person on the deal", () => {
     expect(held.json()).toEqual({
       code: "TILL_HELD",
       message: "Count the till to take it over from A.\u00A0Singh.",
-      holderName: "A.\u00A0Singh",
     });
     const openBefore = await pool!.query("SELECT session_id, opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(openBefore.rows.map((row) => row.opened_by)).toEqual([idOf(B)]);

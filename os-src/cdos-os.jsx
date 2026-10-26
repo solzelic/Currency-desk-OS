@@ -556,7 +556,7 @@
                   {openTills.map(t => { const on = effTill === t.id; return (
                     <button key={t.id} type="button" onClick={() => setTillSel(m => ({ ...m, [b.id]: t.id }))}
                       style={{ fontFamily: 'var(--f-mono)', fontSize: 10, padding: '5px 9px', borderRadius: 7, cursor: 'pointer', border: `1px solid ${on ? 'var(--ink)' : 'var(--hair)'}`, background: on ? 'var(--ink)' : 'rgba(255,255,255,0.55)', color: on ? '#fff' : 'var(--soft)' }}>
-                      {t.name.replace(/\s+—.*/, '')}{t.operator ? ' · ' + t.operator + ' on now' : (t.teller ? ' · ' + t.teller : ' · free')}
+                      {t.name.replace(/\s+—.*/, '')}{rec && t.teller === rec.name ? ' · yours' : (t.operator ? ' · ' + t.operator + ' on now' : (t.teller ? ' · ' + t.teller : ' · free'))}
                     </button>); })}
                 </div>)}
             </div>);
@@ -597,7 +597,7 @@
      a desk with no ledger sees — there, those tills are the only book there
      is — but nothing in either mode claims an operator the server has not
      named. See tillOccupant in cdos-backend.js. */
-  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate, ledgerScope, onSelectLedgerTill, myId }) {
+  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate, ledgerScope, onSelectLedgerTill }) {
     const [open, setOpen] = useState(false);
     const [pending, setPending] = useState(null);   // option key awaiting confirmation
     const [err, setErr] = useState('');
@@ -605,7 +605,6 @@
     useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
     const occupantOf = (session) => (window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '');
-    const yours = (session) => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     /* One list, whichever book is in charge. `onLedger` says which, because a
        key from the local list must never be handed to the server as a
        workspace and a workspace id means nothing to the local station. */
@@ -617,7 +616,6 @@
           occupant: occupantOf(w.session),
           // no session on the ledger means the book cannot say who is there
           note: w.session && w.session.status === 'open' ? '' : (w.session ? 'not open' : 'never opened'),
-          yours: yours(w.session),
           on: !!(ledgerScope.active && ledgerScope.active.workspaceId === w.workspaceId),
         }))
       : ((ab && ab.tills) || []).filter(t => t.status !== 'closed').map(t => ({
@@ -627,7 +625,6 @@
           // as a live session — this browser cannot know who is sitting down
           occupant: '',
           note: t.teller ? 'posted to ' + t.teller : '',
-          yours: false,
           on: station.tillId === t.id,
         }));
     const at = options.find(o => o.on) || null;
@@ -656,7 +653,7 @@
         {options.map(o => (
           <button key={o.key} onClick={() => pick(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}>
             <Ic n="wallet" s={13} c={o.on ? CD.ink : CD.mute} />
-            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}<span style={{ color: CD.faint }}>{o.yours ? ' · you' : (o.occupant ? ' · ' + o.occupant + ' on now' : (o.note ? ' · ' + o.note : ''))}</span></span>
+            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}<span style={{ color: CD.faint }}>{o.on ? ' · you' : (o.occupant ? ' · ' + o.occupant + ' on now' : (o.note ? ' · ' + o.note : ''))}</span></span>
             {o.on && <Ic n="check" s={13} c={CD.ink} />}
           </button>))}
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10.5, color: CD.faint, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n="logout" s={11} c={CD.faint} /> To change store, sign out &amp; back in.</div>
@@ -1879,11 +1876,6 @@
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
-    window.CDOS.openTakeover = () => {
-      window.CDOS._takeoverPending = true;
-      openApp('till');
-      window.dispatchEvent(new Event('cdos-takeover'));
-    };
     const closeWin = (id) => { if (id === 'store') setEditApps(false); setWins(ws => ws.filter(w => w.id !== id)); };
     const minWin = (id) => setWins(ws => ws.map(w => w.id === id ? { ...w, min: true } : w));
     const zoomWin = (id) => {
@@ -2646,7 +2638,7 @@
           </div>
           <div className="tenant-meta">
             <span className="tenant-name">{settings.operatingName || settings.bizName || 'Exchange house'}</span>
-            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} myId={srvUser && srvUser.id} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
+            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
           </div>
         </div>
         <div className="tenant-right">
