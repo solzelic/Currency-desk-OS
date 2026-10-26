@@ -65,9 +65,11 @@ export const migrations: readonly Migration[] = [
   ["052_idv_credit_ledger", "src/db/migrations/052_idv_credit_ledger.sql"],
   /* 053 is the booking-error flag beside a prepared or filed LCTR. The filing row is not updated. */
   ["053_lctr_filing_flag", "src/db/migrations/053_lctr_filing_flag.sql"],
-  /* 054 stores each structuring-watch acknowledgement as its own row.
+  /* 054 is the per-customer lock a reversal takes. A booking does not take it. */
+  ["054_watch_customer_lock", "src/db/migrations/054_watch_customer_lock.sql"],
+  /* 055 stores each structuring-watch acknowledgement as its own row.
      The session role is on the row. Update, delete, and truncate are refused. */
-  ["054_structuring_ack", "src/db/migrations/054_structuring_ack.sql"],
+  ["055_structuring_ack", "src/db/migrations/055_structuring_ack.sql"],
 ] as const;
 
 export async function runMigrations(
