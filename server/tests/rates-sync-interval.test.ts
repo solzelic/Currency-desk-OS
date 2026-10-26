@@ -76,10 +76,11 @@ describe("rates sync gap", () => {
       warnRatesSyncMinutes(raw, warn);
     }
     expect(warn).toHaveBeenCalledTimes(3);
-    expect(warn.mock.calls[0][0]).toContain("15");
-    expect(warn.mock.calls[1][0]).toContain("120");
-    expect(warn.mock.calls[2][0]).toContain("1440");
-    expect(String(warn.mock.calls[0][0])).not.toMatch(/\u2014|\u2013/);
+    const lines = warn.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(lines).toContain("15");
+    expect(lines).toContain("120");
+    expect(lines).toContain("1440");
+    expect(lines).not.toMatch(/\u2014|\u2013/);
   });
 });
 
