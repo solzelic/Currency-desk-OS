@@ -26,6 +26,25 @@ const bool = (value: unknown): boolean => value === true;
 const unixDate = (value: unknown): Date | null => typeof value === "number" && Number.isFinite(value) ? new Date(value * 1000) : null;
 const plan = (value: unknown): TenantPlan | null => typeof value === "string" && (TENANT_PLANS as readonly string[]).includes(value) ? value as TenantPlan : null;
 
+const TEST_SHOP_DETAIL = "Test shops can't use billing.";
+
+export class TestShopBillingError extends Error {
+  readonly code = "TEST_SHOP";
+  constructor() {
+    super(TEST_SHOP_DETAIL);
+    this.name = "TestShopBillingError";
+  }
+}
+
+async function isTestShop(db: Db, tenantId: string): Promise<boolean> {
+  const rows = await db.select({ isTestShop: schema.tenants.isTestShop }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1);
+  return rows[0]?.isTestShop === true;
+}
+
+function refuseTestShop(reply: { code: (status: number) => { send: (body: unknown) => unknown } }) {
+  return reply.code(403).send({ error: "TEST_SHOP", detail: TEST_SHOP_DETAIL });
+}
+
 /* The plan an invoice charged for: the last line with a positive amount
    whose price is one of ours. A plan change in the portal invoices a
    credit for the old plan (negative) and a charge for the new one, so
@@ -64,6 +83,7 @@ async function tenantForCustomer(db: Db, stripeCustomerId: string | null): Promi
 }
 
 async function ensureStripeCustomer(db: Db, config: StripeBillingConfig, tenantId: string, email: string | null, name: string): Promise<string> {
+  if (await isTestShop(db, tenantId)) throw new TestShopBillingError();
   const existing = await db.select().from(schema.stripeCustomers).where(eq(schema.stripeCustomers.tenantId, tenantId)).limit(1);
   if (existing[0]) return existing[0].stripeCustomerId;
   /* Lifetime offers are issued as customer-restricted Stripe promotion codes.
@@ -71,6 +91,7 @@ async function ensureStripeCustomer(db: Db, config: StripeBillingConfig, tenantI
      owner email and record the tenant mapping. This keeps the offer locked to
      its intended account instead of relying on a browser-visible code. */
   if (email) {
+    if (await isTestShop(db, tenantId)) throw new TestShopBillingError();
     const matches = await stripeClient(config).customers.list({ email, limit: 10 });
     const reserved = matches.data.find((customer) => customer.metadata.currencydesk_entitlement === "lifetime_owner" || customer.metadata.currencydesk_entitlement === "lifetime_guest");
     if (reserved) {
@@ -80,6 +101,7 @@ async function ensureStripeCustomer(db: Db, config: StripeBillingConfig, tenantI
       return reserved.id;
     }
   }
+  if (await isTestShop(db, tenantId)) throw new TestShopBillingError();
   const customer = await stripeClient(config).customers.create({ email: email ?? undefined, name, metadata: { currencydesk_tenant_id: tenantId } }, { idempotencyKey: `currencydesk:customer:${tenantId}` });
   const now = new Date();
   await db.insert(schema.stripeCustomers).values({ tenantId, stripeCustomerId: customer.id, createdAt: now, updatedAt: now })
@@ -173,6 +195,7 @@ export async function reportKycUsage(db: Db, tenantId: string, verificationId: s
   if (!config?.kycMeterEventName) throw new Error("Stripe KYC meter is not configured.");
   const customer = await db.select().from(schema.stripeCustomers).where(eq(schema.stripeCustomers.tenantId, tenantId)).limit(1);
   if (!customer[0]) throw new Error("Tenant has no Stripe customer.");
+  if (await isTestShop(db, tenantId)) throw new TestShopBillingError();
   await stripeClient(config).billing.meterEvents.create({
     event_name: config.kycMeterEventName,
     payload: { stripe_customer_id: customer[0].stripeCustomerId, value: "1", verification_id: verificationId },
@@ -202,6 +225,7 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
     if (!baseUrl || !price) return reply.code(503).send({ error: "billing_not_configured" });
     const tenant = await db.select().from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1);
     if (!tenant[0]) return reply.code(404).send({ error: "not_found" });
+    if (tenant[0].isTestShop) return refuseTestShop(reply);
     const admins = await db.select({ staffId: schema.staffUsers.staffId }).from(schema.staffUsers)
       .where(and(eq(schema.staffUsers.tenantId, who.tenantId), eq(schema.staffUsers.role, "administrator")));
     const email = admins.map((a) => a.staffId).find((value) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) ?? null;
@@ -234,6 +258,7 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
     if (!config || !baseUrl) return reply.code(503).send({ error: "billing_not_configured" });
     const customer = await db.select().from(schema.stripeCustomers).where(eq(schema.stripeCustomers.tenantId, who.tenantId)).limit(1);
     if (!customer[0]) return reply.code(409).send({ error: "no_billing_customer" });
+    if (await isTestShop(db, who.tenantId)) return refuseTestShop(reply);
     const portal = await stripeClient(config).billingPortal.sessions.create({ customer: customer[0].stripeCustomerId, return_url: `${baseUrl}/app` });
     return { url: portal.url };
   });

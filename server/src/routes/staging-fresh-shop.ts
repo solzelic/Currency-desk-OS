@@ -20,6 +20,7 @@ import { schema } from "../db/index.js";
 import { hashCode, makeCode } from "../email.js";
 import { slugTaken } from "../onboarding/provision.js";
 import { makeReference } from "./enquiries.js";
+import { STAGING_DOOR_REASON } from "./early-access.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -173,7 +174,7 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
       charterNo: null,
       isDemo: false,
       doNotContact: true,
-      doNotContactReason: "staging test shop",
+      doNotContactReason: STAGING_DOOR_REASON,
       details: { stagingFresh: true, slug },
     });
     return reply.code(201).send({ ok: true, reference, email });

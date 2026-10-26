@@ -39,11 +39,17 @@ const PLATFORM_TENANT = "tnt-platform";
 const CACHE_MS = 15_000;
 let cached: { at: number; claimed: number } | null = null;
 
+/* Written only by the staging door. A public application cannot set it. */
+export const STAGING_DOOR_REASON = "staging test shop";
+
+export function isStagingDoorEnquiry(row: { doNotContact?: boolean | null; doNotContactReason?: string | null }): boolean {
+  return row.doNotContact === true && row.doNotContactReason === STAGING_DOOR_REASON;
+}
+
 export async function claimedCount(db: Db): Promise<number> {
   const applications = (await db.select().from(schema.enquiries)).filter(
     // never the walkthrough: practising must not tell the site a place has gone
-    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo
-      && (e.details as { stagingFresh?: boolean } | null)?.stagingFresh !== true,
+    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo && !isStagingDoorEnquiry(e),
   );
   const spokenFor = new Set(applications.map((a) => a.tenantId).filter(Boolean) as string[]);
   const desks = (await db.select().from(schema.tenants)).filter(

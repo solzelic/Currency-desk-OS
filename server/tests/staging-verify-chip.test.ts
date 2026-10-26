@@ -45,7 +45,10 @@ describe("confirm code on the staging fresh path", () => {
     const shown = verifyCopy({ ownerEmail: "owner@shop.test" });
     expect(shown.help).toBe("Enter the code below.");
     expect(shown.resend).toBe("");
+    expect(shown.fixTail).toBe(". You\u2019ll need this address every time you sign in.");
     expect(shown.fixTail).not.toMatch(/\u2014|\u2013/);
+    expect(html).toContain("Go back and change it<\\u002Fbutton>{{ verifyFixTail }}");
+    expect(html).not.toContain("Go back and change it<\\u002Fbutton> {{ verifyFixTail }}");
     const chip = html.slice(html.indexOf("data-staging-code"), html.indexOf("data-staging-code") + 900);
     expect(chip).toContain("Staging code");
     expect(chip).toContain("font-family:var(--m)");

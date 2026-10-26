@@ -186,7 +186,7 @@ const BRIDGE = `<script>
           help: "We\\u2019ve texted a 6-digit code to " + (to || "your mobile") +
                 ". This is the number that signs you in from now on, and the one we call.",
           resend: "No text yet?", fixLead: "Wrong number?",
-          fixTail: "\\u2014 you\\u2019ll need this number every time you sign in.",
+          fixTail: " \\u2014 you\\u2019ll need this number every time you sign in.",
         };
       }
       var shown = CD.verify && /^[0-9]{6}$/.test(CD.verify.code || "") ? CD.verify.code : "";
@@ -203,7 +203,7 @@ const BRIDGE = `<script>
         help: "We\\u2019ve emailed a 6-digit code to " + (to || "your email address") +
               ". This is the address that signs you in from now on, and the one we write to.",
         resend: "No email yet?", fixLead: "Wrong address?",
-        fixTail: "\\u2014 you\\u2019ll need this address every time you sign in.",
+        fixTail: " \\u2014 you\\u2019ll need this address every time you sign in.",
       };
     },
 
@@ -670,7 +670,7 @@ patch(
   "    if (window.__cdOnb) return window.__cdOnb.verifyCopy(this.state.data);\n" +
   "    const d = this.state.data;\n" +
   "    return { q:'Confirm your mobile.', help:'We\\u2019ve texted a 6-digit code to ' + (d.phone || 'your mobile') + '.',\n" +
-  "             resend:'No text yet?', fixLead:'Wrong number?', fixTail:'\\u2014 you\\u2019ll need this number every time you sign in.' };\n" +
+  "             resend:'No text yet?', fixLead:'Wrong number?', fixTail:' \\u2014 you\\u2019ll need this number every time you sign in.' };\n" +
   "  }\n\n" +
   "  meta(i, d, j, home, selCcy) {",
 );
@@ -687,7 +687,7 @@ patch(
 patch(
   "the tail of the 'wrong number' footnote",
   "Go back and change it</button> — you'll need this number every time you sign in.</span>",
-  "Go back and change it</button> {{ verifyFixTail }}</span>",
+  "Go back and change it</button>{{ verifyFixTail }}</span>",
 );
 
 /* --- 6b. The main button acknowledges being pressed ----------------

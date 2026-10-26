@@ -23,7 +23,7 @@ import { platformMfaEnrolled } from "../auth/platform-mfa.js";
 import { hashPassword } from "../auth/password.js";
 import { issueCdId } from "../auth/cdid.js";
 import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js";
-import { forgetClaimedCount } from "./early-access.js";
+import { forgetClaimedCount, isStagingDoorEnquiry } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
@@ -562,7 +562,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
   // a health snapshot for the dashboard header
   app.get("/api/admin/overview", async (req, reply) => {
     if (!(await gate(req, reply))) return;
-    const tenants = (await db.select().from(schema.tenants)).filter((t) => t.id !== PLATFORM_TENANT);
+    const tenants = (await db.select().from(schema.tenants)).filter((t) => t.id !== PLATFORM_TENANT && t.isTestShop !== true);
     const staff = (await db.select({ tenantId: schema.staffUsers.tenantId }).from(schema.staffUsers)).filter((s) => s.tenantId !== PLATFORM_TENANT);
     const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
     const byStatus = { active: 0, trial: 0, suspended: 0 };
@@ -580,7 +580,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     /* The funnel ahead of those desks. "waiting" is the number that should
        drive someone to open this page: applications nobody has answered. */
     // the walkthrough is a rehearsal, not a lead — it belongs in no total
-    const apps = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "early_access" && !e.isDemo);
+    const apps = (await db.select().from(schema.enquiries)).filter((e) => e.kind === "early_access" && !e.isDemo && !isStagingDoorEnquiry(e));
     const byAppStatus: Record<string, number> = {};
     for (const s of schema.ENQUIRY_STATUSES) byAppStatus[s] = 0;
     for (const a of apps) byAppStatus[a.status] = (byAppStatus[a.status] || 0) + 1;
