@@ -79,6 +79,10 @@ describe("fresh shop button", () => {
     const staging = draw({ employees: [], stagingOpen: true });
     expect(staging).toContain("Start a fresh shop");
     expect(staging).toContain('data-fresh-shop="1"');
+    const fresh = staging.slice(staging.indexOf('data-fresh-shop="1"'), staging.indexOf('data-fresh-shop="1"') + 700);
+    expect(fresh).toContain("Staging");
+    expect(fresh).toContain("1px solid var(--si-mute)");
+    expect(fresh).not.toContain("var(--si-primary)");
     for (const label of ROLES) expect(staging).toContain(label);
     expect(staging).not.toMatch(/\u2014|\u2013/);
     expect(staging).not.toContain("ONE-TIME PASSWORD");

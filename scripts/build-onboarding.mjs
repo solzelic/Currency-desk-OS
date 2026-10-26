@@ -193,9 +193,9 @@ const BRIDGE = `<script>
       if (shown) {
         return {
           q: "Confirm your email.",
-          help: "Type this code. It is shown here. " + shown,
-          resend: "No email yet?", fixLead: "Wrong address?",
-          fixTail: "\\u2014 you\\u2019ll need this address every time you sign in.",
+          help: "Enter the code below.",
+          resend: "", fixLead: "Wrong address?",
+          fixTail: ". You\\u2019ll need this address every time you sign in.",
         };
       }
       return {
@@ -715,7 +715,28 @@ patch(
   "      onResend: () => { this.set('code', ''); if (window.__cdOnb) window.__cdOnb.sendCode(this.state.data).then(() => this.forceUpdate()); },\n" +
   "      verifyResend: (window.__cdOnb && window.__cdOnb.err) ? window.__cdOnb.err : this.vCopy().resend,\n" +
   "      verifyNoteColor: (window.__cdOnb && window.__cdOnb.err) ? '#b3261e' : 'var(--mute)',\n" +
-  "      verifyFixLead: this.vCopy().fixLead, verifyFixTail: this.vCopy().fixTail,",
+  "      verifyFixLead: this.vCopy().fixLead, verifyFixTail: this.vCopy().fixTail,\n" +
+  "      verifyShown: (window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code) || '',\n" +
+  "      verifyShowChip: !!(window.__cdOnb && window.__cdOnb.verify && /^[0-9]{6}$/.test(window.__cdOnb.verify.code || '')),\n" +
+  "      verifyShowResend: !(window.__cdOnb && window.__cdOnb.verify && /^[0-9]{6}$/.test(window.__cdOnb.verify.code || '')),\n" +
+  "      onCopyShown: () => { var shown = (window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code) || ''; try { if (navigator.clipboard && shown) navigator.clipboard.writeText(shown); } catch (e) {} },",
+);
+patch(
+  "the staging code chip on the verify screen",
+  '<div style="margin-top: 22px;">\n                <input inputmode="numeric"',
+  '<div style="margin-top: 22px;">\n' +
+  '                <sc-if value="{{ verifyShowChip }}" hint-placeholder-val="{{ false }}">\n' +
+  '                  <div data-staging-code="1" style="display:flex;align-items:center;flex-wrap:nowrap;gap:8px;margin:0 0 12px;padding:0 8px 0 10px;min-height:44px;border:1px solid var(--line);border-radius:12px;background:#fff;">' +
+  '<span style="font-size:12px;font-weight:700;color:#17140F;white-space:nowrap;">Staging code</span>' +
+  '<span style="font-family:var(--m);font-size:20px;font-weight:700;letter-spacing:0.04em;color:#17140F;white-space:nowrap;">{{ verifyShown }}</span>' +
+  '<button type="button" data-copy-code="1" sc-camel-on-click="{{ onCopyShown }}" style="margin-left:auto;flex:none;height:44px;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:#17140F;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">Copy</button></div>\n' +
+  '                </sc-if>\n' +
+  '                <input inputmode="numeric"',
+);
+patch(
+  "the resend row hides when the code is on screen",
+  '<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px;"><span style="font-size: 12.5px; color: {{ verifyNoteColor }};">{{ verifyResend }}</span><button sc-camel-on-click="{{ onResend }}" style="background: none; border: 0; color: var(--primary); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; padding: 4px 6px;">Send it again</button></div>',
+  '<sc-if value="{{ verifyShowResend }}" hint-placeholder-val="{{ true }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px;"><span style="font-size: 12.5px; color: {{ verifyNoteColor }};">{{ verifyResend }}</span><button sc-camel-on-click="{{ onResend }}" style="background: none; border: 0; color: var(--primary); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; padding: 4px 6px;">Send it again</button></div></sc-if>',
 );
 patch(
   "onCode — a typed code would advance without ever being checked",

@@ -62915,15 +62915,32 @@ ${snap}`;
         minHeight: 44,
         boxSizing: 'border-box',
         borderRadius: 12,
-        border: 'none',
-        background: 'var(--si-primary)',
-        color: '#fff',
+        border: '1px solid var(--si-mute)',
+        background: 'var(--si-panel)',
+        color: 'var(--si-ink)',
         fontFamily: 'Archivo, system-ui, sans-serif',
         fontSize: 15,
         fontWeight: 600,
-        cursor: busy ? 'default' : 'pointer'
+        cursor: busy ? 'default' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8
       }
-    }, b.label)), freshErr ? /*#__PURE__*/React.createElement("div", {
+    }, b.label, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: MONO,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: 'var(--si-mute)',
+        border: '1px solid var(--si-mute)',
+        borderRadius: 6,
+        padding: '2px 6px',
+        lineHeight: 1.2
+      }
+    }, "Staging"))), freshErr ? /*#__PURE__*/React.createElement("div", {
       "data-fresh-error": "1",
       style: {
         color: 'var(--si-flag)',
