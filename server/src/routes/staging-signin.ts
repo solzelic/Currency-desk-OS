@@ -1,7 +1,7 @@
-/* One-click staging sign-in. Registered only when STAGING=1
-   (see app.ts). Every request passes the Host header into
-   isStagingRuntime and checks the demo shop, so a live host
-   or any shop other than tnt-yorkfx is still 404.
+/* One-click staging sign-in. Registered only when stagingDoorOpen()
+   is true (STAGING exactly "1"; see app.ts). Every request calls
+   stagingDoorOpen with the headers and checks the demo shop, so a
+   live host or any shop other than tnt-yorkfx is still 404.
 
    The session is a normal cdos_session for one seeded demo staff
    member. It lasts three days. A desk sign-in stays twelve hours. */
@@ -11,7 +11,7 @@ import { z } from "zod";
 import { audit } from "../audit.js";
 import { clientIp } from "../auth/client-ip.js";
 import { stagingAddressLimited } from "../auth/signin-guard.js";
-import { isStagingRuntime, requestHost } from "../auth/staging-runtime.js";
+import { requestHost, stagingDoorOpen, type StagingDoorHeaders } from "../auth/staging-runtime.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { isDemoDeskTenant } from "../demo-desk.js";
 import type { Db } from "../db/index.js";
@@ -44,8 +44,8 @@ export function clearStagingCookie(reply: FastifyReply, secure: boolean): void {
   reply.clearCookie(STAGING_COOKIE, cookieOpts(secure));
 }
 
-async function doorOpen(db: Db, host: string): Promise<boolean> {
-  if (!isStagingRuntime(host)) return false;
+async function doorOpen(db: Db, headers: StagingDoorHeaders): Promise<boolean> {
+  if (!stagingDoorOpen(headers)) return false;
   const row = await db
     .select({ id: schema.tenants.id, siteSlug: schema.tenants.siteSlug })
     .from(schema.tenants)
@@ -61,14 +61,14 @@ export function registerStagingSignInRoutes(app: FastifyInstance, db: Db): void 
   app.get("/api/staging/signin", async (req, reply) => {
     /* 404, not 403, and enabled is false. The login page treats
        anything other than 200 { enabled: true } as no buttons. */
-    if (!(await doorOpen(db, req.headers.host ?? ""))) {
+    if (!(await doorOpen(db, req.headers))) {
       return reply.code(404).send({ enabled: false });
     }
     return { enabled: true };
   });
 
   app.post("/api/staging/enter", async (req, reply) => {
-    if (!(await doorOpen(db, req.headers.host ?? ""))) {
+    if (!(await doorOpen(db, req.headers))) {
       return reply.code(404).send({ error: "not_found" });
     }
     if (await stagingAddressLimited(db, clientIp(req))) {

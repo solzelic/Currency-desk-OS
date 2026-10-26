@@ -63,7 +63,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
 | `/api/health` | public probe (no auth). Trivial database read; **200** if it succeeds, **503** `{ ok: false, error: "database" }` if it does not. The body adds `commit` (7-character `RENDER_GIT_COMMIT`, or `unknown`) and `lastMigration` (newest `schema_migrations` id, or null when that read fails, including a connect failure). On Postgres that read sets `statement_timeout` to 1000 ms, so the server cancels it and frees the connection. Render `healthCheckPath`. Narrative checks stay at authenticated `/api/admin/health` |
-| `GET /api/staging/signin`, `POST /api/staging/enter` | Registered only when `STAGING` is exactly `1`. Each request passes the Host header into `isStagingRuntime` and requires the demo shop `tnt-yorkfx`. A live host is 404. The flag is not in `render.yaml`. |
+| `GET /api/staging/signin`, `POST /api/staging/enter` | Registered only when `stagingDoorOpen()` is true (`STAGING` exactly `1`). Each request calls `stagingDoorOpen` with the headers, which checks the Host through `isStagingRuntime` and ignores `x-forwarded-host`, and requires the demo shop `tnt-yorkfx`. A live host is 404. The flag is not in `render.yaml`. |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
 The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css` is a 404, including a browser navigation. It is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. `/shared/id-document-types.js`, `/shared/counter-cash.js`, `/shared/rolling-24h.js`, and `/shared/lctr-reversal.js` are on the list for the uncompiled shell and are a 404 with `os-src/` once the compiled OS shell is present. Nothing else under `shared/` is served. The compiled desk links `/os-src/york-os.css`, so that stylesheet stays public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production`, a missing `web/app/index.html` logs that the uncompiled shell and `os-src` are public, and a missing `web/app/admin.html` logs that the uncompiled admin shell is public. The admin warning does not mention `os-src`. The same boot logs nothing when `NODE_ENV` is unset or `test`. The fallback itself stays, so a skipped build does not take the desk down.
@@ -160,6 +160,14 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `ledger_lock_watch_customer(tenant, entity, branch, customer)`.
   An insert into `ledger_reversals` calls it for the reversed deal.
   A new deal does not take the lock. 053 is on main, so this file is 054.
+- Migration `056_tenant_test_shop` adds `tenants.is_test_shop`
+  (`boolean not null default false`). The shared boot DDL does not
+  add the column. Postgres adds it only here, and raises when a
+  leftover column has any other shape. PGlite runs this same file
+  after DDL, because PGlite does not run the SQL migrations. The
+  Drizzle schema includes the column. Every existing shop stays
+  false. Nothing sets it true. 055 is on main, so this file is 056.
+  Issue #412.
 
 ## Test commands
 

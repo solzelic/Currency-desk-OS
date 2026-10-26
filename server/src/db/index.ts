@@ -6,11 +6,12 @@
    Both are real Postgres, so the queries never fork; only the managed
    path runs migrations (see the note above desk_clients).
    ============================================================ */
+import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { runMigrations } from "./migrations.js";
+import { runMigrations, type Migration } from "./migrations.js";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -690,13 +691,17 @@ CREATE TABLE IF NOT EXISTS idv_shop_config (
 );
 `;
 
-/** App schema plus ledger migrations, on the connection string the caller passes. */
-export async function provisionPostgres(connectionString: string) {
+/** App schema plus ledger migrations, on the connection string the caller passes.
+    A caller can stop before the last migration to rehearse an upgrade. */
+export async function provisionPostgres(
+  connectionString: string,
+  configuredMigrations?: readonly Migration[],
+) {
   const pool = new pg.Pool({ connectionString });
   const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
   if (typeExists.rows.length === 0) await pool.query(ENUM_DDL);
   await pool.query(DDL);
-  await runMigrations(pool);
+  await runMigrations(pool, configuredMigrations);
   return pool;
 }
 
@@ -719,6 +724,12 @@ export async function createDb(): Promise<DbHandle> {
     await client.exec(ENUM_DDL);
   }
   await client.exec(DDL);
+  /* PGlite does not run SQL migrations. Postgres adds is_test_shop
+     only in 056, so this file is applied here and not in the shared
+     DDL. A leftover of the wrong shape raises, same as on Postgres. */
+  await client.exec(
+    await readFile(new URL("./migrations/056_tenant_test_shop.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }

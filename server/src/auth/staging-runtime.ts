@@ -40,3 +40,23 @@ export function isStagingRuntime(
   if (host === undefined) return true;
   return isStagingHost(requestHost(host), env);
 }
+
+/* The one door later staging routes reuse. x-forwarded-host is
+   never a host: naming the staging host there does not open a
+   live Host, and naming a live host there does not close a
+   real staging Host. */
+export type StagingDoorHeaders = {
+  host?: string | string[] | undefined;
+  "x-forwarded-host"?: string | string[] | undefined;
+};
+
+/** No headers: the registration gate, STAGING exactly "1".
+    With headers: that flag, plus isStagingRuntime on the Host
+    header. A missing Host is closed. */
+export function stagingDoorOpen(
+  headers?: StagingDoorHeaders,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (headers === undefined) return env.STAGING === "1";
+  return isStagingRuntime(headers.host ?? "", env);
+}
