@@ -72,6 +72,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **A reversal locks that customer.** Migration 054 defines
+  `ledger_lock_watch_customer(tenant, entity, branch, customer)`.
+  The function takes a transaction advisory lock on a hash of those
+  four values. An insert into `ledger_reversals` calls it for the
+  reversed deal's tenant, entity, branch, and customer. A new deal
+  does not take the lock. Two reversals for one customer run one
+  after the other. The lock ends when that transaction commits or
+  rolls back. Nothing else calls the function. The structuring watch
+  acknowledgement (#392) will call it before reading the watch.
+
 - **Staging has a one-click sign-in.** `STAGING` must be exactly `1`, and `RENDER_EXTERNAL_HOSTNAME` must be `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` with `IS_PULL_REQUEST=true`. `GET /api/staging/signin` and `POST /api/staging/enter` pass the request Host into `isStagingRuntime`, and a missing Host counts as empty. A live host, a missing flag, or a shop other than `tnt-yorkfx` is 404. The enter body is JSON and only a role. The 21st call from one address is refused. The flag is not in `render.yaml`. The session lasts three days. A normal sign-in stays twelve hours and clears the staging marker. The login page shows six Enter as buttons only when the config answers `{enabled:true}`. The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and it stays up for that session. The demo seed inserts `c.adebayo` (compliance officer) and `l.berg` (auditor) only when `STAGING` is exactly `1`, including on a database that already has the other demo staff. An existing row is not overwritten. If `SEED_PASSWORD` is unset, those two get a random password.
 
 - **The desk snapshot hides an STR from a teller.** `GET /api/tenant/state` returns a suspicious report to administrator, branch manager, and compliance officer. A suspicious report is a submission keyed `STR-`, a basis of structuring, or a kind from the pack's suspicious codes, including SMR. Report history for that filing is treated the same way. The same read returns `ackStr` and `ackStrInfo` to those three plus supervisor. A teller, an auditor, and any other role receive neither. `PUT /api/tenant/state` from a role outside a set leaves the stored report or acknowledgement in place, does not store a new suspicious report, and still saves the other fields. Issue #342.
