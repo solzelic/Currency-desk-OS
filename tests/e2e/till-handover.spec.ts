@@ -101,6 +101,8 @@ async function openTill(page: Page): Promise<void> {
 
 async function expectHolderName(page: Page): Promise<void> {
   const strip = page.locator(".till-operator");
+  const show = page.getByTitle("Show who's on the drawer");
+  if (await show.isVisible().catch(() => false)) await show.click();
   await expect(strip).toContainText("On the drawer:", { timeout: 20_000 });
   await expect(strip).toContainText(HOLDER);
   await expect(strip).not.toContainText("a.singh");
@@ -169,11 +171,11 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const take = page.locator('[data-takeover="strip"]');
   await expect(take).toBeVisible({ timeout: 20_000 });
   await page.setViewportSize({ width: 1280, height: 900 });
-  expect(await take.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => take.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await page.getByTitle("Hide operator bar").click();
   const chip = page.locator('[data-takeover="chip"]');
   await expect(chip).toBeVisible();
-  expect(await chip.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => chip.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await expect(page.locator("[data-count-gate]")).toHaveText("Only the person on this till can count it.");
   await expect(page.locator(".till-step")).toHaveCount(0);
   await chip.click();
@@ -193,7 +195,7 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await expect(yen).toBeVisible();
   await expect(yen).toHaveAttribute("placeholder", "0");
   await expect(yen).toHaveAttribute("inputmode", "numeric");
-  expect(await yen.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => yen.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await yen.fill("1500.7");
   await expect(yen).not.toHaveValue("1501");
   expect(await yen.inputValue()).not.toContain(".");

@@ -1761,7 +1761,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .till-waiting { background: #E8F1FB; }
 html[data-cdtheme="dark"] .till-waiting { background: #1A2836; }
 html[data-cdtheme="dark"] .phone-head {
-  background: #161513;
+  background: #1e1d1a;
   border-bottom-color: rgba(255,255,255,0.16);
 }
 html[data-cdtheme="dark"] {
@@ -1769,7 +1769,7 @@ html[data-cdtheme="dark"] {
   --till-live: #4CC38A;
 }
 html[data-cdtheme="dark"] [data-tour="till"] .till-tabwrap::after {
-  background: linear-gradient(90deg, rgba(22,21,19,0), #161513 78%);
+  background: linear-gradient(90deg, rgba(30,29,26,0), #1e1d1a 78%);
 }
 .till-screen {
   width: 100%;
