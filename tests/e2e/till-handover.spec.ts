@@ -231,28 +231,63 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const submit = sheet.getByRole("button", { name: "Take over till" });
   await expect.poll(async () => cancel.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await expect.poll(async () => submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
-  const note = "Yen has no decimals. Nothing was changed.";
-  await yen.fill("1500");
-  await expect(yen).toHaveValue("1500");
-  for (const bad of ["1,500.7", "1500.7", "1e3", "-1500", "1500．7"]) {
-    await yen.fill(bad);
-    await expect(yen, bad).toHaveValue("1500");
+  const fraction = "Yen has no decimals.";
+  const whole = "Enter a whole number, like 1500.";
+  const refused: Array<[string, string]> = [
+    ["1500,7", fraction],
+    ["1.500", fraction],
+    ["1e3", whole],
+    ["15e3", whole],
+    ["1,50,0", fraction],
+    ["-1500", whole],
+    ["١٥٠٠", whole],
+  ];
+  for (const [sample, message] of refused) {
+    await yen.fill(sample);
+    await expect(yen, `paste ${sample}`).toHaveValue(sample);
+    await expect(sheet.getByText(message)).toBeVisible();
+    await expect(submit).toBeDisabled();
+    await yen.fill("");
+    await yen.pressSequentially(sample);
+    await expect(yen, `keys ${sample}`).toHaveValue(sample);
+    await expect(sheet.getByText(message)).toBeVisible();
+    await expect(submit).toBeDisabled();
   }
-  await expect(yen).not.toHaveValue("1");
-  await expect(yen).not.toHaveValue("15007");
-  await expect(sheet.getByText(note)).toBeVisible();
-  await shoot(page, "note", sheet.getByText(note));
-  await page.setViewportSize({ width: 1280, height: 900 });
+  await yen.fill("-1500");
+  await expect(yen).toHaveValue("-1500");
   await yen.fill("");
-  await yen.pressSequentially("1500.7");
+  await expect(yen).toHaveValue("");
+  await expect(sheet.getByText(fraction)).toHaveCount(0);
+  await expect(sheet.getByText(whole)).toHaveCount(0);
+  await expect(submit).toBeDisabled();
+  await yen.pressSequentially("1500");
   await expect(yen).toHaveValue("1500");
+  await expect(sheet.getByText(fraction)).toHaveCount(0);
+  await yen.fill("");
+  await expect(yen).toHaveValue("");
+  await expect(submit).toBeDisabled();
+  await yen.fill("0");
+  await expect(yen).toHaveValue("0");
+  await expect(sheet.getByText(whole)).toHaveCount(0);
+  await expect(submit).toBeDisabled();
+  await yen.fill(" 1500 ");
+  await expect(yen).toHaveValue(" 1500 ");
+  await expect(sheet.getByText(whole)).toHaveCount(0);
+  await yen.fill("1,500");
+  await expect(yen).toHaveValue("1,500");
+  await yen.fill("１５００");
+  await expect(yen).toHaveValue("１５００");
+  await yen.fill("1500,7");
+  await expect(yen).toHaveValue("1500,7");
   await expect(yen).not.toHaveValue("15007");
-  await expect(sheet.getByText(note)).toBeVisible();
+  await expect(sheet.getByText(fraction)).toBeVisible();
+  await shoot(page, "note", sheet.getByText(fraction));
+  await page.setViewportSize({ width: 1280, height: 900 });
   const cad = sheet.getByLabel("CAD counted");
   await cad.pressSequentially("10.5");
-  expect(await cad.inputValue()).toContain(".");
-  await yen.fill("1,500");
-  await expect(yen).toHaveValue("1500");
+  await expect(cad).toHaveValue("10.5");
+  await yen.fill("150,000");
+  await expect(yen).toHaveValue("150,000");
   await shoot(page, "sheet", sheet);
   const others = sheet.locator("input");
   const count = await others.count();
@@ -264,8 +299,8 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const heldByPx = await sheet.locator("[data-held-by]").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(heldByPx).toBeGreaterThanOrEqual(13);
 
-  await yen.fill("150000");
-  await expect(yen).toHaveValue("150000");
+  await yen.fill(" 150000 ");
+  await expect(yen).toHaveValue(" 150000 ");
   for (let i = 0; i < count; i++) {
     const label = await others.nth(i).getAttribute("aria-label");
     if (label === "JPY counted") continue;
@@ -285,6 +320,8 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const alert = sheet.getByRole("alert");
   await expect(alert).toHaveText(MISMATCH, { timeout: 30_000 });
   expect(posted).toContain('"JPY":"150000"');
+  expect(posted).not.toContain('"JPY":" 150000 "');
+  expect(posted).not.toContain('"JPY":"0"');
   expect(posted).not.toContain("150000.00");
   await sheet.getByRole("button", { name: "Take over till" }).click();
   await expect.poll(() => keys.length).toBeGreaterThanOrEqual(2);

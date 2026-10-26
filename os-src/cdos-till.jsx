@@ -45,7 +45,17 @@
   const noDecimalNote = (c) => {
     const last = ((nameOf(c) || '').split(' ').pop() || c);
     const name = last.charAt(0).toUpperCase() + last.slice(1);
-    return name + ' has no decimals. Nothing was changed.';
+    return name + ' has no decimals.';
+  };
+  const WHOLE_NUMBER_NOTE = 'Enter a whole number, like 1500.';
+  /* A note only when the teller has typed something parseCount refuses.
+     An empty field is not a count, and it does not carry a note. */
+  const countNote = (c, text) => {
+    if (!window.CDOS.parseCount || window.CDOS.parseCount(text, c).ok) return '';
+    if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return '';
+    const raw = String(text == null ? '' : text).trim().normalize('NFKC');
+    if (raw === '') return '';
+    return /[.,]/.test(raw) ? noDecimalNote(c) : WHOLE_NUMBER_NOTE;
   };
   const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy)
     ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.'
@@ -236,25 +246,7 @@
      does not show those amounts. Saving calls the handover route. */
   function TakeoverSheet({ currencies, holder, busy, error, onClose, onSubmit }) {
     const [raw, setRaw] = useState({});
-    const [bad, setBad] = useState({});
-    const shown = useRef({});
-    const armed = useRef({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
-    const onAmount = (c, value) => {
-      const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
-      const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
-      shown.current[c] = next.text;
-      armed.current[c] = next.armed;
-      setBad(o => { const n = { ...o }; if (next.warn) n[c] = true; else delete n[c]; return n; });
-      setRaw(o => ({ ...o, [c]: next.text }));
-    };
-    const refuseSeparator = (c, event) => {
-      if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
-      if (event.key !== '.' && event.key !== '．') return;
-      event.preventDefault();
-      armed.current[c] = true;
-      setBad(o => ({ ...o, [c]: true }));
-    };
+    const ready = currencies.length > 0 && currencies.every(c => window.CDOS.parseCount(raw[c] ?? '', c).ok);
     return ReactDOM.createPortal(
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
         <div role="dialog" aria-label="Take over till" onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 460, maxHeight: 'calc(100vh - 40px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -271,11 +263,11 @@
               {currencies.map((c, i) => (
                 <div key={c} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                   <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
-                  <input data-takeover="amount" value={raw[c] || ''} onKeyDown={e => refuseSeparator(c, e)} onChange={e => onAmount(c, e.target.value)} inputMode={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal'} placeholder={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                  <input data-takeover="amount" value={raw[c] ?? ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal'} placeholder={(window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
                 </div>
               ))}
             </div>
-            {Object.keys(bad).map(c => <div key={c} className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{noDecimalNote(c)}</div>)}
+            {currencies.map(c => { const note = countNote(c, raw[c] ?? ''); return note ? <div key={c} className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{note}</div> : null; })}
             {error ? <div role="alert" className="till-refusal text-[12px] mt-3 px-3 py-2" style={{ borderRadius: 9 }}>{error}</div> : null}
           </div>
           <div className="px-5 py-3.5 flex items-center justify-end gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
@@ -755,16 +747,9 @@
       const counts = {};
       for (let i = 0; i < serverCcys.length; i++) {
         const c = serverCcys[i];
-        const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
-        const text = String(raw[c] ?? '').trim();
-        if (places === 0) {
-          const accepted = window.CDOS.wholeUnitSubmit(text);
-          if (accepted == null) {
-            setSessionErr(noDecimalNote(c));
-            return;
-          }
-          counts[c] = accepted;
-        } else counts[c] = Number(text).toFixed(places);
+        const parsed = window.CDOS.parseCount(String(raw[c] ?? ''), c);
+        if (!parsed.ok) return;
+        counts[c] = parsed.value;
       }
       const body = JSON.stringify(counts);
       if (takeoverKey.current.body !== body || !takeoverKey.current.key) {

@@ -224,14 +224,14 @@
     }).format(roundMinor(n, places));
   }
 
-  /* A 0-decimal count. NFKC, then digits, or thousands commas.
-     Anything else is refused whole. Cutting "1,500.7" down to 1
-     is a different amount, and the book cannot see that it happened.
-     The digit typed after a refused mark is refused too. A longer
-     replacement is a new amount. Three-decimal currencies never
-     come through here. */
+  /* A takeover count. The field keeps every character the teller
+     typed or pasted. This only reads that text: trim the surrounding
+     spaces, apply NFKC, then accept a whole number or, for a currency
+     with a minor unit, a number of digits and one point. Empty is not
+     a count. The value is the string the handover sends. */
   var WHOLE = /^\d+$/;
   var THOUSANDS = /^\d{1,3}(,\d{3})+$/;
+  var GROUPED = /^\d{1,3}(,\d{3})+(\.\d*)?$/;
 
   function canonicalWhole(raw) {
     if (WHOLE.test(raw)) return raw;
@@ -239,29 +239,26 @@
     return null;
   }
 
-  function wholeUnitInput(previous, incoming, armed) {
-    var prev = String(previous == null ? "" : previous);
-    var raw = String(incoming == null ? "" : incoming).normalize("NFKC");
-    if (raw === "") return { text: "", warn: false, armed: false };
-    var accepted = canonicalWhole(raw);
-    if (accepted != null) {
-      if (armed && accepted.length === prev.length + 1 && accepted.indexOf(prev) === 0) {
-        return { text: prev, warn: true, armed: true };
-      }
-      return { text: accepted, warn: false, armed: false };
+  function decimalValue(raw, places) {
+    var body = GROUPED.test(raw) ? raw.replace(/,/g, "") : raw;
+    if (!/^\d*\.?\d*$/.test(body) || body === "" || body === ".") return null;
+    var amount = Number(body);
+    if (!isFinite(amount)) return null;
+    return amount.toFixed(places);
+  }
+
+  function parseCount(text, currency) {
+    var raw = String(text == null ? "" : text).trim().normalize("NFKC");
+    if (raw === "") return { ok: false };
+    var places = displayPlaces(currency);
+    if (places === 0) {
+      var whole = canonicalWhole(raw);
+      if (whole == null) return { ok: false };
+      return { ok: true, value: whole };
     }
-    return { text: prev, warn: true, armed: !/^[\d,]+$/.test(raw) };
-  }
-
-  function wholeUnitSubmit(text) {
-    var raw = String(text == null ? "" : text).normalize("NFKC").trim();
-    if (raw === "") return "0";
-    return canonicalWhole(raw);
-  }
-
-  function countAmountText(places, previous, incoming, armed) {
-    if (places === 0) return wholeUnitInput(previous, incoming, armed);
-    return { text: String(incoming == null ? "" : incoming).replace(/[^0-9.]/g, ""), warn: false, armed: false };
+    var value = decimalValue(raw, places);
+    if (value == null) return { ok: false };
+    return { ok: true, value: value };
   }
 
   function moneyAmount(n, code, scales) {
@@ -276,7 +273,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, wholeUnitInput: wholeUnitInput, countAmountText: countAmountText, wholeUnitSubmit: wholeUnitSubmit };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount };
 });
 
 
@@ -15174,7 +15171,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   const noDecimalNote = c => {
     const last = (nameOf(c) || '').split(' ').pop() || c;
     const name = last.charAt(0).toUpperCase() + last.slice(1);
-    return name + ' has no decimals. Nothing was changed.';
+    return name + ' has no decimals.';
+  };
+  const WHOLE_NUMBER_NOTE = 'Enter a whole number, like 1500.';
+  /* A note only when the teller has typed something parseCount refuses.
+     An empty field is not a count, and it does not carry a note. */
+  const countNote = (c, text) => {
+    if (!window.CDOS.parseCount || window.CDOS.parseCount(text, c).ok) return '';
+    if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return '';
+    const raw = String(text == null ? '' : text).trim().normalize('NFKC');
+    if (raw === '') return '';
+    return /[.,]/.test(raw) ? noDecimalNote(c) : WHOLE_NUMBER_NOTE;
   };
   const phoneRoundNote = (n, ccy) => storedRoundNote(n, ccy) ? 'Expected is rounded from ' + storedText(n, ccy) + ' from older deals.' : '';
   const denLabel = v => v >= 1 ? Number.isInteger(v) ? String(v) : v.toFixed(2) : Math.round(v * 100) + '¢';
@@ -15664,37 +15671,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onSubmit
   }) {
     const [raw, setRaw] = useState({});
-    const [bad, setBad] = useState({});
-    const shown = useRef({});
-    const armed = useRef({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
-    const onAmount = (c, value) => {
-      const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
-      const next = window.CDOS.countAmountText(places, shown.current[c] || '', value, !!armed.current[c]);
-      shown.current[c] = next.text;
-      armed.current[c] = next.armed;
-      setBad(o => {
-        const n = {
-          ...o
-        };
-        if (next.warn) n[c] = true;else delete n[c];
-        return n;
-      });
-      setRaw(o => ({
-        ...o,
-        [c]: next.text
-      }));
-    };
-    const refuseSeparator = (c, event) => {
-      if ((window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) !== 0) return;
-      if (event.key !== '.' && event.key !== '．') return;
-      event.preventDefault();
-      armed.current[c] = true;
-      setBad(o => ({
-        ...o,
-        [c]: true
-      }));
-    };
+    const ready = currencies.length > 0 && currencies.every(c => window.CDOS.parseCount(raw[c] ?? '', c).ok);
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -15786,9 +15763,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, c), /*#__PURE__*/React.createElement("input", {
       "data-takeover": "amount",
-      value: raw[c] || '',
-      onKeyDown: e => refuseSeparator(c, e),
-      onChange: e => onAmount(c, e.target.value),
+      value: raw[c] ?? '',
+      onChange: e => setRaw(o => ({
+        ...o,
+        [c]: e.target.value
+      })),
       inputMode: (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? 'numeric' : 'decimal',
       placeholder: (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00',
       "aria-label": `${c} counted`,
@@ -15799,13 +15778,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    })))), Object.keys(bad).map(c => /*#__PURE__*/React.createElement("div", {
-      key: c,
-      className: "till-refusal text-[12px] mt-3 px-3 py-2",
-      style: {
-        borderRadius: 9
-      }
-    }, noDecimalNote(c))), error ? /*#__PURE__*/React.createElement("div", {
+    })))), currencies.map(c => {
+      const note = countNote(c, raw[c] ?? '');
+      return note ? /*#__PURE__*/React.createElement("div", {
+        key: c,
+        className: "till-refusal text-[12px] mt-3 px-3 py-2",
+        style: {
+          borderRadius: 9
+        }
+      }, note) : null;
+    }), error ? /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "till-refusal text-[12px] mt-3 px-3 py-2",
       style: {
@@ -16550,16 +16532,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const counts = {};
       for (let i = 0; i < serverCcys.length; i++) {
         const c = serverCcys[i];
-        const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
-        const text = String(raw[c] ?? '').trim();
-        if (places === 0) {
-          const accepted = window.CDOS.wholeUnitSubmit(text);
-          if (accepted == null) {
-            setSessionErr(noDecimalNote(c));
-            return;
-          }
-          counts[c] = accepted;
-        } else counts[c] = Number(text).toFixed(places);
+        const parsed = window.CDOS.parseCount(String(raw[c] ?? ''), c);
+        if (!parsed.ok) return;
+        counts[c] = parsed.value;
       }
       const body = JSON.stringify(counts);
       if (takeoverKey.current.body !== body || !takeoverKey.current.key) {

@@ -82,12 +82,6 @@ export function screen() {
     cashVariance: (counted: number, expected: number, ccy: string) => number;
     storedRoundNote: (n: number, ccy: string) => string;
     sumHomeMinor: (values: number[], places: number) => number;
-    countAmountText: (
-      places: number,
-      previous: string,
-      incoming: string,
-      armed: boolean,
-    ) => { text: string; warn: boolean; armed: boolean };
-    wholeUnitSubmit: (text: string) => string | null;
+    parseCount: (text: string, currency: string) => { ok: true; value: string } | { ok: false };
   };
 }

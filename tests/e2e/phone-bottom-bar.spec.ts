@@ -1,7 +1,55 @@
 /* Phone bottom bar. At 390×844 the desk uses the bar. At 1280 the
    desktop chrome is the one a wide window already had. */
+import { createRequire } from "node:module";
+import path from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
+
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (config: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }>;
+    end: () => Promise<void>;
+  };
+};
+const Decimal = requireFromServer("decimal.js") as {
+  new (value: string): { toDecimalPlaces: (places: number, rounding: number) => { toFixed: (places: number) => string } };
+  ROUND_HALF_UP: number;
+};
+const ZERO_PLACES = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF"]);
+const THREE_PLACES = new Set(["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]);
+
+function countedFor(currency: string, amount: string): string {
+  const code = currency.trim().toUpperCase();
+  const places = ZERO_PLACES.has(code) ? 0 : THREE_PLACES.has(code) ? 3 : 2;
+  return new Decimal(amount).toDecimalPlaces(places, Decimal.ROUND_HALF_UP).toFixed(places);
+}
+
+/* The signed-in owner has to hold the till before the denomination
+   rows are on the screen. A session left open by an earlier spec is
+   taken at the book, so the variance is zero. */
+async function bookHeldBy(openedBy: string, sessionNumber: string): Promise<Record<string, string>> {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    const result = await pool.query(
+      `SELECT b.currency, b.available_amount::text AS amount
+         FROM ledger_till_balances b
+         JOIN ledger_till_sessions s
+           ON s.tenant_id=b.tenant_id AND s.legal_entity_id=b.legal_entity_id
+          AND s.branch_id=b.branch_id AND s.workspace_id=b.workspace_id
+          AND s.till_id=b.till_id
+        WHERE s.status='open' AND s.opened_by=$1 AND s.session_number::text=$2`,
+      [openedBy, sessionNumber],
+    );
+    const counts: Record<string, string> = {};
+    for (const row of result.rows) {
+      counts[String(row.currency).trim()] = countedFor(String(row.currency), String(row.amount));
+    }
+    return counts;
+  } finally {
+    await pool.end();
+  }
+}
 
 const PHONE = { width: 390, height: 844 };
 
@@ -371,25 +419,50 @@ async function rowsBetweenLabels(page: Page): Promise<number> {
    this checks is that screen. */
 async function tillOpen(page: Page): Promise<void> {
   const opened = await page.evaluate(async () => {
+    const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => ({}));
+    const id = String((me as { user?: { id?: string } }).user?.id ?? "");
+    const tail = id.split(":").pop() || "";
     const probe = await fetch("/api/ledger/till-session", { credentials: "same-origin" });
-    if (probe.status === 404) return "no-ledger";
+    if (probe.status === 404) return { state: "no-ledger" as const };
     const body = await probe.json().catch(() => {
       /* A probe that is not JSON has no session to read. The test
          opens one below. */
       return {};
-    });
-    if (body.session && body.session.status === "open") return "open";
+    }) as { session?: { status?: string; openedBy?: string; sessionNumber?: number } };
+    const session = body.session;
+    const opener = String(session?.openedBy ?? "");
+    const mine = session?.status === "open" && (opener === id || (tail !== "" && opener.endsWith(":" + tail)));
+    if (mine) return { state: "open" as const };
+    if (session?.status === "open") {
+      return { state: "held" as const, openedBy: opener, sessionNumber: String(session.sessionNumber ?? "") };
+    }
     const res = await fetch("/api/ledger/till-sessions/open", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
       body: "{}",
     });
-    if (res.ok || res.status === 409) return "open";
-    return `${res.status} ${await res.text()}`;
+    if (res.ok || res.status === 409) return { state: "open" as const };
+    return { state: "error" as const, detail: `${res.status} ${await res.text()}` };
   });
-  if (opened === "no-ledger") return;
-  expect(opened, "the till did not open").toBe("open");
+  if (opened.state === "no-ledger") return;
+  if (opened.state === "held") {
+    expect(process.env.SEAM_DATABASE_URL, "the till is held by someone else").toBeTruthy();
+    const counts = await bookHeldBy(opened.openedBy, opened.sessionNumber);
+    expect(Object.keys(counts).length, "no balances for the open till").toBeGreaterThan(0);
+    const handed = await page.evaluate(async (body) => {
+      const res = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ idempotencyKey: "phone-owner-" + Date.now(), counts: body }),
+      });
+      return { ok: res.ok, status: res.status, text: await res.text() };
+    }, counts);
+    expect(handed.ok, `${handed.status} ${handed.text}`).toBe(true);
+  } else {
+    expect(opened.state, opened.state === "error" ? opened.detail : "the till did not open").toBe("open");
+  }
   const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
   await page.reload();
   await landOnDesktop(page);
