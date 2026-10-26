@@ -79,8 +79,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   reversed deal's tenant, entity, branch, and customer. A new deal
   does not take the lock. Two reversals for one customer run one
   after the other. The lock ends when that transaction commits or
-  rolls back. Nothing else calls the function. The structuring watch
-  acknowledgement (#392) will call it before reading the watch.
+  rolls back. An acknowledgement shares that legal entity row, then
+  calls this function, then reads the watch and inserts.
 
 - **Staging has a one-click sign-in.** `STAGING` must be exactly `1`, and `RENDER_EXTERNAL_HOSTNAME` must be `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` with `IS_PULL_REQUEST=true`. `GET /api/staging/signin` and `POST /api/staging/enter` pass the request Host into `isStagingRuntime`, and a missing Host counts as empty. A live host, a missing flag, or a shop other than `tnt-yorkfx` is 404. The enter body is JSON and only a role. The 21st call from one address is refused. The flag is not in `render.yaml`. The session lasts three days. A normal sign-in stays twelve hours and clears the staging marker. The login page shows six Enter as buttons only when the config answers `{enabled:true}`. The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and it stays up for that session. The demo seed inserts `c.adebayo` (compliance officer) and `l.berg` (auditor) only when `STAGING` is exactly `1`, including on a database that already has the other demo staff. An existing row is not overwritten. If `SEED_PASSWORD` is unset, those two get a random password.
 

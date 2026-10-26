@@ -10,6 +10,27 @@ import { DEMO } from "../../src/seed.js";
 
 export const SWEEP_CUSTOMER = "Nora Quinn";
 
+export async function insertCashDeal(
+  pool: pg.Pool | pg.PoolClient,
+  scope: readonly string[],
+  id: string,
+  ref: string,
+  customerId: string,
+  amount: string,
+  postedAt: Date,
+): Promise<void> {
+  const tenant = scope[0] ?? "";
+  await pool.query(
+    `INSERT INTO ledger_transactions
+       (transaction_id,transaction_ref,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,actor_id,
+        from_currency,to_currency,input_amount,output_amount,rate,fee_cad,spread_cad,purpose,source_of_funds,posted_at,
+        deal_kind,received_instrument,disbursed_instrument,cash_in_home)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'CAD','USD',$10,4400,0.73,0,0,'Travel money','Employment income',$11,
+             'exchange','cash','cash',$10)`,
+    [id, ref, ...scope, customerId, tenant + ":j.masri", amount, postedAt],
+  );
+}
+
 export type SweepIds = {
   clientId: string;
   customerId: string;
@@ -173,15 +194,7 @@ export async function seedSweepFixture(app: FastifyInstance, pool: pg.Pool, db: 
   const otherRef = "YFX-SWEEP-B-" + mark;
   const scope = [tenantId, legalEntityId, branchId, workspaceId, "till-01"];
   for (const [tx, ref] of [[transactionId, transactionRef], [otherId, otherRef]] as const) {
-    await pool.query(
-      `INSERT INTO ledger_transactions
-         (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id, workspace_id, till_id, customer_id, actor_id,
-          from_currency, to_currency, input_amount, output_amount, rate, fee_cad, spread_cad, purpose, source_of_funds, posted_at,
-          deal_kind, received_instrument, disbursed_instrument, cash_in_home)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'CAD', 'USD', 6000, 4400, 0.73, 0, 0, 'Travel money', 'Employment income', now(),
-               'exchange', 'cash', 'cash', 6000)`,
-      [tx, ref, ...scope, customerId, tenantId + ":j.masri"],
-    );
+    await insertCashDeal(pool, scope, tx, ref, customerId, "6000.00", new Date());
   }
 
   const quote = await app.inject({

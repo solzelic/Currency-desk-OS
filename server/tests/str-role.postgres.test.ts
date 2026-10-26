@@ -13,6 +13,8 @@ import { hasBackendPermission } from "../src/auth/permissions.js";
 import { createDb, provisionPostgres, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { watchAckGate } from "../src/ledger/structuring-watch.js";
+import { insertCashDeal } from "./helpers/route-sweep.js";
 
 const roles = createRequire(import.meta.url)("../../shared/str-role.js") as {
   canSeeStr: (role: string) => boolean;
@@ -127,51 +129,59 @@ function daysAgo(days: number) {
 }
 
 async function clearBook() {
+  await pool.query("ALTER TABLE ledger_structuring_acks DISABLE TRIGGER ledger_structuring_acks_no_truncate");
   await pool.query(
-    "ALTER TABLE ledger_structuring_acks DISABLE TRIGGER ledger_structuring_acks_no_truncate",
+    `TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings,
+            ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE`,
   );
+  await pool.query("ALTER TABLE ledger_structuring_acks ENABLE TRIGGER ledger_structuring_acks_no_truncate");
+}
+
+async function addCustomer(id: string, name: string, where = scope) {
   await pool.query(
-    `TRUNCATE ledger_structuring_acks, ledger_filing_flags,
-            ledger_report_filings, ledger_audit_events, ledger_transactions,
-            ledger_customers, ledger_principals CASCADE`,
-  );
-  await pool.query(
-    "ALTER TABLE ledger_structuring_acks ENABLE TRIGGER ledger_structuring_acks_no_truncate",
+    `INSERT INTO ledger_customers
+       (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+     VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
+    [id, ...where.slice(0, 4), name],
   );
 }
 
-async function addCustomer(id: string, name: string) {
-  await pool.query(
-    `INSERT INTO ledger_customers (
-       customer_id, tenant_id, legal_entity_id, branch_id, workspace_id,
-       name, risk, id_status
-     ) VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
-    [id, ...scope.slice(0, 4), name],
-  );
-}
-
-async function postCash(
+function postCash(
   id: string,
   ref: string,
   customerId: string,
   amount: string,
   postedAt: Date,
+  where = scope,
 ) {
-  await pool.query(
-    `INSERT INTO ledger_transactions (
-       transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id,
-       workspace_id, till_id, customer_id, actor_id,
-       from_currency, to_currency, input_amount, output_amount, rate,
-       fee_cad, spread_cad, purpose, source_of_funds, posted_at,
-       deal_kind, received_instrument, disbursed_instrument, cash_in_home
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $3 || ':j.masri',
-       'CAD', 'USD', $9, 4400, 0.73, 0, 0,
-       'Travel money', 'Employment income', $10,
-       'exchange', 'cash', 'cash', $9
-     )`,
-    [id, ref, ...scope, customerId, amount, postedAt],
-  );
+  return insertCashDeal(pool, where, id, ref, customerId, amount, postedAt);
+}
+
+async function duringAck(run: (client: pg.PoolClient) => Promise<unknown>) {
+  let committed = false;
+  watchAckGate.between = async () => {
+    const other = await pool.connect();
+    try {
+      await other.query("BEGIN");
+      await other.query("SET LOCAL lock_timeout = '800ms'");
+      await run(other);
+      await other.query("COMMIT");
+      committed = true;
+    } catch {
+      await other.query("ROLLBACK");
+    } finally {
+      other.release();
+    }
+  };
+  try {
+    const saved = await acknowledge("cust-watch");
+    const rows = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const want = committed ? { status: 404, rows: 0, committed } : { status: 200, rows: 1, committed };
+    expect({ status: saved.statusCode, rows: rows.rows[0].n, committed }).toEqual(want);
+    if (!committed) expect((await watchItem("cust-watch")).count).toBe(2);
+  } finally {
+    watchAckGate.between = null;
+  }
 }
 
 async function acknowledge(customerId: string, staffId?: string) {
@@ -407,45 +417,17 @@ postgres("str filing and the transaction field strip", () => {
 
   it("a second acknowledge of the same customer adds a row and the read shows the newest", async () => {
     const newestId = `${DEMO.tenantId}:j.masri`;
-    const first = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(first.statusCode, first.body).toBe(200);
-    const second = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await cookie("j.masri"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(second.statusCode, second.body).toBe(200);
+    expect((await acknowledge("cust-watch")).statusCode).toBe(200);
+    expect((await acknowledge("cust-watch", "j.masri")).statusCode).toBe(200);
     const rows = await pool.query(
       "SELECT count(*)::int AS n FROM ledger_structuring_acks WHERE customer_id = $1",
       ["cust-watch"],
     );
     expect(rows.rows[0].n).toBe(2);
-    const list = await app.inject({
-      method: "GET",
-      url: "/api/ledger/structuring-watch",
-      cookies: await asRole("supervisor"),
+    expect(await watchItem("cust-watch")).toMatchObject({
+      count: 2, total: "12000.00", actorId: newestId, acknowledged: true,
     });
-    expect(list.statusCode, list.body).toBe(200);
-    const item = list.json().items.find(
-      (row: { customerId: string }) => row.customerId === "cust-watch",
-    );
-    expect(item.count).toBe(2);
-    expect(item.total).toBe("12000.00");
-    expect(item.actorId).toBe(newestId);
-    expect(item.acknowledged).toBe(true);
-    const deals = await app.inject({
-      method: "GET",
-      url: "/api/ledger/transactions",
-      cookies: await asRole("supervisor"),
-    });
-    expect(deals.statusCode, deals.body).toBe(200);
-    const deal = deals.json().transactions.find(
+    const deal = (await dealRows("cust-watch")).find(
       (row: { transactionRef: string }) => row.transactionRef === "YFX-STR-1",
     );
     expect(deal.ackStr).toBe(true);
@@ -453,22 +435,10 @@ postgres("str filing and the transaction field strip", () => {
   });
 
   it("refuses an update or a delete of a structuring acknowledgement", async () => {
-    const saved = await app.inject({
-      method: "POST",
-      url: "/api/ledger/structuring-watch/acknowledge",
-      cookies: await asRole("supervisor"),
-      payload: { customerId: "cust-watch" },
-    });
-    expect(saved.statusCode, saved.body).toBe(200);
-    await expect(
-      pool.query("UPDATE ledger_structuring_acks SET actor_id = actor_id"),
-    ).rejects.toThrow(/append-only/);
-    await expect(
-      pool.query("DELETE FROM ledger_structuring_acks"),
-    ).rejects.toThrow(/append-only/);
-    const kept = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
-    );
+    expect((await acknowledge("cust-watch")).statusCode).toBe(200);
+    await expect(pool.query("UPDATE ledger_structuring_acks SET actor_id = actor_id")).rejects.toThrow(/append-only/);
+    await expect(pool.query("DELETE FROM ledger_structuring_acks")).rejects.toThrow(/append-only/);
+    const kept = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
     expect(kept.rows[0].n).toBe(1);
   });
 
@@ -516,15 +486,13 @@ postgres("str filing and the transaction field strip", () => {
   it("a third qualifying deal of 9000 leaves 21000 unacknowledged", async () => {
     const saved = await acknowledge("cust-watch");
     expect(saved.statusCode, saved.body).toBe(200);
-    const before = await watchItem("cust-watch");
-    expect(before.count).toBe(2);
-    expect(before.total).toBe("12000.00");
-    expect(before.acknowledged).toBe(true);
+    expect(await watchItem("cust-watch")).toMatchObject({
+      count: 2, total: "12000.00", acknowledged: true,
+    });
     await postCash("tx-str-3", "YFX-STR-3", "cust-watch", "9000.00", new Date());
-    const item = await watchItem("cust-watch");
-    expect(item.count).toBe(3);
-    expect(item.total).toBe("21000.00");
-    expect(item.acknowledged).toBe(false);
+    expect(await watchItem("cust-watch")).toMatchObject({
+      count: 3, total: "21000.00", acknowledged: false,
+    });
     const rows = await dealRows("cust-watch");
     expect(rows).toHaveLength(3);
     for (const row of rows) {
@@ -551,14 +519,56 @@ postgres("str filing and the transaction field strip", () => {
     expect(await watchItem("cust-return")).toBeUndefined();
     await postCash("tx-ret-3", "YFX-RET-3", "cust-return", "6000.00", daysAgo(3));
     await postCash("tx-ret-4", "YFX-RET-4", "cust-return", "6000.00", daysAgo(3));
-    const item = await watchItem("cust-return");
-    expect(item.count).toBe(2);
-    expect(item.total).toBe("12000.00");
-    expect(item.acknowledged).toBe(false);
+    expect(await watchItem("cust-return")).toMatchObject({
+      count: 2, total: "12000.00", acknowledged: false,
+    });
     const rows = await dealRows("cust-return");
     const refs = rows.map((row: { transactionRef: string }) => row.transactionRef);
     expect(refs.sort()).toEqual(["YFX-RET-1", "YFX-RET-2", "YFX-RET-3", "YFX-RET-4"]);
     for (const row of rows) expect(row.ackStr).toBe(false);
+  });
+
+  it("a reversal that clears the watch cannot land under an acknowledgement", async () => {
+    await duringAck((other) => other.query(
+      `INSERT INTO ledger_reversals
+         (reversal_id, transaction_id, actor_id, reason, posted_at)
+       VALUES ('rev-race','tx-str-1',$1,'void',now())`,
+      [`${DEMO.tenantId}:j.masri`],
+    ));
+  });
+
+  it("a reporting line change cannot land under an acknowledgement", async () => {
+    try {
+      await duringAck((other) => other.query(
+        "UPDATE legal_entities SET report_threshold = 50000 WHERE id = $1",
+        [DEMO.legalEntityId],
+      ));
+    } finally {
+      await pool.query(
+        "UPDATE legal_entities SET report_threshold = NULL WHERE id = $1",
+        [DEMO.legalEntityId],
+      );
+    }
+  });
+
+  it("keeps another branch, entity, and tenant off this watch", async () => {
+    const places = [
+      ["cust-branch", DEMO.tenantId, DEMO.legalEntityId, "br-other"],
+      ["cust-entity", DEMO.tenantId, "le-other", DEMO.branchId],
+      ["cust-tenant", "tnt-other", DEMO.legalEntityId, DEMO.branchId],
+    ] as const;
+    for (const [id, tenant, entity, branch] of places) {
+      const where = [tenant, entity, branch, scope[3]!, scope[4]!];
+      await addCustomer(id, id, where);
+      await postCash(`tx-${id}-1`, `YFX-${id}-1`, id, "6000.00", new Date(), where);
+      await postCash(`tx-${id}-2`, `YFX-${id}-2`, id, "6000.00", new Date(), where);
+      const refused = await acknowledge(id);
+      expect(refused.statusCode, id).toBe(404);
+      expect(refused.json().message, id).toBe("This customer is not on the watch.");
+      expect(await watchItem(id), id).toBeUndefined();
+    }
+    const rows = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    expect(rows.rows[0].n).toBe(0);
   });
 
   it("refuses an acknowledgement for ghost-nobody", async () => {

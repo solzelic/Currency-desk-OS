@@ -21,6 +21,10 @@ const { canSeeStructuringWatch } = createRequire(import.meta.url)("../../../shar
 const WINDOW_DAYS = 7;
 const REFUSED = "You cannot open this list.";
 
+export const watchAckGate: { between: (() => Promise<void>) | null } = {
+  between: null,
+};
+
 export type WatchItem = {
   customerId: string;
   name: string;
@@ -205,6 +209,14 @@ export class StructuringWatchService {
       await client.query("BEGIN");
       const role = await authorizeLedgerActor(client, actor, "ledger:view");
       requireWatch(role);
+      await client.query(
+        "SELECT 1 FROM legal_entities WHERE id = $1 FOR SHARE",
+        [actor.legalEntityId],
+      );
+      await client.query(
+        "SELECT ledger_lock_watch_customer($1, $2, $3, $4)",
+        [actor.tenantId, actor.legalEntityId, actor.branchId, customerId],
+      );
       const { items } = await dealMarks(client, actor, [], role);
       const item = items.find((row) => row.customerId === customerId);
       if (!item) {
@@ -213,6 +225,7 @@ export class StructuringWatchService {
           "This customer is not on the watch.",
         );
       }
+      if (watchAckGate.between) await watchAckGate.between();
       await client.query(
         `INSERT INTO ledger_structuring_acks
            (tenant_id, legal_entity_id, branch_id, customer_id,
