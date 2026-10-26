@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { civilDate, civilTodayInZone } from "../civil-date.js";
 import { branchZone } from "./branch-day.js";
 import Decimal from "decimal.js";
@@ -7,6 +7,8 @@ import { branchZone as branchZoneOnClient } from "./branch-zone.js";
 import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable, parseMoney, roundTo } from "./currencies.js";
+import { pinDeskName } from "../auth/desk-name.js";
+import { hasBackendPermission } from "../auth/permissions.js";
 import { authorizeLedgerActor } from "./principal.js";
 import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
@@ -97,6 +99,17 @@ export function recordedVariance(
 }
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
+const HANDOVER_MISMATCH = "The count does not match. A supervisor must approve this takeover.";
+/* The approver sheet is not in this release. A request that names an
+   approver or a PIN is refused here, before the PIN is read. */
+const HANDOVER_APPROVAL_ENABLED: boolean = false;
+const handoverRequestHash = (
+  counts: Counts,
+  approval?: { staffId: string; pin: string },
+) => createHash("sha256").update(JSON.stringify({
+  counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "")),
+})).digest("hex");
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
   sessionNumber: row.session_number,
@@ -132,13 +145,22 @@ export class TillControlService {
         LIMIT 1`,
       scope(actor),
     );
+    const codes = await client.query(
+      `SELECT currency
+         FROM ledger_till_balances
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+          AND workspace_id=$4 AND till_id=$5
+        ORDER BY currency`,
+      scope(actor),
+    );
+    const currencies = codes.rows.map((row) => String(row.currency).trim());
     if (!session.rowCount) {
-      return { session: null, latestCounts: {} };
+      return { session: null, latestCounts: {}, currencies };
     }
     const counts = await client.query(
       `SELECT DISTINCT ON (c.currency)
               c.currency,c.expected_amount,c.counted_amount,c.variance_amount,
-              c.stored_expected_amount,
+              c.stored_expected_amount,c.board_mid_rate,
               b.batch_id,b.count_kind,b.actor_id,b.counted_at
          FROM ledger_till_count_batches b
          JOIN ledger_till_counts c ON c.batch_id=b.batch_id
@@ -150,22 +172,41 @@ export class TillControlService {
        The zone is read on that connection. A pool read here waits
        for a second connection while the till transaction still holds one. */
     const zone = await branchZoneOnClient(client, actor.branchId);
+    const openedBy = String(session.rows[0].opened_by ?? "");
+    const named = openedBy
+      ? await client.query(`SELECT name FROM staff_users WHERE id=$1`, [openedBy])
+      : { rows: [] as { name?: string }[] };
+    const holderName = pinDeskName(String(named.rows[0]?.name ?? ""));
     return {
-      session: sessionJson(session.rows[0], zone),
+      session: {
+        ...sessionJson(session.rows[0], zone),
+        holderName: holderName || null,
+      },
+      currencies,
       latestCounts: Object.fromEntries(
-        counts.rows.map((row) => [
-          row.currency.trim(),
-          {
+        counts.rows.map((row) => {
+          const figure: Record<string, unknown> = {
             batchId: row.batch_id,
             kind: row.count_kind,
-            expected: row.expected_amount,
-            counted: row.counted_amount,
-            variance: row.variance_amount,
-            storedExpected: row.stored_expected_amount,
-            actorId: row.actor_id,
             countedAt: new Date(row.counted_at).toISOString(),
-          },
-        ]),
+          };
+          /* Counted figures and who entered them belong to the holder
+             while the session is open. A non-holder gets the currency
+             and the time, not the amount. A closed session is the record
+             the closer just wrote. */
+          if (String(session.rows[0].status) !== "open" || openedBy === actor.userId) {
+            figure.counted = row.counted_amount;
+            figure.actorId = row.actor_id;
+          }
+          /* The handover copy is the count the incoming teller just gave.
+             Expected and variance are the book. They stay off this payload. */
+          if (row.count_kind !== "handover") {
+            figure.expected = row.expected_amount;
+            figure.variance = row.variance_amount;
+            figure.storedExpected = row.stored_expected_amount;
+          }
+          return [row.currency.trim(), figure];
+        }),
       ),
     };
   }
@@ -218,12 +259,102 @@ export class TillControlService {
         ORDER BY workspace_id,session_number DESC`,
       [scopeIn.tenantId, scopeIn.legalEntityId, scopeIn.branchId],
     );
-    return new Map(
-      result.rows.map((row) => [
-        String(row.workspace_id),
-        sessionJson(row as Record<string, unknown>, zone),
-      ]),
+    const ids = result.rows.map((row) => String(row.opened_by ?? "")).filter(Boolean);
+    const names = ids.length
+      ? await this.pool.query(
+          `SELECT id, name FROM staff_users WHERE id = ANY($1::text[])`,
+          [ids],
+        )
+      : { rows: [] as { id: string; name: string }[] };
+    const byId = new Map(
+      names.rows.map((row) => [String(row.id), pinDeskName(String(row.name ?? ""))]),
     );
+    return new Map(
+      result.rows.map((row) => {
+        const session = sessionJson(row as Record<string, unknown>, zone);
+        const holderName = byId.get(String(row.opened_by ?? "")) || null;
+        return [String(row.workspace_id), { ...session, holderName }] as const;
+      }),
+    );
+  }
+
+  /* Handover rows a closer can read. A nonzero variance is a flag.
+     An even count is still a record. Names come from staff_users.
+     Counted amounts and the variance stay on the count batch. */
+  async handoverNotes(actor: LedgerActor) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await authorizeLedgerActor(client, actor, "ledger:view");
+      const rows = await client.query(
+        `SELECT a.count_batch_id, a.from_user, a.actor_id, a.prior_session_id,
+                a.target_id, a.actor_role, a.created_at, b.till_id,
+                c.currency, c.counted_amount::text AS counted,
+                c.variance_amount::text AS variance
+           FROM ledger_audit_events a
+           JOIN ledger_till_count_batches b ON b.batch_id = a.count_batch_id
+           JOIN ledger_till_counts c ON c.batch_id = a.count_batch_id
+          WHERE a.action = 'till.session.handover'
+            AND a.tenant_id=$1 AND a.legal_entity_id=$2 AND a.branch_id=$3
+            AND a.workspace_id=$4
+          ORDER BY a.created_at, c.currency`,
+        scope(actor).slice(0, 4),
+      );
+      const ids = [
+        ...new Set(
+          rows.rows.flatMap((row) => [String(row.from_user ?? ""), String(row.actor_id ?? "")]).filter(Boolean),
+        ),
+      ];
+      const names = ids.length
+        ? await client.query(`SELECT id, name FROM staff_users WHERE id = ANY($1::text[])`, [ids])
+        : { rows: [] as { id: string; name: string }[] };
+      const byId = new Map(
+        names.rows.map((row) => [String(row.id), pinDeskName(String(row.name ?? ""))]),
+      );
+      const grouped = new Map<string, {
+        batchId: string; tillId: string; priorSessionId: string; sessionId: string;
+        actorRole: string; at: string; fromName: string; toName: string;
+        lines: { currency: string; counted: string; variance: string }[]; off: boolean;
+      }>();
+      for (const row of rows.rows) {
+        const key = String(row.count_batch_id);
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            batchId: key,
+            tillId: String(row.till_id ?? "").trim(),
+            priorSessionId: String(row.prior_session_id ?? ""),
+            sessionId: String(row.target_id ?? ""),
+            actorRole: String(row.actor_role ?? ""),
+            at: new Date(row.created_at as string | Date).toISOString(),
+            fromName: byId.get(String(row.from_user)) || "",
+            toName: byId.get(String(row.actor_id)) || "",
+            lines: [],
+            off: false,
+          });
+        }
+        const item = grouped.get(key)!;
+        const variance = String(row.variance);
+        if (!new Decimal(variance).isZero()) item.off = true;
+        item.lines.push({
+          currency: String(row.currency).trim(),
+          counted: String(row.counted),
+          variance,
+        });
+      }
+      await client.query("COMMIT");
+      const records = [...grouped.values()];
+      const flags = records.filter((row) => row.off).map((row) => ({
+        fromName: row.fromName,
+        toName: row.toName,
+        lines: row.lines.map((line) => ({ currency: line.currency, variance: line.variance })),
+      }));
+      return { flags, records };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /* MOVING TO ANOTHER DRAWER, ON THE RECORD.
@@ -296,6 +427,15 @@ export class TillControlService {
             AND workspace_id=$4 AND till_id=$5`,
         scope(actor),
       );
+      const withheld = !!(state.session && state.session.status === "open" && state.session.openedBy !== actor.userId);
+      if (withheld) {
+        for (const figure of Object.values(state.latestCounts)) {
+          const row = figure as { expected?: unknown; storedExpected?: unknown; variance?: unknown };
+          delete row.expected;
+          delete row.storedExpected;
+          delete row.variance;
+        }
+      }
       await client.query("COMMIT");
       return {
         workspaceId: actor.workspaceId,
@@ -304,12 +444,14 @@ export class TillControlService {
         selectedAt: now.toISOString(),
         ...state,
         balanceGeneration: mark.rows[0]?.generation ?? "0",
-        balances: Object.fromEntries(
-          balances.rows.map((row) => [
-            row.currency.trim(),
-            row.available_amount,
-          ]),
-        ),
+        balances: withheld
+          ? {}
+          : Object.fromEntries(
+              balances.rows.map((row) => [
+                row.currency.trim(),
+                row.available_amount,
+              ]),
+            ),
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -629,23 +771,74 @@ export class TillControlService {
     }
   }
 
-  /* A blind count. The person taking the till does not see the expected
-     figures. The variance stays on the old session. The closer and the
-     counter are the person who counted. A new session opens in their name. */
-  handover(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
-    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts));
+  /* A blind count. The incoming teller does not see the book or the
+     variance. Over CAD 20.00, absolute at the board mid, stays held
+     until a different person with till:handover:approve enters a PIN. */
+  handover(
+    actor: LedgerActor,
+    idempotencyKey: string,
+    counts: Counts,
+    approval?: { staffId: string; pin: string },
+  ) {
+    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts, approval));
   }
 
-  private async handoverOnce(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
+  private async handoverOnce(
+    actor: LedgerActor,
+    idempotencyKey: string,
+    counts: Counts,
+    approval?: { staffId: string; pin: string },
+  ): Promise<Awaited<ReturnType<TillControlService["current"]>>> {
     const client = await this.pool.connect();
+    const hash = handoverRequestHash(counts, approval);
+    let settled = false;
+    const remember = (response: unknown) => client.query(
+      `UPDATE ledger_idempotency SET response=$1
+        WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4
+          AND workspace_id=$5 AND till_id=$6 AND operation='till-handover'
+          AND idempotency_key=$7`,
+      [response, ...scope(actor), idempotencyKey],
+    );
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "till:count");
+      const role = await authorizeLedgerActor(client, actor, "till:count");
+      const replay = await client.query(
+        `SELECT response, actor_id, request_hash FROM ledger_idempotency
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5 AND operation='till-handover'
+            AND idempotency_key=$6
+          FOR UPDATE`,
+        [...scope(actor), idempotencyKey],
+      );
+      if (replay.rowCount) {
+        const row = replay.rows[0] as { response?: unknown; actor_id?: string | null; request_hash?: string | null };
+        if (row.actor_id !== actor.userId || row.request_hash !== hash) {
+          throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
+        }
+        if (row.response) {
+          await client.query("COMMIT");
+          return row.response as Awaited<ReturnType<TillControlService["current"]>>;
+        }
+      }
+      if (!replay.rowCount) {
+        const claimed = await client.query(
+          `INSERT INTO ledger_idempotency
+            (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key,actor_id,request_hash)
+           VALUES ($1,$2,$3,$4,$5,'till-handover',$6,$7,$8) ON CONFLICT DO NOTHING`,
+          [...scope(actor), idempotencyKey, actor.userId, hash],
+        );
+        if (!claimed.rowCount) {
+          throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
+        }
+      }
+      /* The session day follows the same clock as opening a till.
+         The approver stamp below is the database clock on its own. */
       const now = new Date();
       const clock = await branchBusinessDate(client, actor.branchId, now);
       const session = await this.openSession(client, actor);
       if (session.opened_by === actor.userId) {
         const response = await this.currentWithClient(client, actor);
+        await remember(response);
         await client.query("COMMIT");
         return response;
       }
@@ -658,38 +851,94 @@ export class TillControlService {
           "Every authoritative till currency must be counted before closing.",
         );
       }
-      const opener = session.opened_by as string;
-      const batchId = `till_close_${randomUUID()}`;
-      await client.query(
-        `INSERT INTO ledger_till_count_batches
-          (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
-           till_id,count_kind,actor_id,idempotency_key,counted_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'close',$8,$9,$10)`,
-        [batchId, session.session_id, ...scope(actor), actor.userId, idempotencyKey, now],
-      );
-      for (const row of balances) {
-        const currency = row.currency.trim() as Currency;
-        const expected = expectedIn(row.available_amount);
-        const counted = countedIn(String(counts[currency]), currency);
+      /* A refusal is committed on its own, so the audit row survives the
+         403. The first submitted count is the one stored on that row.
+         A later count from someone who cannot approve is the same 403. */
+      const refuse = async (): Promise<never> => {
+        const counted = Object.keys(counts).sort().map((currency) => ({
+          currency,
+          counted: String(counts[currency] ?? ""),
+        }));
         await client.query(
-          `INSERT INTO ledger_till_counts
-            (batch_id,currency,expected_amount,counted_amount,variance_amount,
-             stored_expected_amount)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
+          `INSERT INTO ledger_audit_events
+            (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+             action,target_id,correlation_id,created_at,prior_session_id,variances)
+           VALUES ($1,$2,$3,$4,$5,$6,'till.handover.refused',$7,$8,clock_timestamp(),$9,$10::jsonb)`,
           [
-            batchId,
-            currency,
-            expected,
-            counted,
-            recordedVariance(counted, expected, currency),
-            expected,
+            randomUUID(),
+            ...scope(actor).slice(0, 4),
+            actor.userId,
+            actor.tillId,
+            randomUUID(),
+            session.session_id,
+            JSON.stringify(counted),
           ],
         );
+        await client.query("COMMIT");
+        settled = true;
+        throw new LedgerError("HANDOVER_APPROVAL_REQUIRED", HANDOVER_MISMATCH);
+      };
+      const prior = await client.query(
+        `SELECT 1 FROM ledger_audit_events
+          WHERE action='till.handover.refused' AND prior_session_id=$1
+          LIMIT 1`,
+        [session.session_id],
+      );
+      if (prior.rowCount && !hasBackendPermission(role, "till:handover:approve")) await refuse();
+      if (approval && !HANDOVER_APPROVAL_ENABLED) await refuse();
+      const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
+      const board = await client.query(
+        `SELECT board_rows FROM rate_boards
+          WHERE tenant_id=$1 AND branch_id=$2
+          ORDER BY published_at DESC LIMIT 1`,
+        [actor.tenantId, actor.branchId],
+      );
+      const boardRows = (board.rows[0]?.board_rows ?? {}) as Record<string, { mid?: unknown }>;
+      const lines: { currency: string; expected: string; counted: string; variance: string; mid: string | null }[] = [];
+      let absCad = new Decimal(0);
+      let unpriced = false;
+      for (const row of balances) {
+        const currency = row.currency.trim();
+        const expected = expectedIn(row.available_amount);
+        const counted = countedIn(String(counts[currency]), currency);
+        const variance = recordedVariance(counted, expected, currency);
+        const raw = currency === home ? 1 : boardRows[currency]?.mid;
+        const midDec = raw == null ? null : new Decimal(String(raw));
+        const mid = midDec && midDec.gt(0) ? midDec.toDecimalPlaces(12).toFixed(12) : null;
+        const gap = new Decimal(variance).abs();
+        if (gap.gt(0) && !mid) unpriced = true;
+        else if (mid) absCad = absCad.plus(gap.mul(mid));
+        lines.push({ currency, expected, counted, variance, mid });
+      }
+      if (unpriced || absCad.gt(new Decimal("20"))) await refuse();
+      const opener = session.opened_by as string;
+      const writeBatch = async (sessionId: string, kind: "close" | "handover") => {
+        const id = `till_${kind}_${randomUUID()}`;
+        await client.query(
+          `INSERT INTO ledger_till_count_batches
+            (batch_id,session_id,tenant_id,legal_entity_id,branch_id,workspace_id,
+             till_id,count_kind,actor_id,idempotency_key,counted_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [id, sessionId, ...scope(actor), kind, actor.userId, idempotencyKey, now],
+        );
+        for (const line of lines) {
+          await client.query(
+            `INSERT INTO ledger_till_counts
+              (batch_id,currency,expected_amount,counted_amount,variance_amount,
+               stored_expected_amount,board_mid_rate)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [id, line.currency, line.expected, line.counted, line.variance, line.expected, line.mid],
+          );
+        }
+        return id;
+      };
+      const batchId = await writeBatch(session.session_id, "close");
+      for (const line of lines) {
         await client.query(
           `UPDATE ledger_till_balances SET available_amount=$1
             WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4
               AND workspace_id=$5 AND till_id=$6 AND currency=$7`,
-          [counted, ...scope(actor), currency],
+          [line.counted, ...scope(actor), line.currency],
         );
       }
       await client.query(
@@ -716,12 +965,57 @@ export class TillControlService {
           clock.day, actor.userId, now,
         ],
       );
-      await this.audit(client, actor, "till.session.handover", sessionId, `from=${opener}`, now);
+      await writeBatch(sessionId, "handover");
+      await client.query(
+        `INSERT INTO ledger_audit_events
+          (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+           action,target_id,reason,correlation_id,created_at,
+           prior_session_id,count_batch_id,actor_role,from_user,
+           approver_id,approver_role,approved_at,variances)
+         VALUES ($1,$2,$3,$4,$5,$6,'till.session.handover',$7,$8,$9,clock_timestamp(),
+           $10,$11,$12,$13,$14,$15,
+           CASE WHEN $14::text IS NULL THEN NULL ELSE clock_timestamp() END,$16::jsonb)`,
+        [
+          randomUUID(),
+          ...scope(actor).slice(0, 4),
+          actor.userId,
+          sessionId,
+          `from=${opener}`,
+          randomUUID(),
+          session.session_id,
+          batchId,
+          role,
+          opener,
+          null,
+          null,
+          JSON.stringify(lines.map((line) => ({
+            currency: line.currency,
+            variance: line.variance,
+            mid: line.mid,
+          }))),
+        ],
+      );
+      const dropped = await client.query(
+        `UPDATE quotes SET status='cancelled'
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+            AND workspace_id=$4 AND till_id=$5
+            AND status='active' AND created_by=$6
+          RETURNING quote_id`,
+        [...scope(actor), opener],
+      );
+      for (const row of dropped.rows) {
+        await client.query(
+          `INSERT INTO quote_events (event_id,quote_id,actor_id,event_type,detail,created_at)
+           VALUES ($1,$2,$3,'cancelled',$4::jsonb,clock_timestamp())`,
+          [randomUUID(), row.quote_id, actor.userId, JSON.stringify({ reason: "handover" })],
+        );
+      }
       const response = await this.currentWithClient(client, actor);
+      await remember(response);
       await client.query("COMMIT");
       return response;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!settled) await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
         throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
       }

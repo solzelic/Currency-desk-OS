@@ -301,6 +301,7 @@
             balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
+            currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
           };
         });
       },
@@ -308,6 +309,12 @@
         return request("/api/ledger/till-sessions/open", {
           method: "POST",
           body: "{}",
+        });
+      },
+      handoverTill: function (payload) {
+        return request("/api/ledger/till-sessions/handover", {
+          method: "POST",
+          body: JSON.stringify(payload),
         });
       },
       saveTillCount: function (payload) {

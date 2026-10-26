@@ -77,8 +77,11 @@ async function immutability(pool: pg.Pool) {
 
 describe("migration 056 is registered after 055", () => {
   it("adds is_test_shop and does not create a table or replace a trigger", async () => {
-    expect(migrations.at(-1)?.[0]).toBe(ID);
-    expect(migrations.some(([id]) => id === "055_structuring_ack")).toBe(true);
+    const ids = migrations.map(([id]) => id);
+    expect(ids.indexOf(ID)).toBe(ids.indexOf("055_structuring_ack") + 1);
+    expect(ids.indexOf("057_handover_audit_fields")).toBe(ids.indexOf(ID) + 1);
+    expect(ids.indexOf("058_handover_approver_and_variances")).toBe(ids.indexOf("057_handover_audit_fields") + 1);
+    expect(ids.at(-1)).toBe("059_handover_idempotency_actor");
     const sql = await readFile(new URL(`../src/db/migrations/${ID}.sql`, import.meta.url), "utf8");
     expect(sql).toMatch(/ADD COLUMN is_test_shop boolean NOT NULL DEFAULT false/);
     expect(sql).not.toMatch(/if not exists/i);

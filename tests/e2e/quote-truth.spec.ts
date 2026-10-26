@@ -22,27 +22,74 @@ function sameMoney(left: string, right: string): boolean {
 function expectSame(left: string, right: string, label: string) {
   expect(sameMoney(left, right), `${label}: ${left} vs ${right}`).toBe(true);
 }
+async function bookOf(openedBy: string): Promise<Record<string, string>> {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    const result = await pool.query(
+      `SELECT b.currency, b.available_amount::text AS amount
+         FROM ledger_till_balances b
+         JOIN ledger_till_sessions s
+           ON s.tenant_id=b.tenant_id AND s.legal_entity_id=b.legal_entity_id
+          AND s.branch_id=b.branch_id AND s.workspace_id=b.workspace_id
+          AND s.till_id=b.till_id
+        WHERE s.status='open' AND s.opened_by=$1`,
+      [openedBy],
+    );
+    const counts: Record<string, string> = {};
+    for (const row of result.rows) counts[String(row.currency).trim()] = Number(row.amount).toFixed(2);
+    return counts;
+  } finally {
+    await pool.end();
+  }
+}
+
 async function takeTill(page: Page) {
-  const open = await page.evaluate(async () => {
+  const state = await page.evaluate(async () => {
     const me = await fetch("/api/auth/me").then((r) => r.json());
     const id = String(me.user?.id ?? "");
     const session = await fetch("/api/ledger/till-session").then((r) => r.json());
+    const book = await fetch("/api/ledger/till-balances").then((r) => r.json());
     const opener = String(session.session?.openedBy ?? "");
     const mine = session.session?.status === "open" && (opener === id || opener.endsWith(":" + id));
+    return {
+      mine,
+      opener,
+      status: String(session.session?.status ?? ""),
+      withheld: !!book.amountsWithheld,
+      balances: (book.balances ?? {}) as Record<string, string>,
+    };
+  });
+  if (state.mine) return;
+  if (state.status === "open") {
+    const counts = state.withheld ? await bookOf(state.opener) : Object.fromEntries(
+      Object.entries(state.balances).map(([currency, amount]) => [currency, Number(amount).toFixed(2)]),
+    );
+    const open = await page.evaluate(async (counts) => {
+      const handed = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: "qt-" + Date.now(), counts }),
+      });
+      return handed.ok ? "open" : await handed.text();
+    }, counts);
+    expect(open, "till open").toBe("open");
+    return;
+  }
+  const open = await page.evaluate(async () => {
     let balances: Record<string, string> = (await fetch("/api/ledger/till-balances").then((r) => r.json())).balances ?? {};
     if (!Object.keys(balances).length) {
-      const seeded = await fetch("/api/ledger/opening-balances", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ balances: { CAD: "20000.00", USD: "8000.00" } }) });
-      if (!seeded.ok) return await seeded.text();
-      balances = (await fetch("/api/ledger/till-balances").then((r) => r.json())).balances ?? {};
+      const seeded = await fetch("/api/ledger/opening-balances", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ balances: { CAD: "20000.00", USD: "8000.00" } }),
+      });
+      if (!seeded.ok && seeded.status !== 409) return await seeded.text();
     }
-    if (mine) return "open";
-    if (session.session?.status === "open") {
-      const counts: Record<string, string> = {};
-      for (const [c, v] of Object.entries(balances)) counts[c] = Number(v).toFixed(2);
-      const handed = await fetch("/api/ledger/till-sessions/handover", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: "qt-" + Date.now(), counts }) });
-      return handed.ok ? "open" : await handed.text();
-    }
-    const res = await fetch("/api/ledger/till-sessions/open", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const res = await fetch("/api/ledger/till-sessions/open", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     return res.ok || res.status === 409 ? "open" : await res.text();
   });
   expect(open, "till open").toBe("open");
