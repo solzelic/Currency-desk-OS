@@ -28,14 +28,14 @@ const verifyCopy = (new Function("CD", "return ({ " + grab(html, "verifyCopy") +
 }).verifyCopy;
 
 function contrast(fg: string, bg: string): number {
-  const lin = (hex: string) => {
-    const n = parseInt(hex.slice(1), 16);
-    return [16, 8, 0].map((shift) => {
-      const c = ((n >> shift) & 255) / 255;
-      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const channel = (hex: string, shift: number) => {
+    const c = ((parseInt(hex.slice(1), 16) >> shift) & 255) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   };
-  const [lighter, darker] = [lin(fg), lin(bg)].sort((a, b) => b - a);
+  const lum = (hex: string) =>
+    0.2126 * channel(hex, 16) + 0.7152 * channel(hex, 8) + 0.0722 * channel(hex, 0);
+  const lighter = Math.max(lum(fg), lum(bg));
+  const darker = Math.min(lum(fg), lum(bg));
   return (lighter + 0.05) / (darker + 0.05);
 }
 
