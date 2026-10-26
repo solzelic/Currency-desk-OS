@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { sql as dbSql } from "drizzle-orm";
 import type pg from "pg";
 
 export type Migration = readonly [migrationId: string, path: string];
@@ -73,10 +74,57 @@ export const migrations: readonly Migration[] = [
   ["055_structuring_ack", "src/db/migrations/055_structuring_ack.sql"],
 ] as const;
 
+type MigrationReader = {
+  execute: (query: ReturnType<typeof dbSql>) => Promise<{ rows: ReadonlyArray<{ migration_id?: unknown }> }>;
+};
+
+/* Health must not keep a pooled connection. Postgres cancels the read.
+   PGlite has no statement_timeout, so that path stops waiting in process. */
+const MIGRATION_READ_TIMEOUT_MS = 1000;
+
+function postgresPool(db: MigrationReader): pg.Pool | null {
+  const client = (db as { session?: { client?: pg.Pool } }).session?.client;
+  if (client && typeof client.connect === "function") return client;
+  return null;
+}
+
+async function newestFromReader(db: MigrationReader): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const found = await Promise.race([
+      db.execute(dbSql`
+        SELECT migration_id FROM schema_migrations
+        ORDER BY applied_at DESC, migration_id DESC
+        LIMIT 1
+      `),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), MIGRATION_READ_TIMEOUT_MS);
+        timer.unref();
+      }),
+    ]);
+    const id = found.rows[0]?.migration_id;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/* Newest applied id, or null when the table is missing, the read fails
+   (including a connect failure), or Postgres cancels it. Names only. */
+export async function newestAppliedMigration(db: MigrationReader): Promise<string | null> {
+  const pool = postgresPool(db);
+  if (pool) return newestFromPostgres(pool);
+  return newestFromReader(db);
+}
+
 export async function runMigrations(
   pool: pg.Pool,
   configuredMigrations: readonly Migration[] = migrations,
 ) {
+  /* Before the runner's first query. Name only: no connection string. */
+  console.log("opening database");
   const ordered = [...configuredMigrations].sort(([left], [right]) =>
     left.localeCompare(right),
   );
@@ -97,6 +145,30 @@ export async function runMigrations(
       await client.query(sql);
       await client.query("INSERT INTO schema_migrations (migration_id,checksum) VALUES ($1,$2)", [migrationId, checksum]);
       await client.query("COMMIT");
+      console.log(`migration applied: ${migrationId}`);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+  }
+}
+
+/* Below the runner. A pack test takes the first BEGIN in this file as the
+   runner's transaction, so this read must not sit above that one.
+   Own transaction so SET LOCAL dies with it. Always release the client. */
+async function newestFromPostgres(pool: pg.Pool): Promise<string | null> {
+  let client: pg.PoolClient | undefined;
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = 1000");
+    const found = await client.query(
+      "SELECT migration_id FROM schema_migrations ORDER BY applied_at DESC, migration_id DESC LIMIT 1",
+    );
+    await client.query("COMMIT");
+    const id = found.rows[0]?.migration_id;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch {
+    try { await client?.query("ROLLBACK"); } catch { /* the server already aborted it */ }
+    return null;
+  } finally {
+    client?.release();
   }
 }

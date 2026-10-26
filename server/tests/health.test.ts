@@ -12,8 +12,10 @@ import { buildApp } from "../src/app.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
+const savedCommit = process.env.RENDER_GIT_COMMIT;
 
 beforeAll(async () => {
+  delete process.env.RENDER_GIT_COMMIT;
   process.env.PGLITE_MEMORY = "1";
   handle = await createDb();
   app = await buildApp(handle.db);
@@ -22,13 +24,20 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await handle.close();
+  if (savedCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+  else process.env.RENDER_GIT_COMMIT = savedCommit;
 });
 
 describe("GET /api/health", () => {
   it("is 200 when the database answers a trivial read", async () => {
     const res = await app.inject({ method: "GET", url: "/api/health" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, service: "currencydesk-server" });
+    expect(res.json()).toEqual({
+      ok: true,
+      service: "currencydesk-server",
+      commit: "unknown",
+      lastMigration: null,
+    });
   });
 
   it("is 503 when the database cannot answer, and leaks nothing", async () => {
@@ -42,6 +51,8 @@ describe("GET /api/health", () => {
         ok: false,
         service: "currencydesk-server",
         error: "database",
+        commit: "unknown",
+        lastMigration: null,
       });
       const body = res.body;
       expect(body).not.toMatch(/ECONNREFUSED|supersecret|password=|5432/i);
@@ -53,6 +64,48 @@ describe("GET /api/health", () => {
   it("needs no session", async () => {
     const res = await app.inject({ method: "GET", url: "/api/health" });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("returns lastMigration null when the migration read never resolves", async () => {
+    let release: (value: { rows: [] }) => void = () => {};
+    const gate = new Promise<{ rows: [] }>((resolve) => { release = resolve; });
+    const execute = vi.spyOn(handle.db, "execute").mockImplementation(() => gate as never);
+    const started = Date.now();
+    const pending = app.inject({ method: "GET", url: "/api/health" });
+    const winner = await Promise.race([
+      pending.then((res) => ({ kind: "response" as const, res })),
+      new Promise<{ kind: "hung" }>((resolve) => setTimeout(() => resolve({ kind: "hung" }), 1500)),
+    ]);
+    release({ rows: [] });
+    if (winner.kind === "hung") await pending;
+    try {
+      expect(winner.kind).toBe("response");
+      if (winner.kind !== "response") return;
+      expect(Date.now() - started).toBeLessThan(1500);
+      expect(winner.res.statusCode).toBe(200);
+      const body = winner.res.json();
+      expect(body.ok).toBe(true);
+      expect(body.service).toBe("currencydesk-server");
+      expect(body.lastMigration).toBeNull();
+    } finally {
+      execute.mockRestore();
+    }
+  });
+
+  it("returns lastMigration null when the pool cannot connect", async () => {
+    const session = handle.db as unknown as { session: { client: { connect?: () => Promise<never> } } };
+    const client = session.session.client;
+    client.connect = () => Promise.reject(new Error("connect refused"));
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/health" });
+      expect(res.statusCode).not.toBe(500);
+      const body = res.json();
+      expect(body.ok).toBe(true);
+      expect(body.lastMigration).toBeNull();
+      expect(res.body).not.toMatch(/connect refused/);
+    } finally {
+      delete client.connect;
+    }
   });
 });
 
@@ -69,6 +122,8 @@ describe("GET /api/health when the database is gone", () => {
         ok: false,
         service: "currencydesk-server",
         error: "database",
+        commit: "unknown",
+        lastMigration: null,
       });
     } finally {
       await isolated.close();
