@@ -5,6 +5,7 @@ import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
@@ -114,6 +115,10 @@ const tillCounts = byCurrency(monetary("0"), "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
+}).strict();
+const handoverBody = countBody.extend({
+  approverStaffId: z.string().trim().min(1).max(120).optional(),
+  approverPin: z.string().regex(/^\d{4}$/).optional(),
 }).strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -379,8 +384,9 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =
-      error.code === "AUTHENTICATION_REQUIRED" ? 401
-        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
+      error.code === "AUTHENTICATION_REQUIRED" || error.code === "WRONG_PIN" ? 401
+        : error.code === "PIN_LOCKED" ? 429
+        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" || error.code === "HANDOVER_APPROVAL_REQUIRED" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
@@ -640,9 +646,21 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   app.get("/api/ledger/till-balances", async (req, reply) => {
     try {
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send(await provisioning.getBalances(actor))
-        : undefined;
+      if (!actor) return;
+      const balances = await provisioning.getBalances(actor);
+      const current = await tillControl.current(actor);
+      /* Same gate as the session below. A teller who does not hold the
+         till does not receive the book amounts. */
+      if (current.session && current.session.status === "open" && current.session.openedBy !== actor.userId) {
+        return reply.send({
+          tillId: balances.tillId,
+          balanceGeneration: balances.balanceGeneration,
+          balances: {},
+          currencies: current.currencies,
+          amountsWithheld: true,
+        });
+      }
+      return reply.send(balances);
     } catch (error) {
       return failure(reply, error);
     }
@@ -654,15 +672,19 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (!actor) return;
       const current = await tillControl.current(actor);
       /* A count that is not saved yet must not show the expected figure
-         to the person who does not hold the till. */
+         to the person who does not hold the till. Variance is the same
+         figure with the count subtracted, so it stays off too. */
       if (current.session && current.session.openedBy !== actor.userId) {
         for (const figure of Object.values(current.latestCounts)) {
-          const row = figure as { expected?: unknown; storedExpected?: unknown };
+          const row = figure as { expected?: unknown; storedExpected?: unknown; variance?: unknown };
           delete row.expected;
           delete row.storedExpected;
+          delete row.variance;
         }
       }
-      return reply.send(current);
+      if (!hasBackendPermission(actor.role, "till:close")) return reply.send(current);
+      const notes = await tillControl.handoverNotes(actor);
+      return reply.send({ ...current, handoverFlags: notes.flags, handoverRecords: notes.records });
     } catch (error) {
       return failure(reply, error);
     }
@@ -680,12 +702,20 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/till-sessions/handover", async (req, reply) => {
-    const parsed = countBody.safeParse(req.body);
+    const parsed = handoverBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
+      const approval = parsed.data.approverStaffId && parsed.data.approverPin
+        ? { staffId: parsed.data.approverStaffId, pin: parsed.data.approverPin }
+        : undefined;
       return actor
-        ? reply.code(201).send(await tillControl.handover(actor, parsed.data.idempotencyKey, parsed.data.counts))
+        ? reply.code(201).send(await tillControl.handover(
+            actor,
+            parsed.data.idempotencyKey,
+            parsed.data.counts,
+            approval,
+          ))
         : undefined;
     } catch (error) {
       return failure(reply, error);

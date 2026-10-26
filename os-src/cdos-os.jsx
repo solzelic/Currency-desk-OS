@@ -1042,7 +1042,12 @@
     const syncTillFromServer = async () => {
       if (!srvUser || !window.CDOS.Backend || !station || !station.tillId) return;
       try {
+        const session = await window.CDOS.Backend.loadTillSession();
+        const open = session.session && session.session.status === "open";
+        const mine = window.CDOS.Backend.holdsTill(session.session, srvUser.id);
+        if (open && !mine) return;
         const result = await window.CDOS.Backend.loadTillBalances();
+        if (result.amountsWithheld) return;
         const ledger = Object.fromEntries(
           Object.entries(result.balances || {}).map(([ccy2, value]) => [ccy2, Number(value)]));
         setBranches(list => list.map(b => b.id !== station.branchId ? b : {
@@ -2423,7 +2428,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} subs={subs} beneficiaries={beneficiaries} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCount={!!(srvUser && ['administrator', 'branch_manager', 'supervisor', 'teller'].indexOf(srvUser.role) >= 0)} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;

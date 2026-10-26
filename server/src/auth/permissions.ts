@@ -10,6 +10,7 @@ export type BackendPermission =
   | "ledger:view"
   | "till:initialize"
   | "till:count"
+  | "till:handover:approve"
   | "till:close"
   | "till:move"
   | "vault:view"
@@ -68,10 +69,10 @@ export type BackendPermission =
 
 export const backendRolePermissions: Readonly<Record<string, readonly BackendPermission[]>> = {
   teller: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "customer:view", "customer:write", "ledger:view", "till:count", "vault:view"],
-  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "filing:view"],
+  supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "filing:view"],
   compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "filing:view"],
   branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file", "filing:view"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "filing:view", "compliance:thresholds"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "filing:view", "compliance:thresholds"],
   auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };
 

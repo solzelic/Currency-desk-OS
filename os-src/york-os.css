@@ -3545,3 +3545,16 @@ html[data-cdtheme="dark"] #cdos-staging-banner {
   background: #e0a106;
 }
 body:has(#cdos-staging-banner) #lock { top: var(--cdos-banner, 28px); overflow: auto; }
+
+/* A narrow till window, including one open on a wide screen.
+   The title stays one line. The drawer total drops below it.
+   Vault does not shrink off the row. The phone rules below 430px
+   keep their own stack. */
+[data-tour="till"] { container-type: inline-size; }
+@container (max-width: 720px) {
+  [data-tour="till"] .till-head { flex-wrap: wrap; align-items: flex-start; }
+  [data-tour="till"] .till-name { white-space: nowrap; }
+  [data-tour="till"] .till-actions { flex-wrap: wrap; }
+  [data-tour="till"] .till-pill { flex: 1 0 100%; }
+  [data-tour="till"] .till-vault { flex-shrink: 0; white-space: nowrap; }
+}

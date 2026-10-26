@@ -506,8 +506,12 @@
       setServerCode((error && error.code) || '');
       setHolderName((error && error.holderName) || '');
     };
-    const takeOverTill = serverCode === 'TILL_HELD' ? (
-      <button type="button" onClick={() => { onClose(); if (window.CDOS.openTakeover) window.CDOS.openTakeover(); }} title={holderName ? ('Take over this till from ' + holderName) : 'Take over this till'} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>Take over this till</button>
+    const heldDeal = serverCode === 'TILL_HELD';
+    const takeOverTill = heldDeal ? (
+      <button type="button" onClick={() => { onClose(); if (window.CDOS.openTakeover) window.CDOS.openTakeover(); }} title={holderName ? ('Take over this till from ' + holderName) : 'Take over this till'} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)', minHeight: 44 }}>Take over this till</button>
+    ) : null;
+    const heldLine = heldDeal ? (
+      <div role="alert" className="px-3 py-2 text-[12px]" style={{ background: CD.amberSoft, borderRadius: 9, color: CD.brassText }}>{(holderName || 'Someone') + ' holds this till.'}</div>
     ) : null;
 
     /* Anything the teller put on this ticket. Closing from the phone is
@@ -1445,20 +1449,22 @@
                     `record` — a money order or a bill payment the server
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
-                {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
+                {serverError && !isExchange && !heldDeal && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
+                {!isExchange && heldLine}
                 {!isExchange && takeOverTill}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>
                     Frozen quote · {unitText(serverQuote.inputAmount, serverQuote.from)} {serverQuote.from} → {unitText(serverQuote.outputAmount, serverQuote.to)} {serverQuote.to} · expires {new Date(serverQuote.expiresAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>}
-                  {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
+                  {serverError && !heldDeal && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
+                  {heldLine}
                   {takeOverTill}
-                  {phoneSheet && !allGreen
+                  {heldDeal ? null : phoneSheet && !allGreen
                     ? <button type="button" onClick={showMissing} disabled={quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: quotePending ? CD.line : CD.ink, color: quotePending ? CD.faint : 'var(--cd-on-ink)' }}><Ic n="lock" s={15} c="currentColor" /> {stepsLabel}</button>
                     : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy || quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy || quotePending) ? CD.line : CD.ink, color: (!canSave || serverBusy || quotePending) ? CD.faint : 'var(--cd-on-ink)' }}>
                         <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                       </button>}
-                </> : phoneSheet && !allGreen
+                </> : heldDeal ? null : phoneSheet && !allGreen
                   ? <button type="button" onClick={showMissing} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: CD.ink, color: 'var(--cd-on-ink)' }}>{stepsLabel}</button>
                   : <CommitBtn onCommit={record} disabled={!canSave} icon="check" label={allGreen ? 'Record transaction' : `${remaining} to complete`} doneLabel="Recorded" title="Post this transaction to the ledger" className="cd-tx-go w-full justify-center" style={{ padding: '0.65rem 1rem', fontSize: 14 }} />}
                 <button onClick={onClose} className="cd-tx-cancel w-full py-2 text-[12px]" style={{ color: CD.mute }}>Cancel</button>

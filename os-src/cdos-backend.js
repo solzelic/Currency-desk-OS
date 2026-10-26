@@ -103,7 +103,7 @@
      the screen is expected to show nothing rather than guess. */
   function tillOccupant(session) {
     if (!session || session.status !== "open") return "";
-    return String(session.openedBy || "").split(":").pop() || "";
+    return String(session.holderName || "").trim();
   }
 
   /* True only when this person holds the open session. A selected till is
@@ -305,18 +305,36 @@
          server says the till holds, and which session that holding sits in.
          Fetching them separately let one arrive without the other and the
          screen rendered a balance with no session to post it against. */
-      loadTill: function () {
-        return Promise.all([
-          request("/api/ledger/till-balances"),
-          request("/api/ledger/till-session"),
-        ]).then(function (results) {
-          return {
-            tillId: results[0].tillId || null,
-            balances: results[0].balances || {},
-            balanceGeneration: results[0].balanceGeneration != null ? String(results[0].balanceGeneration) : null,
-            session: results[1].session || null,
-            latestCounts: results[1].latestCounts || {},
+      loadTill: function (myId) {
+        return request("/api/ledger/till-session").then(function (sessionBody) {
+          var session = sessionBody.session || null;
+          var open = !!(session && session.status === "open");
+          var mine = holdsTill(session, myId);
+          var shared = {
+            session: session,
+            latestCounts: sessionBody.latestCounts || {},
+            currencies: sessionBody.currencies || [],
+            handoverRecords: sessionBody.handoverRecords || null,
           };
+          var withheld = function (book) {
+            return Object.assign({
+              tillId: (book && book.tillId) || null,
+              balances: null,
+              amountsWithheld: true,
+              balanceGeneration: null,
+              currencies: (book && book.currencies) || shared.currencies,
+            }, shared);
+          };
+          if (open && !mine) return Promise.resolve(withheld(null));
+          return request("/api/ledger/till-balances").then(function (book) {
+            if (book.amountsWithheld) return withheld(book);
+            return Object.assign({
+              tillId: book.tillId || null,
+              balances: book.balances || {},
+              amountsWithheld: false,
+              balanceGeneration: book.balanceGeneration != null ? String(book.balanceGeneration) : null,
+            }, shared);
+          });
         });
       },
       openTillSession: function () {

@@ -179,7 +179,7 @@
             <div className="flex flex-col gap-1.5">
               {roster.map(s => { const on = toName === s.name; const isMe = s.name === me.name; return (
                 <button key={s.name} onClick={() => setToName(s.name)} className="flex items-center gap-3 px-3 py-2.5 text-left" style={{ border: `1px solid ${on ? CD.ink : CD.line}`, background: on ? CD.ink : 'var(--cd-panel)', borderRadius: 10 }}>
-                  <span className="grid place-items-center flex-none font-semibold" style={{ width: 30, height: 30, borderRadius: 8, background: on ? 'var(--cd-on-ink-faint)' : CD.lineSoft, color: on ? 'var(--cd-on-ink)' : CD.ink, fontSize: 11 }}>{s.name.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase()}</span>
+                  <span className="grid place-items-center flex-none font-semibold" style={{ width: 30, height: 30, borderRadius: 8, background: on ? 'var(--cd-on-ink-faint)' : CD.lineSoft, color: on ? 'var(--cd-on-ink)' : CD.ink, fontSize: 11 }}>{s.name.split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase()}</span>
                   <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-medium" style={{ color: on ? 'var(--cd-on-ink)' : CD.ink }}>{s.name}{isMe ? ' (me)' : ''}</span><span className="block text-[11px]" style={{ color: on ? 'var(--cd-on-ink-soft)' : CD.mute }}>{s.role}</span></span>
                   {on && <Ic n="check" s={16} c="var(--cd-on-ink)" />}
                 </button>); })}
@@ -230,7 +230,38 @@
      does not show those amounts. Saving calls the handover route. */
   function TakeoverSheet({ currencies, holder, busy, error, onClose, onSubmit }) {
     const [raw, setRaw] = useState({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    const [note, setNote] = useState(false);
+    const [asked, setAsked] = useState(false);
+    const [whoId, setWhoId] = useState('');
+    const [pin, setPin] = useState('');
+    const mismatch = 'The count does not match. A supervisor must approve this takeover.';
+    const [phone, setPhone] = useState(() => typeof matchMedia === 'function' && matchMedia('(max-width: 430px)').matches);
+    useEffect(() => { if (error === mismatch) setAsked(true); }, [error]);
+    useEffect(() => {
+      if (typeof matchMedia !== 'function') return undefined;
+      const mq = matchMedia('(max-width: 430px)');
+      const on = () => setPhone(mq.matches);
+      on();
+      mq.addEventListener('change', on);
+      return () => mq.removeEventListener('change', on);
+    }, []);
+    const placesOf = (c) => (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2);
+    const badOf = (c) => {
+      const text = String(raw[c] || '').trim();
+      if (!text) return '';
+      const frac = text.includes('.') ? text.split('.')[1] : '';
+      const places = placesOf(c);
+      if (!/^\d+(\.\d+)?$/.test(text) || frac.length > places) {
+        return places === 0 ? (c + ' is a whole number.') : (c + ' is counted to ' + places + ' decimal places.');
+      }
+      return '';
+    };
+    const problems = currencies.map(badOf).filter(Boolean);
+    const gate = asked || error === mismatch;
+    const pinReady = !gate || (whoId.trim() !== '' && /^\d{4}$/.test(pin));
+    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '') && problems.length === 0 && pinReady;
+    const who = holder || 'someone';
+    const blind = 'Expected amounts stay hidden.';
     return ReactDOM.createPortal(
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
         <div role="dialog" aria-label="Take over till" onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 460, maxHeight: 'calc(100vh - 40px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -238,30 +269,37 @@
             <span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n="users" s={17} c="var(--cd-on-ink)" /></span>
             <div className="flex-1 min-w-0">
               <div className="font-semibold leading-tight" style={{ color: CD.ink }}>Take over till</div>
-              <div className="text-[11px]" style={{ color: CD.mute }}>{holder ? `Held by ${holder}. ` : ''}Count the cash in the drawer. The book keeps its figures hidden until this count is saved.</div>
+              <div className="text-[12px]" style={{ color: CD.mute }}>{phone
+                ? <span>Held by {who}. Count the cash. <button type="button" aria-label="About this count" onClick={() => setNote(v => !v)} style={{ border: 0, background: 'transparent', color: CD.ink, fontWeight: 700, minWidth: 44, minHeight: 44 }}>(i)</button>{note ? <span> {blind}</span> : null}</span>
+                : <span>Held by {who}. Count the cash in the drawer. {blind}</span>}</div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
           <div className="px-5 py-4 overflow-auto">
-            <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden' }}>
+            <div style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 11, overflow: 'hidden' }}>
               {currencies.map((c, i) => (
                 <div key={c} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                   <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
-                  <input value={raw[c] || ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode="decimal" placeholder="0.00" aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                  <input value={raw[c] || ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode="decimal" placeholder={placesOf(c) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2" style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink, minHeight: 44, boxSizing: 'border-box' }} />
                 </div>
               ))}
             </div>
+            {problems[0] ? <div role="alert" className="text-[12px] mt-3 px-3 py-2" style={{ background: CD.amberSoft, color: CD.brassText, borderRadius: 9 }}>{problems[0]}</div> : null}
             {error ? <div role="alert" className="text-[12px] mt-3 px-3 py-2" style={{ background: CD.flagSoft, color: CD.flag, borderRadius: 9 }}>{error}</div> : null}
+            {gate ? <div className="mt-3" data-approver="1">
+              <input value={whoId} onChange={e => setWhoId(e.target.value)} aria-label="Supervisor staff id" placeholder="Supervisor staff id" className="w-full outline-none text-[13px] px-2 mb-2" style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 7, color: CD.ink, minHeight: 44, boxSizing: 'border-box' }} />
+              <input value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} inputMode="numeric" aria-label="Supervisor PIN" placeholder="PIN" className="w-full outline-none text-[13px] px-2" style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 7, color: CD.ink, minHeight: 44, boxSizing: 'border-box' }} />
+            </div> : null}
           </div>
           <div className="px-5 py-3.5 flex items-center justify-end gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <button type="button" onClick={onClose} className="text-[13px] px-3 py-2 font-medium" style={{ color: CD.mute }}>Cancel</button>
-            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(raw)} className="flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9 }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
+            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(raw, gate ? { staffId: whoId.trim(), pin } : null)} className="flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, minHeight: 44 }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
           </div>
         </div>
       </div>, document.body);
   }
 
-  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill, myId }) {
+  function TillDrawer({ rows: allRows, log, day, onCloseDay, onOpenNextDay, me, canCloseDay = true, canCount = false, baseline, setBaseline, receipts, stationName, stationTill, branches, station, setStation, onOpenReport, settings, onMoveCash, onOpenVault, moves, serverBacked, cashVersion, onSessionSync, ledgerScope, onSelectLedgerTill, myId }) {
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     const tillRootRef = useRef(null);
@@ -275,6 +313,12 @@
            currency that was not counted must never be sent.
        ------------------------------------------------------------------ */
     const [serverBalances, setServerBalances] = useState(null);
+    const [amountsWithheld, setAmountsWithheld] = useState(false);
+    const [serverCurrencies, setServerCurrencies] = useState([]);
+    const [handoverRecords, setHandoverRecords] = useState([]);
+    const handoverKey = useRef('');
+    const [takenOver, setTakenOver] = useState(null);
+    const heldRef = useRef(null);
     /* The mark on the drawer when these expected figures were read.
        The close sends it back. If money moved, the mark no longer
        matches and the close is refused. */
@@ -352,6 +396,16 @@
     // every session-shaped response (open / count / close) lands here
     const applySession = (result) => {
       const session = (result && result.session) || null;
+      if (result && Array.isArray(result.handoverRecords)) setHandoverRecords(result.handoverRecords);
+      const mineNow = !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
+      if (session && session.status === 'open' && mineNow) {
+        heldRef.current = session.sessionId;
+        setTakenOver(null);
+      } else if (heldRef.current && session && session.status === 'open' && session.sessionId !== heldRef.current) {
+        setTakenOver(session);
+        setServerBalances(null);
+        heldRef.current = null;
+      }
       setServerSession(session);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
@@ -369,6 +423,15 @@
       return () => { live = false; };
     }, [serverBacked, deskFacts, serverSession && serverSession.sessionId, serverSession && serverSession.status]);
     const applyBook = (result) => {
+      if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
+      if (result && result.amountsWithheld) {
+        setAmountsWithheld(true);
+        setServerBalances(null);
+        setBalanceGeneration(null);
+        setServerBalanceError('');
+        return;
+      }
+      setAmountsWithheld(false);
       setServerBalances((result && result.balances) || {});
       /* A count in progress keeps the mark it started on. Adopting the
          generation just fetched would let a refresh, or any other
@@ -381,7 +444,7 @@
     };
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
-      return window.CDOS.Backend.loadTill().then(result => {
+      return window.CDOS.Backend.loadTill(myId).then(result => {
         applyBook(result);
         return applySession(result);
       });
@@ -395,7 +458,7 @@
         return;
       }
       let active = true;
-      window.CDOS.Backend.loadTill()
+      window.CDOS.Backend.loadTill(myId)
         .then(result => {
           if (!active) return;
           applyBook(result);
@@ -413,7 +476,16 @@
       // this screen follows money leaving the vault without a remount; the
       // ledger workspace joins it because the first fetch can happen before the
       // OS has learned which till the server is answering for
-    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace]);
+    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace, myId]);
+    const refreshRef = useRef(refreshTill);
+    refreshRef.current = refreshTill;
+    useEffect(() => {
+      if (!serverBacked) return undefined;
+      const tick = () => { const run = refreshRef.current; if (run) run().catch(() => {}); };
+      const id = setInterval(tick, 15000);
+      window.addEventListener('focus', tick);
+      return () => { clearInterval(id); window.removeEventListener('focus', tick); };
+    }, [serverBacked]);
 
     // opening the till is an act, not a side effect of looking at the screen
     const openTill = async () => {
@@ -565,7 +637,7 @@
     const [takeoverOpen, setTakeoverOpen] = useState(false);
     useEffect(() => {
       const open = () => {
-        if (!window.CDOS._takeoverPending) return;
+        if (!window.CDOS._takeoverPending || !canCount) return;
         window.CDOS._takeoverPending = false;
         setSessionErr('');
         setTakeoverOpen(true);
@@ -592,7 +664,7 @@
        till there is no operator to name, and the strip says so rather than
        falling back to a roster. */
     const serverShift = serverBacked && serverSession && serverSession.status === 'open'
-      ? { operator: personOf(serverSession.openedBy), role: '', since: new Date(serverSession.openedAt).getTime() }
+      ? { operator: serverSession.holderName || 'someone', role: '', since: new Date(serverSession.openedAt).getTime() }
       : null;
     const current = serverBacked ? serverShift : shifts[tillId];
     // seed the operator for this till on first view — from the till's assigned
@@ -657,11 +729,14 @@
     }, [counts, quick, mode]);
     const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
 
-    const serverBalancesReady = !serverBacked || serverBalances !== null;
+    const serverBalancesReady = !serverBacked || serverBalances !== null || amountsWithheld;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
     // an untouched currency would be written back at whatever we sent.
-    const serverCcys = useMemo(() => Object.keys(serverBalances || {}).sort(), [serverBalances]);
+    const serverCcys = useMemo(() => {
+      const book = Object.keys(serverBalances || {});
+      return [...(book.length ? book : serverCurrencies)].sort();
+    }, [serverBalances, serverCurrencies]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const iHold = mine(serverSession);
@@ -682,22 +757,29 @@
       && Object.prototype.hasOwnProperty.call(serverBalances, c)
       ? Number(serverBalances[c])
       : null);
-    const doTakeover = async (raw) => {
+    const doTakeover = async (raw, approval) => {
       if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
       const counts = {};
-      serverCcys.forEach(c => { counts[c] = Number(raw[c]).toFixed(2); });
+      serverCcys.forEach(c => { counts[c] = String(raw[c] == null ? '' : raw[c]).trim(); });
       setTillBusy('handover');
       setSessionErr('');
       try {
-        const key = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : ('ho' + Date.now());
-        const result = await window.CDOS.Backend.handoverTill({ idempotencyKey: key, counts });
+        if (!handoverKey.current) handoverKey.current = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : ('ho' + Date.now());
+        const payload = { idempotencyKey: handoverKey.current, counts };
+        if (approval && approval.staffId && approval.pin) {
+          payload.approverStaffId = approval.staffId;
+          payload.approverPin = approval.pin;
+        }
+        const result = await window.CDOS.Backend.handoverTill(payload);
+        handoverKey.current = '';
         clearAllCounts();
         applySession(result);
-        applyBook(await window.CDOS.Backend.loadTillBalances());
+        applyBook(await window.CDOS.Backend.loadTill(myId));
         log && log('Till taken over', tillNm);
         setTakeoverOpen(false);
       } catch (error) {
-        setSessionErr(error.message || 'The server would not hand this till over.');
+        setSessionErr(error.message || 'This till could not be handed over. Try again or call a supervisor.');
+        if (error && error.code === 'TILL_HELD') refreshTill().catch(() => {});
       } finally {
         setTillBusy('');
       }
@@ -760,6 +842,7 @@
             setSessionErr('');
           } catch (error) {
             setSessionErr(error.message || 'The server rejected the count.');
+            if (error && error.code === 'TILL_HELD') refreshTill().catch(() => {});
             log && log('Drawer count failed', error.message || 'Server rejected the count');
             saveLock.current = 0;
             return;
@@ -883,7 +966,7 @@
                stored would put the old mark back, and the next count
                would close against the drawer that just moved. */
             clearAllCounts();
-            const fresh = await window.CDOS.Backend.loadTill();
+            const fresh = await window.CDOS.Backend.loadTill(myId);
             applyBook(fresh);
             applySession(fresh);
           } catch (refreshError) {
@@ -1011,7 +1094,7 @@
             </span>) : (stationTill ? <b className="till-pick" style={{ color: CD.ink }}>{stationTill}</b> : null)}
             <span className="till-statusline">
             <span>{serverBacked ? `Session ${serverSession ? serverSession.sessionNumber : '—'}` : `Day ${day && day.num || 1}`}{bookClosed ? ' · closed' : serverBacked && !serverSession ? ' · not opened' : ''} · {countedCcys.length === 1 ? '1 drawer counted' : countedCcys.length + ' drawers counted'}</span>
-            {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk }}>· {serverBalanceError ? 'server balances unavailable' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
+            {serverBacked && <span style={{ color: serverBalanceError ? CD.flag : serverBalancesReady ? reconGreen : reconInk }}>· {serverBalanceError ? 'server balances unavailable' : amountsWithheld ? 'count is blind' : serverBalancesReady ? 'server balances live' : 'loading server balances'}</span>}
             {/* the ledger's own name for the drawer these figures belong to —
                 the picker to the left names a local till, which is a different
                 thing and can disagree */}
@@ -1030,7 +1113,7 @@
                 ? (serverBalances ? totalHome(serverCcys.map(c => [Number(serverBalances[c]), c])) : null)
                 : (_tRec && window.CDOS._stations && window.CDOS._stations.tillCad ? window.CDOS._stations.tillCad(_tRec) : null);
               return (<>
-                {_tc != null && !heldByOther && <span className="till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: reconInk }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
+                {_tc != null && !heldByOther && <span className="till-pill flex items-center gap-1.5 px-2.5 py-1.5 text-[11px]" style={{ border: `1px solid ${CD.lineSoft}`, borderRadius: 8, background: 'var(--cd-chip)', color: reconInk }} title={serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail. Floats are issued and returned at the vault'}>{serverBacked ? 'In drawer · ledger' : 'Float in drawer'} <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{fmtHome(_tc)}</b></span>}
                 {/* the drawer's own end of the cash rail — same modal, same
                     ledger movement, preset to this branch and this till */}
                 {onMoveCash && <button onClick={() => onMoveCash({ kind: 'issue', bId: _ab && _ab.id, tId: station && station.tillId })} title="Issue a float from the vault, or return cash to it — recorded on the ledger" className="till-move flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'var(--cd-panel)' }}><Ic n="swap" s={13} c={CD.mute} /> Move cash</button>}
@@ -1084,8 +1167,14 @@
         {serverSession && sessionOpen && (
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: reconGreen, flex: 'none' }}></span>
-            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {serverSession.holderName || 'someone'} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
             <span className="ml-auto flex-none" style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+          </div>
+        )}
+        {takenOver && (
+          <div className="till-taken flex items-center gap-2 px-4 py-2 flex-none" data-taken-over="1" style={{ background: 'var(--cd-chip)', borderBottom: `1px solid ${CD.line}` }}>
+            <span className="flex-1 text-[12px]" style={{ color: CD.ink }}>{tillNm + ' was taken over by ' + (takenOver.holderName || 'someone') + ' at ' + (window.CDOS.deskTime ? window.CDOS.deskTime(takenOver.openedAt, '12h', takenOver.timezone) : '') + '.'}</span>
+            <button type="button" onClick={() => window.CDOS.openApp && window.CDOS.openApp('ledger')} className="flex-none text-[12px] font-semibold px-3" style={{ minHeight: 44, borderRadius: 8, border: `1px solid ${CD.pinNote}`, background: CD.panel, color: CD.ink }}>Go to counter</button>
           </div>
         )}
         {sessionClosed && (
@@ -1120,15 +1209,17 @@
       {stripOpen ? (
       <div className="till-operator flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
+          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
           <div className="min-w-0 leading-tight">
             <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: reconInk }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: reconInk }}> · {current.role}</span> : null}</div>
             <div className="text-[10.5px]" style={{ color: reconInk }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
-          {heldByOther
-            ? <button type="button" data-takeover="strip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Take over till</button>
+          {heldByOther && !takenOver && canCount
+            ? <button type="button" data-takeover="strip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[12px] font-medium px-3" style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 8, color: CD.ink, background: CD.panel, minHeight: 44 }}><Ic n="users" s={13} c={CD.mute} /> Take over till</button>
+            : heldByOther && !takenOver
+              ? <span className="text-[12px]" style={{ color: CD.ink }}>Held by {serverSession.holderName || 'someone'}</span>
             : !serverBacked
               ? <button type="button" onClick={() => setHandoffOpen(true)} title="Hand the drawer to the next operator" className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}><Ic n="users" s={13} c={CD.mute} /> Hand off</button>
               : null}
@@ -1137,8 +1228,9 @@
       </div>
       ) : (
       <div className="till-operator flex items-center gap-2 flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
-        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
-        {heldByOther && <button type="button" data-takeover="chip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.ink, background: CD.panel }}><Ic n="users" s={12} c={CD.mute} /> Take over till</button>}
+        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
+        {heldByOther && !takenOver && canCount && <button type="button" data-takeover="chip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[12px] font-medium px-3" style={{ border: `1px solid ${CD.pinNote}`, borderRadius: 999, color: CD.ink, background: CD.panel, minHeight: 44 }}><Ic n="users" s={12} c={CD.mute} /> Take over till</button>}
+        {heldByOther && !takenOver && !canCount && <span className="text-[12px]" style={{ color: CD.ink }}>Held by {serverSession.holderName || 'someone'}</span>}
       </div>
       )}
 
@@ -1200,7 +1292,7 @@
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
                 {!heldByOther && <div className="till-expected-wrap text-[11px] mt-1.5" style={{ color: CD.faint }}>
-                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float'} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
+                  <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected. Keep the count blind.' : 'Reveal and read out the expected float'} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
                     <b style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{unitText(expectedOf(ccy), ccy)} {ccy}</b>
                     {isCounted(ccy) && (() => { const v = cashVariance(ccyTotal(ccy), expectedOf(ccy), ccy); const off = v !== 0; return <b style={{ color: revealExp[ccy] ? (off ? CD.flag : CD.green) : CD.faint, fontFamily: 'Space Mono, monospace', filter: (blind && !revealExp[ccy]) ? 'blur(6px)' : 'none', transition: 'filter .15s', userSelect: 'none' }}>{off ? `${v > 0 ? '+' : ''}${unitText(v, ccy)} ${v > 0 ? 'over' : 'short'}` : '\u2713 balanced'}</b>; })()}
@@ -1370,6 +1462,10 @@
 
         {/* ===== HISTORY ===== */}
         {tab === 'history' && (<div className="p-4">
+          {canCloseDay && handoverRecords.length > 0 && <div className="mb-4" data-handover-records="1">
+            <div className="text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Till handovers</div>
+            {handoverRecords.map(row => <div key={row.batchId} className="text-[12px] px-3 py-2 mb-1" style={{ background: row.off ? CD.amberSoft : 'var(--cd-chip)', color: row.off ? CD.brassText : CD.ink, borderRadius: 8 }}>{row.fromName} to {row.toName}. {row.tillId}. {row.lines.map(line => line.currency + ' ' + (Number(line.variance) === 0 ? 'exact' : line.variance)).join(', ')}. {window.CDOS.deskTime ? window.CDOS.deskTime(row.at, '12h', serverSession && serverSession.timezone) : ''}</div>)}
+          </div>}
           {/* the cash rail — every issue & return for THIS drawer */}
           {(() => {
             const _tRec = ((_ab && _ab.tills) || []).find(t => t.id === (station && station.tillId));
