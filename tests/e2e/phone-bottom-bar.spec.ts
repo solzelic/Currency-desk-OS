@@ -8,44 +8,25 @@ import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
 const { Pool } = requireFromServer("pg") as {
   Pool: new (config: { connectionString: string }) => {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }>;
+    query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }>;
     end: () => Promise<void>;
   };
 };
-const Decimal = requireFromServer("decimal.js") as {
-  new (value: string): { toDecimalPlaces: (places: number, rounding: number) => { toFixed: (places: number) => string } };
-  ROUND_HALF_UP: number;
-};
-const ZERO_PLACES = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF"]);
-const THREE_PLACES = new Set(["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]);
 
-function countedFor(currency: string, amount: string): string {
-  const code = currency.trim().toUpperCase();
-  const places = ZERO_PLACES.has(code) ? 0 : THREE_PLACES.has(code) ? 3 : 2;
-  return new Decimal(amount).toDecimalPlaces(places, Decimal.ROUND_HALF_UP).toFixed(places);
-}
-
-/* The signed-in owner has to hold the till before the denomination
-   rows are on the screen. A session left open by an earlier spec is
-   taken at the book, so the variance is zero. */
-async function bookHeldBy(openedBy: string, sessionNumber: string): Promise<Record<string, string>> {
+/* The denomination rows are on screen only for the person who holds
+   the open session. An earlier spec can leave that session with
+   someone else. This test signs the owner on as the holder for the
+   check, then puts the previous holder back. The book is not rewritten. */
+async function holdAsOwner(ownerId: string, openedBy: string, sessionNumber: string): Promise<number> {
   const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
   try {
     const result = await pool.query(
-      `SELECT b.currency, b.available_amount::text AS amount
-         FROM ledger_till_balances b
-         JOIN ledger_till_sessions s
-           ON s.tenant_id=b.tenant_id AND s.legal_entity_id=b.legal_entity_id
-          AND s.branch_id=b.branch_id AND s.workspace_id=b.workspace_id
-          AND s.till_id=b.till_id
-        WHERE s.status='open' AND s.opened_by=$1 AND s.session_number::text=$2`,
-      [openedBy, sessionNumber],
+      `UPDATE ledger_till_sessions
+          SET opened_by=$1
+        WHERE status='open' AND opened_by=$2 AND session_number::text=$3`,
+      [ownerId, openedBy, sessionNumber],
     );
-    const counts: Record<string, string> = {};
-    for (const row of result.rows) {
-      counts[String(row.currency).trim()] = countedFor(String(row.currency), String(row.amount));
-    }
-    return counts;
+    return result.rowCount ?? 0;
   } finally {
     await pool.end();
   }
@@ -417,7 +398,7 @@ async function rowsBetweenLabels(page: Page): Promise<number> {
 /* A fresh book has no open session, and that banner takes the
    rows. Counting starts once the till is open, so the first load
    this checks is that screen. */
-async function tillOpen(page: Page): Promise<void> {
+async function tillOpen(page: Page): Promise<{ openedBy: string; sessionNumber: string; ownerId: string } | null> {
   const opened = await page.evaluate(async () => {
     const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => ({}));
     const id = String((me as { user?: { id?: string } }).user?.id ?? "");
@@ -434,7 +415,7 @@ async function tillOpen(page: Page): Promise<void> {
     const mine = session?.status === "open" && (opener === id || (tail !== "" && opener.endsWith(":" + tail)));
     if (mine) return { state: "open" as const };
     if (session?.status === "open") {
-      return { state: "held" as const, openedBy: opener, sessionNumber: String(session.sessionNumber ?? "") };
+      return { state: "held" as const, openedBy: opener, sessionNumber: String(session.sessionNumber ?? ""), ownerId: id };
     }
     const res = await fetch("/api/ledger/till-sessions/open", {
       method: "POST",
@@ -445,21 +426,13 @@ async function tillOpen(page: Page): Promise<void> {
     if (res.ok || res.status === 409) return { state: "open" as const };
     return { state: "error" as const, detail: `${res.status} ${await res.text()}` };
   });
-  if (opened.state === "no-ledger") return;
+  if (opened.state === "no-ledger") return null;
+  let previous: { openedBy: string; sessionNumber: string; ownerId: string } | null = null;
   if (opened.state === "held") {
     expect(process.env.SEAM_DATABASE_URL, "the till is held by someone else").toBeTruthy();
-    const counts = await bookHeldBy(opened.openedBy, opened.sessionNumber);
-    expect(Object.keys(counts).length, "no balances for the open till").toBeGreaterThan(0);
-    const handed = await page.evaluate(async (body) => {
-      const res = await fetch("/api/ledger/till-sessions/handover", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ idempotencyKey: "phone-owner-" + Date.now(), counts: body }),
-      });
-      return { ok: res.ok, status: res.status, text: await res.text() };
-    }, counts);
-    expect(handed.ok, `${handed.status} ${handed.text}`).toBe(true);
+    const updated = await holdAsOwner(opened.ownerId, opened.openedBy, opened.sessionNumber);
+    expect(updated, "the signed-in owner did not become the holder").toBeGreaterThan(0);
+    previous = { openedBy: opened.openedBy, sessionNumber: opened.sessionNumber, ownerId: opened.ownerId };
   } else {
     expect(opened.state, opened.state === "error" ? opened.detail : "the till did not open").toBe("open");
   }
@@ -469,13 +442,17 @@ async function tillOpen(page: Page): Promise<void> {
   await sync;
   await dismissTour(page);
   await settled(page);
+  return previous;
 }
 
 test("an owner can bring every denomination fully above the count panel", async ({ page }) => {
+  let previous: { openedBy: string; sessionNumber: string; ownerId: string } | null = null;
+  try {
   for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "j.masri");
-    await tillOpen(page);
+    const held = await tillOpen(page);
+    if (held) previous = held;
     await page.locator('#phonebar [data-phone-app="till"]').click();
     await dismissTour(page);
     await settled(page);
@@ -505,6 +482,12 @@ test("an owner can bring every denomination fully above the count panel", async 
     expect(scrolled.blocked, `${size.width} blocked`).toBe(0);
   }
   await expect(page.locator("#phone-fab")).toHaveCount(0);
+  } finally {
+    if (previous) {
+      const restored = await holdAsOwner(previous.openedBy, previous.ownerId, previous.sessionNumber);
+      if (restored < 1) throw new Error("the previous holder was not restored");
+    }
+  }
 });
 
 /* Desktop window chrome. A phone draws none of it: no traffic
