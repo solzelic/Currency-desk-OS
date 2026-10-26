@@ -77,6 +77,14 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `runMigrations` logs `opening database` before its first query and one
   `migration applied: <id>` line for each migration it applies. A later
   run logs no applied line for a migration already stored.
+- Market rates: `listenServer` reads the newest `market_rates` row and,
+  when it is older than the gap, inserts one snapshot and publishes one
+  board for the demo branch. The gap is exactly 60 minutes.
+  `RATES_SYNC_MINUTES` is clamped to 60, lower and higher. A value other
+  than 60 logs one boot warning and is ignored. After a fresh snapshot
+  the timer waits the full 60 minutes. A snapshot that is already part
+  way through that hour waits only the remainder. The timer does not
+  query every 15 minutes. `RATES_SYNC=off` does not start it.
 - Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
   it once. Saving or clearing a domain, and deleting a desk that had one,
   reload it on this process. That instant reload assumes one server
