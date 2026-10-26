@@ -17166,7 +17166,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     })())), /*#__PURE__*/React.createElement("div", {
       className: "till-tabwrap"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "fld-bar",
+      className: "fld-bar fld-pinned",
       style: {
         margin: '2px -16px 0',
         padding: '0 16px'
