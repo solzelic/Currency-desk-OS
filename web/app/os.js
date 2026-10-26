@@ -15658,11 +15658,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink
       }
     }, "Take over till"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "text-[13px]",
       style: {
         color: CD.mute
       }
-    }, holder ? `Held by ${holder}. ` : '', "Count the cash in the drawer. The book keeps its figures hidden until this count is saved.")), /*#__PURE__*/React.createElement("button", {
+    }, holder ? `Held by ${holder}. ` : '', "Expected amounts stay hidden until you save this count.")), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       "aria-label": "Close",
@@ -15701,7 +15701,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         [c]: e.target.value
       })),
       inputMode: "decimal",
-      placeholder: "0.00",
+      placeholder: (window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2) === 0 ? '0' : '0.00',
       "aria-label": `${c} counted`,
       className: "flex-1 text-right outline-none text-[13px] px-2 py-1.5",
       style: {
@@ -15754,6 +15754,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onOpenNextDay,
     me,
     canCloseDay = true,
+    canCountTill = false,
     baseline,
     setBaseline,
     receipts,
@@ -15850,9 +15851,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [onSessionSync]);
     // hydrate the count fields from whatever the server last recorded for this
     // session, so a reload (or a second teller's screen) shows the same counts
+    const otherHolds = session => !!(serverBacked && session && session.status === 'open' && myId && session.openedBy !== myId);
     const applyLatestCounts = result => {
       const latest = result && result.latestCounts || {};
-      if (!result || !result.session || result.session.status !== 'open' || !Object.keys(latest).length) return;
+      if (!result || !result.session || result.session.status !== 'open' || otherHolds(result.session) || !Object.keys(latest).length) return;
       const nextQuick = {},
         nextMode = {},
         nextAt = {},
@@ -15935,9 +15937,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
-      return window.CDOS.Backend.loadTill().then(result => {
-        applyBook(result);
-        return applySession(result);
+      return window.CDOS.Backend.loadTillSession().then(result => {
+        const session = applySession(result);
+        if (otherHolds(session)) {
+          setServerBalances({});
+          if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
+          return session;
+        }
+        return window.CDOS.Backend.loadTill().then(book => {
+          applyBook(book);
+          return applySession(book);
+        });
       });
     };
     useEffect(() => {
@@ -15950,8 +15960,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         return;
       }
       let active = true;
-      window.CDOS.Backend.loadTill().then(result => {
-        if (!active) return;
+      window.CDOS.Backend.loadTillSession().then(result => {
+        if (!active) return null;
+        const session = applySession(result);
+        if (otherHolds(session)) {
+          setServerBalances({});
+          if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
+          return null;
+        }
+        return window.CDOS.Backend.loadTill();
+      }).then(result => {
+        if (!active || !result) return;
         applyBook(result);
         applySession(result);
       }).catch(error => {
@@ -15969,7 +15988,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // this screen follows money leaving the vault without a remount; the
       // ledger workspace joins it because the first fetch can happen before the
       // OS has learned which till the server is answering for
-    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace]);
+    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace, myId]);
 
     // opening the till is an act, not a side effect of looking at the screen
     const openTill = async () => {
@@ -15978,9 +15997,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setSessionErr('');
       try {
         const session = applySession(await window.CDOS.Backend.openTillSession());
-        const balances = await window.CDOS.Backend.loadTillBalances();
-        applyBook(balances);
-        log && log('Till opened', `Session ${session ? session.sessionNumber : '—'} · ${tillNm}`);
+        if (!otherHolds(session)) {
+          const balances = await window.CDOS.Backend.loadTillBalances();
+          applyBook(balances);
+        }
+        log && log('Till opened', session && session.sessionNumber != null ? `Session ${session.sessionNumber} · ${tillNm}` : String(tillNm || 'Till'));
       } catch (error) {
         setSessionErr(error.message || 'The server would not open this till.');
       } finally {
@@ -16394,6 +16415,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
     const iHold = mine(serverSession);
     const heldByOther = !!(serverBacked && sessionOpen && serverSession && myId && !iHold);
+    useEffect(() => {
+      if (!heldByOther) return;
+      setQuick({});
+      setCounts({});
+      setCountedAt({});
+      try {
+        localStorage.removeItem('cdos_till_quick');
+      } catch (e) {}
+    }, [heldByOther]);
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
     // states and must not render the same. The OS marks the day closed when
@@ -16411,7 +16441,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
       const counts = {};
       serverCcys.forEach(c => {
-        counts[c] = Number(raw[c]).toFixed(2);
+        const places = window.CDOS.displayPlaces ? window.CDOS.displayPlaces(c) : 2;
+        counts[c] = Number(raw[c]).toFixed(places);
       });
       setTillBusy('handover');
       setSessionErr('');
@@ -16421,13 +16452,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           idempotencyKey: key,
           counts
         });
+        try {
+          localStorage.removeItem('cdos_till_quick');
+        } catch (e) {}
         clearAllCounts();
-        applySession(result);
-        applyBook(await window.CDOS.Backend.loadTillBalances());
+        const session = applySession(result);
+        if (!otherHolds(session)) applyBook(await window.CDOS.Backend.loadTillBalances());
         log && log('Till taken over', tillNm);
         setTakeoverOpen(false);
       } catch (error) {
-        setSessionErr(error.message || 'The server would not hand this till over.');
+        setSessionErr(error.message || 'This till could not be handed over. Try again or call a supervisor.');
       } finally {
         setTillBusy('');
       }
@@ -16653,8 +16687,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         /* The count is done. Drop its mark before reading the book, so
            the next count pins the generation it actually starts on. */
         dropCountMark();
-        const balances = await window.CDOS.Backend.loadTillBalances();
-        applyBook(balances);
+        if (!heldByOther) {
+          const balances = await window.CDOS.Backend.loadTillBalances();
+          applyBook(balances);
+        }
         setSessionErr('');
       }
       onCloseDay && onCloseDay(summary);
@@ -16685,9 +16721,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                stored would put the old mark back, and the next count
                would close against the drawer that just moved. */
             clearAllCounts();
-            const fresh = await window.CDOS.Backend.loadTill();
-            applyBook(fresh);
-            applySession(fresh);
+            if (!heldByOther) {
+              const fresh = await window.CDOS.Backend.loadTill();
+              applyBook(fresh);
+              applySession(fresh);
+            }
           } catch (refreshError) {
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }
@@ -16988,7 +17026,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           background: 'var(--cd-chip)',
           color: reconInk
         },
-        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail — floats are issued and returned at the vault'
+        title: serverBacked ? 'What the server ledger says this drawer holds, across every ledger currency' : 'What this drawer holds on the cash rail. Floats are issued and returned at the vault'
       }, serverBacked ? 'In drawer · ledger' : 'Float in drawer', " ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: CD.ink,
@@ -17256,7 +17294,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
-    }, heldByOther ? /*#__PURE__*/React.createElement("button", {
+    }, heldByOther && canCountTill ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-takeover": "strip",
       onClick: () => {
@@ -17331,14 +17369,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 8
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && /*#__PURE__*/React.createElement("button", {
+    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && canCountTill && /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-takeover": "chip",
       onClick: () => {
         setSessionErr('');
         setTakeoverOpen(true);
       },
-      className: "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1",
+      className: "flex items-center gap-1.5 text-[13px] font-medium px-2.5 py-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 999,
@@ -17521,9 +17559,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
-      readOnly: ccyMode(ccy) !== 'total',
+      value: heldByOther ? '' : ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
+      readOnly: heldByOther || ccyMode(ccy) !== 'total',
       onFocus: () => {
+        if (heldByOther) return;
         if (ccyMode(ccy) !== 'total') {
           setMode(o => ({
             ...o,
@@ -17536,6 +17575,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       },
       onChange: e => {
+        if (heldByOther) return;
         setQuick(o => ({
           ...o,
           [ccy]: e.target.value.replace(/[^0-9.]/g, '')
@@ -17564,7 +17604,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => toggleReveal(ccy),
-      title: revealExp[ccy] ? 'Hide expected — keep the count blind' : 'Reveal & read out the expected float',
+      title: revealExp[ccy] ? 'Hide expected. Keep the count blind.' : 'Reveal & read out the expected float',
       className: "till-expected inline-flex items-center gap-1.5 flex-wrap",
       style: {
         border: 0,
@@ -17617,7 +17657,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           fontFamily: 'Space Mono, monospace'
         }
       }, sinceLabel(ts)), " \xB7 ", atLabel(ts)) : /*#__PURE__*/React.createElement("span", null, "Not counted yet today");
-    })())), /*#__PURE__*/React.createElement("div", {
+    })())), !heldByOther && /*#__PURE__*/React.createElement("div", {
       className: "text-right flex-none till-grand"
     }, /*#__PURE__*/React.createElement("div", {
       className: "till-grand-label text-[10px] uppercase tracking-widest",
@@ -18700,7 +18740,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       onDone: doHandoff
     }), takeoverOpen && /*#__PURE__*/React.createElement(TakeoverSheet, {
       currencies: serverCcys,
-      holder: current && current.operator,
+      holder: serverSession && serverSession.holderName,
       busy: tillBusy === 'handover',
       error: sessionErr,
       onClose: () => setTakeoverOpen(false),
@@ -71154,6 +71194,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             me: me,
             myId: srvUser && srvUser.id,
             canCloseDay: can('canCloseDay'),
+            canCountTill: !!(srvUser && {
+              teller: 1,
+              supervisor: 1,
+              branch_manager: 1,
+              administrator: 1
+            }[srvUser.role]),
             baseline: baseline,
             setBaseline: setBaseline,
             receipts: receipts,

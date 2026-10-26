@@ -109,10 +109,17 @@ test("a second teller takes over a held till from the deal form", async ({ page,
 
   await signInAtDesk(page, "m.costa");
   await dismissTour(page);
+  const balanceCalls: string[] = [];
+  page.on("request", (req) => {
+    if (req.url().includes("/api/ledger/till-balances")) balanceCalls.push(req.url());
+  });
   /* A teller's dock has no Cash drawer. The deal form opens it the same
      way, through openApp, which does not consult that dock. */
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("till"));
   await expect(page.locator(".till-sessionline")).toContainText("opened by a.singh", { timeout: 30_000 });
+  expect(balanceCalls, balanceCalls.join("\n")).toEqual([]);
+  await expect(page.locator(".till-grand")).toHaveCount(0);
+  await expect(page.locator(".till-counted input").first()).toHaveValue("");
   await page.locator(".till-pick button").first().click();
   const menu = page.locator(".till-pick");
   await expect(menu.getByText("a.singh on now")).toBeVisible();
@@ -144,7 +151,8 @@ test("a second teller takes over a held till from the deal form", async ({ page,
   await take.click();
   const sheet = page.getByRole("dialog", { name: "Take over till" });
   await expect(sheet).toBeVisible({ timeout: 20_000 });
-  await expect(sheet).not.toContainText(/expected/i);
+  await expect(sheet).toContainText("Expected amounts stay hidden until you save this count.");
+  await expect(sheet).toContainText(/Held by A.\s*Singh/);
   const before = await sheet.innerText();
   for (const leaked of ["25000", "25,000", "12000", "12,000", "7000", "7,000", "3500", "3,500"]) {
     expect(before, leaked).not.toContain(leaked);
