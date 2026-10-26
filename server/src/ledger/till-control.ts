@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { civilDate, civilTodayInZone } from "../civil-date.js";
 import { branchZone } from "./branch-day.js";
 import Decimal from "decimal.js";
@@ -102,6 +102,19 @@ export function recordedVariance(
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
 const HANDOVER_MISMATCH = "The count does not match. A supervisor must approve this takeover.";
+/* The approver sheet is not in this release. A request that names an
+   approver or a PIN is refused before the PIN is read. This is a
+   constant, not an environment variable. The call below stays so the
+   later change can turn it on. */
+const HANDOVER_APPROVAL_ENABLED: boolean = false;
+const handoverRequestHash = (
+  counts: Counts,
+  approval?: { staffId: string; pin: string },
+) => createHash("sha256").update(JSON.stringify({
+  counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
+  approverStaffId: approval?.staffId ?? "",
+  approverPin: approval?.pin ?? "",
+})).digest("hex");
 
 async function approverFor(
   client: pg.PoolClient,
@@ -210,10 +223,14 @@ export class TillControlService {
           const figure: Record<string, unknown> = {
             batchId: row.batch_id,
             kind: row.count_kind,
-            counted: row.counted_amount,
-            actorId: row.actor_id,
             countedAt: new Date(row.counted_at).toISOString(),
           };
+          /* Counted figures and who entered them belong to the holder.
+             A non-holder gets the currency and the time, not the amount. */
+          if (openedBy === actor.userId) {
+            figure.counted = row.counted_amount;
+            figure.actorId = row.actor_id;
+          }
           /* The handover copy is the count the incoming teller just gave.
              Expected and variance are the book. They stay off this payload. */
           if (row.count_kind !== "handover") {
@@ -806,6 +823,8 @@ export class TillControlService {
     approval?: { staffId: string; pin: string },
   ): Promise<Awaited<ReturnType<TillControlService["current"]>>> {
     const client = await this.pool.connect();
+    const hash = handoverRequestHash(counts, approval);
+    let settled = false;
     const remember = (response: unknown) => client.query(
       `UPDATE ledger_idempotency SET response=$1
         WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4
@@ -817,23 +836,29 @@ export class TillControlService {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       const role = await authorizeLedgerActor(client, actor, "till:count");
       const replay = await client.query(
-        `SELECT response FROM ledger_idempotency
+        `SELECT response, actor_id, request_hash FROM ledger_idempotency
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
             AND workspace_id=$4 AND till_id=$5 AND operation='till-handover'
             AND idempotency_key=$6
           FOR UPDATE`,
         [...scope(actor), idempotencyKey],
       );
-      if (replay.rowCount && replay.rows[0].response) {
-        await client.query("COMMIT");
-        return replay.rows[0].response as Awaited<ReturnType<TillControlService["current"]>>;
+      if (replay.rowCount) {
+        const row = replay.rows[0] as { response?: unknown; actor_id?: string | null; request_hash?: string | null };
+        if (row.actor_id !== actor.userId || row.request_hash !== hash) {
+          throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
+        }
+        if (row.response) {
+          await client.query("COMMIT");
+          return row.response as Awaited<ReturnType<TillControlService["current"]>>;
+        }
       }
       if (!replay.rowCount) {
         const claimed = await client.query(
           `INSERT INTO ledger_idempotency
-            (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key)
-           VALUES ($1,$2,$3,$4,$5,'till-handover',$6) ON CONFLICT DO NOTHING`,
-          [...scope(actor), idempotencyKey],
+            (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key,actor_id,request_hash)
+           VALUES ($1,$2,$3,$4,$5,'till-handover',$6,$7,$8) ON CONFLICT DO NOTHING`,
+          [...scope(actor), idempotencyKey, actor.userId, hash],
         );
         if (!claimed.rowCount) {
           throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
@@ -859,6 +884,41 @@ export class TillControlService {
           "Every authoritative till currency must be counted before closing.",
         );
       }
+      /* A refusal is committed on its own, so the audit row survives the
+         403. The first submitted count is the one stored on that row.
+         A later count from someone who cannot approve is the same 403. */
+      const refuse = async (): Promise<never> => {
+        const counted = Object.keys(counts).sort().map((currency) => ({
+          currency,
+          counted: String(counts[currency] ?? ""),
+        }));
+        await client.query(
+          `INSERT INTO ledger_audit_events
+            (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+             action,target_id,correlation_id,created_at,prior_session_id,variances)
+           VALUES ($1,$2,$3,$4,$5,$6,'till.handover.refused',$7,$8,clock_timestamp(),$9,$10::jsonb)`,
+          [
+            randomUUID(),
+            ...scope(actor).slice(0, 4),
+            actor.userId,
+            actor.tillId,
+            randomUUID(),
+            session.session_id,
+            JSON.stringify(counted),
+          ],
+        );
+        await client.query("COMMIT");
+        settled = true;
+        throw new LedgerError("HANDOVER_APPROVAL_REQUIRED", HANDOVER_MISMATCH);
+      };
+      const prior = await client.query(
+        `SELECT 1 FROM ledger_audit_events
+          WHERE action='till.handover.refused' AND prior_session_id=$1
+          LIMIT 1`,
+        [session.session_id],
+      );
+      if (prior.rowCount && !hasBackendPermission(role, "till:handover:approve")) await refuse();
+      if (approval && !HANDOVER_APPROVAL_ENABLED) await refuse();
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
       const board = await client.query(
         `SELECT board_rows FROM rate_boards
@@ -885,8 +945,11 @@ export class TillControlService {
       }
       let approver: { id: string; role: string } | null = null;
       if (unpriced || absCad.gt(new Decimal("20"))) {
-        if (!approval) throw new LedgerError("HANDOVER_APPROVAL_REQUIRED", HANDOVER_MISMATCH);
-        approver = await approverFor(client, actor, approval.staffId, approval.pin);
+        if (HANDOVER_APPROVAL_ENABLED && approval) {
+          approver = await approverFor(client, actor, approval.staffId, approval.pin);
+        } else {
+          await refuse();
+        }
       }
       const opener = session.opened_by as string;
       const writeBatch = async (sessionId: string, kind: "close" | "handover") => {
@@ -992,7 +1055,7 @@ export class TillControlService {
       await client.query("COMMIT");
       return response;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (!settled) await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
         throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
       }

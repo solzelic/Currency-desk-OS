@@ -79,6 +79,8 @@ export const migrations: readonly Migration[] = [
   ["057_handover_audit_fields", "src/db/migrations/057_handover_audit_fields.sql"],
   /* 058 is the handover approver and the mid stored on the count. 057 is on this branch. */
   ["058_handover_approver_and_variances", "src/db/migrations/058_handover_approver_and_variances.sql"],
+  /* 059 binds a till handover key to the actor and a hash of the body. 058 is on this branch. */
+  ["059_handover_idempotency_actor", "src/db/migrations/059_handover_idempotency_actor.sql"],
 ] as const;
 
 type MigrationReader = {

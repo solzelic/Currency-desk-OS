@@ -706,8 +706,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
-      const approval = parsed.data.approverStaffId && parsed.data.approverPin
-        ? { staffId: parsed.data.approverStaffId, pin: parsed.data.approverPin }
+      const approval = parsed.data.approverStaffId || parsed.data.approverPin
+        ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "" }
         : undefined;
       return actor
         ? reply.code(201).send(await tillControl.handover(
