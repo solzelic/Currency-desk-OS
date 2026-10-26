@@ -28,7 +28,7 @@ import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
-import { hasHostedSite } from "../sites.js";
+import { hasHostedSite, refreshSiteDomains, warnSiteDomainRefreshFailure } from "../sites.js";
 import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
@@ -1607,6 +1607,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     await db.delete(schema.tenants).where(eq(schema.tenants.id, id));
     // record the deletion under the admin's own tenant so it survives
     await audit(db, { tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId, actorId: who.id, action: "admin.desk_deleted", detail: { id, name: t.name, slug: t.siteSlug } });
+    if (t.siteDomain) {
+      try {
+        await refreshSiteDomains(db);
+      } catch (error) {
+        warnSiteDomainRefreshFailure(error);
+      }
+    }
     return { ok: true, deleted: id };
   });
 }

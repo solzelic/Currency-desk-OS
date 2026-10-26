@@ -85,6 +85,16 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   the timer waits the full 60 minutes. A snapshot that is already part
   way through that hour waits only the remainder. The timer does not
   query every 15 minutes. `RATES_SYNC=off` does not start it.
+- Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
+  it once. Saving or clearing a domain, and deleting a desk that had one,
+  reload it on this process. That instant reload assumes one server
+  instance. Staging and live each run as a single instance on Render free.
+  With more instances, a domain saved on one can lag on the others until
+  the safety reload, up to 30 minutes. The safety reload runs every 30
+  minutes, or longer when `SITE_DOMAIN_REFRESH_MINUTES` is set, and never
+  longer than 24 hours. Anything under 30 is 30. Anything above 1440 is
+  1440. An unknown Host does not query the database. A Host with one
+  trailing dot matches the saved domain.
 - Ledger tables: raw SQL — `server/src/ledger/migration.sql` registered as
   migration `001_ledger`, then `server/src/db/migrations/002…`. Append-only
   book. Invariants: `docs/CASH_OWNERSHIP_INVARIANTS.md`.

@@ -20,7 +20,7 @@ import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval.js";
 import { startRatesSync } from "./rates/sync-schedule.js";
-import { refreshSiteDomains } from "./sites.js";
+import { siteDomainRefreshIntervalMs, startSiteDomainRefresh } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {
@@ -122,9 +122,11 @@ if (shouldPopulateDemoDesk()) {
 }
 
   const app = await buildApp(handle.db);
-  // custom-domain → site map: buildApp loads it once; keep it fresh so a
-  // domain recorded on another instance (or straight in the DB) takes effect
-  setInterval(() => void refreshSiteDomains(handle.db).catch(() => {}), 60 * 1000).unref();
+  // buildApp loaded the custom-domain map once. A shop save reloads it on
+  // this process. This safety pass covers another instance or a direct
+  // database edit. The gap is 30 minutes to 24 hours
+  // (SITE_DOMAIN_REFRESH_MINUTES) so an idle Neon database can suspend.
+  startSiteDomainRefresh(handle.db, siteDomainRefreshIntervalMs(process.env.SITE_DOMAIN_REFRESH_MINUTES));
   return { app, db: handle.db };
 }
 
