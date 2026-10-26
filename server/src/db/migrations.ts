@@ -72,6 +72,9 @@ export const migrations: readonly Migration[] = [
      ledger_structuring_watch_acks. The session role is on the row.
      Update, delete, and truncate are refused. */
   ["055_structuring_ack", "src/db/migrations/055_structuring_ack.sql"],
+  /* 056 marks a tenant as a staging test shop. Nothing sets it yet.
+     055 is on main, so this file is 056. */
+  ["056_tenant_test_shop", "src/db/migrations/056_tenant_test_shop.sql"],
 ] as const;
 
 type MigrationReader = {

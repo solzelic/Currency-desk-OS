@@ -10,7 +10,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { runMigrations } from "./migrations.js";
+import { runMigrations, type Migration } from "./migrations.js";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -41,6 +41,7 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_test_shop boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -690,13 +691,17 @@ CREATE TABLE IF NOT EXISTS idv_shop_config (
 );
 `;
 
-/** App schema plus ledger migrations, on the connection string the caller passes. */
-export async function provisionPostgres(connectionString: string) {
+/** App schema plus ledger migrations, on the connection string the caller passes.
+    A caller can stop before the last migration to rehearse an upgrade. */
+export async function provisionPostgres(
+  connectionString: string,
+  configuredMigrations?: readonly Migration[],
+) {
   const pool = new pg.Pool({ connectionString });
   const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
   if (typeExists.rows.length === 0) await pool.query(ENUM_DDL);
   await pool.query(DDL);
-  await runMigrations(pool);
+  await runMigrations(pool, configuredMigrations);
   return pool;
 }
 
