@@ -13,7 +13,7 @@ import { hasBackendPermission } from "../src/auth/permissions.js";
 import { createDb, provisionPostgres, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { watchAckGate } from "../src/ledger/structuring-watch.js";
+import { WATCH_ACK_TABLE, watchAckGate } from "../src/ledger/structuring-watch.js";
 import { insertCashDeal } from "./helpers/route-sweep.js";
 
 const roles = createRequire(import.meta.url)("../../shared/str-role.js") as {
@@ -101,7 +101,7 @@ async function asRole(role: string) {
 }
 
 function isWatchQuery(sql: string) {
-  return /make_interval\s*\(\s*days/i.test(sql) || /ledger_structuring_acks/i.test(sql);
+  return /make_interval\s*\(\s*days/i.test(sql) || sql.includes(WATCH_ACK_TABLE);
 }
 
 async function captureSql(run: () => Promise<void>) {
@@ -129,12 +129,12 @@ function daysAgo(days: number) {
 }
 
 async function clearBook() {
-  await pool.query("ALTER TABLE ledger_structuring_acks DISABLE TRIGGER ledger_structuring_acks_no_truncate");
+  await pool.query(`ALTER TABLE ${WATCH_ACK_TABLE} DISABLE TRIGGER ${WATCH_ACK_TABLE}_no_truncate`);
   await pool.query(
-    `TRUNCATE ledger_structuring_acks, ledger_filing_flags, ledger_report_filings,
+    `TRUNCATE ${WATCH_ACK_TABLE}, ledger_filing_flags, ledger_report_filings,
             ledger_audit_events, ledger_transactions, ledger_customers, ledger_principals CASCADE`,
   );
-  await pool.query("ALTER TABLE ledger_structuring_acks ENABLE TRIGGER ledger_structuring_acks_no_truncate");
+  await pool.query(`ALTER TABLE ${WATCH_ACK_TABLE} ENABLE TRIGGER ${WATCH_ACK_TABLE}_no_truncate`);
 }
 
 async function addCustomer(id: string, name: string, where = scope) {
@@ -175,7 +175,7 @@ async function duringAck(run: (client: pg.PoolClient) => Promise<unknown>) {
   };
   try {
     const saved = await acknowledge("cust-watch");
-    const rows = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const rows = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     const want = committed ? { status: 404, rows: 0, committed } : { status: 200, rows: 1, committed };
     expect({ status: saved.statusCode, rows: rows.rows[0].n, committed }).toEqual(want);
     if (!committed) expect((await watchItem("cust-watch")).count).toBe(2);
@@ -393,7 +393,7 @@ postgres("str filing and the transaction field strip", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(refused.statusCode).toBe(403);
-    const none = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const none = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     expect(none.rows[0].n).toBe(0);
     const saved = await app.inject({
       method: "POST",
@@ -402,7 +402,7 @@ postgres("str filing and the transaction field strip", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(saved.statusCode, saved.body).toBe(200);
-    const once = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const once = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     expect(once.rows[0].n).toBe(1);
     const again = await app.inject({
       method: "POST",
@@ -411,7 +411,7 @@ postgres("str filing and the transaction field strip", () => {
       payload: { customerId: "cust-watch" },
     });
     expect(again.statusCode).toBe(403);
-    const still = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const still = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     expect(still.rows[0].n).toBe(1);
   });
 
@@ -420,7 +420,7 @@ postgres("str filing and the transaction field strip", () => {
     expect((await acknowledge("cust-watch")).statusCode).toBe(200);
     expect((await acknowledge("cust-watch", "j.masri")).statusCode).toBe(200);
     const rows = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks WHERE customer_id = $1",
+      `SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE} WHERE customer_id = $1`,
       ["cust-watch"],
     );
     expect(rows.rows[0].n).toBe(2);
@@ -436,9 +436,9 @@ postgres("str filing and the transaction field strip", () => {
 
   it("refuses an update or a delete of a structuring acknowledgement", async () => {
     expect((await acknowledge("cust-watch")).statusCode).toBe(200);
-    await expect(pool.query("UPDATE ledger_structuring_acks SET actor_id = actor_id")).rejects.toThrow(/append-only/);
-    await expect(pool.query("DELETE FROM ledger_structuring_acks")).rejects.toThrow(/append-only/);
-    const kept = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    await expect(pool.query(`UPDATE ${WATCH_ACK_TABLE} SET actor_id = actor_id`)).rejects.toThrow(/append-only/);
+    await expect(pool.query(`DELETE FROM ${WATCH_ACK_TABLE}`)).rejects.toThrow(/append-only/);
+    const kept = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     expect(kept.rows[0].n).toBe(1);
   });
 
@@ -567,7 +567,7 @@ postgres("str filing and the transaction field strip", () => {
       expect(refused.json().message, id).toBe("This customer is not on the watch.");
       expect(await watchItem(id), id).toBeUndefined();
     }
-    const rows = await pool.query("SELECT count(*)::int AS n FROM ledger_structuring_acks");
+    const rows = await pool.query(`SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`);
     expect(rows.rows[0].n).toBe(0);
   });
 
@@ -576,7 +576,7 @@ postgres("str filing and the transaction field strip", () => {
     expect(refused.statusCode).toBe(404);
     expect(refused.json().message).toBe("This customer is not on the watch.");
     const rows = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
+      `SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`,
     );
     expect(rows.rows[0].n).toBe(0);
   });
@@ -587,7 +587,7 @@ postgres("str filing and the transaction field strip", () => {
     expect(refused.statusCode).toBe(404);
     expect(refused.json().message).toBe("This customer is not on the watch.");
     const rows = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
+      `SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`,
     );
     expect(rows.rows[0].n).toBe(0);
   });
@@ -605,7 +605,7 @@ postgres("str filing and the transaction field strip", () => {
     const admin = await acknowledge("cust-watch", "j.masri");
     expect(admin.statusCode, admin.body).toBe(200);
     const roles = await pool.query(
-      "SELECT actor_role FROM ledger_structuring_acks ORDER BY ack_id",
+      `SELECT actor_role FROM ${WATCH_ACK_TABLE} ORDER BY ack_id`,
     );
     expect(roles.rows.map((row) => row.actor_role)).toEqual([
       "supervisor",
@@ -617,10 +617,10 @@ postgres("str filing and the transaction field strip", () => {
     const saved = await acknowledge("cust-watch");
     expect(saved.statusCode, saved.body).toBe(200);
     await expect(
-      pool.query("TRUNCATE ledger_structuring_acks"),
+      pool.query(`TRUNCATE ${WATCH_ACK_TABLE}`),
     ).rejects.toThrow(/append-only/);
     const kept = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_structuring_acks",
+      `SELECT count(*)::int AS n FROM ${WATCH_ACK_TABLE}`,
     );
     expect(kept.rows[0].n).toBe(1);
   });

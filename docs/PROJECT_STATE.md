@@ -103,9 +103,10 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `GET /api/ledger/structuring-watch` and
   `POST /api/ledger/structuring-watch/acknowledge` are those four roles.
   A teller is refused before a row is written. Each acknowledgement inserts
-  a new row, stores the session role, and stores the deal ids it saw. The
-  customer stays acknowledged only while the current watch deals are that
-  set and the ack time is at or after the newest of them. Update, delete,
+  a new row in `ledger_structuring_watch_acks`, stores the session role,
+  and stores the deal ids it saw. The customer stays acknowledged only
+  while the current watch deals are that set and the ack time is at or
+  after the newest of them. Update, delete,
   and truncate are refused by `ledger_append_only`. A customer who is not
   on the watch is refused and nothing is written.
   `canSeeStructuringWatch`, `STR_KEYS`, and `WATCH_KEYS` live in

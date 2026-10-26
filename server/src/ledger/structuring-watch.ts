@@ -20,6 +20,7 @@ const { canSeeStructuringWatch } = createRequire(import.meta.url)("../../../shar
 
 const WINDOW_DAYS = 7;
 const REFUSED = "You cannot open this list.";
+export const WATCH_ACK_TABLE = "ledger_structuring_watch_acks";
 
 export const watchAckGate: { between: (() => Promise<void>) | null } = {
   between: null,
@@ -71,7 +72,7 @@ async function loadWatch(client: pg.PoolClient, actor: LedgerActor): Promise<Wat
        LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
        LEFT JOIN LATERAL (
          SELECT actor_id, acknowledged_at, deal_ids
-           FROM ledger_structuring_acks
+           FROM ${WATCH_ACK_TABLE}
           WHERE tenant_id = t.tenant_id
             AND legal_entity_id = t.legal_entity_id
             AND branch_id = t.branch_id
@@ -227,7 +228,7 @@ export class StructuringWatchService {
       }
       if (watchAckGate.between) await watchAckGate.between();
       await client.query(
-        `INSERT INTO ledger_structuring_acks
+        `INSERT INTO ${WATCH_ACK_TABLE}
            (tenant_id, legal_entity_id, branch_id, customer_id,
             actor_id, actor_role, deal_ids)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,

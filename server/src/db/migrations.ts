@@ -67,8 +67,9 @@ export const migrations: readonly Migration[] = [
   ["053_lctr_filing_flag", "src/db/migrations/053_lctr_filing_flag.sql"],
   /* 054 is the per-customer lock a reversal takes. A booking does not take it. */
   ["054_watch_customer_lock", "src/db/migrations/054_watch_customer_lock.sql"],
-  /* 055 stores each structuring-watch acknowledgement as its own row.
-     The session role is on the row. Update, delete, and truncate are refused. */
+  /* 055 stores each structuring-watch acknowledgement in
+     ledger_structuring_watch_acks. The session role is on the row.
+     Update, delete, and truncate are refused. */
   ["055_structuring_ack", "src/db/migrations/055_structuring_ack.sql"],
 ] as const;
 
