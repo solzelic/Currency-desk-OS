@@ -10,10 +10,12 @@ import {
   siteDomainRefreshIntervalMs,
   siteSlugForHost,
   startSiteDomainRefresh,
+  SITE_DOMAIN_REFRESH_MAX_MS,
   SITE_DOMAIN_REFRESH_MIN_MS,
 } from "../src/sites.js";
 
 const MIN = 30 * 60 * 1000;
+const DAY = 24 * 60 * 60 * 1000;
 
 function countingDb(rows: () => { slug: string | null; domain: string | null }[]) {
   let calls = 0;
@@ -55,6 +57,11 @@ describe("site domain refresh interval", () => {
     expect(siteDomainRefreshIntervalMs("30")).toBe(MIN);
     expect(siteDomainRefreshIntervalMs("45")).toBe(45 * 60 * 1000);
     expect(siteDomainRefreshIntervalMs("90.9")).toBe(90 * 60 * 1000);
+    expect(SITE_DOMAIN_REFRESH_MAX_MS).toBe(DAY);
+    expect(siteDomainRefreshIntervalMs("1440")).toBe(DAY);
+    expect(siteDomainRefreshIntervalMs("1e9")).toBe(DAY);
+    expect(siteDomainRefreshIntervalMs("Infinity")).toBe(DAY);
+    expect(siteDomainRefreshIntervalMs("99999")).toBe(DAY);
   });
 
   it("does not query the database on a 60 second timer", async () => {
@@ -72,6 +79,7 @@ describe("site domain refresh interval", () => {
     expect(counter.calls()).toBe(1);
     expect(siteSlugForHost("newshop.example")).toBe("yorkfx");
     expect(siteSlugForHost("www.newshop.example:443")).toBe("yorkfx");
+    expect(siteSlugForHost("newshop.example.")).toBe("yorkfx");
   });
 
   it("respects a safety interval longer than 30 minutes", async () => {
@@ -85,6 +93,33 @@ describe("site domain refresh interval", () => {
     expect(counter.calls()).toBe(1);
     await vi.advanceTimersByTimeAsync(45 * 60 * 1000);
     expect(counter.calls()).toBe(2);
+  });
+
+  it("caps a direct 1e12 delay at 24 hours", async () => {
+    vi.useFakeTimers();
+    const counter = countingDb(() => []);
+    stops.push(startSiteDomainRefresh(counter.db, 1e12));
+    await vi.advanceTimersByTimeAsync(DAY - 1);
+    expect(counter.calls()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(counter.calls()).toBe(1);
+  });
+
+  it("logs a warning when a safety reload fails", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const db = {
+      select() {
+        return { from() { return { where: async () => { throw new Error("db down"); } }; } };
+      },
+    } as unknown as Db;
+    stops.push(startSiteDomainRefresh(db, SITE_DOMAIN_REFRESH_MIN_MS));
+    try {
+      await vi.advanceTimersByTimeAsync(SITE_DOMAIN_REFRESH_MIN_MS);
+      expect(warn).toHaveBeenCalledWith("[site-domains] refresh failed: db down");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("boot does not schedule the old 60 second domain refresh", () => {

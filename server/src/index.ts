@@ -122,8 +122,8 @@ if (shouldPopulateDemoDesk()) {
 
   const app = await buildApp(handle.db);
   // buildApp loaded the custom-domain map once. A shop save reloads it on
-  // that request. This safety pass covers a domain written on another
-  // instance or straight in the database. The floor is 30 minutes
+  // this process. This safety pass covers another instance or a direct
+  // database edit. The gap is 30 minutes to 24 hours
   // (SITE_DOMAIN_REFRESH_MINUTES) so an idle Neon database can suspend.
   startSiteDomainRefresh(handle.db, siteDomainRefreshIntervalMs(process.env.SITE_DOMAIN_REFRESH_MINUTES));
   return { app, db: handle.db };

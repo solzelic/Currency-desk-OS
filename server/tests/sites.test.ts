@@ -249,4 +249,24 @@ describe("domain map freshness", () => {
     expect(gone.body).toContain("more trades, less paperwork");
     expect(siteDomainRefreshCount()).toBe(before + 2);
   });
+
+  it("serves a host that still has its trailing dot", async () => {
+    const admin = await login("j.masri");
+    const saved = await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: cookieOf(admin),
+      payload: { siteDomain: "shop.example" },
+    });
+    expect(saved.statusCode).toBe(200);
+    const home = await app.inject({ method: "GET", url: "/", headers: { host: "shop.example." } });
+    expect(home.statusCode).toBe(200);
+    expect(home.body).toContain("York");
+    await app.inject({
+      method: "PATCH",
+      url: "/api/tenant",
+      cookies: cookieOf(admin),
+      payload: { siteDomain: null },
+    });
+  });
 });
