@@ -191,9 +191,11 @@ export class TillControlService {
             kind: row.count_kind,
             countedAt: new Date(row.counted_at).toISOString(),
           };
-          /* Counted figures and who entered them belong to the holder.
-             A non-holder gets the currency and the time, not the amount. */
-          if (openedBy === actor.userId) {
+          /* Counted figures and who entered them belong to the holder
+             while the session is open. A non-holder gets the currency
+             and the time, not the amount. A closed session is the record
+             the closer just wrote. */
+          if (String(session.rows[0].status) !== "open" || openedBy === actor.userId) {
             figure.counted = row.counted_amount;
             figure.actorId = row.actor_id;
           }
