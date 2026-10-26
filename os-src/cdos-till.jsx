@@ -77,6 +77,7 @@
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = (id) => String(id || '').split(':').pop() || '—';
+  const initialsOf = (name) => String(name || '').split(/[\s.]+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const clockOf = (ms) => ms ? new Date(ms).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
   /* WHAT THIS DRAWER HAS BEEN COUNTED AT, AND ONLY THAT.
@@ -238,7 +239,7 @@
             <span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n="users" s={17} c="var(--cd-on-ink)" /></span>
             <div className="flex-1 min-w-0">
               <div className="font-semibold leading-tight" style={{ color: CD.ink }}>Take over till</div>
-              <div className="text-[13px]" style={{ color: CD.mute }}>{`Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`}</div>
+              <div className="text-[13px]" data-held-by="" style={{ color: CD.mute, fontSize: 13 }}>{`Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`}</div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="p-1.5"><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
@@ -281,6 +282,7 @@
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [pendingTakeover, setPendingTakeover] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
 
@@ -356,6 +358,7 @@
     const applySession = (result) => {
       const session = (result && result.session) || null;
       setServerSession(session);
+      setPendingTakeover((result && result.pendingTakeover) || null);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -404,6 +407,7 @@
         setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
+        setPendingTakeover(null);
         setServerBalanceError('');
         return;
       }
@@ -609,16 +613,18 @@
     /* WHO IS ON THIS DRAWER.
 
        On a server-backed desk the answer is the session's, and only the
-       session's: the person who opened this till, at the time the ledger
+       session's: the holder's display name, at the time the ledger
        recorded. The strip used to read a local shift map seeded from the demo
        roster's `teller` field, so switching drawers renamed the operator to
        "M. Costa" while A. Singh was signed in and the server was recording
-       actor_id = a.singh — the screen and the audit trail naming two different
-       people over the same cash. When the ledger has no open session for this
-       till there is no operator to name, and the strip says so rather than
-       falling back to a roster. */
+       actor_id = a.singh. The screen and the audit trail were naming two
+       different people over the same cash. The login id is not that name.
+       When the ledger has no display name the strip says Unknown, the same
+       word as the takeover sheet. When the ledger has no open session for
+       this till there is no operator to name, and the strip says so rather
+       than falling back to a roster. */
     const serverShift = serverBacked && serverSession && serverSession.status === 'open'
-      ? { operator: personOf(serverSession.openedBy), role: '', since: new Date(serverSession.openedAt).getTime() }
+      ? { operator: serverSession.holderName || 'Unknown', role: '', since: new Date(serverSession.openedAt).getTime() }
       : null;
     const current = serverBacked ? serverShift : shifts[tillId];
     // seed the operator for this till on first view — from the till's assigned
@@ -1128,8 +1134,14 @@
         {serverSession && sessionOpen && (
           <div className="till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}`, color: reconInk }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: reconGreen, flex: 'none' }}></span>
-            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {personOf(serverSession.openedBy)} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
+            <span>Session <b style={{ color: CD.ink, fontFamily: 'Space Mono, monospace' }}>#{serverSession.sessionNumber}</b> open · {serverSession.businessDate} · opened by {serverSession.holderName || 'Unknown'} at {clockOf(new Date(serverSession.openedAt).getTime())}</span>
             <span className="ml-auto flex-none" style={{ color: reconInk }}>{serverCcys.length} ledger currenc{serverCcys.length === 1 ? 'y' : 'ies'} · {countedN}/{recon.length} counted</span>
+          </div>
+        )}
+        {iHold && pendingTakeover && (
+          <div className="till-waiting flex items-center gap-2 px-4 py-2 flex-none text-[13px]" role="status" data-waiting="takeover" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+            <Ic n="users" s={14} c={CD.ink} />
+            <span>{pendingTakeover.name + "'s takeover is waiting for a supervisor."}</span>
           </div>
         )}
         {sessionClosed && (
@@ -1164,7 +1176,7 @@
       {stripOpen ? (
       <div className="till-operator flex items-center justify-between gap-2 px-4 py-2 flex-none" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>
+          <span className="grid place-items-center flex-none font-semibold" style={{ width: 28, height: 28, borderRadius: 8, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 10.5 }}>{current ? initialsOf(current.operator) : '—'}</span>
           <div className="min-w-0 leading-tight">
             <div className="text-[12.5px]" style={{ color: CD.ink }}><span style={{ color: reconInk }}>On the drawer:</span> <b>{current ? current.operator : '—'}</b>{current && current.role ? <span className="text-[11px]" style={{ color: reconInk }}> · {current.role}</span> : null}</div>
             <div className="text-[10.5px]" style={{ color: reconInk }}>{current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : (serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned')}{requireCount ? ' · count required at handoff' : ''}</div>
@@ -1181,7 +1193,7 @@
       </div>
       ) : (
       <div className="till-operator flex items-center gap-2 flex-none px-4 py-1.5" style={{ background: 'var(--cd-panel)', borderBottom: `1px solid ${CD.line}` }}>
-        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
+        <button onClick={() => setStripOpen(true)} title="Show who's on the drawer" className="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.mute, background: CD.panel }}><span className="grid place-items-center flex-none font-semibold" style={{ width: 16, height: 16, borderRadius: 5, background: CD.ink, color: 'var(--cd-on-ink)', fontSize: 8 }}>{current ? initialsOf(current.operator) : '—'}</span>{current ? current.operator : 'Operator'} · on the drawer</button>
         {heldByOther && canCountTill && <button type="button" data-takeover="chip" onClick={() => { setSessionErr(''); setTakeoverOpen(true); }} className="flex items-center gap-1.5 text-[13px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 999, color: CD.ink, background: CD.panel }}><Ic n="users" s={12} c={CD.mute} /> Take over till</button>}
       </div>
       )}

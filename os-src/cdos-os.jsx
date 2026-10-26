@@ -1616,6 +1616,20 @@
     const meRef = useRef(me);
     useEffect(() => { meRef.current = me; }, [me]);
 
+    /* A person the directory does not know yet still has a posting when
+       the server says so. The stop screen is for someone with no branch
+       at all. The local branch id is this desk's, not the server's. */
+    const postedBranch = (user) => {
+      const ids = user && user.authorizedBranchIds;
+      if (!Array.isArray(ids) || !ids.length) return { branches: [], home: null };
+      const open = branches.find(b => b.status === 'open' && b.main) || branches.find(b => b.status === 'open') || branches[0];
+      return open ? { branches: [open.id], home: open.id } : { branches: [], home: null };
+    };
+    const withPosting = (rec, user) => {
+      if (!rec || !rec._adopted || rec.branches === '*' || (Array.isArray(rec.branches) && rec.branches.length)) return rec;
+      const spot = postedBranch(user);
+      return { ...rec, branches: spot.branches, home: spot.home };
+    };
     const routeAfterAuth = (rec) => {
       if (!rec) { setStage('lock'); return; }
       applyRole(rec);
@@ -1733,7 +1747,8 @@
             const u = d.user;
             if (u.mustChangePassword) return;   // that has its own screen, and a password we do not have
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
-            const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+            const spot = postedBranch(u);
+            const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: spot.branches, home: spot.home, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
             /* The plan is the owner's field. Copying it for anyone else is a settings write. */
             if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
@@ -2334,12 +2349,13 @@
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
         setStagingOn(!!(srvUser && srvUser.staging === true));
-        if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
-        markPersistRole(rec.role);
+        const routed = withPosting(rec, srvUser);
+        if (routed._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...routed, _adopted: undefined }] }));
+        if (srvPlan && routed.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(routed.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
-        setUser(rec.code || rec.name); setAuthRec(rec);
-        await hydrateTenant(); routeAfterAuth(rec);
+        setUser(routed.code || routed.name); setAuthRec(routed);
+        await hydrateTenant(); routeAfterAuth(routed);
       }}
     />;
     if (stage === 'signup') return <OnboardWizard plan={ENTRY.plan} onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;

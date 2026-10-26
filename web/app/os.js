@@ -3409,6 +3409,7 @@
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
             currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
+            pendingTakeover: results[1].pendingTakeover || null,
           };
         });
       },
@@ -15166,6 +15167,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
+  const initialsOf = name => String(name || '').split(/[\s.]+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
     hour: '2-digit',
     minute: '2-digit',
@@ -15659,8 +15661,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, "Take over till"), /*#__PURE__*/React.createElement("div", {
       className: "text-[13px]",
+      "data-held-by": "",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        fontSize: 13
       }
     }, `Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`)), /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -15794,6 +15798,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [pendingTakeover, setPendingTakeover] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
         This screen totalled every drawer "in CAD" and labelled it so — a
@@ -15892,6 +15897,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const applySession = result => {
       const session = result && result.session || null;
       setServerSession(session);
+      setPendingTakeover(result && result.pendingTakeover || null);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -15957,6 +15963,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
+        setPendingTakeover(null);
         setServerBalanceError('');
         return;
       }
@@ -16242,16 +16249,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [handoffs]);
     /* WHO IS ON THIS DRAWER.
         On a server-backed desk the answer is the session's, and only the
-       session's: the person who opened this till, at the time the ledger
+       session's: the holder's display name, at the time the ledger
        recorded. The strip used to read a local shift map seeded from the demo
        roster's `teller` field, so switching drawers renamed the operator to
        "M. Costa" while A. Singh was signed in and the server was recording
-       actor_id = a.singh — the screen and the audit trail naming two different
-       people over the same cash. When the ledger has no open session for this
-       till there is no operator to name, and the strip says so rather than
-       falling back to a roster. */
+       actor_id = a.singh. The screen and the audit trail were naming two
+       different people over the same cash. The login id is not that name.
+       When the ledger has no display name the strip says Unknown, the same
+       word as the takeover sheet. When the ledger has no open session for
+       this till there is no operator to name, and the strip says so rather
+       than falling back to a roster. */
     const serverShift = serverBacked && serverSession && serverSession.status === 'open' ? {
-      operator: personOf(serverSession.openedBy),
+      operator: serverSession.holderName || 'Unknown',
       role: '',
       since: new Date(serverSession.openedAt).getTime()
     } : null;
@@ -17195,12 +17204,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", serverSession.holderName || 'Unknown', " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
       className: "ml-auto flex-none",
       style: {
         color: reconInk
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), iHold && pendingTakeover && /*#__PURE__*/React.createElement("div", {
+      className: "till-waiting flex items-center gap-2 px-4 py-2 flex-none text-[13px]",
+      role: "status",
+      "data-waiting": "takeover",
+      style: {
+        background: CD.brassSoft,
+        borderBottom: `1px solid ${CD.line}`,
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 14,
+      c: CD.ink
+    }), /*#__PURE__*/React.createElement("span", null, pendingTakeover.name + "'s takeover is waiting for a supervisor.")), sessionClosed && /*#__PURE__*/React.createElement("div", {
       className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -17272,7 +17294,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 10.5
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), /*#__PURE__*/React.createElement("div", {
+    }, current ? initialsOf(current.operator) : '—'), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px]",
@@ -17369,7 +17391,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         fontSize: 8
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && canCountTill && /*#__PURE__*/React.createElement("button", {
+    }, current ? initialsOf(current.operator) : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && canCountTill && /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-takeover": "chip",
       onClick: () => {
@@ -69578,6 +69600,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       meRef.current = me;
     }, [me]);
+
+    /* A person the directory does not know yet still has a posting when
+       the server says so. The stop screen is for someone with no branch
+       at all. The local branch id is this desk's, not the server's. */
+    const postedBranch = user => {
+      const ids = user && user.authorizedBranchIds;
+      if (!Array.isArray(ids) || !ids.length) return {
+        branches: [],
+        home: null
+      };
+      const open = branches.find(b => b.status === 'open' && b.main) || branches.find(b => b.status === 'open') || branches[0];
+      return open ? {
+        branches: [open.id],
+        home: open.id
+      } : {
+        branches: [],
+        home: null
+      };
+    };
+    const withPosting = (rec, user) => {
+      if (!rec || !rec._adopted || rec.branches === '*' || Array.isArray(rec.branches) && rec.branches.length) return rec;
+      const spot = postedBranch(user);
+      return {
+        ...rec,
+        branches: spot.branches,
+        home: spot.home
+      };
+    };
     const routeAfterAuth = rec => {
       if (!rec) {
         setStage('lock');
@@ -69721,14 +69771,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           const u = d.user;
           if (u.mustChangePassword) return; // that has its own screen, and a password we do not have
           const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
+          const spot = postedBranch(u);
           const rec = known || {
             id: 'e_' + Date.now(),
             code: u.id,
             name: u.name || u.id,
             role: SRV2OS[u.role] || 'Cashier',
             active: true,
-            branches: [],
-            home: null,
+            branches: spot.branches,
+            home: spot.home,
             _adopted: true
           };
           if (!known) setSettings(s => ({
@@ -70833,24 +70884,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       },
       onComplete: async (rec, srvPlan, srvUser) => {
         setStagingOn(!!(srvUser && srvUser.staging === true));
-        if (rec._adopted) setSettings(s => ({
+        const routed = withPosting(rec, srvUser);
+        if (routed._adopted) setSettings(s => ({
           ...s,
           employees: [...(s.employees || []), {
-            ...rec,
+            ...routed,
             _adopted: undefined
           }]
         }));
-        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
+        if (srvPlan && routed.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
-        markPersistRole(rec.role);
+        markPersistRole(routed.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
-        setUser(rec.code || rec.name);
-        setAuthRec(rec);
+        setUser(routed.code || routed.name);
+        setAuthRec(routed);
         await hydrateTenant();
-        routeAfterAuth(rec);
+        routeAfterAuth(routed);
       }
     });
     if (stage === 'signup') return /*#__PURE__*/React.createElement(OnboardWizard, {

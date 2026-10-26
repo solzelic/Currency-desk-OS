@@ -317,6 +317,7 @@
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
             currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
+            pendingTakeover: results[1].pendingTakeover || null,
           };
         });
       },

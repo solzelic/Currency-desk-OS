@@ -682,9 +682,15 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
           delete row.variance;
         }
       }
-      if (!hasBackendPermission(actor.role, "till:close")) return reply.send(current);
+      const waiting = current.session
+        && current.session.status === "open"
+        && current.session.openedBy === actor.userId
+        ? await tillControl.pendingTakeover(actor, String(current.session.sessionId))
+        : null;
+      const body = waiting ? { ...current, pendingTakeover: waiting } : current;
+      if (!hasBackendPermission(actor.role, "till:close")) return reply.send(body);
       const notes = await tillControl.handoverNotes(actor);
-      return reply.send({ ...current, handoverFlags: notes.flags, handoverRecords: notes.records });
+      return reply.send({ ...body, handoverFlags: notes.flags, handoverRecords: notes.records });
     } catch (error) {
       return failure(reply, error);
     }

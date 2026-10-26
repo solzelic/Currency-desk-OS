@@ -722,6 +722,32 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
   });
 
+  it("the holder is told who is waiting, without the count or a second copy of it", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "waiting-costa");
+    expect(refused.statusCode, refused.body).toBe(403);
+    const singh = await login("a.singh");
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: singh,
+      headers,
+    });
+    expect(session.statusCode, session.body).toBe(200);
+    expect(session.json().pendingTakeover).toEqual({ name: "M.\u00A0Costa" });
+    expect(JSON.stringify(session.json())).not.toContain("24970");
+    const incoming = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: costa,
+      headers,
+    });
+    expect(incoming.statusCode, incoming.body).toBe(200);
+    expect(incoming.json().pendingTakeover).toBeUndefined();
+    expect(JSON.stringify(incoming.json())).not.toContain("24970");
+  });
+
   it("a wrong approver PIN leaves the lockout counter where it was", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
