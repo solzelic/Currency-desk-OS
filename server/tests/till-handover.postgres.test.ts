@@ -151,12 +151,19 @@ postgres("a second teller takes a held till by counting it", () => {
       "INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ($1,$2,$3,'Yorkville') ON CONFLICT DO NOTHING",
       [DEMO.branchId, DEMO.tenantId, DEMO.legalEntityId],
     );
+    /* Names are read on the ledger connection. Sign-in for this file
+       is the PGlite seed, so the ledger needs the same people. A new
+       row copies that seeded password. A conflict does not replace
+       password_hash. A stub hash would stay, because seed() does not
+       replace one, and a later file on this database could not sign in. */
+    const [known] = await handle.db.select().from(staffUsers).where(eq(staffUsers.staffId, "a.singh")).limit(1);
+    if (!known) throw new Error("demo staff were not seeded");
     await pool.query(
       `INSERT INTO staff_users (id,tenant_id,legal_entity_id,branch_id,staff_id,name,role,authorized_branch_ids,password_hash)
-       VALUES ($1,$2,$3,$4,'a.singh','A. Singh','supervisor','[]'::jsonb,'x'),
-              ($5,$2,$3,$4,'m.costa','M. Costa','teller','[]'::jsonb,'x')
+       VALUES ($1,$2,$3,$4,'a.singh','A. Singh','supervisor','[]'::jsonb,$6),
+              ($5,$2,$3,$4,'m.costa','M. Costa','teller','[]'::jsonb,$6)
        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
-      [idOf("a.singh"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, idOf("m.costa")],
+      [idOf("a.singh"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, idOf("m.costa"), known.passwordHash],
     );
     await pool.query("UPDATE legal_entities SET home_currency='CAD' WHERE id=$1", [DEMO.legalEntityId]);
     const singhPin = await hashPin("1357");
@@ -165,16 +172,14 @@ postgres("a second teller takes a held till by counting it", () => {
     await pool.query(
       `INSERT INTO staff_users
         (id,tenant_id,legal_entity_id,branch_id,staff_id,name,role,authorized_branch_ids,password_hash,pin_hash)
-       VALUES ($1,$2,$3,$4,'j.masri','J. Masri','administrator','[]'::jsonb,'x',$5),
-              ($6,$2,$3,$4,'r.haddad','R. Haddad','branch_manager','[]'::jsonb,'x',NULL)
+       VALUES ($1,$2,$3,$4,'j.masri','J. Masri','administrator','[]'::jsonb,$7,$5),
+              ($6,$2,$3,$4,'r.haddad','R. Haddad','branch_manager','[]'::jsonb,$7,NULL)
        ON CONFLICT (id) DO UPDATE SET role=EXCLUDED.role, pin_hash=EXCLUDED.pin_hash, name=EXCLUDED.name`,
-      [idOf("j.masri"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, masriPin, idOf("r.haddad")],
+      [idOf("j.masri"), DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, masriPin, idOf("r.haddad"), known.passwordHash],
     );
     /* Compliance and audit sign in on a staging desk. This file's
        app database is not staging, so the two roles are written here
        with the same password as the rest of the demo staff. */
-    const [known] = await handle.db.select().from(staffUsers).where(eq(staffUsers.staffId, "a.singh")).limit(1);
-    if (!known) throw new Error("demo staff were not seeded");
     for (const person of [
       { staffId: "c.adebayo", name: "C. Adebayo", role: "compliance_officer" as const },
       { staffId: "l.berg", name: "L. Berg", role: "auditor" as const },
