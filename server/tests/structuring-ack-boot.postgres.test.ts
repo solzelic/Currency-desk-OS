@@ -79,6 +79,24 @@ async function columns(pool: pg.Pool, table: string) {
   return found.rows.map((row) => row.column_name as string);
 }
 
+const TRIGGER_RAISE = /missing an enabled ledger_append_only trigger/;
+
+async function shippedTriggerCheck() {
+  const sql = await readFile(
+    new URL("../src/db/migrations/055_structuring_ack.sql", import.meta.url),
+    "utf8",
+  );
+  const blocks = sql.match(/DO \$\$[\s\S]*?END \$\$;/g) ?? [];
+  const block = blocks[blocks.length - 1] ?? "";
+  expect(block).toContain("pg_trigger");
+  expect(blocks.filter((item) => item.includes("pg_trigger"))).toHaveLength(1);
+  return block;
+}
+
+async function withCorrectAcks(name: string) {
+  return hold(await provisionPostgres(await makeDb(name)));
+}
+
 async function refusesWrites(pool: pg.Pool) {
   await pool.query(
     `INSERT INTO ${WATCH_ACK_TABLE}
@@ -204,5 +222,41 @@ postgres("structuring acknowledgement boot", () => {
     );
     await expect(runMigrations(pool)).rejects.toThrow(/column actor_role missing or wrong/);
     expect(await recorded(pool, "055_structuring_ack")).toBe(0);
+  }, 120000);
+
+  it("raises when an acknowledgement trigger is disabled", async () => {
+    const block = await shippedTriggerCheck();
+    const pool = await withCorrectAcks("currencydesk_ackboot_off");
+    await pool.query(
+      `ALTER TABLE ${WATCH_ACK_TABLE} DISABLE TRIGGER ${WATCH_ACK_TABLE}_append_only`,
+    );
+    await expect(pool.query(block)).rejects.toThrow(TRIGGER_RAISE);
+  }, 120000);
+
+  it("raises when an acknowledgement trigger calls another function", async () => {
+    const block = await shippedTriggerCheck();
+    const pool = await withCorrectAcks("currencydesk_ackboot_fn");
+    await pool.query(
+      "CREATE OR REPLACE FUNCTION ack_boot_other() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$",
+    );
+    await pool.query(
+      `CREATE OR REPLACE TRIGGER ${WATCH_ACK_TABLE}_append_only
+         BEFORE UPDATE OR DELETE ON ${WATCH_ACK_TABLE}
+         FOR EACH ROW EXECUTE FUNCTION ack_boot_other()`,
+    );
+    await expect(pool.query(block)).rejects.toThrow(TRIGGER_RAISE);
+  }, 120000);
+
+  it("raises when an acknowledgement trigger is dropped", async () => {
+    const block = await shippedTriggerCheck();
+    const pool = await withCorrectAcks("currencydesk_ackboot_drop");
+    await pool.query(`DROP TRIGGER ${WATCH_ACK_TABLE}_no_truncate ON ${WATCH_ACK_TABLE}`);
+    await expect(pool.query(block)).rejects.toThrow(TRIGGER_RAISE);
+  }, 120000);
+
+  it("accepts both acknowledgement triggers when they call ledger_append_only", async () => {
+    const block = await shippedTriggerCheck();
+    const pool = await withCorrectAcks("currencydesk_ackboot_ok");
+    await pool.query(block);
   }, 120000);
 });
