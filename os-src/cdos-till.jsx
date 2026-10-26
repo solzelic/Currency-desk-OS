@@ -1127,16 +1127,16 @@
             The picker above now names the ledger's tills, so the title and the
             money agree by construction — this is a reminder of which drawer is
             being counted, not a warning that two things disagree. */}
-        {ledgerAmbiguous && ledgerTill && (
-          <div className="till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
+        {ledgerAmbiguous && ledgerTill && (() => {
+          const place = ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '';
+          const note = `This branch has ${ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to ${ledgerTill.tillId}${place}. Use the till name in the header to move to another drawer; the ledger moves with it.`;
+          return (
+          <div className="till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]" role="note" aria-label={note} style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="alert" s={13} c={CD.brass} />
-            <span className="flex-1 min-w-0">
-              This branch has {ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to <b style={{ fontFamily: 'Space Mono, monospace' }}>{ledgerTill.tillId}</b>
-              {ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : ''}.
-              <span style={{ color: CD.mute }}> Use the till name in the header to move to another drawer; the ledger moves with it.</span>
-            </span>
+            <span className="till-scope-text flex-1 min-w-0" aria-hidden="true">{note}</span>
           </div>
-        )}
+          );
+        })()}
         {switchNote && (
           <div className="till-switch-note flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]" style={{ background: CD.brassSoft, borderBottom: `1px solid ${CD.line}`, color: CD.ink }}>
             <Ic n="wallet" s={13} c={CD.brass} />

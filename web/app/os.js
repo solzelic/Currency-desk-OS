@@ -17180,28 +17180,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: ic,
       s: 13,
       c: tab === id ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
-      className: "till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
-      style: {
-        background: CD.brassSoft,
-        borderBottom: `1px solid ${CD.line}`,
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "alert",
-      s: 13,
-      c: CD.brass
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "flex-1 min-w-0"
-    }, "This branch has ", ledgerScope.workspaces.length, " tills on the ledger. Everything on this screen \u2014 the expected figures, the counts, the close \u2014 belongs to ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, ledgerTill.tillId), ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '', ".", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.mute
-      }
-    }, " Use the till name in the header to move to another drawer; the ledger moves with it."))), switchNote && /*#__PURE__*/React.createElement("div", {
+    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && (() => {
+      const place = ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '';
+      const note = `This branch has ${ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to ${ledgerTill.tillId}${place}. Use the till name in the header to move to another drawer; the ledger moves with it.`;
+      return /*#__PURE__*/React.createElement("div", {
+        className: "till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
+        role: "note",
+        "aria-label": note,
+        style: {
+          background: CD.brassSoft,
+          borderBottom: `1px solid ${CD.line}`,
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "alert",
+        s: 13,
+        c: CD.brass
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "till-scope-text flex-1 min-w-0",
+        "aria-hidden": "true"
+      }, note));
+    })(), switchNote && /*#__PURE__*/React.createElement("div", {
       className: "till-switch-note flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.brassSoft,
