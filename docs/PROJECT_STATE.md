@@ -448,8 +448,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 - **Engineering standards audit** of `main` at `f31cf21` is recorded in
   `docs/STANDARDS_AUDIT.md` (2026-09-04). Docs only — no product slice
   opened at that stamp. Issue **#31** (one-shot platform-admin bootstrap)
-  has since landed in code. Audit Slice D (honest public health) has
-  also landed: `GET /api/health` now performs a trivial database read.
+  has since landed in code. Audit Slice D (honest public health) landed
+  a database read on the public probe. That read now lives on
+  `GET /api/health/deep`. Public `GET /api/health` is process-up only.
   Audit Slice E (quote door matches the book) has landed:
   `POST /api/quotes` validates currency as an uppercase ISO-style
   3-letter code, not a four-way CAD/USD/EUR/GBP enum. A desk that can
@@ -790,23 +791,9 @@ account and never overwrites `passwordHash` / `mustChangePassword` /
 `passwordUpdatedAt`. The env var should still be removed from Render after
 first sign-in so the plaintext is not left in the host environment.
 
-Public `GET /api/health` is no longer process-alive only. It runs the same
-kind of trivial tenant read as the admin dashboard's database check
-(`server/src/platform/health.ts`) and answers **503** `{ ok: false,
-error: "database" }` when that read fails. A reachable database also
-returns `commit` (the first 7 characters of `RENDER_GIT_COMMIT`, or
-`unknown` when that variable is unset) and `lastMigration` (the id of
-the newest applied row in `schema_migrations`, or null when that read
-fails, including a connect failure, or Postgres cancels it). The Postgres read sets `statement_timeout`
-to 1000 ms, so the server cancels it and frees the connection. PGlite
-stops waiting after 1 second in the process. The tenant read on this
-route is unchanged. When the database is not
-reachable, `lastMigration` is null and `ok` stays false. Render `healthCheckPath` still points at `/api/health`.
-The migration runner logs `opening database` before its first query and
-`migration applied: <id>` for each migration it applies. A second run
-logs no applied line. Free-tier sleep after idle is unchanged. That is
-a hosting step, not this probe. `/api/admin/health` remains the
-authenticated narrative dashboard.
+Public `GET /api/health` is process-up only. It returns `{ ok: true, service: "currencydesk-server" }` and does not query the database, so Render's probe does not keep the database awake. It stays 200 while the process is up, including when the database cannot answer. Render `healthCheckPath` still points at `/api/health`.
+
+`GET /api/health/deep` runs the trivial tenant read and returns `commit` (the first 7 characters of `RENDER_GIT_COMMIT`, or `unknown` when that variable is unset) and `lastMigration` (the newest applied id in `schema_migrations`, or null when that read fails, including a connect failure, or Postgres cancels it). On Postgres that read sets `statement_timeout` to 1000 ms, so the server cancels it and frees the connection. PGlite stops waiting after 1 second in the process. When the tenant read fails the deep check is **503** `{ ok: false, error: "database", commit, lastMigration: null }`. The body does not include the database error. On staging the shared door opens this route with no session: `STAGING` exactly `1`, and the process hostname and the request Host are staging hosts. `x-forwarded-host` is ignored. On live the route needs the owner permission `team:manage`. Any other platform role is 403 `{error}` only. A request with no session cookie is 401 before a session lookup, and that body has no commit or migration fields. A live host stays closed when `STAGING` is set. The deep result, including a 503, is kept in memory for 30 seconds. Release Manager and QA check a staging deploy with `GET /api/health/deep` on the staging host. A live promote is checked without signing in: the deployed commit comes from Render's deploy status, and the migration is the one staging reports for that same commit. A platform admin can still call this path on live. `/api/admin/health` remains the authenticated narrative dashboard. The migration runner logs `opening database` before its first query and `migration applied: <id>` for each migration it applies. A second run logs no applied line.
 
 ## Next engineering priorities (ordered)
 
@@ -821,7 +808,7 @@ authenticated narrative dashboard.
 
 ## Last reviewed
 
-**2026-10-26**, public health names the deploy. `GET /api/health` still answers from the tenant read: 200 when it works, 503 `{ ok: false, error: "database" }` when it does not. The body adds `commit` and `lastMigration`. `commit` is the first 7 characters of `RENDER_GIT_COMMIT`, or `unknown` when unset. `lastMigration` is the newest applied id in `schema_migrations`, or null when that read fails, including a connect failure, Postgres cancels it, or the database is down. On Postgres the read sets `statement_timeout` to 1000 ms so the server cancels it and frees the connection. PGlite stops waiting after 1 second in the process. The tenant read on this route is unchanged. `runMigrations` logs `opening database` before its first query and one `migration applied: <id>` line each time it applies a migration. A second run logs no applied line. No migration was added.
+**2026-10-26**, public health is shallow. `GET /api/health` returns `{ ok: true, service: "currencydesk-server" }`, does not query the database, and stays 200 while the process is up. Render still probes that path. `GET /api/health/deep` does the tenant read and returns `commit` and `lastMigration`. It is 503 `{ ok: false, error: "database" }` when that read fails. The Postgres migration read still sets `statement_timeout` to 1000 ms. Staging opens the deep check with no session when the shared staging door is open. Live requires `team:manage`. A 401 or 403 has no commit or migration fields. The result is cached for 30 seconds. `runMigrations` still logs `opening database` and one `migration applied: <id>` line per migration it applies. No migration was added.
 
 **2026-10-24**, per-shop identity verification settings. Migration 050 adds `idv_shop_config`. The provider column defaults to `persona`. The owner reads and writes `/api/settings/idv`. The shop comes from the session. The API key field accepts only `PERSONA_API_KEY` or `PERSONA_API_KEY_<SHOP>`. A field left out of PUT stays as stored. A wrong type or an unknown field is 400 and does not change the row. Checks default to off. 049 is the inquiry map. 050 follows it.
 
