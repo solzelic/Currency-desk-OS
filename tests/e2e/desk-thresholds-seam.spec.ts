@@ -22,8 +22,39 @@
    FINTRAC requires" and "not compliant" are the two things that must
    never be confused with each other.
    ============================================================ */
+import { createRequire } from "node:module";
+import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, landOnDesktop, rendered } from "./fixtures";
 import type { APIRequestContext, Page } from "@playwright/test";
+
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Pool } = requireFromServer("pg") as {
+  Pool: new (config: { connectionString: string }) => {
+    query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, string>[] }>;
+    end: () => Promise<void>;
+  };
+};
+
+async function bookOf(openedBy: string): Promise<Record<string, string>> {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    const result = await pool.query(
+      `SELECT b.currency, b.available_amount::text AS amount
+         FROM ledger_till_balances b
+         JOIN ledger_till_sessions s
+           ON s.tenant_id=b.tenant_id AND s.legal_entity_id=b.legal_entity_id
+          AND s.branch_id=b.branch_id AND s.workspace_id=b.workspace_id
+          AND s.till_id=b.till_id
+        WHERE s.status='open' AND s.opened_by=$1`,
+      [openedBy],
+    );
+    const counts: Record<string, string> = {};
+    for (const row of result.rows) counts[String(row.currency).trim()] = Number(row.amount).toFixed(2);
+    return counts;
+  } finally {
+    await pool.end();
+  }
+}
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
@@ -84,17 +115,8 @@ async function deskCanTrade(page: Page, taken: { by: string | null; opened: bool
       notes.push(opened.ok ? "session:open" : `session:${opened.status} ${await opened.text()}`);
     } else if (!mine) {
       heldBy = opener;
-      const heldNow = await fetch("/api/ledger/till-balances").then((r) => r.json());
-      const counts: Record<string, string> = {};
-      for (const [currency, amount] of Object.entries(heldNow.balances ?? {})) {
-        counts[currency] = Number(amount).toFixed(2);
-      }
-      const handed = await fetch("/api/ledger/till-sessions/handover", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ idempotencyKey: `thr-take-${Date.now()}`, counts }),
-      });
-      notes.push(handed.ok ? "session:open" : `session:${handed.status} ${await handed.text()}`);
+      notes.push("session:needs-book");
+      return { notes, heldBy, opened: openedByUs };
     }
     const held = await fetch("/api/ledger/till-balances").then((r) => r.json());
     for (const [currency, wanted] of [["CAD", 60000], ["USD", 60000]] as const) {
@@ -124,6 +146,39 @@ async function deskCanTrade(page: Page, taken: { by: string | null; opened: bool
      no fixture. */
   taken.by = report.heldBy;
   taken.opened = report.opened;
+  if (report.heldBy && report.notes.includes("session:needs-book")) {
+    const counts = await bookOf(report.heldBy);
+    const handed = await page.evaluate(async (counts) => {
+      const res = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idempotencyKey: `thr-take-${Date.now()}`, counts }),
+      });
+      if (!res.ok) return [`session:${res.status} ${await res.text()}`];
+      const notes = ["session:open"];
+      const held = await fetch("/api/ledger/till-balances").then((r) => r.json());
+      for (const [currency, wanted] of [["CAD", 60000], ["USD", 60000]] as const) {
+        const have = Number(held.balances?.[currency] ?? 0);
+        if (have >= wanted) continue;
+        const answer = await fetch("/api/ledger/till-movements", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            idempotencyKey: `thr-topup-${currency}-${Date.now()}`,
+            direction: "in",
+            currency,
+            amount: (wanted - have).toFixed(2),
+            counterpartyType: "bank",
+            counterpartyRef: "threshold-seam",
+            reason: "Top-up so the threshold seam has a desk that can trade",
+          }),
+        });
+        notes.push(answer.ok ? `${currency}:ok` : `${currency}:${answer.status} ${await answer.text()}`);
+      }
+      return notes;
+    }, counts);
+    report.notes = handed;
+  }
   const failed = report.notes.filter((note) => !/:ok$|:open$/.test(note));
   expect(failed, `the desk could not be made ready: ${report.notes.join(" · ")}`).toEqual([]);
   await page.reload();
@@ -140,10 +195,17 @@ async function returnTill(request: APIRequestContext, opener: string): Promise<s
   if (!login.ok()) return `login ${login.status()} ${await login.text()}`;
   const held = await request.get("/api/ledger/till-balances");
   if (!held.ok()) return `balances ${held.status()} ${await held.text()}`;
-  const body = (await held.json()) as { balances?: Record<string, string> };
-  const counts: Record<string, string> = {};
-  for (const [currency, amount] of Object.entries(body.balances ?? {})) {
-    counts[currency] = Number(amount).toFixed(2);
+  const body = (await held.json()) as { balances?: Record<string, string>; amountsWithheld?: boolean };
+  const session = await request.get("/api/ledger/till-session");
+  if (!session.ok()) return `session ${session.status()} ${await session.text()}`;
+  const holder = String(((await session.json()) as { session?: { openedBy?: string } }).session?.openedBy ?? "");
+  const counts: Record<string, string> = body.amountsWithheld
+    ? await bookOf(holder)
+    : {};
+  if (!body.amountsWithheld) {
+    for (const [currency, amount] of Object.entries(body.balances ?? {})) {
+      counts[currency] = Number(amount).toFixed(2);
+    }
   }
   const handed = await request.post("/api/ledger/till-sessions/handover", {
     data: { idempotencyKey: `thr-return-${Date.now()}`, counts },

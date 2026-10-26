@@ -66,6 +66,7 @@ async function reset() {
       ($1,$2,$3,$4,'GBP',0.581)`,
     scope.slice(0, 4),
   );
+  await pool.query("DELETE FROM rate_boards WHERE id='board-close-stale'");
   for (const [currency, value] of [
     ["CAD", 25000],
     ["USD", 12000],
@@ -94,6 +95,26 @@ const book = async (cookies: Record<string, string>) =>
       cookies,
     })
   ).json() as { balanceGeneration?: string; balances: Record<string, string> };
+
+/* The open session belongs to a.singh. A manager who does not hold it
+   receives no amounts, so a count that has to match the book is read
+   as the holder and then submitted by whoever the test is closing as. */
+const holderBook = async () => book(await cookie());
+
+async function priceYen() {
+  await pool.query(
+    `INSERT INTO rate_boards
+      (id,tenant_id,legal_entity_id,branch_id,buy_margin,sell_margin,board_rows,published_at)
+     VALUES ('board-close-stale',$1,$2,$3,0.02,0.03,$4::jsonb,clock_timestamp())
+     ON CONFLICT (id) DO UPDATE SET board_rows=EXCLUDED.board_rows, published_at=clock_timestamp()`,
+    [
+      DEMO.tenantId,
+      DEMO.legalEntityId,
+      DEMO.branchId,
+      JSON.stringify({ JPY: { mid: 0.0092 } }),
+    ],
+  );
+}
 
 const close = (
   cookies: Record<string, string>,
@@ -188,7 +209,7 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    const counted = await holderBook();
     const closed = await close(manager, {
       idempotencyKey: "close-yen-whole",
       counts: { ...counted.balances, JPY: "489176.00" },
@@ -210,7 +231,7 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    const counted = await holderBook();
     const handed = await app.inject({
       method: "POST",
       url: "/api/ledger/till-sessions/handover",
@@ -238,7 +259,7 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    const counted = await holderBook();
     const closed = await close(manager, {
       idempotencyKey: "close-yen-plus",
       counts: { ...counted.balances, JPY: "489177.00" },
@@ -258,7 +279,7 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    const counted = await holderBook();
     const closed = await close(manager, {
       idempotencyKey: "close-yen-minus",
       counts: { ...counted.balances, JPY: "489175.00" },
@@ -278,7 +299,8 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    await priceYen();
+    const counted = await holderBook();
     const handed = await app.inject({
       method: "POST",
       url: "/api/ledger/till-sessions/handover",
@@ -301,7 +323,8 @@ postgres("a till close after the drawer has moved", () => {
       "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',489175.85)",
       scope,
     );
-    const counted = await book(manager);
+    await priceYen();
+    const counted = await holderBook();
     const handed = await app.inject({
       method: "POST",
       url: "/api/ledger/till-sessions/handover",
@@ -497,7 +520,7 @@ postgres("a till close after the drawer has moved", () => {
   it("refuses a till close when money moved after the count", async () => {
     const teller = await cookie();
     const manager = await cookie("r.haddad");
-    const counted = await book(manager);
+    const counted = await book(teller);
 
     const deal = await app.inject({
       method: "POST",
@@ -515,7 +538,7 @@ postgres("a till close after the drawer has moved", () => {
       },
     });
     expect(deal.statusCode, deal.body).toBe(201);
-    const afterDeal = await book(manager);
+    const afterDeal = await book(teller);
     expect(afterDeal.balances.CAD).toBe("25040.00");
 
     const closed = await close(manager, {
@@ -526,7 +549,7 @@ postgres("a till close after the drawer has moved", () => {
     });
     expect(closed.statusCode, closed.body).toBe(422);
     expect(closed.json().message).toBe("Money moved since you counted. Count again.");
-    expect((await book(manager)).balances).toEqual(afterDeal.balances);
+    expect((await book(teller)).balances).toEqual(afterDeal.balances);
     expect(
       (
         await pool.query(
@@ -542,7 +565,7 @@ postgres("a till close after the drawer has moved", () => {
       ).rows[0].n,
     ).toBe(0);
 
-    const recounted = await book(manager);
+    const recounted = await book(teller);
     const accepted = await close(manager, {
       idempotencyKey: "close-fresh",
       counts: recounted.balances,
@@ -556,7 +579,7 @@ postgres("a till close after the drawer has moved", () => {
 
   it("tells an old tab to reload when the close names no mark", async () => {
     const manager = await cookie("r.haddad");
-    const counted = await book(manager);
+    const counted = await holderBook();
     /* A tab opened before this mark existed posts the close it always
        posted: the counts, and no balanceGeneration. That used to come
        back as a bare validation code. */
@@ -569,7 +592,7 @@ postgres("a till close after the drawer has moved", () => {
     expect(closed.json().message).toBe(
       "The desk was updated. Reload, then count again.",
     );
-    expect((await book(manager)).balances).toEqual(counted.balances);
+    expect((await holderBook()).balances).toEqual(counted.balances);
     expect(
       (
         await pool.query(
@@ -588,7 +611,7 @@ postgres("a till close after the drawer has moved", () => {
 
   it("still closes when nothing moved after the count", async () => {
     const manager = await cookie("r.haddad");
-    const counted = await book(manager);
+    const counted = await holderBook();
     const closed = await close(manager, {
       idempotencyKey: "close-quiet",
       counts: counted.balances,

@@ -444,9 +444,18 @@ postgres("a switched session is the person on the deal", () => {
     });
     expect(JSON.stringify(refusedCount.json())).not.toContain("expected");
 
+    const drawer = await pool!.query(
+      `SELECT trim(currency) AS currency, available_amount
+         FROM ledger_till_balances
+        WHERE workspace_id=$1 AND till_id='till-01'`,
+      [DEMO.workspaceId],
+    );
+    const counts = Object.fromEntries(
+      drawer.rows.map((row) => [String(row.currency), Number(row.available_amount).toFixed(2)]),
+    );
     const handover = await app.inject({
       method: "POST", url: "/api/ledger/till-sessions/handover", cookies: iqbal, headers,
-      payload: { idempotencyKey: "handover-iqbal", counts: { CAD: "50000.00", USD: "4000.00" } },
+      payload: { idempotencyKey: "handover-iqbal", counts },
     });
     expect(handover.statusCode, handover.body).toBe(201);
     expect(handover.json().session.openedBy).toBe(idOf("s.iqbal"));

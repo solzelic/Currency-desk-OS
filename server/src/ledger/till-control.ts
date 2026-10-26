@@ -839,8 +839,9 @@ export class TillControlService {
           throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
         }
       }
-      const clocked = await client.query(`SELECT clock_timestamp() AS now`);
-      const now = clocked.rows[0].now as Date;
+      /* The session day follows the same clock as opening a till.
+         The approver stamp below is the database clock on its own. */
+      const now = new Date();
       const clock = await branchBusinessDate(client, actor.branchId, now);
       const session = await this.openSession(client, actor);
       if (session.opened_by === actor.userId) {
