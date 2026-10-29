@@ -10,6 +10,8 @@
    nothing is sent to a server and launch is simulated, so a test card
    number never leaves the browser. The design reopens on the screen it
    last saved, which is how each test lands on the screen it needs.
+   The last two open on an invite code so the save PUTs, and a route
+   reads that body. The card number is the Stripe test number.
    ============================================================ */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -136,4 +138,85 @@ test("after launch the saved copy is gone", async ({ page }) => {
   /* The done screen keeps re-rendering, and none of that writes it back. */
   await page.waitForTimeout(1500);
   expect(await rawStored(page)).toBeNull();
+});
+
+/* Invite in the path: save() PUTs. No code would stay offline and never
+   call the network. GET state is 404 so the seeded screen stays. */
+const REF = "CD-HBRFX2";
+const PASS = "harbour-pass-2026";
+
+type SaveBody = { at?: number; data?: Record<string, unknown> };
+
+async function onNetwork(page: Page, seen: { put: SaveBody[]; launch: SaveBody[] }) {
+  await page.route("**/api/onboarding/*/state", (route) => {
+    if (route.request().method() !== "PUT") {
+      route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+      return;
+    }
+    seen.put.push(route.request().postDataJSON() as SaveBody);
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.route("**/api/onboarding/*/verify/*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, channel: "email", sentTo: ANSWERS.ownerEmail }),
+    }));
+  await page.route("**/api/onboarding/*/launch", (route) => {
+    seen.launch.push(route.request().postDataJSON() as SaveBody);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.addInitScript(
+    ([key, value]) => localStorage.setItem(key, value),
+    [KEY, JSON.stringify({ i: 5, data: ANSWERS })] as const,
+  );
+  await page.goto(`/onboarding/${REF}`);
+  await expect(page.getByPlaceholder("At least 6 characters")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __cdOnb?: { code?: string } }).__cdOnb?.code)).toBe(REF);
+}
+
+async function typePasswordAndCard(page: Page) {
+  await page.getByPlaceholder("At least 6 characters").fill(PASS);
+  const next = page.locator('button[style*="--cd-cta"]').first();
+  const codeBox = page.getByPlaceholder("000000");
+  for (let step = 0; step < 12 && !(await codeBox.isVisible()); step++) {
+    await expect(next).toBeEnabled();
+    await next.click();
+  }
+  await codeBox.fill("424242");
+  const card = page.getByPlaceholder("Card number");
+  await expect(card).toBeVisible();
+  await card.fill(TEST_CARD);
+  await page.getByPlaceholder("MM / YY").fill("1229");
+  await page.getByPlaceholder("CVC").fill("123");
+  await page.getByPlaceholder("Name on card").fill("Alex Roy");
+}
+
+function expectSaveHasNoSecrets(body: SaveBody) {
+  const data = body.data ?? {};
+  for (const k of ["ownerPass", "code", "backup"]) expect(data, k).not.toHaveProperty(k);
+  for (const k of Object.keys(data)) expect(k.startsWith("card"), k).toBe(false);
+  const raw = JSON.stringify(body);
+  expect(raw).not.toContain(PASS);
+  expect(raw).not.toContain("4242");
+  expect(data.city).toBe("Toronto");
+}
+
+test("a network state save carries no password, code or card", async ({ page }) => {
+  const seen = { put: [] as SaveBody[], launch: [] as SaveBody[] };
+  await onNetwork(page, seen);
+  await typePasswordAndCard(page);
+  await expect.poll(() => seen.put.length).toBeGreaterThan(0);
+  await page.waitForTimeout(1200);
+  expectSaveHasNoSecrets(seen.put[seen.put.length - 1]);
+});
+
+test("launch still sends the password", async ({ page }) => {
+  const seen = { put: [] as SaveBody[], launch: [] as SaveBody[] };
+  await onNetwork(page, seen);
+  await typePasswordAndCard(page);
+  await page.getByRole("button", { name: /tick here to accept it/ }).click();
+  await page.getByRole("button", { name: `Open ${ANSWERS.operatingName}` }).click();
+  await expect.poll(() => seen.launch.length).toBeGreaterThan(0);
+  expect(seen.launch[0].data?.ownerPass).toBe(PASS);
 });

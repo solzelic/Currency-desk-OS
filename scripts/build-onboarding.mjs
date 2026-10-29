@@ -593,13 +593,16 @@ if (!design.includes(`KEY = '${KEY}'`)) {
    The browser's copy never holds a secret (#431), and once the desk is
    launched there is no copy at all: this call runs on every update,
    including the ones after launch, so deleting the key anywhere else would
-   be undone by the next render. */
+   be undone by the next render. The PUT gets safe() too, so the password,
+   the code, backup and any card field stay off that request. The same
+   filter covers the copy when the bridge is missing. Launch is unchanged. */
 patch(
   "the persist call — nothing would save",
   "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: this.state.data }));",
   "if (window.__cdOnb && this.state.paid) { localStorage.removeItem(this.KEY); } else { " +
-  "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: window.__cdOnb ? window.__cdOnb.safe(this.state.data) : this.state.data })); " +
-  "if (window.__cdOnb) window.__cdOnb.save(save, this.state.data); }",
+  "var cdKept = (window.__cdOnb && window.__cdOnb.safe ? window.__cdOnb.safe : function (d) { var o = {}, k; for (k in d) if (Object.prototype.hasOwnProperty.call(d, k) && k !== 'ownerPass' && k !== 'code' && k !== 'backup' && k.indexOf('card') !== 0) o[k] = d[k]; return o; })(this.state.data); " +
+  "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: cdKept })); " +
+  "if (window.__cdOnb) window.__cdOnb.save(save, window.__cdOnb.safe(this.state.data)); }",
 );
 
 /* --- 2. The componentDidUpdate defect, and the send-on-arrival hook -
