@@ -273,9 +273,10 @@ const BRIDGE = `<script>
        purpose: the answers are still in localStorage, and telling somebody
        mid-sentence that the network blinked helps nobody. */
     save: function (i, data) {
-      if (!CD.code) return;
+      if (!CD.code || CD.launched) return;
       clearTimeout(CD._t);
       CD._t = setTimeout(function () {
+        if (CD.launched) return;
         fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/state", {
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ at: i, data: data }),
@@ -500,6 +501,15 @@ const BRIDGE = `<script>
            read it off the email and type it back is the flow admitting it
            wasn't listening. */
         if (!data.cdId) data.cdId = CD.code;
+        /* An open desk does not get a browser copy. createdDesk is the
+           server's word; paid or launched in the answers means the same.
+           The answers stay in memory so the welcome still shows, which is
+           the screen main opens on a reload. */
+        if (s.createdDesk || data.paid || data.launched) {
+          CD.launched = true;
+          CD.resume = withoutSecrets(data);
+          try { localStorage.removeItem(KEY); } catch (e2) {}
+        } else {
         /* THE LINK OPENS AT THE BEGINNING, NOT WHERE THEY STOPPED.
 
            s.at is the screen they last saved on, and restoring it meant
@@ -513,6 +523,7 @@ const BRIDGE = `<script>
            possible: before this there was no way back to look at what you
            had typed. */
         localStorage.setItem(KEY, JSON.stringify({ i: 0, data: withoutSecrets(data) }));
+        }
       } else if (xhr.status === 404) {
         CD.known[CD.code] = false;
         CD.unknownCode = true;
@@ -599,7 +610,7 @@ if (!design.includes(`KEY = '${KEY}'`)) {
 patch(
   "the persist call — nothing would save",
   "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: this.state.data }));",
-  "if (window.__cdOnb && this.state.paid) { localStorage.removeItem(this.KEY); } else { " +
+  "if (window.__cdOnb && (this.state.paid || window.__cdOnb.launched)) { localStorage.removeItem(this.KEY); } else { " +
   "var cdKept = (window.__cdOnb && window.__cdOnb.safe ? window.__cdOnb.safe : function (d) { var o = {}, k; for (k in d) if (Object.prototype.hasOwnProperty.call(d, k) && k !== 'ownerPass' && k !== 'code' && k !== 'backup' && k.indexOf('card') !== 0) o[k] = d[k]; return o; })(this.state.data); " +
   "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: cdKept })); " +
   "if (window.__cdOnb) window.__cdOnb.save(save, window.__cdOnb.safe(this.state.data)); }",
@@ -695,6 +706,11 @@ patch(
    '000001' makes the prototype's verify screen arrive already valid.
    Two occurrences, fresh() and demo(), and both have to go or the CTA
    lights up before anything has been sent. */
+patch(
+  "resume on an open desk — the answers stay in memory, not in localStorage",
+  "try { const s = JSON.parse(localStorage.getItem(this.KEY)); if (s && s.data && ((this.props && this.props.startStep) || 0) === 0) { this.setState({ data: { ...this.fresh(), ...s.data }, i: (s.i && s.i > 0 && s.i < 16) ? s.i : 0 }); } } catch (e) {}",
+  "try { const s = (window.__cdOnb && window.__cdOnb.launched) ? { i: 0, data: window.__cdOnb.resume || {} } : JSON.parse(localStorage.getItem(this.KEY)); if (s && s.data && ((this.props && this.props.startStep) || 0) === 0) { this.setState({ data: { ...this.fresh(), ...s.data }, i: (s.i && s.i > 0 && s.i < 16) ? s.i : 0 }); } } catch (e) {}",
+);
 patch(
   "the pre-filled verification code",
   "code:'000001'",

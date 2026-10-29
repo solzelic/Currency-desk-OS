@@ -208,7 +208,7 @@ test("a network state save carries no password, code or card", async ({ page }) 
   await typePasswordAndCard(page);
   await expect.poll(() => seen.put.length).toBeGreaterThan(0);
   await page.waitForTimeout(1200);
-  expectSaveHasNoSecrets(seen.put[seen.put.length - 1]);
+  for (const body of seen.put) expectSaveHasNoSecrets(body);
 });
 
 test("launch still sends the password", async ({ page }) => {
@@ -219,4 +219,54 @@ test("launch still sends the password", async ({ page }) => {
   await page.getByRole("button", { name: `Open ${ANSWERS.operatingName}` }).click();
   await expect.poll(() => seen.launch.length).toBeGreaterThan(0);
   expect(seen.launch[0].data?.ownerPass).toBe(PASS);
+});
+
+/* After the desk is open, GET state carries createdDesk. A reload, the
+   marketing page, and /onboarding must not bring cdos_onb_v2 back or PUT. */
+test("after launch a reload does not restore the saved copy or PUT state", async ({ page }) => {
+  const puts: SaveBody[] = [];
+  let opened = false;
+  await page.route("**/api/onboarding/*/state", (route) => {
+    const put = route.request().method() === "PUT";
+    if (put && opened) puts.push(route.request().postDataJSON() as SaveBody);
+    if (put || !opened) {
+      return route.fulfill({ status: put ? 200 : 404, contentType: "application/json", body: "{}" });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ at: 0, createdDesk: "tnt-harbour", data: { ...ANSWERS, cdId: REF } }),
+    });
+  });
+  await page.route("**/api/onboarding/*/verify/*", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true,"channel":"email"}' }));
+  await page.route("**/api/onboarding/*/launch", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }));
+
+  await page.goto(`/onboarding/${REF}`);
+  await page.evaluate(
+    ([key, value]) => localStorage.setItem(key, value),
+    [KEY, JSON.stringify({ i: 5, data: ANSWERS })] as const,
+  );
+  await page.reload();
+  await expect(page.getByPlaceholder("At least 6 characters")).toBeVisible();
+  await typePasswordAndCard(page);
+  await page.getByRole("button", { name: /tick here to accept it/ }).click();
+  await page.getByRole("button", { name: `Open ${ANSWERS.operatingName}` }).click();
+  await expect.poll(() => rawStored(page)).toBeNull();
+  await page.waitForTimeout(800);
+  opened = true;
+
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/onboarding/${REF}`);
+    await expect(page.getByText(/Let.s open your desk/)).toBeVisible();
+    expect(await rawStored(page), String(width)).toBeNull();
+    expect(puts, String(width)).toEqual([]);
+  }
+  await page.goto("/");
+  expect(await rawStored(page)).toBeNull();
+  await page.goto("/onboarding");
+  expect(await rawStored(page)).toBeNull();
+  expect(puts).toEqual([]);
 });
