@@ -12,10 +12,12 @@ export function setPoolErrorLog(log: PoolErrorLog): void {
   poolErrorLog = log;
 }
 
-function redact(message: string): string {
-  return message
-    .replace(/postgres(?:ql)?:\/\/\S+/gi, "postgres://[redacted]")
-    .replace(/password=\S+/gi, "password=[redacted]");
+/* Slice first, then URLs, then key=value, then user:pass@host. */
+export function redactPoolMessage(message: string): string {
+  return message.slice(0, 500)
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[redacted]")
+    .replace(/\b(ssl)?(password|passfile|key|cert|rootcert)\s*=\s*('(?:[^'\\]|\\.)*'|"[^"]*"|\S+)/gi, "[redacted]")
+    .replace(/\S+:\S+@\S+/g, "[redacted]");
 }
 
 function payloadOf(err: unknown): PoolErrorPayload {
@@ -24,13 +26,18 @@ function payloadOf(err: unknown): PoolErrorPayload {
   const code = typeof err === "object" && err !== null && "code" in err && typeof err.code === "string"
     ? err.code
     : undefined;
-  return { name, message: redact(raw), code };
+  return { name, message: redactPoolMessage(raw), code };
 }
 
-/* Logs a new object. Does not pass err or the client through, and does not exit. */
+function logPoolError(err: unknown): void {
+  const { name, message, code } = payloadOf(err);
+  poolErrorLog.error({ name, message, code }, "idle postgres client closed");
+}
+
+/* Pool errors are idle clients. A checked-out client emits on the client. */
 export function attachPoolErrorHandler(pool: Pool): void {
-  pool.on("error", (err: Error) => {
-    const { name, message, code } = payloadOf(err);
-    poolErrorLog.error({ name, message, code }, "idle postgres client closed");
+  pool.on("error", (err: Error) => { logPoolError(err); });
+  pool.on("connect", (client) => {
+    client.on("error", (err: Error) => { logPoolError(err); });
   });
 }

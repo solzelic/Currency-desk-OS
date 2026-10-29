@@ -1,14 +1,16 @@
+import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { createDb } from "../src/db/index.js";
-import { attachPoolErrorHandler, setPoolErrorLog } from "../src/db/pool-error.js";
+import { attachPoolErrorHandler, redactPoolMessage, setPoolErrorLog } from "../src/db/pool-error.js";
 import { clearDeepHealthCache } from "../src/routes/admin.js";
 
 const serverRoot = fileURLToPath(new URL("..", import.meta.url));
 const HOST = "staging.currencydeskos.com";
+const REDACTED = "Connection terminated unexpectedly [redacted] [redacted]";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
@@ -37,6 +39,20 @@ describe("idle pool error", () => {
     expect(stderr).toContain("Connection terminated unexpectedly");
   });
 
+  it("stays up when a checked-out client errors and does not print the password", async () => {
+    const child = spawn(process.execPath, ["--import", "tsx", "tests/pool-error-child.ts"], {
+      cwd: serverRoot,
+      env: { PATH: process.env.PATH ?? "" },
+    });
+    let out = "";
+    child.stdout.on("data", (chunk: Buffer) => { out += chunk.toString(); });
+    child.stderr.on("data", (chunk: Buffer) => { out += chunk.toString(); });
+    const code = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    expect(code).toBe(0);
+    expect(out).not.toContain("secretpassword");
+    expect(out).not.toContain("from-the-client");
+  });
+
   it("stays up and logs only the redacted name, message, and code", async () => {
     const seen: unknown[] = [];
     setPoolErrorLog({ error(payload) { seen.push(payload); } });
@@ -50,7 +66,7 @@ describe("idle pool error", () => {
     expect(exit).not.toHaveBeenCalled();
     expect(seen).toEqual([{
       name: "Error",
-      message: "Connection terminated unexpectedly postgres://[redacted] password=[redacted]",
+      message: REDACTED,
       code: "ECONNRESET",
     }]);
     const logged = JSON.stringify(seen);
@@ -59,6 +75,51 @@ describe("idle pool error", () => {
     expect(logged).not.toContain("client");
     expect(Object.keys(seen[0] as object)).toEqual(["name", "message", "code"]);
     await pool.end();
+  });
+
+  it("logs a checked-out client with the same redacted payload", async () => {
+    const seen: unknown[] = [];
+    setPoolErrorLog({ error(payload) { seen.push(payload); } });
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const pool = new pg.Pool({ connectionString: "postgres://127.0.0.1:1/none" });
+    attachPoolErrorHandler(pool);
+    const client = new EventEmitter();
+    pool.emit("connect", client as never);
+    await new Promise<void>((resolve) => {
+      setImmediate(() => { const err = idleError(); client.emit("error", err); });
+      setTimeout(resolve, 50);
+    });
+    expect(exit).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ name: "Error", message: REDACTED, code: "ECONNRESET" }]);
+    const logged = JSON.stringify(seen);
+    expect(logged).not.toContain("secretpassword");
+    expect(logged).not.toContain("from-the-client");
+    expect(Object.keys(seen[0] as object)).toEqual(["name", "message", "code"]);
+    await pool.end();
+  });
+});
+
+describe("redaction", () => {
+  it.each([
+    ["postgresql://user:secretpassword@localhost/db"],
+    ["PASSWORD=secretpassword"],
+    ["password = secretpassword"],
+    ["password = 'secret password'"],
+    ["password=\"secret password\""],
+    ["sslpassword=secretpassword"],
+    ["sslkey=secretpassword"],
+    ["user:secretpassword@db.internal"],
+  ])("redacts %s", (secret) => {
+    const out = redactPoolMessage(`boom ${secret} tail`);
+    expect(out).toBe("boom [redacted] tail");
+    expect(out).not.toContain("secret");
+  });
+
+  it("slices to 500 characters before redacting", () => {
+    const out = redactPoolMessage(`${"a".repeat(500)}password=secretpassword`);
+    expect(out).toHaveLength(500);
+    expect(out).not.toContain("password");
+    expect(out).not.toContain("secretpassword");
   });
 });
 
