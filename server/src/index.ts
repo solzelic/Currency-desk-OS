@@ -22,6 +22,7 @@ import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval
 import { startRatesSync } from "./rates/sync-schedule.js";
 import { siteDomainRefreshIntervalMs, startSiteDomainRefresh } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
+import { attachPoolErrorHandler, setPoolErrorLog } from "./db/pool-error.js";
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {
   const value = process.env[key];
@@ -103,6 +104,7 @@ if (shouldPopulateDemoDesk()) {
   } else {
     const { default: pg } = await import("pg");
     const pool = new pg.Pool({ connectionString: ledgerUrl });
+    attachPoolErrorHandler(pool);
     try {
       const result = await populateDemoDesk(pool, handle.db);
       if (result.status === "skipped") {
@@ -122,6 +124,7 @@ if (shouldPopulateDemoDesk()) {
 }
 
   const app = await buildApp(handle.db);
+  setPoolErrorLog(app.log);
   // buildApp loaded the custom-domain map once. A shop save reloads it on
   // this process. This safety pass covers another instance or a direct
   // database edit. The gap is 30 minutes to 24 hours

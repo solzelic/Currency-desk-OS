@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { and, eq } from "drizzle-orm";
 import Decimal from "decimal.js";
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -333,6 +334,7 @@ export function ledgerPoolFor(app: FastifyInstance): pg.Pool | undefined {
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  attachPoolErrorHandler(pool);
   ledgerPools.set(app, pool);
   const service = new LedgerService(pool);
   const provisioning = new LedgerProvisioningService(pool);
