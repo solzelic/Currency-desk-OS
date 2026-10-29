@@ -94,13 +94,20 @@ function flowAnswers(row: { answers?: Record<string, unknown> | null }): Record<
    The password, because it is the owner's; it arrives only on the request
    that creates the desk, is hashed, and is never written to `answers`.
 
+   The verify code, because it proves who owns the address. It is checked
+   on its own request and has no business in the answers.
+
+   Every card field goes, including the name on it and any second card
+   (#431). The page strips the same fields before it writes to the
+   browser's storage (scripts/build-onboarding.mjs).
+
    And nothing may write our own `__` keys, or a browser could mark itself
    confirmed. */
 function stripSecrets(data: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const secret = new Set(["cardNum", "cardCvc", "cardExp", "card2Num", "card2Cvc", "card2Exp", "ownerPass", "backup"]);
+  const secret = new Set(["ownerPass", "code", "backup"]);
   for (const [k, v] of Object.entries(data)) {
-    if (k.startsWith("__") || secret.has(k)) continue;
+    if (k.startsWith("__") || k.startsWith("card") || secret.has(k)) continue;
     out[k] = v;
   }
   return out;

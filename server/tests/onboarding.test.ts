@@ -375,12 +375,20 @@ describe("the applicant's own screens", () => {
     expect(by.ownerName).toBeUndefined();      // seeded from their application
   });
 
-  it("never stores the card or the password, whatever the page sends", async () => {
-    await put(15, { cardNum: "4242424242424242", cardCvc: "123", cardExp: "12/29", ownerPass: "hunter2", city: "Toronto" });
+  it("never stores the card, the password or the verify code, whatever the page sends", async () => {
+    await put(15, {
+      cardNum: "4242424242424242", cardCvc: "123", cardExp: "12/29", cardName: "Alex Roy",
+      backup: { num: "5555555555554444", exp: "11/28", cvc: "456" },
+      ownerPass: "hunter2", code: "123456", city: "Toronto",
+    });
     const d = (await state()).json();
     expect(d.data.cardNum).toBeUndefined();
     expect(d.data.cardCvc).toBeUndefined();
+    expect(d.data.cardExp).toBeUndefined();
+    expect(d.data.cardName).toBeUndefined();
+    expect(d.data.backup).toBeUndefined();
     expect(d.data.ownerPass).toBeUndefined();
+    expect(d.data.code).toBeUndefined();
     expect(d.data.city).toBe("Toronto"); // ...but everything else is kept
   });
 
