@@ -1,6 +1,7 @@
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required for ledger seed data.");
-const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});const scope=["tnt-yorkfx","le-yorkfx-canada","br-yorkville","ws-yorkville-till-01","till-01"];
+const pool=new pg.Pool({connectionString:process.env.DATABASE_URL});attachPoolErrorHandler(pool);const scope=["tnt-yorkfx","le-yorkfx-canada","br-yorkville","ws-yorkville-till-01","till-01"];
 await pool.query("INSERT INTO ledger_principals VALUES ('tnt-yorkfx:a.singh',$1,$2,$3,$4,$5,'teller','[\"br-yorkville\"]'),('tnt-yorkfx:r.haddad',$1,$2,$3,$4,$5,'branch_manager','[\"br-yorkville\"]') ON CONFLICT DO NOTHING",scope);
 await pool.query("INSERT INTO ledger_customers VALUES ('customer-demo',$1,$2,$3,$4,'Demo Customer','Normal','verified') ON CONFLICT DO NOTHING",scope.slice(0,4));
 await pool.query("INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'CAD',1),($1,$2,$3,$4,'USD',0.731),($1,$2,$3,$4,'EUR',0.676),($1,$2,$3,$4,'GBP',0.581) ON CONFLICT DO NOTHING",scope.slice(0,4));

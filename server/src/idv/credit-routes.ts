@@ -3,6 +3,7 @@
    The shop owner still reads the balance. */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import type { Db } from "../db/index.js";
 import { member } from "../platform/team.js";
@@ -10,6 +11,7 @@ import { grant, IdvCreditRefused, readCredits } from "./credit-ledger.js";
 type Caller = { kind: "none" } | { kind: "forbidden" } | { kind: "ok"; user: SessionUser };
 export function registerIdvCreditRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  attachPoolErrorHandler(pool);
   app.addHook("onClose", async () => { await pool.end(); });
   async function owner(req: FastifyRequest): Promise<Caller> {
     const user = await resolveSession(db, req.cookies[SESSION_COOKIE]);

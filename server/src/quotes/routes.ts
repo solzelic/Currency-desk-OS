@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 import { z } from "zod";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
@@ -36,7 +37,7 @@ const previewBody=z.object({from:currencyCode,to:currencyCode,inputAmount:money,
 const overrideBody=z.object({customerRate:rate,reason:z.string().trim().min(1).max(1000)});
 const postBody=z.object({idempotencyKey:z.string().min(1).max(200),purpose:z.string().trim().min(1).max(500),sourceOfFunds:z.string().trim().min(1).max(500),thirdParty:z.boolean().default(false),thirdPartyName:z.string().trim().max(200).optional(),identityNumber:z.string().trim().max(40).optional(),usdLargeNotes:z.boolean().optional(),usdNoteSerials:z.array(z.string().trim().min(1).max(40)).max(200).optional(),reportSuspicion:z.boolean().optional()}).refine(v=>!v.thirdParty||!!v.thirdPartyName,{message:"Third-party name is required.",path:["thirdPartyName"]}).refine(v=>v.thirdParty||!v.thirdPartyName,{message:"Third-party name requires third-party status.",path:["thirdPartyName"]});
 type Resolution={kind:"authenticated";actor:LedgerActor}|{kind:"unauthenticated"}|{kind:"scope_denied"}|{kind:"plan_denied"};
-export function registerQuoteRoutes(app:FastifyInstance,db:Db,databaseUrl:string){const pool=new pg.Pool({connectionString:databaseUrl}),service=new QuoteService(pool,undefined,(tenantId,staffId)=>staffOnTenant(db,tenantId,staffId));app.addHook("onClose",async()=>pool.end());
+export function registerQuoteRoutes(app:FastifyInstance,db:Db,databaseUrl:string){const pool=new pg.Pool({connectionString:databaseUrl});attachPoolErrorHandler(pool);const service=new QuoteService(pool,undefined,(tenantId,staffId)=>staffOnTenant(db,tenantId,staffId));app.addHook("onClose",async()=>pool.end());
 async function actor(req:FastifyRequest):Promise<Resolution>{const user=await resolveSession(db,req.cookies[SESSION_COOKIE]);if(!user)return {kind:"unauthenticated"};if((await tenantPlan(db,user.tenantId))==="basic")return {kind:"plan_denied"};const workspace=await resolveWorkspaceForUser(db,user,req.headers["x-workspace-id"],req.cookies[SESSION_COOKIE]);if(!workspace)return {kind:"scope_denied"};const current={userId:user.id,tenantId:user.tenantId,legalEntityId:user.legalEntityId,branchId:workspace.branchId,workspaceId:workspace.id,tillId:workspace.tillId,role:user.role,authorizedBranchIds:user.authorizedBranchIds};await ensureLedgerPrincipal(pool,current);return {kind:"authenticated",actor:current};}
 /* Contention that survived its retries is not a fault: the transaction
      rolled back whole and nothing was written. Answering 500 INTERNAL_ERROR
