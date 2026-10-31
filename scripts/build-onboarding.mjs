@@ -94,9 +94,29 @@ const BRIDGE = `<script>
     });
   }
 
+  /* SECRETS NEVER REACH THIS BROWSER'S STORAGE (#431).
+
+     The design keeps every answer in localStorage so a reload resumes the
+     flow. That used to include the owner's password, the verify code and
+     every card field, in plain text, and the key outlived the launch. The
+     same names are stripped on the server (stripSecrets in
+     server/src/routes/onboarding-public.ts).
+
+     After a reload those fields come back empty and are typed again. Every
+     other answer survives. */
+  function isSecret(k) {
+    return k === "ownerPass" || k === "code" || k === "backup" || k.indexOf("card") === 0;
+  }
+  function withoutSecrets(data) {
+    var out = {};
+    for (var k in data) if (Object.prototype.hasOwnProperty.call(data, k) && !isSecret(k)) out[k] = data[k];
+    return out;
+  }
+
   var CD = window.__cdOnb = {
     code: code || null,
     application: null,
+    safe: withoutSecrets,
     /* Which channel confirms the account. The server decides and says so
        here, because it is the thing that actually sends. Today that is
        email; when a phone provider exists it becomes "phone" server-side
@@ -253,9 +273,10 @@ const BRIDGE = `<script>
        purpose: the answers are still in localStorage, and telling somebody
        mid-sentence that the network blinked helps nobody. */
     save: function (i, data) {
-      if (!CD.code) return;
+      if (!CD.code || CD.launched) return;
       clearTimeout(CD._t);
       CD._t = setTimeout(function () {
+        if (CD.launched) return;
         fetch("/api/onboarding/" + encodeURIComponent(CD.code) + "/state", {
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({ at: i, data: data }),
@@ -448,6 +469,22 @@ const BRIDGE = `<script>
     document.head.appendChild(css);
   })();
 
+  /* A browser that signed up before #431 still holds the old copy, secrets
+     and all. Rewrite it without them before the bundle reads it, once per
+     load. A copy that will not parse is no use to anybody and goes. */
+  (function () {
+    var raw;
+    try { raw = localStorage.getItem(KEY); } catch (e) { return; }   // storage blocked: nothing was saved
+    if (!raw) return;
+    try {
+      var old = JSON.parse(raw);
+      var data = old && old.data && typeof old.data === "object" ? old.data : {};
+      localStorage.setItem(KEY, JSON.stringify({ i: old && old.i, data: withoutSecrets(data) }));
+    } catch (e) {
+      localStorage.removeItem(KEY);
+    }
+  })();
+
   // before the bundle runs, so the first paint is already their desk
   if (CD.code) {
     try {
@@ -464,6 +501,15 @@ const BRIDGE = `<script>
            read it off the email and type it back is the flow admitting it
            wasn't listening. */
         if (!data.cdId) data.cdId = CD.code;
+        /* An open desk does not get a browser copy. createdDesk is the
+           server's word; paid or launched in the answers means the same.
+           The answers stay in memory so the welcome still shows, which is
+           the screen main opens on a reload. */
+        if (s.createdDesk || data.paid || data.launched) {
+          CD.launched = true;
+          CD.resume = withoutSecrets(data);
+          try { localStorage.removeItem(KEY); } catch (e2) {}
+        } else {
         /* THE LINK OPENS AT THE BEGINNING, NOT WHERE THEY STOPPED.
 
            s.at is the screen they last saved on, and restoring it meant
@@ -476,7 +522,8 @@ const BRIDGE = `<script>
            they already filled in is quick and, more to the point,
            possible: before this there was no way back to look at what you
            had typed. */
-        localStorage.setItem(KEY, JSON.stringify({ i: 0, data: data }));
+        localStorage.setItem(KEY, JSON.stringify({ i: 0, data: withoutSecrets(data) }));
+        }
       } else if (xhr.status === 404) {
         CD.known[CD.code] = false;
         CD.unknownCode = true;
@@ -553,11 +600,20 @@ if (!design.includes(`KEY = '${KEY}'`)) {
   throw new Error(`onboarding: the design's storage key is no longer '${KEY}' — update scripts/build-onboarding.mjs`);
 }
 
-/* --- 1. Save to the server as well as to localStorage ------------- */
+/* --- 1. Save to the server as well as to localStorage -------------
+   The browser's copy never holds a secret (#431), and once the desk is
+   launched there is no copy at all: this call runs on every update,
+   including the ones after launch, so deleting the key anywhere else would
+   be undone by the next render. The PUT gets safe() too, so the password,
+   the code, backup and any card field stay off that request. The same
+   filter covers the copy when the bridge is missing. Launch is unchanged. */
 patch(
   "the persist call — nothing would save",
   "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: this.state.data }));",
-  "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: this.state.data })); if (window.__cdOnb) window.__cdOnb.save(save, this.state.data);",
+  "if (window.__cdOnb && (this.state.paid || window.__cdOnb.launched)) { localStorage.removeItem(this.KEY); } else { " +
+  "var cdKept = (window.__cdOnb && window.__cdOnb.safe ? window.__cdOnb.safe : function (d) { var o = {}, k; for (k in d) if (Object.prototype.hasOwnProperty.call(d, k) && k !== 'ownerPass' && k !== 'code' && k !== 'backup' && k.indexOf('card') !== 0) o[k] = d[k]; return o; })(this.state.data); " +
+  "localStorage.setItem(this.KEY, JSON.stringify({ i: save, data: cdKept })); " +
+  "if (window.__cdOnb) window.__cdOnb.save(save, window.__cdOnb.safe(this.state.data)); }",
 );
 
 /* --- 2. The componentDidUpdate defect, and the send-on-arrival hook -
@@ -650,6 +706,11 @@ patch(
    '000001' makes the prototype's verify screen arrive already valid.
    Two occurrences, fresh() and demo(), and both have to go or the CTA
    lights up before anything has been sent. */
+patch(
+  "resume on an open desk — the answers stay in memory, not in localStorage",
+  "try { const s = JSON.parse(localStorage.getItem(this.KEY)); if (s && s.data && ((this.props && this.props.startStep) || 0) === 0) { this.setState({ data: { ...this.fresh(), ...s.data }, i: (s.i && s.i > 0 && s.i < 16) ? s.i : 0 }); } } catch (e) {}",
+  "try { const s = (window.__cdOnb && window.__cdOnb.launched) ? { i: 0, data: window.__cdOnb.resume || {} } : JSON.parse(localStorage.getItem(this.KEY)); if (s && s.data && ((this.props && this.props.startStep) || 0) === 0) { this.setState({ data: { ...this.fresh(), ...s.data }, i: (s.i && s.i > 0 && s.i < 16) ? s.i : 0 }); } } catch (e) {}",
+);
 patch(
   "the pre-filled verification code",
   "code:'000001'",
