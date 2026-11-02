@@ -15982,7 +15982,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         nextSaved = {};
       Object.entries(latest).forEach(([currency, record]) => {
         if (record == null || record.counted == null) return;
-        nextQuick[currency] = String(record.counted);
+        /* The till columns keep two places, so a saved yen count comes back
+           as 150000.00. Its zero places are dropped, exactly; anything else is
+           left as it is and parseCount says so (#558). */
+        nextQuick[currency] = window.CDOS.countPlaces(currency) === 0 ? String(record.counted).replace(/\.0+$/, '') : String(record.counted);
         nextMode[currency] = 'total';
         const at = new Date(record.countedAt).getTime();
         nextAt[currency] = at;

@@ -243,7 +243,8 @@ test("a phone has no floating plus", async ({ page, request }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator("#menubar")).toBeVisible();
   await page.setViewportSize(PHONE);
-  await tillOpen(page, request);
+  const previous = await tillOpen(page, request);
+  try {
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
   await settled(page);
@@ -273,6 +274,9 @@ test("a phone has no floating plus", async ({ page, request }) => {
   expect(place.bottom, "post in view").toBeLessThanOrEqual(place.height + 1);
   expect(place.sheetTop, "sheet").toBeLessThanOrEqual(1);
   expect(place.sheetBottom, "sheet covers the bar").toBeGreaterThanOrEqual(place.height - 2);
+  } finally {
+    await handBack(page, request, previous);
+  }
 });
 
 /* The cash drawer is one scrolling column. On first load at least
@@ -403,7 +407,7 @@ async function holderBalances(request: APIRequestContext, openedBy: string): Pro
 /* A fresh book has no open session, and that banner takes the
    rows. Counting starts once the till is open, so the first load
    this checks is that screen. */
-async function tillOpen(page: Page, request: APIRequestContext): Promise<void> {
+async function tillOpen(page: Page, request: APIRequestContext): Promise<string | null> {
   const opened = await page.evaluate(async () => {
     const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => ({}));
     const id = String((me as { user?: { id?: string } }).user?.id ?? "");
@@ -431,7 +435,7 @@ async function tillOpen(page: Page, request: APIRequestContext): Promise<void> {
     if (res.ok || res.status === 409) return { state: "open" as const };
     return { state: "error" as const, detail: `${res.status} ${await res.text()}` };
   });
-  if (opened.state === "no-ledger") return;
+  if (opened.state === "no-ledger") return null;
   if (opened.state === "error") expect(opened.state, opened.detail).toBe("open");
   if (opened.state === "held") {
     const counts = await holderBalances(request, opened.openedBy);
@@ -446,19 +450,42 @@ async function tillOpen(page: Page, request: APIRequestContext): Promise<void> {
     }, { idempotencyKey: "phone-owner-" + Date.now(), counts });
     expect(taken, "the owner takes the till with a count that matches").toBe("taken");
   }
+  const previous = opened.state === "held" ? opened.openedBy : null;
   const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
   await page.reload();
   await landOnDesktop(page);
   await sync;
   await dismissTour(page);
   await settled(page);
+  return previous;
+}
+
+/* The person who held the till takes it back the same way: the page, now
+   the holder, reads the drawer, and they count it back at those figures.
+   The book is unchanged and the next spec finds the till as it was. */
+async function handBack(page: Page, request: APIRequestContext, previous: string | null): Promise<void> {
+  if (!previous) return;
+  const counts = await page.evaluate(async () => {
+    const book = await fetch("/api/ledger/till-balances", { credentials: "same-origin" }).then((r) => r.json());
+    return (book.balances ?? {}) as Record<string, string>;
+  });
+  const login = await request.post("/api/auth/login", {
+    data: { staffId: previous.split(":").pop() || "", password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  expect(login.ok(), await login.text()).toBeTruthy();
+  const back = await request.post("/api/ledger/till-sessions/handover", {
+    data: { idempotencyKey: "phone-hand-back-" + Date.now(), counts },
+  });
+  expect(back.ok(), await back.text()).toBeTruthy();
 }
 
 test("an owner can bring every denomination fully above the count panel", async ({ page, request }) => {
+  let previous: string | null = null;
+  try {
   for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "j.masri");
-    await tillOpen(page, request);
+    previous = (await tillOpen(page, request)) ?? previous;
     await page.locator('#phonebar [data-phone-app="till"]').click();
     await dismissTour(page);
     await settled(page);
@@ -491,6 +518,9 @@ test("an owner can bring every denomination fully above the count panel", async 
     expect(scrolled.blocked, `${size.width} blocked`).toBe(0);
   }
   await expect(page.locator("#phone-fab")).toHaveCount(0);
+  } finally {
+    await handBack(page, request, previous);
+  }
 });
 
 /* Desktop window chrome. A phone draws none of it: no traffic

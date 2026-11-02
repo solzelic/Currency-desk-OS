@@ -257,15 +257,19 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
     const [whole, cents = ""] = amount.split(".");
     return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (cents ? "." + cents : "");
   };
+  /* A yen balance is stored as 150000.00; a teller types 150000. */
+  const typed: Record<string, string> = {};
   for (const [ccy, amount] of Object.entries(before)) {
+    const whole = await page.evaluate((c) => (window as unknown as { CDOS: { countPlaces: (c: string) => number } }).CDOS.countPlaces(c) === 0, ccy);
+    typed[ccy] = whole ? amount.replace(/\.0+$/, "") : amount;
     await press(page.locator(`button.till-chip:has-text("${ccy}")`).first());
     await press(page.getByRole("button", { name: /Enter total/i }).first());
-    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? grouped(amount) : amount);
+    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? grouped(amount) : typed[ccy]);
   }
   const closing = page.waitForRequest((r) => /\/api\/ledger\/till-sessions\/[^/]+\/close$/.test(r.url()) && r.method() === "POST");
   await closeTheDay(page);
   const sent = ((await closing).postDataJSON() as { counts: Record<string, string> }).counts;
-  for (const [ccy, amount] of Object.entries(before)) expect(sent[ccy], ccy).toBe(amount);
+  for (const ccy of Object.keys(before)) expect(sent[ccy], ccy).toBe(typed[ccy]);
   await expect.poll(async () => (await book.session())?.status, { timeout: 15_000 }).toBe("closed");
   expect(await book.till()).toEqual(before);
 });
