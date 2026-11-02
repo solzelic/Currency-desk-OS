@@ -284,6 +284,10 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
   await expect(closeDay).toBeDisabled();
   await expect(closeDay).toHaveAttribute("title", commaClose);
   expect(await why(closeDay)).toBe(commaClose);
+  /* A refused count is not a count of 0. Its row stays uncounted, no
+     variance is made up for it, and the line under the button says why. */
+  await expect(page.getByRole("button", { name: "count →" })).toHaveCount(1);
+  await expect(page.getByText(commaClose, { exact: true }).filter({ visible: true })).toHaveCount(1);
   /* The phone's Close the day button carries the same reason. */
   const phoneClose = page.locator(".till-recon-close-btn").first();
   await expect(phoneClose).toBeDisabled();
