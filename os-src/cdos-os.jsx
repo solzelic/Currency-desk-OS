@@ -796,6 +796,12 @@
     const [newDesk, setNewDesk] = useState(null);   // { user, tenant } after a signup verifies
     const [srvUser, setSrvUser] = useState(null);   // server user (carries tenantId) — drives per-tenant persistence
     const [stagingOn, setStagingOn] = useState(false); const [stagingDoor, setStagingDoor] = useState(false);
+    /* The X hides the staging bar for ten minutes. It is read again only on
+       page load and on a screen change, so the bar never pops in while a
+       screen sits still. */
+    const bannerStore = () => { try { return window.localStorage; } catch (e) { return null; } };   // no storage: the bar shows
+    const bannerHiddenNow = () => window.CDOS.stagingBanner.hiddenNow(bannerStore(), Date.now());
+    const [bannerHidden, setBannerHidden] = useState(bannerHiddenNow);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -1631,13 +1637,16 @@
 
     /* A label, not a permission. It lives on document.body so the lock,
        the station picker, and the desktop all show it. A password
-       sign-in, a sign-out, and a 401 take it down. */
+       sign-in, a sign-out, and a 401 take it down. It takes its own space:
+       --cdos-banner moves #os and #lock down by its height, which a
+       ResizeObserver keeps true when the words wrap to two lines. */
+    useEffect(() => { setBannerHidden(bannerHiddenNow()); }, [stage]);
     useEffect(() => {
       const id = 'cdos-staging-banner'; const onDoor = () => setStagingDoor(true); document.addEventListener('cdos-staging-door', onDoor);
       if (!(stagingOn || (stagingDoor && stage === 'lock'))) {
         const gone = document.getElementById(id);
         if (gone) gone.remove();
-        document.body.style.paddingTop = ''; document.documentElement.style.removeProperty('--cdos-banner');
+        document.documentElement.style.removeProperty('--cdos-banner');
         return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
@@ -1645,16 +1654,19 @@
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
-        node.textContent = 'Staging. Demo data only. Never enter a real customer.';
+        node.innerHTML = '<div class="cdos-staging-row"><span data-staging-words>Staging. Demo data only. Never enter a real customer.</span>'
+          + '<button type="button" class="cdos-staging-x" aria-label="Hide staging notice"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>';
+        node.toggleAttribute('data-hidden', bannerHidden);
         document.body.appendChild(node);
       }
-      document.body.style.paddingTop = node.offsetHeight + 'px'; document.documentElement.style.setProperty('--cdos-banner', node.offsetHeight + 'px');
-      return () => {
-        const el = document.getElementById(id);
-        if (el) el.remove();
-        document.body.style.paddingTop = ''; document.documentElement.style.removeProperty('--cdos-banner'); document.removeEventListener('cdos-staging-door', onDoor);
-      };
-    }, [stagingOn, stagingDoor, stage]);
+      node.toggleAttribute('data-hidden', bannerHidden);
+      node.querySelector('.cdos-staging-x').onclick = () => { window.CDOS.stagingBanner.hide(bannerStore(), Date.now()); setBannerHidden(true); };
+      const fit = () => document.documentElement.style.setProperty('--cdos-banner', bannerHidden ? '0px' : node.offsetHeight + 'px');
+      fit();
+      const watch = window.ResizeObserver ? new ResizeObserver(fit) : null;
+      if (watch) watch.observe(node);
+      return () => { if (watch) watch.disconnect(); document.removeEventListener('cdos-staging-door', onDoor); };
+    }, [stagingOn, stagingDoor, stage, bannerHidden]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
@@ -1862,7 +1874,7 @@
     };
     function focusWin(id) { setWins(ws => ws.map(w => w.id === id ? { ...w, z: ++zTop.current, min: false } : w)); }
     function openApp(id) {
-      setPhoneMore(false);
+      setPhoneMore(false); setBannerHidden(bannerHiddenNow());
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) { openSettingsTab('billing'); return; }
       setWins(ws => {
         const ex = ws.find(w => w.id === id);

@@ -337,6 +337,35 @@
 });
 
 
+/* ---- os-src/staging-banner.js ---- */
+/* The staging bar's X hides it for ten minutes, never longer. Anything that
+   is not a moment in the past, or storage that refuses to answer, means the
+   bar shows. The clock is passed in, so tests can set it. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, { stagingBanner: api });
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var KEY = "cdos.stagingBanner.hiddenAt";
+  var HIDE_MS = 600000;
+  function isHidden(stored, now) {
+    var at = typeof stored === "number" ? stored
+      : typeof stored === "string" && /^[0-9]+$/.test(stored) ? Number(stored) : NaN;
+    return isFinite(at) && isFinite(now) && at <= now && now - at < HIDE_MS;
+  }
+  function hiddenNow(storage, now) {
+    try { return !!storage && isHidden(storage.getItem(KEY), now); }
+    catch (e) { return false; }   // storage is off: show the bar
+  }
+  function hide(storage, now) {
+    /* Storage is off: the bar still hides on this screen, and the next
+       screen change cannot read the time back, so it shows again. */
+    try { if (storage) storage.setItem(KEY, String(now)); } catch (e) { return; }
+  }
+  return { KEY: KEY, HIDE_MS: HIDE_MS, isHidden: isHidden, hiddenNow: hiddenNow, hide: hide };
+});
+
+
 /* ---- shared/counter-cash.js ---- */
 /* What actually crossed the counter, in cash.
 
@@ -62908,6 +62937,7 @@ ${snap}`;
         ...(night ? {} : PAPER_BG),
         position: 'fixed',
         inset: 0,
+        top: 'var(--cdos-banner, 0px)',
         display: 'grid',
         placeItems: 'center',
         overflow: 'auto',
@@ -68021,6 +68051,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [srvUser, setSrvUser] = useState(null); // server user (carries tenantId) — drives per-tenant persistence
     const [stagingOn, setStagingOn] = useState(false);
     const [stagingDoor, setStagingDoor] = useState(false);
+    /* The X hides the staging bar for ten minutes. It is read again only on
+       page load and on a screen change, so the bar never pops in while a
+       screen sits still. */
+    const bannerStore = () => {
+      try {
+        return window.localStorage;
+      } catch (e) {
+        return null;
+      }
+    }; // no storage: the bar shows
+    const bannerHiddenNow = () => window.CDOS.stagingBanner.hiddenNow(bannerStore(), Date.now());
+    const [bannerHidden, setBannerHidden] = useState(bannerHiddenNow);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null); // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -69494,7 +69536,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 
     /* A label, not a permission. It lives on document.body so the lock,
        the station picker, and the desktop all show it. A password
-       sign-in, a sign-out, and a 401 take it down. */
+       sign-in, a sign-out, and a 401 take it down. It takes its own space:
+       --cdos-banner moves #os and #lock down by its height, which a
+       ResizeObserver keeps true when the words wrap to two lines. */
+    useEffect(() => {
+      setBannerHidden(bannerHiddenNow());
+    }, [stage]);
     useEffect(() => {
       const id = 'cdos-staging-banner';
       const onDoor = () => setStagingDoor(true);
@@ -69502,7 +69549,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (!(stagingOn || stagingDoor && stage === 'lock')) {
         const gone = document.getElementById(id);
         if (gone) gone.remove();
-        document.body.style.paddingTop = '';
         document.documentElement.style.removeProperty('--cdos-banner');
         return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
@@ -69511,19 +69557,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
-        node.textContent = 'Staging. Demo data only. Never enter a real customer.';
+        node.innerHTML = '<div class="cdos-staging-row"><span data-staging-words>Staging. Demo data only. Never enter a real customer.</span>' + '<button type="button" class="cdos-staging-x" aria-label="Hide staging notice"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>';
+        node.toggleAttribute('data-hidden', bannerHidden);
         document.body.appendChild(node);
       }
-      document.body.style.paddingTop = node.offsetHeight + 'px';
-      document.documentElement.style.setProperty('--cdos-banner', node.offsetHeight + 'px');
+      node.toggleAttribute('data-hidden', bannerHidden);
+      node.querySelector('.cdos-staging-x').onclick = () => {
+        window.CDOS.stagingBanner.hide(bannerStore(), Date.now());
+        setBannerHidden(true);
+      };
+      const fit = () => document.documentElement.style.setProperty('--cdos-banner', bannerHidden ? '0px' : node.offsetHeight + 'px');
+      fit();
+      const watch = window.ResizeObserver ? new ResizeObserver(fit) : null;
+      if (watch) watch.observe(node);
       return () => {
-        const el = document.getElementById(id);
-        if (el) el.remove();
-        document.body.style.paddingTop = '';
-        document.documentElement.style.removeProperty('--cdos-banner');
+        if (watch) watch.disconnect();
         document.removeEventListener('cdos-staging-door', onDoor);
       };
-    }, [stagingOn, stagingDoor, stage]);
+    }, [stagingOn, stagingDoor, stage, bannerHidden]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
@@ -69833,6 +69884,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }
     function openApp(id) {
       setPhoneMore(false);
+      setBannerHidden(bannerHiddenNow());
       if (id !== 'settings' && id !== 'store' && !planAllows(id)) {
         openSettingsTab('billing');
         return;

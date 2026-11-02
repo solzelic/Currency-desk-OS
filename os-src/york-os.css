@@ -141,7 +141,7 @@ button { font-family: inherit; }
 /* ============================================================
    DESKTOP + MENU BAR
    ============================================================ */
-#os { position: fixed; inset: 0; display: flex; flex-direction: column; }
+#os { position: fixed; inset: 0; top: var(--cdos-banner, 0px); display: flex; flex-direction: column; transition: top 0.2s ease; }
 #os.hidden { display: none; }
 
 #menubar {
@@ -3519,29 +3519,39 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 .cd-tx-rate-shown { font-size: 14px !important; line-height: 18px !important; }
 .cd-tx-rate-line > .cd-tx-rate-shown { color: var(--color-text, #111111) !important; font-family: var(--f-body, "Archivo", system-ui, sans-serif) !important; font-weight: 500 !important; }
 
-/* Staging quick sign-in. A label on every screen, light and dark. */
+/* Staging quick sign-in. A label on every screen, light and dark. It
+   takes its own space: --cdos-banner (its height, 0px when hidden) moves
+   #os and #lock down, so it never covers the header. */
 #cdos-staging-banner {
   position: fixed;
   z-index: 10050;
   top: 0;
   left: 0;
   right: 0;
-  min-height: 22px;
   box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  padding: 4px 10px;
+  padding-top: env(safe-area-inset-top, 0px);
   font: 600 12px/1.35 Archivo, system-ui, sans-serif;
   letter-spacing: 0.01em;
   text-align: center;
   color: #17140f;
   background: #f3e2a4;
-  pointer-events: none;
+  user-select: none;
+  transition: transform 0.2s ease, opacity 0.2s ease, visibility 0s;
 }
+#cdos-staging-banner[data-hidden] { transform: translateY(-100%); opacity: 0; visibility: hidden; transition: transform 0.2s ease, opacity 0.2s ease, visibility 0s 0.2s; }
+.cdos-staging-row { position: relative; min-height: 32px; display: flex; align-items: center; justify-content: center; padding: 6px 44px 6px 12px; box-sizing: border-box; }
+.cdos-staging-x { position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.cdos-staging-x:focus-visible { outline: 2px solid currentColor; outline-offset: -8px; border-radius: 6px; }
 html[data-cdtheme="dark"] #cdos-staging-banner {
   color: #1a1404;
   background: #e0a106;
 }
-body:has(#cdos-staging-banner) #lock { top: var(--cdos-banner, 28px); overflow: auto; }
+#lock { top: var(--cdos-banner, 0px); transition: top 0.2s ease; }
+body:has(#cdos-staging-banner) #lock { overflow: auto; }
+@media (max-width: 430px) {
+  /* The bar already covers the notch; the phone head does not add it twice. */
+  body:has(#cdos-staging-banner:not([data-hidden])) .phone-head { height: var(--phone-top-h); padding-top: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #cdos-staging-banner, #cdos-staging-banner[data-hidden], #os, #lock { transition: none; }
+}

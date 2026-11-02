@@ -41,7 +41,7 @@ const box = (page: Page, selector: string) =>
     return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
   });
 
-const header = (width: number) => (width < 768 ? ".phone-head" : "#menubar");
+const header = (width: number) => (width <= 430 ? ".phone-head" : "#menubar");
 
 async function atDesk(page: Page, width: number, height: number): Promise<void> {
   await page.setViewportSize({ width, height });
@@ -56,9 +56,9 @@ for (const [width, height] of [[1280, 800], [390, 844], [360, 800]] as const) {
     await atDesk(page, width, height);
     await expect(page.locator(BAR)).toContainText(WORDS);
     const bar = await box(page, BAR);
-    const head = await box(page, header(width));
     expect(bar.top).toBe(0);
-    expect(head.top, "header top").toBeGreaterThanOrEqual(bar.bottom - 0.5);
+    /* The header slides down over 0.2s; measure where it settles. */
+    await expect.poll(async () => (await box(page, header(width))).top, { message: "header top" }).toBeGreaterThanOrEqual(bar.bottom - 0.5);
     expect(bar.height, "bar height").toBeGreaterThanOrEqual(31.5);
     /* The words are never clipped: the text fits inside the bar. */
     const clipped = await page.locator(BAR).evaluate((el) => {
@@ -77,8 +77,7 @@ test("(a) on the lock screen the sign-in sits below the bar", async ({ page }) =
   await page.evaluate(() => document.dispatchEvent(new Event("cdos-staging-door")));
   await expect(page.locator(BAR)).toBeVisible();
   const bar = await box(page, BAR);
-  const lock = await box(page, "#lock");
-  expect(lock.top, "lock top").toBeGreaterThanOrEqual(bar.bottom - 0.5);
+  await expect.poll(async () => (await box(page, "#lock")).top, { message: "lock top" }).toBeGreaterThanOrEqual(bar.bottom - 0.5);
 });
 
 test("(b) the X is a 44 by 44 button with its name, and Tab shows a focus ring", async ({ page }) => {
@@ -125,7 +124,7 @@ test("(d) ten minutes later it stays hidden until the screen changes", async ({ 
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("rates"));
   await expect(page.locator(BAR)).toBeVisible();
   const bar = await box(page, BAR);
-  expect((await box(page, "#menubar")).top).toBeGreaterThanOrEqual(bar.bottom - 0.5);
+  await expect.poll(async () => (await box(page, "#menubar")).top).toBeGreaterThanOrEqual(bar.bottom - 0.5);
 });
 
 test("(d) before ten minutes a screen change keeps it hidden", async ({ page }) => {
