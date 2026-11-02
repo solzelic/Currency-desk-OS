@@ -118,7 +118,7 @@
       <span className="text-[9px] px-1.5 py-0.5 flex-none" style={{ borderRadius: 4, background: d.t === 'bill' ? CD.lineSoft : 'transparent', border: d.t === 'coin' ? `1px solid ${CD.line}` : 'none', color: CD.mute, fontFamily: 'Space Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d.t}</span>
       <div className="flex items-center flex-none" style={{ marginLeft: 'auto' }}>
         <button onClick={() => setCount(ccy, d.i, String(Math.max(0, cnt - 1)))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '7px 0 0 7px', color: CD.mute }}>−</button>
-        <input type="number" value={(counts[ccy] || {})[d.i] ?? ''} onChange={e => setCount(ccy, d.i, e.target.value)} placeholder="0" className="text-center outline-none" style={{ width: 52, height: 28, border: `1px solid ${CD.line}`, borderLeft: 0, borderRight: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', fontSize: 13 }} />
+        <input type="text" inputMode="numeric" aria-label={`${ccy} ${d.v} pieces`} value={(counts[ccy] || {})[d.i] ?? ''} onChange={e => setCount(ccy, d.i, e.target.value)} placeholder="0" className="text-center outline-none" style={{ width: 52, height: 28, border: `1px solid ${CD.line}`, borderLeft: 0, borderRight: 0, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', fontSize: 13 }} />
         <button onClick={() => setCount(ccy, d.i, String(cnt + 1))} className="till-step grid place-items-center" style={{ width: 26, height: 28, border: `1px solid ${CD.line}`, borderRadius: '0 7px 7px 0', color: CD.mute }}>+</button>
       </div>
       <span style={{ width: 92, textAlign: 'right', fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: sub ? CD.ink : CD.faint, fontVariantNumeric: 'tabular-nums', fontWeight: sub ? 600 : 400 }}>{sub ? num(sub) : '—'}</span>
@@ -256,7 +256,7 @@
                 <div key={c} className="px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
-                    <input data-takeover="amount" value={raw[c] ?? ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode={window.CDOS.displayPlaces(c) === 0 ? 'numeric' : 'decimal'} placeholder={window.CDOS.displayPlaces(c) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} aria-invalid={shownError(c) ? 'true' : undefined} aria-describedby={shownError(c) ? `takeover-${c}-error` : undefined} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${shownError(c) ? CD.flag : CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                    <input data-takeover="amount" value={raw[c] ?? ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode={window.CDOS.countPlaces(c) === 0 ? 'numeric' : 'decimal'} placeholder={window.CDOS.countPlaces(c) === 0 ? '0' : '0.00'} aria-label={`${c} counted`} aria-invalid={shownError(c) ? 'true' : undefined} aria-describedby={shownError(c) ? `takeover-${c}-error` : undefined} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${shownError(c) ? CD.flag : CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
                   </div>
                   {shownError(c) ? <div id={`takeover-${c}-error`} role="alert" className="text-[12px] mt-1.5 text-right" style={{ color: CD.flag }}>{shownError(c)}</div> : null}
                 </div>
@@ -690,8 +690,21 @@
     const atLabel = (ts) => ts ? new Date(ts).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = (c) => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
-    const ccyTotal = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) || 0) : denTotal(c);
-    const isCounted = (c) => ccyMode(c) === 'total' ? (parseFloat(quick[c]) > 0) : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
+    /* What a count says, exactly (#558): the typed total read by parseCount,
+       or the pieces added in whole minor units by countPieces. Save and
+       close send this text. A refused count is never sent and never
+       rounded; its reason shows under the field. */
+    const countRead = (c) => ccyMode(c) === 'total'
+      ? window.CDOS.parseCount(quick[c] ?? '', c)
+      : window.CDOS.countPieces((DEN[c] || []).map(([v], i) => [v, (counts[c] || {})[i] ?? '']), c);
+    const ccyTotal = (c) => { const r = countRead(c); return r.ok ? Number(r.value) : 0; };   // display only
+    const isCounted = (c) => {
+      const typed = ccyMode(c) === 'total' ? String(quick[c] ?? '').trim() : Object.values(counts[c] || {}).join('').trim();
+      if (!typed) return false;
+      const r = countRead(c);
+      return !r.ok || /[1-9]/.test(r.value);
+    };
+    const countRefusal = (c) => { const r = countRead(c); return isCounted(c) && !r.ok ? r.reason : ''; };
     const countedCcys = useMemo(() => {
       const keys = new Set(CCYS);
       Object.keys(quick).forEach(k => keys.add(k));
@@ -806,13 +819,15 @@
     const saveSnapshot = async () => {
       const now = Date.now();
       if (saved || now - saveLock.current < 1800 || !countedCcys.length) return;
+      const refused = countedCcys.find(countRefusal);
+      if (refused) { setSessionErr(countRefusal(refused)); return; }
       saveLock.current = now;
       if (serverBacked) {
         // the server only accepts counts for currencies it holds a balance for;
         // anything else in the drawer stays a local figure until the ledger
         // carries that currency
         const serverCounts = Object.fromEntries(
-          countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
+          countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, countRead(c).value]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
             setSessionErr('Open the till before saving a count — there is no session to record it against.');
@@ -859,7 +874,7 @@
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
     const closeBlocked = serverBacked
-      ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length)
+      ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length || recon.some(r => countRefusal(r.c)))
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
@@ -913,9 +928,11 @@
         if (missing.length) {
           throw new Error(`Count ${missing.join(', ')} before closing — the close writes your count back as the till balance.`);
         }
+        const refused = recon.find(r => countRefusal(r.c));
+        if (refused) throw new Error(countRefusal(refused.c));
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
-          counts: Object.fromEntries(recon.map(r => [r.c, r.counted.toFixed(2)])),
+          counts: Object.fromEntries(recon.map(r => [r.c, countRead(r.c).value])),
           balanceGeneration,
           note: summary.note,
         }));
@@ -1248,9 +1265,10 @@
               <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Skip the breakdown — just enter the total {ccy} you counted in the drawer.</div>
               <div className="flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
-                <input type="number" autoFocus value={heldByOther ? '' : (quick[ccy] ?? '')} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="till-count-input flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
+                <input type="text" inputMode={window.CDOS.countPlaces(ccy) === 0 ? 'numeric' : 'decimal'} aria-label={`${ccy} counted`} aria-invalid={countRefusal(ccy) ? 'true' : undefined} autoFocus value={heldByOther ? '' : (quick[ccy] ?? '')} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="till-count-input flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
               </div>
-              {!heldByOther && ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy)}</div>}
+              {countRefusal(ccy) ? <div role="alert" data-count-refusal={ccy} className="mt-2 text-[12px]" style={{ color: CD.flag }}>{countRefusal(ccy)}</div> : null}
+              {!heldByOther && !countRefusal(ccy) && ccy !== homeCcy && homeOf(ccyTotal(ccy), ccy) != null && <div className="mt-2 text-[12px]" style={{ color: CD.mute }}>≈ {fmt(homeOf(ccyTotal(ccy), ccy), homeCcy)}</div>}
             </div>
           ) : mayCount ? (
           <div className="grid md:grid-cols-2 gap-x-5 gap-y-0">
@@ -1274,9 +1292,10 @@
               <div className="till-count-main min-w-0">
                 <div className="text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{ccy} counted</div>
                 <div className="till-counted flex items-center" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, maxWidth: 220, marginTop: 3, background: ccyMode(ccy) === 'total' ? 'var(--cd-panel)' : 'transparent' }}>
-                  <input type="text" inputMode="decimal" value={!mayCount ? '' : (ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : unitText(ccyTotal(ccy), ccy))} readOnly={!mayCount || ccyMode(ccy) !== 'total'} onFocus={() => { if (!mayCount) return; if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { if (!mayCount) return; setQuick(o => ({ ...o, [ccy]: e.target.value.replace(/[^0-9.]/g, '') })); stampCount(ccy); }} className="till-count-input min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
+                  <input type="text" inputMode="decimal" value={!mayCount ? '' : (ccyMode(ccy) === 'total' ? (quick[ccy] ?? '') : unitText(ccyTotal(ccy), ccy))} readOnly={!mayCount || ccyMode(ccy) !== 'total'} onFocus={() => { if (!mayCount) return; if (ccyMode(ccy) !== 'total') { setMode(o => ({ ...o, [ccy]: 'total' })); setQuick(o => ({ ...o, [ccy]: String(denTotal(ccy) || '') })); } }} onChange={e => { if (!mayCount) return; setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} className="till-count-input min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent" style={{ width: 150, fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace', color: CD.ink, cursor: ccyMode(ccy) !== 'total' ? 'pointer' : 'text' }} />
                   <span className="px-2.5 text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderLeft: `1px solid ${CD.line}` }}>{ccy}</span>
                 </div>
+                {countRefusal(ccy) ? <div role="alert" data-count-refusal={ccy} className="text-[12px] mt-1.5" style={{ color: CD.flag, maxWidth: 260 }}>{countRefusal(ccy)}</div> : null}
                 {!heldByOther && <div className="till-expected-wrap text-[11px] mt-1.5" style={{ color: CD.faint }}>
                   <button onClick={() => toggleReveal(ccy)} title={revealExp[ccy] ? 'Hide expected. Keep the count blind.' : 'Reveal & read out the expected float'} className="till-expected inline-flex items-center gap-1.5 flex-wrap" style={{ border: 0, background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' }}>
                     <span>Expected</span>
@@ -1292,7 +1311,7 @@
               {!heldByOther && <div className="text-right flex-none till-grand">
                 <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
                 <div className="till-grand-num" data-absent={grandHome == null ? '1' : undefined} style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? (canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against') : ''}>{fmtHome(grandHome)}</div>
-                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count'} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count' || countedCcys.some(countRefusal)} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
               </div>}
             </div>
             {mayCount && <div className="till-count-hint py-2" style={{ fontSize: 12, color: CD.faint }}>{'Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.'}</div>}

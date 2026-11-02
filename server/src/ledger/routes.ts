@@ -57,8 +57,25 @@ const deskCurrenciesBody = z.object({
   currencies: z.union([z.array(z.string().trim().min(1).max(8)).max(60), z.null()]),
 }).strict();
 
-const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
-const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
+const DECIMAL = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
+const decimalString = z.string().regex(DECIMAL, "Expected decimal string with at most two places.");
+/* The range check runs only on a string the shape check accepted. Zod runs
+   a refine even after a failed regex, and new Decimal("1500²") throws, which
+   answered a bad amount with a 500 (#558, #557). */
+const inRange = (value: string, minimum: Decimal.Value) =>
+  DECIMAL.test(value) && new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000");
+const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => inRange(value, minimum), "Amount is outside the permitted range.");
+/* A till count as the teller wrote it: ASCII digits, thousands commas in
+   groups of three, and at most two places. The commas are dropped before
+   the range check, so 25,000.00 is 25000.00 and 1,50 is refused. Nothing
+   that is not an ASCII digit is read as one. Same rule as parseCount in
+   os-src/minor-units-format.js (#558). */
+const GROUPED = /^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d{1,2})?$/;
+const countAmount = z
+  .string()
+  .refine((value) => DECIMAL.test(value) || GROUPED.test(value), "A count is ASCII digits, thousands commas and at most two places.")
+  .transform((value) => value.replace(/,/g, ""))
+  .refine((value) => inRange(value, "0"), "A count is outside what a till can hold.");
 const postBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   customerId: z.string().min(1).max(120),
@@ -111,11 +128,17 @@ const balancesBody = z.object({
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-const tillCounts = byCurrency(monetary("0"), "count");
+const tillCounts = byCurrency(countAmount, "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
 }).strict();
+/* What a till route says about a body it cannot read. It never repeats
+   the input back. */
+const BAD_COUNT = {
+  code: "INVALID_REQUEST",
+  message: "A count must be digits 0 to 9, thousands commas and at most the currency's decimal places.",
+} as const;
 const handoverBody = countBody.extend({
   approverStaffId: z.string().trim().min(1).max(120).optional(),
   approverPin: z.string().regex(/^\d{4}$/).optional(),
@@ -708,21 +731,22 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/till-sessions/handover", async (req, reply) => {
-    const parsed = handoverBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
+      /* Who is asking comes first, so a stranger learns nothing about
+         what a count may look like. */
       const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const parsed = handoverBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
       const approval = parsed.data.approverStaffId || parsed.data.approverPin
         ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "" }
         : undefined;
-      return actor
-        ? reply.code(201).send(await tillControl.handover(
-            actor,
-            parsed.data.idempotencyKey,
-            parsed.data.counts,
-            approval,
-          ))
-        : undefined;
+      return reply.code(201).send(await tillControl.handover(
+        actor,
+        parsed.data.idempotencyKey,
+        parsed.data.counts,
+        approval,
+      ));
     } catch (error) {
       return failure(reply, error);
     }
@@ -730,9 +754,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
 
   app.post("/api/ledger/till-counts", async (req, reply) => {
     const parsed = countBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
+    if (!parsed.success) return reply.code(422).send(BAD_COUNT);
     try {
       const actor = await actorOrReply(req, reply);
       return actor
@@ -751,9 +773,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
 
   app.post("/api/ledger/till-sessions/:sessionId/close", async (req, reply) => {
     const parsed = closeTillBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
+    if (!parsed.success) return reply.code(422).send(BAD_COUNT);
     /* An old tab, still open across the deploy that added the mark,
        posts the close it always posted: counts, and no generation.
        There is nothing to compare, so this count cannot be written

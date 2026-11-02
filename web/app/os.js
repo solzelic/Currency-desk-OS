@@ -229,39 +229,75 @@
      Read exactly or refused, never rounded and never guessed. 1.999 CAD is
      refused, because sending 2.00 is a count nobody made. A pasted 1500² is
      refused, because reading the ² as a 2 is a count of 15002. Only the
-     ASCII digits 0 to 9 and one point are read, so a superscript, a
-     full-width or an Arabic-Indic digit is refused, not normalised.
+     ASCII digits 0 to 9, thousands commas in groups of three, and one point
+     are read, so a superscript, a subscript, a full-width or an Arabic-Indic
+     digit is refused, not normalised. 1,500.25 reads as 1500.25; 1,50 is
+     refused.
 
      The work is on the text, not on a Number, so no binary rounding can
-     reach the value. The value is the decimal string the handover sends,
-     padded to the currency's places. The server checks the same rule
-     again: decimalString in server/src/ledger/routes.ts, then the
-     currency's minor unit. Grouping commas are refused here; reading them
-     is issue #556. */
-  var COUNT_MAX_WHOLE_DIGITS = 10;   // a till holds at most 1,000,000,000
+     reach the value. The value is the decimal string the server is sent,
+     padded to the places the till can hold. The server checks the same
+     shape again (countAmount in server/src/ledger/routes.ts), then the
+     currency's minor unit. */
+  var COUNT_MAX_WHOLE = "1000000000";   // a till holds at most 1,000,000,000
+
+  /* The places a till count can carry. The till columns are numeric(24,2),
+     so a three-place currency counts to two here; storing three is its own
+     change. A currency with no minor unit counts whole. */
+  function countPlaces(currency) {
+    return displayPlaces(currency) === 0 ? 0 : 2;
+  }
+
+  function overCap(whole, fraction) {
+    if (whole.length !== COUNT_MAX_WHOLE.length) return whole.length > COUNT_MAX_WHOLE.length;
+    return whole > COUNT_MAX_WHOLE || (whole === COUNT_MAX_WHOLE && /[1-9]/.test(fraction));
+  }
 
   function parseCount(text, currency) {
     var ccy = String(currency || "").toUpperCase();
     var raw = String(text == null ? "" : text).trim();
     if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
-    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
-    if (!m || (m[1] === "" && !m[2])) {
+    var m = /^(?:([0-9]*)|([0-9]{1,3}(?:,[0-9]{3})+))(?:\.([0-9]*))?$/.exec(raw);
+    var digits = m ? (m[2] != null ? m[2].replace(/,/g, "") : m[1]) : "";
+    if (!m || (digits === "" && !m[3])) {
       return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
     }
-    var places = displayPlaces(ccy);
-    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
-    var fraction = m[2] == null ? "" : m[2];
-    if (places === 0 && m[2] != null) {
+    var places = countPlaces(ccy);
+    var whole = digits.replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[3] == null ? "" : m[3];
+    if (places === 0 && m[3] != null) {
       return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
     }
     if (fraction.length > places) {
       return { ok: false, reason: ccy + " counts to " + places + " decimal places. " + raw + " has " + fraction.length + ". Nothing was rounded." };
     }
     while (fraction.length < places) fraction += "0";
-    var tooBig = whole.length > COUNT_MAX_WHOLE_DIGITS ||
-      (whole.length === COUNT_MAX_WHOLE_DIGITS && (whole > "1000000000" || (whole === "1000000000" && /[1-9]/.test(fraction))));
-    if (tooBig) return { ok: false, reason: ccy + " " + raw + " is more than a till can hold." };
+    if (overCap(whole, fraction)) return { ok: false, reason: ccy + " " + raw + " is more than a till can hold." };
     return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
+  }
+
+  /* A count by denomination: rows of [face value, pieces as typed]. Pieces
+     are whole digits or empty. The total is added in whole minor units with
+     BigInt, so 0.10 x 3 plus 0.20 is 0.50, never 0.5000000000000001. */
+  function countPieces(rows, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var places = countPlaces(ccy);
+    var scale = Math.pow(10, places);
+    var total = BigInt(0);
+    for (var i = 0; i < (rows || []).length; i++) {
+      var pieces = String(rows[i][1] == null ? "" : rows[i][1]);
+      if (pieces === "") continue;
+      if (!/^[0-9]+$/.test(pieces)) return { ok: false, reason: "Count " + ccy + " pieces with the digits 0 to 9." };
+      total += BigInt(pieces) * BigInt(Math.round(Number(rows[i][0]) * scale));
+    }
+    var text = total.toString();
+    if (places > 0) {
+      while (text.length <= places) text = "0" + text;
+      text = text.slice(0, -places) + "." + text.slice(-places);
+    }
+    var parts = text.split(".");
+    if (overCap(parts[0], parts[1] || "")) return { ok: false, reason: ccy + " " + text + " is more than a till can hold." };
+    return { ok: true, value: text };
   }
 
   function moneyAmount(n, code, scales) {
@@ -276,7 +312,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount, countPlaces: countPlaces, countPieces: countPieces };
 });
 
 
@@ -15301,7 +15337,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "\u2212"), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+      type: "text",
+      inputMode: "numeric",
+      "aria-label": `${ccy} ${d.v} pieces`,
       value: (counts[ccy] || {})[d.i] ?? '',
       onChange: e => setCount(ccy, d.i, e.target.value),
       placeholder: "0",
@@ -15767,8 +15805,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         ...o,
         [c]: e.target.value
       })),
-      inputMode: window.CDOS.displayPlaces(c) === 0 ? 'numeric' : 'decimal',
-      placeholder: window.CDOS.displayPlaces(c) === 0 ? '0' : '0.00',
+      inputMode: window.CDOS.countPlaces(c) === 0 ? 'numeric' : 'decimal',
+      placeholder: window.CDOS.countPlaces(c) === 0 ? '0' : '0.00',
       "aria-label": `${c} counted`,
       "aria-invalid": shownError(c) ? 'true' : undefined,
       "aria-describedby": shownError(c) ? `takeover-${c}-error` : undefined,
@@ -16482,8 +16520,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
-    const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
-    const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
+    /* What a count says, exactly (#558): the typed total read by parseCount,
+       or the pieces added in whole minor units by countPieces. Save and
+       close send this text. A refused count is never sent and never
+       rounded; its reason shows under the field. */
+    const countRead = c => ccyMode(c) === 'total' ? window.CDOS.parseCount(quick[c] ?? '', c) : window.CDOS.countPieces((DEN[c] || []).map(([v], i) => [v, (counts[c] || {})[i] ?? '']), c);
+    const ccyTotal = c => {
+      const r = countRead(c);
+      return r.ok ? Number(r.value) : 0;
+    }; // display only
+    const isCounted = c => {
+      const typed = ccyMode(c) === 'total' ? String(quick[c] ?? '').trim() : Object.values(counts[c] || {}).join('').trim();
+      if (!typed) return false;
+      const r = countRead(c);
+      return !r.ok || /[1-9]/.test(r.value);
+    };
+    const countRefusal = c => {
+      const r = countRead(c);
+      return isCounted(c) && !r.ok ? r.reason : '';
+    };
     const countedCcys = useMemo(() => {
       const keys = new Set(CCYS);
       Object.keys(quick).forEach(k => keys.add(k));
@@ -16668,12 +16723,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const saveSnapshot = async () => {
       const now = Date.now();
       if (saved || now - saveLock.current < 1800 || !countedCcys.length) return;
+      const refused = countedCcys.find(countRefusal);
+      if (refused) {
+        setSessionErr(countRefusal(refused));
+        return;
+      }
       saveLock.current = now;
       if (serverBacked) {
         // the server only accepts counts for currencies it holds a balance for;
         // anything else in the drawer stays a local figure until the ledger
         // carries that currency
-        const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
+        const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, countRead(c).value]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
             setSessionErr('Open the till before saving a count — there is no session to record it against.');
@@ -16731,7 +16791,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
-    const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
+    const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length || recon.some(r => countRefusal(r.c)) : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */
@@ -16780,9 +16840,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         if (missing.length) {
           throw new Error(`Count ${missing.join(', ')} before closing — the close writes your count back as the till balance.`);
         }
+        const refused = recon.find(r => countRefusal(r.c));
+        if (refused) throw new Error(countRefusal(refused.c));
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
-          counts: Object.fromEntries(recon.map(r => [r.c, r.counted.toFixed(2)])),
+          counts: Object.fromEntries(recon.map(r => [r.c, countRead(r.c).value])),
           balanceGeneration,
           note: summary.note
         }));
@@ -17595,7 +17657,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRight: `1px solid ${CD.line}`
       }
     }, ccy), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+      type: "text",
+      inputMode: window.CDOS.countPlaces(ccy) === 0 ? 'numeric' : 'decimal',
+      "aria-label": `${ccy} counted`,
+      "aria-invalid": countRefusal(ccy) ? 'true' : undefined,
       autoFocus: true,
       value: heldByOther ? '' : quick[ccy] ?? '',
       onChange: e => {
@@ -17611,12 +17676,19 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         fontFamily: 'Space Mono, monospace'
       }
-    })), !heldByOther && ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && /*#__PURE__*/React.createElement("div", {
+    })), countRefusal(ccy) ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-count-refusal": ccy,
+      className: "mt-2 text-[12px]",
+      style: {
+        color: CD.flag
+      }
+    }, countRefusal(ccy)) : null, !heldByOther && !countRefusal(ccy) && ccy !== homeCcy && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[12px]",
       style: {
         color: CD.mute
       }
-    }, "\u2248 ", fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy))) : mayCount ? /*#__PURE__*/React.createElement("div", {
+    }, "\u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))) : mayCount ? /*#__PURE__*/React.createElement("div", {
       className: "grid md:grid-cols-2 gap-x-5 gap-y-0"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
@@ -17697,7 +17769,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         if (!mayCount) return;
         setQuick(o => ({
           ...o,
-          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
+          [ccy]: e.target.value
         }));
         stampCount(ccy);
       },
@@ -17716,7 +17788,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         borderLeft: `1px solid ${CD.line}`
       }
-    }, ccy)), !heldByOther && /*#__PURE__*/React.createElement("div", {
+    }, ccy)), countRefusal(ccy) ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-count-refusal": ccy,
+      className: "text-[12px] mt-1.5",
+      style: {
+        color: CD.flag,
+        maxWidth: 260
+      }
+    }, countRefusal(ccy)) : null, !heldByOther && /*#__PURE__*/React.createElement("div", {
       className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
@@ -17797,7 +17877,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
     }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
-      disabled: saved || !sessionOpen || tillBusy === 'count',
+      disabled: saved || !sessionOpen || tillBusy === 'count' || countedCcys.some(countRefusal),
       title: !sessionOpen ? 'Open the till before saving a count' : '',
       className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
