@@ -189,13 +189,14 @@ describe("is_test_shop", () => {
     const p = join(dir, f);
     return statSync(p).isDirectory() ? (f === "migrations" ? [] : files(p)) : p.endsWith(".ts") ? [p] : [];
   });
-  it("is set only by provisioning, from the staging fresh-shop check", () => {
+  it("is set only by provisioning, from the two staging fresh-shop doors", () => {
     const root = join(here, "../src");
     /* A read aliases the column (isTestShop: schema.tenants.isTestShop). Anything else is a write. */
-    const writers = files(root).filter((p) => /isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|is_test_shop\s*=/.test(readFileSync(p, "utf8")));
-    expect(writers.map((p) => p.slice(root.length + 1)).sort()).toEqual(["db/schema.ts", "onboarding/provision.ts", "routes/signup.ts"]);
+    const writers = files(root).filter((p) => /isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|isTestShop\s*=(?!=)|is_test_shop\s*=/.test(readFileSync(p, "utf8")));
+    expect(writers.map((p) => p.slice(root.length + 1)).sort()).toEqual(["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts"]);
     expect(readFileSync(join(root, "routes/signup.ts"), "utf8")).toMatch(/isTestShop: stagingTestShop,/);
     expect(readFileSync(join(root, "onboarding/provision.ts"), "utf8")).toMatch(/isTestShop: spec\.isTestShop === true,/);
+    expect(readFileSync(join(root, "routes/onboarding-public.ts"), "utf8")).toMatch(/if \(stagingSlug\) \{\s+spec\.isTestShop = true;/);
   });
 });
 
