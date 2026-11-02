@@ -306,3 +306,44 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
   await expect.poll(async () => (await book.session())?.status, { timeout: 15_000 }).toBe("closed");
   expect(await book.till()).toEqual(before);
 });
+
+/* #558, item 11: an empty count turns Save count off and says why, the way
+   an empty field keeps Take over till off. The reason is on the button
+   (title and aria-describedby) while the field is empty, and it shows
+   under the field once the teller has typed and then emptied it. */
+test("an empty count turns Save count off and says why", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  await openTill(page);
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await press(page.getByRole("button", { name: /Enter total/i }).first());
+  const cad = page.locator('input[placeholder="0.00"]').first();
+  const refusal = page.locator('[data-count-refusal="CAD"]').first();
+  const save = page.getByRole("button", { name: /Save count/i }).first();
+  const empty = "Type the CAD count.";
+
+  await cad.fill("1500");
+  await expect(save).toBeEnabled();
+  await expect(refusal).toHaveCount(0);
+
+  await cad.fill("");
+  await expect(cad).toHaveValue("");
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", empty);
+  const id = await save.getAttribute("aria-describedby");
+  expect(id, "aria-describedby names the reason").toBeTruthy();
+  await expect(page.locator(`[id="${id}"]`)).toHaveText(empty);
+  await expect(refusal).toHaveText(empty);
+  await expect(cad).toHaveAttribute("aria-invalid", "true");
+
+  /* Spaces are not a count either. */
+  await cad.fill("   ");
+  await expect(save).toBeDisabled();
+  await expect(refusal).toHaveText(empty);
+
+  await cad.fill("1500");
+  await expect(save).toBeEnabled();
+  await expect(refusal).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-describedby", /.+/);
+});
