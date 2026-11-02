@@ -62,6 +62,9 @@ export default defineConfig({
       DATABASE_URL: process.env.SEAM_DATABASE_URL ?? "",
       PGLITE_MEMORY: "1",
       SEED_PASSWORD: "yorkville",
+      /* Staging demo staff (the auditor and compliance) exist only
+         when this is set. The seam is that seed. No payment provider. */
+      STAGING: "1",
       PLATFORM_ADMIN_EMAILS: "j.masri",
       /* No provider calls. Rates stay put, and email is written to the
          log — which is also where these tests read a confirmation code

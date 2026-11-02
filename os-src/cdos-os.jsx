@@ -120,9 +120,10 @@
       const move = (ev) => {
         const dx = ev.clientX - s.sx, dy = ev.clientY - s.sy;
         const box = {};
-        if (dir.indexOf('e') >= 0) box.w = Math.max(300, s.ow + dx);
+        const floor = String(win.id).split('~')[0] === 'till' ? 420 : 300;
+        if (dir.indexOf('e') >= 0) box.w = Math.max(floor, s.ow + dx);
         if (dir.indexOf('s') >= 0) box.h = Math.max(200, s.oh + dy);
-        if (dir.indexOf('w') >= 0) { const nw = Math.max(300, s.ow - dx); box.w = nw; box.x = Math.max(0, s.ox + (s.ow - nw)); }
+        if (dir.indexOf('w') >= 0) { const nw = Math.max(floor, s.ow - dx); box.w = nw; box.x = Math.max(0, s.ox + (s.ow - nw)); }
         onResize(win.id, box);
       };
       const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
@@ -556,7 +557,7 @@
                   {openTills.map(t => { const on = effTill === t.id; return (
                     <button key={t.id} type="button" onClick={() => setTillSel(m => ({ ...m, [b.id]: t.id }))}
                       style={{ fontFamily: 'var(--f-mono)', fontSize: 10, padding: '5px 9px', borderRadius: 7, cursor: 'pointer', border: `1px solid ${on ? 'var(--ink)' : 'var(--hair)'}`, background: on ? 'var(--ink)' : 'rgba(255,255,255,0.55)', color: on ? '#fff' : 'var(--soft)' }}>
-                      {t.name.replace(/\s+—.*/, '')}{rec && t.teller === rec.name ? ' · yours' : (t.operator ? ' · ' + t.operator + ' on now' : (t.teller ? ' · ' + t.teller : ' · free'))}
+                      {t.name.replace(/\s+—.*/, '')}{t.operator ? ' · ' + t.operator + ' on now' : (t.teller ? ' · ' + t.teller : ' · free')}
                     </button>); })}
                 </div>)}
             </div>);
@@ -597,7 +598,7 @@
      a desk with no ledger sees — there, those tills are the only book there
      is — but nothing in either mode claims an operator the server has not
      named. See tillOccupant in cdos-backend.js. */
-  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate, ledgerScope, onSelectLedgerTill }) {
+  function StationSwitcher({ branches, station, setStation, log, lockTill, me, gate, ledgerScope, onSelectLedgerTill, myId }) {
     const [open, setOpen] = useState(false);
     const [pending, setPending] = useState(null);   // option key awaiting confirmation
     const [err, setErr] = useState('');
@@ -605,6 +606,7 @@
     useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
     const occupantOf = (session) => (window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '');
+    const yours = (session) => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     /* One list, whichever book is in charge. `onLedger` says which, because a
        key from the local list must never be handed to the server as a
        workspace and a workspace id means nothing to the local station. */
@@ -616,6 +618,7 @@
           occupant: occupantOf(w.session),
           // no session on the ledger means the book cannot say who is there
           note: w.session && w.session.status === 'open' ? '' : (w.session ? 'not open' : 'never opened'),
+          yours: yours(w.session),
           on: !!(ledgerScope.active && ledgerScope.active.workspaceId === w.workspaceId),
         }))
       : ((ab && ab.tills) || []).filter(t => t.status !== 'closed').map(t => ({
@@ -625,6 +628,7 @@
           // as a live session — this browser cannot know who is sitting down
           occupant: '',
           note: t.teller ? 'posted to ' + t.teller : '',
+          yours: false,
           on: station.tillId === t.id,
         }));
     const at = options.find(o => o.on) || null;
@@ -653,7 +657,7 @@
         {options.map(o => (
           <button key={o.key} onClick={() => pick(o.key)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: o.on ? CD.brassSoft : 'transparent', border: 0, cursor: 'pointer', textAlign: 'left' }}>
             <Ic n="wallet" s={13} c={o.on ? CD.ink : CD.mute} />
-            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}<span style={{ color: CD.faint }}>{o.on ? ' · you' : (o.occupant ? ' · ' + o.occupant + ' on now' : (o.note ? ' · ' + o.note : ''))}</span></span>
+            <span style={{ flex: 1, fontSize: 12, color: CD.ink }}>{o.name}<span style={{ color: CD.faint }}>{o.yours ? ' · you' : (o.occupant ? ' · ' + o.occupant + ' on now' : (o.note ? ' · ' + o.note : ''))}</span></span>
             {o.on && <Ic n="check" s={13} c={CD.ink} />}
           </button>))}
         <div style={{ padding: '8px 12px', borderTop: `1px solid ${CD.lineSoft}`, fontSize: 10.5, color: CD.faint, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n="logout" s={11} c={CD.faint} /> To change store, sign out &amp; back in.</div>
@@ -1450,7 +1454,8 @@
         const dh = deskEl ? deskEl.clientHeight : (window.innerHeight - 96);
         setWins(ws => ws.map(w => {
           if (w.max) return (w.w === dw && w.h === dh && w.x === 0 && w.y === 0) ? w : { ...w, w: dw, h: dh, x: 0, y: 0 };
-          const W = Math.max(320, Math.min(w.w, dw - 16));
+          const floor = String(w.id).split('~')[0] === 'till' && dw >= 1280 ? 420 : 320;
+          const W = Math.max(floor, Math.min(w.w, dw - 16));
           const H = Math.max(240, Math.min(w.h, dh - 16));
           const X = Math.max(8, Math.min(w.x, dw - W - 8));
           const Y = Math.max(8, Math.min(w.y, dh - H - 8));
@@ -1613,6 +1618,20 @@
     const meRef = useRef(me);
     useEffect(() => { meRef.current = me; }, [me]);
 
+    /* A person the directory does not know yet still has a posting when
+       the server says so. The stop screen is for someone with no branch
+       at all. The local branch id is this desk's, not the server's. */
+    const postedBranch = (user) => {
+      const ids = user && user.authorizedBranchIds;
+      if (!Array.isArray(ids) || !ids.length) return { branches: [], home: null };
+      const open = branches.find(b => b.status === 'open' && b.main) || branches.find(b => b.status === 'open') || branches[0];
+      return open ? { branches: [open.id], home: open.id } : { branches: [], home: null };
+    };
+    const withPosting = (rec, user) => {
+      if (!rec || !rec._adopted || rec.branches === '*' || (Array.isArray(rec.branches) && rec.branches.length)) return rec;
+      const spot = postedBranch(user);
+      return { ...rec, branches: spot.branches, home: spot.home };
+    };
     const routeAfterAuth = (rec) => {
       if (!rec) { setStage('lock'); return; }
       applyRole(rec);
@@ -1730,7 +1749,8 @@
             const u = d.user;
             if (u.mustChangePassword) return;   // that has its own screen, and a password we do not have
             const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
-            const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+            const spot = postedBranch(u);
+            const rec = known || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: spot.branches, home: spot.home, _adopted: true };
             if (!known) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
             /* The plan is the owner's field. Copying it for anyone else is a settings write. */
             if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
@@ -1876,6 +1896,11 @@
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
+    window.CDOS.openTakeover = () => {
+      window.CDOS._takeoverPending = true;
+      openApp('till');
+      window.dispatchEvent(new Event('cdos-takeover'));
+    };
     const closeWin = (id) => { if (id === 'store') setEditApps(false); setWins(ws => ws.filter(w => w.id !== id)); };
     const minWin = (id) => setWins(ws => ws.map(w => w.id === id ? { ...w, min: true } : w));
     const zoomWin = (id) => {
@@ -2250,7 +2275,7 @@
         localStorage.setItem('cdos_submissions_v1', '{}');
         if (oneBranches) localStorage.setItem(_ST.SKEY, JSON.stringify(oneBranches));
         if (oneStation) localStorage.setItem('cdos_station_v1', JSON.stringify(oneStation));
-        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1', 'cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
       } catch (e) {}
       // mirror into React state so the desktop shows the clean desk immediately
       setRows([]); setClients({}); setSettings(nextSettings);
@@ -2295,6 +2320,7 @@
     function logout() {
       setStagingOn(false);
       try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
+      try { ['cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
       try { window.CDOS_PERSIST.end(); } catch (e) {}
       hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
@@ -2326,12 +2352,13 @@
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
         setStagingOn(!!(srvUser && srvUser.staging === true));
-        if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
-        if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
-        markPersistRole(rec.role);
+        const routed = withPosting(rec, srvUser);
+        if (routed._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...routed, _adopted: undefined }] }));
+        if (srvPlan && routed.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
+        markPersistRole(routed.role);
         srvUserRef.current = srvUser || null; setSrvUser(srvUser || null);
-        setUser(rec.code || rec.name); setAuthRec(rec);
-        await hydrateTenant(); routeAfterAuth(rec);
+        setUser(routed.code || routed.name); setAuthRec(routed);
+        await hydrateTenant(); routeAfterAuth(routed);
       }}
     />;
     if (stage === 'signup') return <OnboardWizard plan={ENTRY.plan} onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
@@ -2404,6 +2431,7 @@
     const storeLocked = orderedApps.filter(id => !planAllows(id)).map(mkApp);
 
     function renderApp(id) {
+      window.CDOS.serverRole = (srvUser && srvUser.role) || '';
       switch (baseApp(id)) {
         case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
@@ -2415,7 +2443,7 @@
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} subs={subs} beneficiaries={beneficiaries} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
-        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
+        case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} canCountTill={!!(window.CDOS.Backend && window.CDOS.Backend.canCountTill(srvUser && srvUser.role))} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
@@ -2638,7 +2666,7 @@
           </div>
           <div className="tenant-meta">
             <span className="tenant-name">{settings.operatingName || settings.bizName || 'Exchange house'}</span>
-            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
+            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} myId={srvUser && srvUser.id} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
           </div>
         </div>
         <div className="tenant-right">

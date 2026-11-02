@@ -53,6 +53,59 @@ it("subtracts whole-unit expected, and names a stored fraction", () => {
   expect(C.storedRoundNote(99.85, "JPY")).toContain("99.85 JPY");
 });
 
+/* The field is the text the teller typed. parseCount only reads it.
+   A prefix is what the field holds after that many keys, and the
+   same call reads a paste of the whole sample. */
+const COUNT_SAMPLES: Array<[string, { ok: true; value: string } | { ok: false }]> = [
+  ["1500,7", { ok: false }],
+  ["1.500", { ok: false }],
+  ["1e3", { ok: false }],
+  ["15e3", { ok: false }],
+  ["1,50,0", { ok: false }],
+  ["-1500", { ok: false }],
+  [" 1500 ", { ok: true, value: "1500" }],
+  ["١٥٠٠", { ok: false }],
+  ["", { ok: false }],
+  ["0", { ok: true, value: "0" }],
+  ["1,500", { ok: true, value: "1500" }],
+  ["１５００", { ok: true, value: "1500" }],
+];
+
+it("reads a zero-decimal count from the typed text, by key and by paste", () => {
+  for (const [sample, want] of COUNT_SAMPLES) {
+    expect(C.parseCount(sample, "JPY"), `paste ${JSON.stringify(sample)}`).toEqual(want);
+    let typed = "";
+    for (const key of sample) {
+      typed += key;
+      const step = C.parseCount(typed, "JPY");
+      const same = C.parseCount(typed, "JPY");
+      expect(same, `key ${JSON.stringify(typed)}`).toEqual(step);
+      if (typed === sample) expect(step, `keys ${JSON.stringify(sample)}`).toEqual(want);
+    }
+  }
+  expect(C.parseCount("-1500", "JPY").ok).toBe(false);
+  expect(C.parseCount("", "JPY")).toEqual({ ok: false });
+  expect(C.parseCount("1500", "JPY")).toEqual({ ok: true, value: "1500" });
+  expect(C.parseCount("1500,7", "JPY")).toEqual({ ok: false });
+  expect(C.parseCount("15007", "JPY")).toEqual({ ok: true, value: "15007" });
+  expect(C.parseCount("10.500", "KWD")).toEqual({ ok: true, value: "10.500" });
+  expect(C.parseCount("10.5", "KWD")).toEqual({ ok: true, value: "10.500" });
+  expect(C.parseCount("1.500", "KWD")).toEqual({ ok: true, value: "1.500" });
+  expect(C.parseCount("10.5", "CAD")).toEqual({ ok: true, value: "10.50" });
+  expect(C.parseCount("", "CAD")).toEqual({ ok: false });
+  expect(C.parseCount("0", "CAD")).toEqual({ ok: true, value: "0.00" });
+  expect(till).toContain("parseCount(");
+  expect(till).toContain("e.target.value");
+  expect(till).toContain("has no decimals.");
+  expect(till).toContain("Enter a whole number, like 1500.");
+  expect(till).not.toContain("Nothing was changed.");
+  expect(till).not.toContain("wholeUnitSubmit");
+  expect(till).not.toContain("countAmountText");
+  expect(till).not.toContain("Whole numbers only");
+  expect(till).not.toContain("text.replace(/[^\\d]/g, '')");
+  expect(till).not.toContain("text.indexOf('.')");
+});
+
 it("keeps two decimals on a whole count, and yen stays whole", () => {
   expect(C.unitText(20000, "CAD")).toBe("20,000.00");
   expect(C.unitText(5000, "USD")).toBe("5,000.00");

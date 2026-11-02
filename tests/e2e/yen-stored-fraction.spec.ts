@@ -407,7 +407,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expectInk(recon.locator("thead th").first(), "wide header");
   await expectInk(wideExpected, "wide expected total");
   await expectInk(page.getByText("On the drawer:", { exact: true }), "on the drawer");
-  await expectInk(page.locator(".till-operator .text-\\[10\\.5px\\]"), "operator since");
+  await expectInk(page.locator(".till-operator").getByText(/^since /), "operator since");
   await expectInk(page.locator(".till-sessionline"), "session line");
   await expectInk(page.locator(".till-sessionline .ml-auto"), "session count");
   await expectInk(page.locator(".till-pill"), "in drawer");
