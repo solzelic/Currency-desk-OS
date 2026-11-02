@@ -18,6 +18,7 @@
    ============================================================ */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
@@ -139,6 +140,7 @@ type Resolution =
 
 export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  attachPoolErrorHandler(pool);
   const records = new ClientRecordService(pool);
   const acceptedIds = new AcceptedIdTypeService(pool);
   app.addHook("onClose", async () => { await pool.end(); });

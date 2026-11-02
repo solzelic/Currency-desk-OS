@@ -12,6 +12,7 @@ import { drizzle as drizzlePglite, type PgliteDatabase } from "drizzle-orm/pglit
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { runMigrations, type Migration } from "./migrations.js";
+import { attachPoolErrorHandler } from "./pool-error.js";
 import * as schema from "./schema.js";
 
 export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
@@ -698,6 +699,7 @@ export async function provisionPostgres(
   configuredMigrations?: readonly Migration[],
 ) {
   const pool = new pg.Pool({ connectionString });
+  attachPoolErrorHandler(pool);
   const typeExists = await pool.query(`SELECT 1 FROM pg_type WHERE typname = 'staff_role'`);
   if (typeExists.rows.length === 0) await pool.query(ENUM_DDL);
   await pool.query(DDL);

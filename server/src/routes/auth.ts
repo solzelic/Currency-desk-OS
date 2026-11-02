@@ -35,6 +35,7 @@ import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import pg from "pg";
+import { attachPoolErrorHandler } from "../db/pool-error.js";
 import { randomUUID } from "node:crypto";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { clientIp } from "../auth/client-ip.js";
@@ -117,6 +118,7 @@ const TILL_VIEWER = new Set(["branch_manager", "administrator", "auditor", "comp
 export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   const ledgerUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   const ledger = ledgerUrl ? new pg.Pool({ connectionString: ledgerUrl, max: 2 }) : null;
+  if (ledger) attachPoolErrorHandler(ledger);
   if (ledger) app.addHook("onClose", async () => { await ledger.end(); });
   /* Who counted the till on this workspace. No open session means nobody.
      The ledger pool is the book when the app database is not. */
