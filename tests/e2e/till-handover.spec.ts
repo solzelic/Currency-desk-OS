@@ -151,3 +151,55 @@ test("a second teller takes over a held till from the deal form", async ({ page,
   await expect(page.locator(".till-sessionline")).toContainText("opened by a.singh");
   await shoot(page, "takeover-403", alert);
 });
+
+/* #558: the count field reads exactly what was typed or pasted, or refuses
+   it with the reason. Nothing is rounded, and a superscript is not a digit. */
+test("the takeover count refuses 1.999 and a pasted 1500², and sends a count exactly as typed", async ({ page, context, request }) => {
+  test.setTimeout(240_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await ensureApproverPin(request);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInAtDesk(page, "a.singh");
+  await dismissTour(page);
+  await heldBySingh(page);
+
+  await signInAtDesk(page, "m.costa");
+  await dismissTour(page);
+  await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("till"));
+  const take = page.locator('[data-takeover="strip"]');
+  await expect(take).toBeVisible({ timeout: 30_000 });
+  await take.click();
+  const sheet = page.getByRole("dialog", { name: "Take over till" });
+  await expect(sheet).toBeVisible({ timeout: 20_000 });
+  const submit = sheet.getByRole("button", { name: "Take over till" });
+  const cad = sheet.getByLabel("CAD counted");
+  const inputs = sheet.locator("input");
+  const count = await inputs.count();
+  for (let i = 0; i < count; i++) await inputs.nth(i).fill("100");
+
+  await cad.fill("1.999");
+  await expect(sheet.locator("#takeover-CAD-error")).toHaveText("CAD counts to 2 decimal places. 1.999 has 3. Nothing was rounded.");
+  await expect(cad).toHaveAttribute("aria-invalid", "true");
+  await expect(submit).toBeDisabled();
+
+  /* A real paste, through the clipboard, lands on the same rule. */
+  await page.evaluate(() => navigator.clipboard.writeText("1500²"));
+  await cad.fill("");
+  await cad.focus();
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect(cad).toHaveValue("1500²");
+  await expect(sheet.locator("#takeover-CAD-error")).toHaveText("Type the CAD count with the digits 0 to 9 and one decimal point.");
+  await expect(submit).toBeDisabled();
+
+  await cad.fill("1.5");
+  await expect(sheet.locator("#takeover-CAD-error")).toHaveCount(0);
+  await expect(submit).toBeEnabled();
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/ledger/till-sessions/handover") && r.method() === "POST");
+  await submit.click();
+  const body = (await sent).postDataJSON() as { counts: Record<string, string> };
+  expect(body.counts.CAD).toBe("1.50");
+  for (const [code, value] of Object.entries(body.counts)) {
+    if (code !== "CAD") expect(value, code).toMatch(/^100(\.0+)?$/);
+  }
+  await expect(sheet.getByRole("alert").last()).toHaveText(MISMATCH, { timeout: 30_000 });
+});

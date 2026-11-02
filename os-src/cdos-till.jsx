@@ -228,7 +228,14 @@
 
   function TakeoverSheet({ currencies, holder, busy, error, onClose, onSubmit }) {
     const [raw, setRaw] = useState({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    /* Each count is read exactly from the text, or refused with the reason
+       under its field (#558). Typing and pasting land here the same way, so
+       a pasted 1500² is refused like a typed one. What is sent is the read
+       value, never a rounded Number. */
+    const read = {};
+    currencies.forEach(c => { read[c] = window.CDOS.parseCount(raw[c], c); });
+    const ready = currencies.length > 0 && currencies.every(c => read[c].ok);
+    const shownError = (c) => String(raw[c] || '').trim() !== '' && !read[c].ok ? read[c].reason : '';
     return ReactDOM.createPortal(
       <div className="fixed inset-0 flex items-center justify-center p-4" style={{ background: 'var(--cd-scrim)', zIndex: 9400 }} onMouseDown={onClose}>
         <div role="dialog" aria-label="Take over till" onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 460, maxHeight: 'calc(100vh - 40px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
@@ -243,9 +250,12 @@
           <div className="px-5 py-4 overflow-auto">
             <div style={{ border: `1px solid ${CD.line}`, borderRadius: 11, overflow: 'hidden' }}>
               {currencies.map((c, i) => (
-                <div key={c} className="flex items-center gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
-                  <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
-                  <input value={raw[c] || ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode="decimal" placeholder="0.00" aria-label={`${c} counted`} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                <div key={c} className="px-3 py-2" style={{ borderTop: i ? `1px solid ${CD.lineSoft}` : 'none', background: 'var(--cd-panel)' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold flex-none" style={{ width: 42, fontFamily: 'Space Mono, monospace', fontSize: 12.5, color: CD.ink }}>{c}</span>
+                    <input value={raw[c] || ''} onChange={e => setRaw(o => ({ ...o, [c]: e.target.value }))} inputMode="decimal" placeholder="0.00" aria-label={`${c} counted`} aria-invalid={shownError(c) ? 'true' : undefined} aria-describedby={shownError(c) ? `takeover-${c}-error` : undefined} className="flex-1 text-right outline-none text-[13px] px-2 py-1.5" style={{ border: `1px solid ${shownError(c) ? CD.flag : CD.line}`, borderRadius: 7, fontVariantNumeric: 'tabular-nums', color: CD.ink }} />
+                  </div>
+                  {shownError(c) ? <div id={`takeover-${c}-error`} role="alert" className="text-[12px] mt-1.5 text-right" style={{ color: CD.flag }}>{shownError(c)}</div> : null}
                 </div>
               ))}
             </div>
@@ -253,7 +263,7 @@
           </div>
           <div className="px-5 py-3.5 flex items-center justify-end gap-2 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
             <button type="button" onClick={onClose} className="text-[13px] px-3 py-2 font-medium" style={{ color: CD.mute }}>Cancel</button>
-            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(raw)} className="flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9 }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
+            <button type="button" disabled={!ready || busy} onClick={() => ready && !busy && onSubmit(Object.fromEntries(currencies.map(c => [c, read[c].value])))} className="flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white" style={{ background: ready && !busy ? CD.ink : 'var(--cd-disabled)', borderRadius: 9 }}><Ic n="check" s={15} c="var(--cd-on-ink)" /> {busy ? 'Taking over…' : 'Take over till'}</button>
           </div>
         </div>
       </div>, document.body);
@@ -675,10 +685,13 @@
       && Object.prototype.hasOwnProperty.call(serverBalances, c)
       ? Number(serverBalances[c])
       : null);
-    const doTakeover = async (raw) => {
+    /* `read` is the sheet's exact count per currency (parseCount), sent as
+       is. It used to be Number(text).toFixed(2), which sent 2.00 for a typed
+       1.999 and two places for a currency with none (#558). */
+    const doTakeover = async (read) => {
       if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
       const counts = {};
-      serverCcys.forEach(c => { counts[c] = Number(raw[c]).toFixed(2); });
+      serverCcys.forEach(c => { counts[c] = read[c]; });
       setTillBusy('handover');
       setSessionErr('');
       try {

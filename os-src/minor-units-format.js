@@ -58,6 +58,46 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A till count, read from the text the teller typed or pasted (#558).
+
+     Read exactly or refused, never rounded and never guessed. 1.999 CAD is
+     refused, because sending 2.00 is a count nobody made. A pasted 1500² is
+     refused, because reading the ² as a 2 is a count of 15002. Only the
+     ASCII digits 0 to 9 and one point are read, so a superscript, a
+     full-width or an Arabic-Indic digit is refused, not normalised.
+
+     The work is on the text, not on a Number, so no binary rounding can
+     reach the value. The value is the decimal string the handover sends,
+     padded to the currency's places. The server checks the same rule
+     again: decimalString in server/src/ledger/routes.ts, then the
+     currency's minor unit. Grouping commas are refused here; reading them
+     is issue #556. */
+  var COUNT_MAX_WHOLE_DIGITS = 10;   // a till holds at most 1,000,000,000
+
+  function parseCount(text, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var raw = String(text == null ? "" : text).trim();
+    if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
+    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
+    if (!m || (m[1] === "" && !m[2])) {
+      return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
+    }
+    var places = displayPlaces(ccy);
+    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[2] == null ? "" : m[2];
+    if (places === 0 && m[2] != null) {
+      return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
+    }
+    if (fraction.length > places) {
+      return { ok: false, reason: ccy + " counts to " + places + " decimal places. " + raw + " has " + fraction.length + ". Nothing was rounded." };
+    }
+    while (fraction.length < places) fraction += "0";
+    var tooBig = whole.length > COUNT_MAX_WHOLE_DIGITS ||
+      (whole.length === COUNT_MAX_WHOLE_DIGITS && (whole > "1000000000" || (whole === "1000000000" && /[1-9]/.test(fraction))));
+    if (tooBig) return { ok: false, reason: ccy + " " + raw + " is more than a till can hold." };
+    return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -70,5 +110,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount };
 });

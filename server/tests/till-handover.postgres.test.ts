@@ -636,6 +636,30 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(whole.statusCode, whole.body).toBe(201);
   });
 
+  it("refuses 1.999 CAD and a pasted 1500², and moves nothing (#558)", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const before = await pool.query(
+      "SELECT currency, available_amount::text AS amount FROM ledger_till_balances ORDER BY currency",
+    );
+    const places = await handover(costa, { CAD: "1.999", USD: "12000.00" }, "cad-three-places");
+    expect(places.statusCode, places.body).toBe(400);
+    /* Refused, and nothing moves. Today the route answers these with a 500,
+       because the range check reads the text before the shape check refuses
+       it; #557 owns making that a 422, so the status is not pinned here. */
+    for (const [count, key] of [["1500²", "cad-superscript"], ["１５００", "cad-fullwidth"]] as const) {
+      const refused = await handover(costa, { CAD: count, USD: "12000.00" }, key);
+      expect(refused.statusCode, `${count}: ${refused.body}`).toBeGreaterThanOrEqual(400);
+    }
+    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+    const after = await pool.query(
+      "SELECT currency, available_amount::text AS amount FROM ledger_till_balances ORDER BY currency",
+    );
+    expect(after.rows).toEqual(before.rows);
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n).toBe(0);
+  });
+
   it("CAD 20.00 exactly proceeds, and a short plus an over do not cancel", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");

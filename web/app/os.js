@@ -224,6 +224,46 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A till count, read from the text the teller typed or pasted (#558).
+
+     Read exactly or refused, never rounded and never guessed. 1.999 CAD is
+     refused, because sending 2.00 is a count nobody made. A pasted 1500² is
+     refused, because reading the ² as a 2 is a count of 15002. Only the
+     ASCII digits 0 to 9 and one point are read, so a superscript, a
+     full-width or an Arabic-Indic digit is refused, not normalised.
+
+     The work is on the text, not on a Number, so no binary rounding can
+     reach the value. The value is the decimal string the handover sends,
+     padded to the currency's places. The server checks the same rule
+     again: decimalString in server/src/ledger/routes.ts, then the
+     currency's minor unit. Grouping commas are refused here; reading them
+     is issue #556. */
+  var COUNT_MAX_WHOLE_DIGITS = 10;   // a till holds at most 1,000,000,000
+
+  function parseCount(text, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var raw = String(text == null ? "" : text).trim();
+    if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
+    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
+    if (!m || (m[1] === "" && !m[2])) {
+      return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
+    }
+    var places = displayPlaces(ccy);
+    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[2] == null ? "" : m[2];
+    if (places === 0 && m[2] != null) {
+      return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
+    }
+    if (fraction.length > places) {
+      return { ok: false, reason: ccy + " counts to " + places + " decimal places. " + raw + " has " + fraction.length + ". Nothing was rounded." };
+    }
+    while (fraction.length < places) fraction += "0";
+    var tooBig = whole.length > COUNT_MAX_WHOLE_DIGITS ||
+      (whole.length === COUNT_MAX_WHOLE_DIGITS && (whole > "1000000000" || (whole === "1000000000" && /[1-9]/.test(fraction))));
+    if (tooBig) return { ok: false, reason: ccy + " " + raw + " is more than a till can hold." };
+    return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -236,7 +276,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount };
 });
 
 
@@ -15592,7 +15632,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onSubmit
   }) {
     const [raw, setRaw] = useState({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    /* Each count is read exactly from the text, or refused with the reason
+       under its field (#558). Typing and pasting land here the same way, so
+       a pasted 1500² is refused like a typed one. What is sent is the read
+       value, never a rounded Number. */
+    const read = {};
+    currencies.forEach(c => {
+      read[c] = window.CDOS.parseCount(raw[c], c);
+    });
+    const ready = currencies.length > 0 && currencies.every(c => read[c].ok);
+    const shownError = c => String(raw[c] || '').trim() !== '' && !read[c].ok ? read[c].reason : '';
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -15663,11 +15712,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, currencies.map((c, i) => /*#__PURE__*/React.createElement("div", {
       key: c,
-      className: "flex items-center gap-2 px-3 py-2",
+      className: "px-3 py-2",
       style: {
         borderTop: i ? `1px solid ${CD.lineSoft}` : 'none',
         background: 'var(--cd-panel)'
       }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("span", {
       className: "font-semibold flex-none",
       style: {
@@ -15685,14 +15736,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       inputMode: "decimal",
       placeholder: "0.00",
       "aria-label": `${c} counted`,
+      "aria-invalid": shownError(c) ? 'true' : undefined,
+      "aria-describedby": shownError(c) ? `takeover-${c}-error` : undefined,
       className: "flex-1 text-right outline-none text-[13px] px-2 py-1.5",
       style: {
-        border: `1px solid ${CD.line}`,
+        border: `1px solid ${shownError(c) ? CD.flag : CD.line}`,
         borderRadius: 7,
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    })))), error ? /*#__PURE__*/React.createElement("div", {
+    })), shownError(c) ? /*#__PURE__*/React.createElement("div", {
+      id: `takeover-${c}-error`,
+      role: "alert",
+      className: "text-[12px] mt-1.5 text-right",
+      style: {
+        color: CD.flag
+      }
+    }, shownError(c)) : null))), error ? /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "text-[12px] mt-3 px-3 py-2",
       style: {
@@ -15716,7 +15776,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       disabled: !ready || busy,
-      onClick: () => ready && !busy && onSubmit(raw),
+      onClick: () => ready && !busy && onSubmit(Object.fromEntries(currencies.map(c => [c, read[c].value]))),
       className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
       style: {
         background: ready && !busy ? CD.ink : 'var(--cd-disabled)',
@@ -16377,11 +16437,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        and a count sheet that prints 0.00 there invites a teller to write a
        variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
     const expectedOf = c => heldByOther ? null : serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
-    const doTakeover = async raw => {
+    /* `read` is the sheet's exact count per currency (parseCount), sent as
+       is. It used to be Number(text).toFixed(2), which sent 2.00 for a typed
+       1.999 and two places for a currency with none (#558). */
+    const doTakeover = async read => {
       if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
       const counts = {};
       serverCcys.forEach(c => {
-        counts[c] = Number(raw[c]).toFixed(2);
+        counts[c] = read[c];
       });
       setTillBusy('handover');
       setSessionErr('');
