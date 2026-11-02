@@ -57,8 +57,20 @@ const deskCurrenciesBody = z.object({
   currencies: z.union([z.array(z.string().trim().min(1).max(8)).max(60), z.null()]),
 }).strict();
 
-const decimalString = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, "Expected decimal string with at most two places.");
-const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000"), "Amount is outside the permitted range.");
+const DECIMAL = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
+const decimalString = z.string().regex(DECIMAL, "Expected decimal string with at most two places.");
+/* The range check runs only on a string the shape check accepted. Zod runs
+   a refine even after a failed regex, and new Decimal("1500²") throws, which
+   answered a bad amount with a 500 (#558, #557). */
+const inRange = (value: string, minimum: Decimal.Value) =>
+  DECIMAL.test(value) && new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000");
+const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => inRange(value, minimum), "Amount is outside the permitted range.");
+/* A till count as the teller wrote it: ASCII digits and at most two
+   places. No comma is read, so 0,500 is not 500 and 1.500,25 is not
+   1500.25. Nothing that is not an ASCII digit is read as one. Same rule as
+   parseCount in os-src/minor-units-format.js (#558). The currency's own
+   places are checked after, in the till service. */
+const countAmount = monetary("0");
 const postBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   customerId: z.string().min(1).max(120),
@@ -111,11 +123,17 @@ const balancesBody = z.object({
 const transactionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-const tillCounts = byCurrency(monetary("0"), "count");
+const tillCounts = byCurrency(countAmount, "count");
 const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
 }).strict();
+/* What a till route says about a body it cannot read. It never repeats
+   the input back. */
+const BAD_COUNT = {
+  code: "INVALID_REQUEST",
+  message: "A count must be the digits 0 to 9 and at most the currency's decimal places, with no commas.",
+} as const;
 const handoverBody = countBody.extend({
   approverStaffId: z.string().trim().min(1).max(120).optional(),
   approverPin: z.string().regex(/^\d{4}$/).optional(),
@@ -682,9 +700,15 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
           delete row.variance;
         }
       }
-      if (!hasBackendPermission(actor.role, "till:close")) return reply.send(current);
+      const waiting = current.session
+        && current.session.status === "open"
+        && current.session.openedBy === actor.userId
+        ? await tillControl.pendingTakeover(actor, String(current.session.sessionId))
+        : null;
+      const body = waiting ? { ...current, pendingTakeover: waiting } : current;
+      if (!hasBackendPermission(actor.role, "till:close")) return reply.send(body);
       const notes = await tillControl.handoverNotes(actor);
-      return reply.send({ ...current, handoverFlags: notes.flags, handoverRecords: notes.records });
+      return reply.send({ ...body, handoverFlags: notes.flags, handoverRecords: notes.records });
     } catch (error) {
       return failure(reply, error);
     }
@@ -702,76 +726,73 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/till-sessions/handover", async (req, reply) => {
-    const parsed = handoverBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
+      /* Who is asking comes first, so a stranger learns nothing about
+         what a count may look like. */
       const actor = await actorOrReply(req, reply);
+      if (!actor) return undefined;
+      const parsed = handoverBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
       const approval = parsed.data.approverStaffId || parsed.data.approverPin
         ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "" }
         : undefined;
-      return actor
-        ? reply.code(201).send(await tillControl.handover(
-            actor,
-            parsed.data.idempotencyKey,
-            parsed.data.counts,
-            approval,
-          ))
-        : undefined;
+      return reply.code(201).send(await tillControl.handover(
+        actor,
+        parsed.data.idempotencyKey,
+        parsed.data.counts,
+        approval,
+      ));
     } catch (error) {
       return failure(reply, error);
     }
   });
 
   app.post("/api/ledger/till-counts", async (req, reply) => {
-    const parsed = countBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
     try {
+      /* Who is asking comes first, as on the handover. */
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.code(201).send(
-            await tillControl.recordCount(
-              actor,
-              parsed.data.idempotencyKey,
-              parsed.data.counts,
-            ),
-          )
-        : undefined;
+      if (!actor) return undefined;
+      const parsed = countBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
+      return reply.code(201).send(
+        await tillControl.recordCount(
+          actor,
+          parsed.data.idempotencyKey,
+          parsed.data.counts,
+        ),
+      );
     } catch (error) {
       return failure(reply, error);
     }
   });
 
   app.post("/api/ledger/till-sessions/:sessionId/close", async (req, reply) => {
-    const parsed = closeTillBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ code: "INVALID_REQUEST" });
-    }
-    /* An old tab, still open across the deploy that added the mark,
-       posts the close it always posted: counts, and no generation.
-       There is nothing to compare, so this count cannot be written
-       back. Say that in a sentence and leave the session open. */
-    if (parsed.data.balanceGeneration == null) {
-      return reply.code(422).send({
-        code: "TILL_COUNT_UNMARKED",
-        message: "The desk was updated. Reload, then count again.",
-      });
-    }
     try {
+      /* Who is asking comes first, as on the handover. */
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send(
-            await tillControl.close(
-              actor,
-              (req.params as { sessionId: string }).sessionId,
-              parsed.data.idempotencyKey,
-              parsed.data.counts,
-              parsed.data.note,
-              parsed.data.balanceGeneration,
-            ),
-          )
-        : undefined;
+      if (!actor) return undefined;
+      const parsed = closeTillBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
+      /* An old tab, still open across the deploy that added the mark,
+         posts the close it always posted: counts, and no generation.
+         There is nothing to compare, so this count cannot be written
+         back. Say that in a sentence and leave the session open. */
+      if (parsed.data.balanceGeneration == null) {
+        return reply.code(422).send({
+          code: "TILL_COUNT_UNMARKED",
+          message: "The desk was updated. Reload, then count again.",
+        });
+      }
+      return reply.send(
+        await tillControl.close(
+          actor,
+          (req.params as { sessionId: string }).sessionId,
+          parsed.data.idempotencyKey,
+          parsed.data.counts,
+          parsed.data.note,
+          parsed.data.balanceGeneration,
+        ),
+      );
     } catch (error) {
       return failure(reply, error);
     }

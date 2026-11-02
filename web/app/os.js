@@ -224,6 +224,91 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A till count, read from the text the teller typed or pasted (#558).
+
+     Read exactly or refused, never rounded and never guessed. 1.999 CAD is
+     refused, because sending 2.00 is a count nobody made. A pasted 1500² is
+     refused, because reading the ² as a 2 is a count of 15002. Only the
+     ASCII digits 0 to 9 and one point are read, so a superscript, a
+     subscript, a full-width or an Arabic-Indic digit is refused, not
+     normalised. Every comma is refused, ASCII, Arabic or full-width:
+     0,500 is not 500 and 1.500,25 is not 1500.25, and a till cannot tell
+     which one the teller meant. A sign or a space inside the number is
+     refused too.
+
+     The work is on the text, not on a Number, so no binary rounding can
+     reach the value. The value is the decimal string the server is sent,
+     padded to the places the till can hold. The server checks the same
+     shape again (countAmount in server/src/ledger/routes.ts), then the
+     currency's minor unit. */
+  var COUNT_MAX_WHOLE = "1000000000";   // a till holds at most 1,000,000,000
+
+  /* The places a till count can carry. The till columns are numeric(24,2),
+     so a three-place currency counts to two here; storing three is its own
+     change. A currency with no minor unit counts whole. */
+  function countPlaces(currency) {
+    return displayPlaces(currency) === 0 ? 0 : 2;
+  }
+
+  function overCap(whole, fraction) {
+    if (whole.length !== COUNT_MAX_WHOLE.length) return whole.length > COUNT_MAX_WHOLE.length;
+    return whole > COUNT_MAX_WHOLE || (whole === COUNT_MAX_WHOLE && /[1-9]/.test(fraction));
+  }
+
+  function overCapReason(ccy, typed) {
+    return ccy + " " + typed + " is more than a till can hold. Check the count and type it again.";
+  }
+
+  function parseCount(text, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var raw = String(text == null ? "" : text).trim();
+    if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
+    if (/[,\u060C\u066C\uFE50\uFF0C]/.test(raw)) {
+      return { ok: false, reason: ccy + " amounts are typed without commas. You typed " + raw + ". Remove the commas to save." };
+    }
+    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
+    if (!m || (m[1] === "" && !m[2])) {
+      return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
+    }
+    var places = countPlaces(ccy);
+    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[2] == null ? "" : m[2];
+    if (places === 0 && m[2] != null) {
+      return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
+    }
+    if (fraction.length > places) {
+      var extra = fraction.length - places;
+      return { ok: false, reason: ccy + " takes " + places + " decimal places. You typed " + raw + ". Remove the extra digit" + (extra === 1 ? "" : "s") + " to save." };
+    }
+    while (fraction.length < places) fraction += "0";
+    if (overCap(whole, fraction)) return { ok: false, reason: overCapReason(ccy, raw) };
+    return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
+  }
+
+  /* A count by denomination: rows of [face value, pieces as typed]. Pieces
+     are whole digits or empty. The total is added in whole minor units with
+     BigInt, so 0.10 x 3 plus 0.20 is 0.50, never 0.5000000000000001. */
+  function countPieces(rows, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var places = countPlaces(ccy);
+    var scale = Math.pow(10, places);
+    var total = BigInt(0);
+    for (var i = 0; i < (rows || []).length; i++) {
+      var pieces = String(rows[i][1] == null ? "" : rows[i][1]);
+      if (pieces === "") continue;
+      if (!/^[0-9]+$/.test(pieces)) return { ok: false, reason: "Count " + ccy + " pieces with the digits 0 to 9." };
+      total += BigInt(pieces) * BigInt(Math.round(Number(rows[i][0]) * scale));
+    }
+    var text = total.toString();
+    if (places > 0) {
+      while (text.length <= places) text = "0" + text;
+      text = text.slice(0, -places) + "." + text.slice(-places);
+    }
+    var parts = text.split(".");
+    if (overCap(parts[0], parts[1] || "")) return { ok: false, reason: overCapReason(ccy, text) };
+    return { ok: true, value: text };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -236,7 +321,7 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount, countPlaces: countPlaces, countPieces: countPieces };
 });
 
 
@@ -3178,6 +3263,7 @@
       error.status = response.status;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
+      if (typeof body.holderName === "string" && body.holderName) error.holderName = body.holderName;
       throw error;
     }
     return body;
@@ -3195,6 +3281,25 @@
   function tillOccupant(session) {
     if (!session || session.status !== "open") return "";
     return String(session.openedBy || "").split(":").pop() || "";
+  }
+
+  /* True only when this person holds the open session. A selected till is
+     not the same fact: the menu used to say "· you" for whichever drawer
+     was on screen. */
+  function holdsTill(session, myId) {
+    if (!session || session.status !== "open" || !myId) return false;
+    var opened = String(session.openedBy || "");
+    if (!opened) return false;
+    if (opened === String(myId)) return true;
+    var mine = String(myId).split(":").pop();
+    var theirs = opened.split(":").pop();
+    return !!(mine && theirs && mine === theirs);
+  }
+
+  /* Same people the server grants till:count. One list for the drawer
+     and the deal sheet, so a role cannot grow a second copy. */
+  function canCountTill(role) {
+    return role === "teller" || role === "supervisor" || role === "branch_manager" || role === "administrator";
   }
 
   function customerPayload(name, record) {
@@ -3353,6 +3458,8 @@
         });
       },
       tillOccupant: tillOccupant,
+      holdsTill: holdsTill,
+      canCountTill: canCountTill,
       customerPayload: customerPayload,
       syncCustomer: syncCustomer,
       previewQuote: function (payload) {
@@ -3394,6 +3501,7 @@
             session: results[1].session || null,
             latestCounts: results[1].latestCounts || {},
             currencies: Array.isArray(results[1].currencies) ? results[1].currencies : [],
+            pendingTakeover: results[1].pendingTakeover || null,
           };
         });
       },
@@ -15151,6 +15259,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   // ledger principals are stored tenant-scoped ("tnt-yorkfx:a.singh"); a teller
   // reading their own close-out should see the person, not the scoping
   const personOf = id => String(id || '').split(':').pop() || '—';
+  const initialsOf = name => String(name || '').split(/[\s.]+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase();
   const clockOf = ms => ms ? new Date(ms).toLocaleTimeString('en-CA', {
     hour: '2-digit',
     minute: '2-digit',
@@ -15237,7 +15346,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute
       }
     }, "\u2212"), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+      type: "text",
+      inputMode: "numeric",
+      "aria-label": `${ccy} ${d.v} pieces`,
       value: (counts[ccy] || {})[d.i] ?? '',
       onChange: e => setCount(ccy, d.i, e.target.value),
       placeholder: "0",
@@ -15583,6 +15694,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       c: "var(--cd-on-ink)"
     }), " ", anyEntered ? 'Confirm count & hand off' : 'Confirm as counted')))))), document.body);
   }
+
+  /* The incoming teller counts every currency the book holds. The sheet
+     does not show those amounts. Saving calls the handover route. */
   function TakeoverSheet({
     currencies,
     holder,
@@ -15592,7 +15706,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onSubmit
   }) {
     const [raw, setRaw] = useState({});
-    const ready = currencies.length > 0 && currencies.every(c => String(raw[c] || '').trim() !== '');
+    /* Each count is read exactly from the text, or refused with the reason
+       under its field (#558). Typing and pasting land here the same way, so
+       a pasted 1500² is refused like a typed one. What is sent is the read
+       value, never a rounded Number. */
+    const read = {};
+    currencies.forEach(c => {
+      read[c] = window.CDOS.parseCount(raw[c], c);
+    });
+    const ready = currencies.length > 0 && currencies.every(c => read[c].ok);
+    const shownError = c => String(raw[c] || '').trim() !== '' && !read[c].ok ? read[c].reason : '';
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -15640,15 +15763,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink
       }
     }, "Take over till"), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px]",
+      className: "text-[13px]",
+      "data-held-by": "",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        fontSize: 13
       }
     }, `Held by ${holder || 'Unknown'}. Expected amounts stay hidden until you save this count.`)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
       "aria-label": "Close",
-      className: "p-1.5"
+      className: "grid place-items-center flex-none",
+      style: {
+        width: 44,
+        height: 44
+      }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "x",
       s: 18,
@@ -15663,11 +15792,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }
     }, currencies.map((c, i) => /*#__PURE__*/React.createElement("div", {
       key: c,
-      className: "flex items-center gap-2 px-3 py-2",
+      className: "px-3 py-2",
       style: {
         borderTop: i ? `1px solid ${CD.lineSoft}` : 'none',
         background: 'var(--cd-panel)'
       }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("span", {
       className: "font-semibold flex-none",
       style: {
@@ -15677,27 +15808,35 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink
       }
     }, c), /*#__PURE__*/React.createElement("input", {
-      value: raw[c] || '',
+      "data-takeover": "amount",
+      value: raw[c] ?? '',
       onChange: e => setRaw(o => ({
         ...o,
         [c]: e.target.value
       })),
-      inputMode: "decimal",
-      placeholder: "0.00",
+      inputMode: window.CDOS.countPlaces(c) === 0 ? 'numeric' : 'decimal',
+      placeholder: window.CDOS.countPlaces(c) === 0 ? '0' : '0.00',
       "aria-label": `${c} counted`,
+      "aria-invalid": shownError(c) ? 'true' : undefined,
+      "aria-describedby": shownError(c) ? `takeover-${c}-error` : undefined,
       className: "flex-1 text-right outline-none text-[13px] px-2 py-1.5",
       style: {
-        border: `1px solid ${CD.line}`,
+        border: `1px solid ${shownError(c) ? CD.flag : CD.line}`,
         borderRadius: 7,
         fontVariantNumeric: 'tabular-nums',
         color: CD.ink
       }
-    })))), error ? /*#__PURE__*/React.createElement("div", {
+    })), shownError(c) ? /*#__PURE__*/React.createElement("div", {
+      id: `takeover-${c}-error`,
       role: "alert",
-      className: "text-[12px] mt-3 px-3 py-2",
+      className: "text-[12px] mt-1.5 text-right",
       style: {
-        background: CD.flagSoft,
-        color: CD.flag,
+        color: CD.flag
+      }
+    }, shownError(c)) : null))), error ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "till-refusal text-[12px] mt-3 px-3 py-2",
+      style: {
         borderRadius: 9
       }
     }, error) : null), /*#__PURE__*/React.createElement("div", {
@@ -15709,18 +15848,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onClose,
-      className: "text-[13px] px-3 py-2 font-medium",
+      className: "text-[13px] font-medium",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        minHeight: 44,
+        padding: '0 12px'
       }
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       disabled: !ready || busy,
-      onClick: () => ready && !busy && onSubmit(raw),
-      className: "flex items-center gap-1.5 text-[13px] px-4 py-2 font-semibold text-white",
+      onClick: () => ready && !busy && onSubmit(Object.fromEntries(currencies.map(c => [c, read[c].value]))),
+      className: "flex items-center gap-1.5 text-[13px] font-semibold text-white",
       style: {
         background: ready && !busy ? CD.ink : 'var(--cd-disabled)',
-        borderRadius: 9
+        borderRadius: 9,
+        minHeight: 44,
+        padding: '0 16px'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "check",
@@ -15736,6 +15879,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     onOpenNextDay,
     me,
     canCloseDay = true,
+    canCountTill = false,
     baseline,
     setBaseline,
     receipts,
@@ -15759,6 +15903,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const rows = useMemo(() => allRows.filter(r => r.status !== 'void'), [allRows]);
     const [tab, setTab] = useState('count');
     const tillRootRef = useRef(null);
+    const takeoverKey = useRef({
+      body: '',
+      key: ''
+    });
     /* ---------------- SERVER TILL SESSION ----------------
        On a server-backed desk the drawer is not a spreadsheet: the till holds
        an authoritative balance per currency, and every count, movement and
@@ -15775,6 +15923,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        matches and the close is refused. */
     const [balanceGeneration, setBalanceGeneration] = useState(null);
     const [serverSession, setServerSession] = useState(null);
+    const [pendingTakeover, setPendingTakeover] = useState(null);
     const [serverBalanceError, setServerBalanceError] = useState('');
     /* THE DESK'S OWN MONEY, AND THE DAY'S OWN BOOK.
         This screen totalled every drawer "in CAD" and labelled it so — a
@@ -15832,16 +15981,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [onSessionSync]);
     // hydrate the count fields from whatever the server last recorded for this
     // session, so a reload (or a second teller's screen) shows the same counts
+    const otherHolds = session => !!(serverBacked && session && session.status === 'open' && myId && !(window.CDOS.Backend && window.CDOS.Backend.holdsTill(session, myId)));
     const applyLatestCounts = result => {
       const latest = result && result.latestCounts || {};
-      if (!result || !result.session || result.session.status !== 'open' || !Object.keys(latest).length) return;
+      if (!result || !result.session || result.session.status !== 'open' || otherHolds(result.session) || !Object.keys(latest).length) return;
       const nextQuick = {},
         nextMode = {},
         nextAt = {},
         nextSaved = {};
       Object.entries(latest).forEach(([currency, record]) => {
         if (record == null || record.counted == null) return;
-        nextQuick[currency] = String(record.counted);
+        /* The till columns keep two places, so a saved yen count comes back
+           as 150000.00. Its zero places are dropped, exactly; anything else is
+           left as it is and parseCount says so (#558). */
+        nextQuick[currency] = window.CDOS.countPlaces(currency) === 0 ? String(record.counted).replace(/\.0+$/, '') : String(record.counted);
         nextMode[currency] = 'total';
         const at = new Date(record.countedAt).getTime();
         nextAt[currency] = at;
@@ -15872,6 +16025,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const applySession = result => {
       const session = result && result.session || null;
       setServerSession(session);
+      setPendingTakeover(result && result.pendingTakeover || null);
       applyLatestCounts(result);
       if (sessionSyncRef.current) sessionSyncRef.current(session);
       return session;
@@ -15918,9 +16072,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const refreshTill = () => {
       if (!serverBacked || !window.CDOS.Backend) return Promise.resolve(null);
-      return window.CDOS.Backend.loadTill().then(result => {
-        applyBook(result);
-        return applySession(result);
+      return window.CDOS.Backend.loadTillSession().then(result => {
+        const session = applySession(result);
+        if (otherHolds(session)) {
+          setServerBalances({});
+          if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
+          return session;
+        }
+        return window.CDOS.Backend.loadTill().then(book => {
+          applyBook(book);
+          return applySession(book);
+        });
       });
     };
     useEffect(() => {
@@ -15929,12 +16091,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         setServerCurrencies([]);
         setBalanceGeneration(null);
         setServerSession(null);
+        setPendingTakeover(null);
         setServerBalanceError('');
         return;
       }
       let active = true;
-      window.CDOS.Backend.loadTill().then(result => {
-        if (!active) return;
+      window.CDOS.Backend.loadTillSession().then(result => {
+        if (!active) return null;
+        const session = applySession(result);
+        if (otherHolds(session)) {
+          setServerBalances({});
+          if (result && Array.isArray(result.currencies)) setServerCurrencies(result.currencies);
+          return null;
+        }
+        return window.CDOS.Backend.loadTill();
+      }).then(result => {
+        if (!active || !result) return;
         applyBook(result);
         applySession(result);
       }).catch(error => {
@@ -15952,7 +16124,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // this screen follows money leaving the vault without a remount; the
       // ledger workspace joins it because the first fetch can happen before the
       // OS has learned which till the server is answering for
-    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace]);
+    }, [serverBacked, station && station.tillId, day && day.num, cashVersion, ledgerTillWorkspace, myId]);
 
     // opening the till is an act, not a side effect of looking at the screen
     const openTill = async () => {
@@ -15961,8 +16133,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       setSessionErr('');
       try {
         const session = applySession(await window.CDOS.Backend.openTillSession());
-        const balances = await window.CDOS.Backend.loadTillBalances();
-        applyBook(balances);
+        if (!otherHolds(session)) {
+          const balances = await window.CDOS.Backend.loadTillBalances();
+          applyBook(balances);
+        }
         log && log('Till opened', `Session ${session ? session.sessionNumber : 'Unknown'} · ${tillNm}`);
       } catch (error) {
         setSessionErr(error.message || 'The server would not open this till.');
@@ -16027,11 +16201,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        see tillOccupant in cdos-backend.js. */
     const onLedgerTills = !!(ledgerScope && (ledgerScope.workspaces || []).length && onSelectLedgerTill);
     const occupantOf = session => window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '';
+    const mine = session => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     const tillOptions = onLedgerTills ? ledgerScope.workspaces.map(w => ({
       key: w.workspaceId,
       name: w.tillId,
       occupant: occupantOf(w.session),
       note: w.session && w.session.status === 'open' ? '' : w.session ? 'not open' : 'never opened',
+      yours: mine(w.session),
       on: !!(ledgerTill && ledgerTill.workspaceId === w.workspaceId)
     })) : _tills.map(t => ({
       key: t.id,
@@ -16040,6 +16216,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       // than as a live session this browser has no way to know about
       occupant: '',
       note: t.teller ? 'posted to ' + t.teller : '',
+      yours: false,
       on: !!(station && station.tillId === t.id)
     }));
     const activeOption = tillOptions.find(o => o.on) || null;
@@ -16163,6 +16340,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     });
     const [handoffOpen, setHandoffOpen] = useState(false);
     const [takeoverOpen, setTakeoverOpen] = useState(false);
+    useEffect(() => {
+      const open = () => {
+        if (!window.CDOS._takeoverPending) return;
+        window.CDOS._takeoverPending = false;
+        setSessionErr('');
+        setTakeoverOpen(true);
+      };
+      open();
+      window.addEventListener('cdos-takeover', open);
+      return () => window.removeEventListener('cdos-takeover', open);
+    }, []);
     // the operator strip is usually the same person all day, so let it be dismissed
     // to a small chip; the owner can pop it back open when the drawer changes hands.
     const [stripOpen, setStripOpen] = useState(() => {
@@ -16189,16 +16377,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [handoffs]);
     /* WHO IS ON THIS DRAWER.
         On a server-backed desk the answer is the session's, and only the
-       session's: the person who opened this till, at the time the ledger
+       session's: the holder's display name, at the time the ledger
        recorded. The strip used to read a local shift map seeded from the demo
        roster's `teller` field, so switching drawers renamed the operator to
        "M. Costa" while A. Singh was signed in and the server was recording
-       actor_id = a.singh — the screen and the audit trail naming two different
-       people over the same cash. When the ledger has no open session for this
-       till there is no operator to name, and the strip says so rather than
-       falling back to a roster. */
+       actor_id = a.singh. The screen and the audit trail were naming two
+       different people over the same cash. The login id is not that name.
+       When the ledger has no display name the strip says Unknown, the same
+       word as the takeover sheet. When the ledger has no open session for
+       this till there is no operator to name, and the strip says so rather
+       than falling back to a roster. */
     const serverShift = serverBacked && serverSession && serverSession.status === 'open' ? {
-      operator: personOf(serverSession.openedBy),
+      operator: serverSession.holderName || 'Unknown',
       role: '',
       since: new Date(serverSession.openedAt).getTime()
     } : null;
@@ -16342,15 +16532,47 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }) : null;
     // total held per currency — quick-entered total overrides the denomination count
     const denTotal = c => (DEN[c] || []).reduce((s, [v], i) => s + v * (parseInt((counts[c] || {})[i], 10) || 0), 0);
-    const ccyTotal = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) || 0 : denTotal(c);
-    const isCounted = c => ccyMode(c) === 'total' ? parseFloat(quick[c]) > 0 : Object.values(counts[c] || {}).some(v => parseInt(v, 10) > 0);
+    /* What a count says, exactly (#558): the typed total read by parseCount,
+       or the pieces added in whole minor units by countPieces. Save and
+       close send this text. A refused count is never sent and never
+       rounded; its reason shows under the field. */
+    const countRead = c => ccyMode(c) === 'total' ? window.CDOS.parseCount(quick[c] ?? '', c) : window.CDOS.countPieces((DEN[c] || []).map(([v], i) => [v, (counts[c] || {})[i] ?? '']), c);
+    const ccyTotal = c => {
+      const r = countRead(c);
+      return r.ok ? Number(r.value) : 0;
+    }; // display only
+    const isCounted = c => {
+      const typed = ccyMode(c) === 'total' ? String(quick[c] ?? '').trim() : Object.values(counts[c] || {}).join('').trim();
+      if (!typed) return false;
+      const r = countRead(c);
+      return !r.ok || /[1-9]/.test(r.value);
+    };
+    const countRefusal = c => {
+      const r = countRead(c);
+      return isCounted(c) && !r.ok ? r.reason : '';
+    };
+    /* The first refused count, as words for a disabled button's title and
+       aria-describedby (#558). Empty when every count reads. */
+    const firstRefusal = codes => {
+      const c = codes.find(countRefusal);
+      return c ? countRefusal(c) : '';
+    };
+    /* An empty field is not a count (#558). Save count stays off while the
+       field in view is empty and says why, as Take over till does. The
+       reason shows under the field once the teller has typed there and
+       emptied it, so a drawer just opened is not shown as an error. */
+    const fieldEmpty = c => ccyMode(c) === 'total' ? String(quick[c] ?? '').trim() === '' : Object.values(counts[c] || {}).join('').trim() === '';
+    const emptyReason = c => fieldEmpty(c) ? window.CDOS.parseCount('', c).reason : '';
+    const emptied = c => Object.prototype.hasOwnProperty.call(ccyMode(c) === 'total' ? quick : counts, c);
+    const shownCountError = c => countRefusal(c) || (emptied(c) ? emptyReason(c) : '');
     const countedCcys = useMemo(() => {
       const keys = new Set(CCYS);
       Object.keys(quick).forEach(k => keys.add(k));
       Object.keys(counts).forEach(k => keys.add(k));
       return [...keys].filter(isCounted);
     }, [counts, quick, mode]);
-    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
+    const grandHome = useMemo(() => countedCcys.some(countRefusal) ? null : totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]); // a refused count has no total (docs/ABSENT_FIGURES.md)
+
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
@@ -16361,9 +16583,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [serverBalances, serverCurrencies]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
-    const openedBy = serverSession ? String(serverSession.openedBy || '') : '';
-    const iHold = !!(myId && openedBy && (openedBy === myId || openedBy.split(':').pop() === String(myId).split(':').pop()));
+    /* Why Save count is off, in words: a refused count first, then an empty field in view. */
+    const saveWhy = firstRefusal(countedCcys) || emptyReason(ccy);
+    const iHold = mine(serverSession);
     const heldByOther = !!(serverBacked && sessionOpen && serverSession && myId && !iHold);
+    const mayCount = !serverBacked || !!(iHold && canCountTill);
+    useEffect(() => {
+      if (!heldByOther) return;
+      setQuick({});
+      setCounts({});
+      setCountedAt({});
+      try {
+        localStorage.removeItem('cdos_till_quick');
+      } catch (e) {}
+    }, [heldByOther]);
     const sessionClosed = serverBacked && !!(serverSession && serverSession.status === 'closed');
     // "the book is shut" and "no session has been opened yet" are different
     // states and must not render the same. The OS marks the day closed when
@@ -16377,23 +16610,40 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        and a count sheet that prints 0.00 there invites a teller to write a
        variance against a number nobody stood behind. See docs/ABSENT_FIGURES.md. */
     const expectedOf = c => heldByOther ? null : serverBacked && serverBalances && Object.prototype.hasOwnProperty.call(serverBalances, c) ? Number(serverBalances[c]) : null;
-    const doTakeover = async raw => {
+    /* `read` is the sheet's exact count per currency (parseCount), sent as
+       is. It used to be Number(text).toFixed(2), which sent 2.00 for a typed
+       1.999 and two places for a currency with none (#558). */
+    const doTakeover = async read => {
       if (!serverBacked || !window.CDOS.Backend || tillBusy) return;
       const counts = {};
-      serverCcys.forEach(c => {
-        counts[c] = Number(raw[c]).toFixed(2);
-      });
+      for (let i = 0; i < serverCcys.length; i++) {
+        const c = serverCcys[i];
+        if (typeof read[c] !== 'string') {
+          setSessionErr('Reopen the takeover sheet, the till currencies changed.');
+          return;
+        }
+        counts[c] = read[c];
+      }
+      const body = JSON.stringify(counts);
+      if (takeoverKey.current.body !== body || !takeoverKey.current.key) {
+        takeoverKey.current = {
+          body,
+          key: window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'ho' + Date.now()
+        };
+      }
       setTillBusy('handover');
       setSessionErr('');
       try {
-        const key = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'ho' + Date.now();
         const result = await window.CDOS.Backend.handoverTill({
-          idempotencyKey: key,
+          idempotencyKey: takeoverKey.current.key,
           counts
         });
+        try {
+          localStorage.removeItem('cdos_till_quick');
+        } catch (e) {}
         clearAllCounts();
-        applySession(result);
-        applyBook(await window.CDOS.Backend.loadTillBalances());
+        const session = applySession(result);
+        if (!otherHolds(session)) applyBook(await window.CDOS.Backend.loadTillBalances());
         log && log('Till taken over', tillNm);
         setTakeoverOpen(false);
       } catch (error) {
@@ -16502,12 +16752,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const saveSnapshot = async () => {
       const now = Date.now();
       if (saved || now - saveLock.current < 1800 || !countedCcys.length) return;
+      const refused = countedCcys.find(countRefusal);
+      if (refused) {
+        setSessionErr(countRefusal(refused));
+        return;
+      }
+      if (emptyReason(ccy)) {
+        setSessionErr(emptyReason(ccy));
+        return;
+      }
       saveLock.current = now;
       if (serverBacked) {
         // the server only accepts counts for currencies it holds a balance for;
         // anything else in the drawer stays a local figure until the ledger
         // carries that currency
-        const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, ccyTotal(c).toFixed(2)]));
+        const serverCounts = Object.fromEntries(countedCcys.filter(c => serverCcys.includes(c)).map(c => [c, countRead(c).value]));
         if (Object.keys(serverCounts).length) {
           if (!serverSession || serverSession.status !== 'open') {
             setSessionErr('Open the till before saving a count — there is no session to record it against.');
@@ -16539,9 +16798,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        currencies the server holds a till balance for, no more and no less.
        Locally it stays the old derived list. */
     const reconCcys = serverBacked ? serverCcys : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
+    /* A refused count is not a count of 0; its row stays uncounted (docs/ABSENT_FIGURES.md). */
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
-      const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
+      const counted = countedCcys.includes(c) && !countRefusal(c) ? ccyTotal(c) : null;
       const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c);
       return {
         c,
@@ -16565,7 +16825,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     };
     const offRows = recon.filter(offOf);
     const countedN = recon.filter(r => r.counted != null).length;
-    const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
+    const closeBlocked = serverBacked ? !serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length || recon.some(r => countRefusal(r.c)) : !!(settings && settings.requireCountOnClose) && countedN < recon.length;
+    const closeRefusal = closeBlocked && serverBalancesReady && sessionOpen ? firstRefusal(recon.map(r => r.c)) : '';
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */
@@ -16614,17 +16875,21 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         if (missing.length) {
           throw new Error(`Count ${missing.join(', ')} before closing — the close writes your count back as the till balance.`);
         }
+        const refused = recon.find(r => countRefusal(r.c));
+        if (refused) throw new Error(countRefusal(refused.c));
         applySession(await window.CDOS.Backend.closeTillSession(serverSession.sessionId, {
           idempotencyKey: `till-close-${serverSession.sessionId}`,
-          counts: Object.fromEntries(recon.map(r => [r.c, r.counted.toFixed(2)])),
+          counts: Object.fromEntries(recon.map(r => [r.c, countRead(r.c).value])),
           balanceGeneration,
           note: summary.note
         }));
         /* The count is done. Drop its mark before reading the book, so
            the next count pins the generation it actually starts on. */
         dropCountMark();
-        const balances = await window.CDOS.Backend.loadTillBalances();
-        applyBook(balances);
+        if (!heldByOther) {
+          const balances = await window.CDOS.Backend.loadTillBalances();
+          applyBook(balances);
+        }
         setSessionErr('');
       }
       onCloseDay && onCloseDay(summary);
@@ -16655,9 +16920,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                stored would put the old mark back, and the next count
                would close against the drawer that just moved. */
             clearAllCounts();
-            const fresh = await window.CDOS.Backend.loadTill();
-            applyBook(fresh);
-            applySession(fresh);
+            if (!heldByOther) {
+              const fresh = await window.CDOS.Backend.loadTill();
+              applyBook(fresh);
+              applySession(fresh);
+            }
           } catch (refreshError) {
             setServerBalanceError(refreshError.message || 'Server balances unavailable');
           }
@@ -16742,11 +17009,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const phoneTotalsKnown = allPhoneCounted && totalExpHome != null && totalCountHome != null && totalVarHome != null;
     const phoneBalanced = phoneTotalsKnown && Math.abs(totalVarHome) <= tolHome + 0.005;
     const phoneDiff = !phoneTotalsKnown ? '' : phoneBalanced ? unitText(totalVarHome, homeCcy) + ' · Balanced' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy) + (totalVarHome > 0 ? ' · Over' : ' · Under');
-    const phoneCloseNote = !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : phoneRemaining > 0 ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.' : "This locks today's records. You can't edit them after.";
+    const phoneCloseNote = !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : closeRefusal ? closeRefusal : phoneRemaining > 0 ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.' : "This locks today's records. You can't edit them after.";
     /* Wide reconcile ink. The app mute grey is 4.40:1 and the app green
        on its soft fill is 3.65:1. This screen uses the phone colours. */
-    const reconInk = '#5E5E63';
-    const reconGreen = '#1D6B45';
+    const reconInk = 'var(--till-session, #5E5E63)';
+    const reconGreen = 'var(--till-live, #1D6B45)';
     const reconGreenSoft = '#E5F2EA';
     const phoneChip = r => {
       if (r.counted == null || r.variance == null) return null;
@@ -16889,7 +17156,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontSize: 12,
         color: CD.ink
       }
-    }, o.name, o.on ? /*#__PURE__*/React.createElement("span", {
+    }, o.name, o.yours ? /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -17000,7 +17267,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     })())), /*#__PURE__*/React.createElement("div", {
       className: "till-tabwrap"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "fld-bar",
+      className: "fld-bar fld-pinned",
       style: {
         margin: '2px -16px 0',
         padding: '0 16px'
@@ -17014,28 +17281,27 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: ic,
       s: 13,
       c: tab === id ? 'var(--cd-on-ink)' : CD.mute
-    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && /*#__PURE__*/React.createElement("div", {
-      className: "till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
-      style: {
-        background: CD.brassSoft,
-        borderBottom: `1px solid ${CD.line}`,
-        color: CD.ink
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "alert",
-      s: 13,
-      c: CD.brass
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "flex-1 min-w-0"
-    }, "This branch has ", ledgerScope.workspaces.length, " tills on the ledger. Everything on this screen \u2014 the expected figures, the counts, the close \u2014 belongs to ", /*#__PURE__*/React.createElement("b", {
-      style: {
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, ledgerTill.tillId), ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '', ".", /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.mute
-      }
-    }, " Use the till name in the header to move to another drawer; the ledger moves with it."))), switchNote && /*#__PURE__*/React.createElement("div", {
+    }), " ", label))))), serverBacked && /*#__PURE__*/React.createElement(React.Fragment, null, ledgerAmbiguous && ledgerTill && (() => {
+      const place = ledgerTill.branchName ? ` at ${ledgerTill.branchName}` : '';
+      const note = `This branch has ${ledgerScope.workspaces.length} tills on the ledger. Everything on this screen — the expected figures, the counts, the close — belongs to ${ledgerTill.tillId}${place}. Use the till name in the header to move to another drawer; the ledger moves with it.`;
+      return /*#__PURE__*/React.createElement("div", {
+        className: "till-scope-note flex items-start gap-2 px-4 py-2.5 flex-none text-[11.5px]",
+        role: "note",
+        "aria-label": note,
+        style: {
+          background: CD.brassSoft,
+          borderBottom: `1px solid ${CD.line}`,
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "alert",
+        s: 13,
+        c: CD.brass
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "till-scope-text flex-1 min-w-0",
+        "aria-hidden": "true"
+      }, note));
+    })(), switchNote && /*#__PURE__*/React.createElement("div", {
       className: "till-switch-note flex items-center gap-2 px-4 py-2 flex-none text-[11.5px]",
       style: {
         background: CD.brassSoft,
@@ -17107,7 +17373,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 14,
       c: "var(--cd-on-ink)"
     }), " ", tillBusy === 'open' ? 'Opening…' : 'Open the till')), serverSession && sessionOpen && /*#__PURE__*/React.createElement("div", {
-      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`,
@@ -17126,13 +17392,25 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.ink,
         fontFamily: 'Space Mono, monospace'
       }
-    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", personOf(serverSession.openedBy), " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
+    }, "#", serverSession.sessionNumber), " open \xB7 ", serverSession.businessDate, " \xB7 opened by ", serverSession.holderName || 'Unknown', " at ", clockOf(new Date(serverSession.openedAt).getTime())), /*#__PURE__*/React.createElement("span", {
       className: "ml-auto flex-none",
       style: {
         color: reconInk
       }
-    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), sessionClosed && /*#__PURE__*/React.createElement("div", {
-      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[11px]",
+    }, serverCcys.length, " ledger currenc", serverCcys.length === 1 ? 'y' : 'ies', " \xB7 ", countedN, "/", recon.length, " counted")), iHold && pendingTakeover && /*#__PURE__*/React.createElement("div", {
+      className: "till-waiting flex items-center gap-2 px-4 py-2 flex-none text-[13px]",
+      role: "status",
+      "data-waiting": "takeover",
+      style: {
+        borderBottom: `1px solid ${CD.line}`,
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 14,
+      c: CD.ink
+    }), /*#__PURE__*/React.createElement("span", null, pendingTakeover.name + "'s takeover is waiting for a supervisor.")), sessionClosed && /*#__PURE__*/React.createElement("div", {
+      className: "till-sessionline flex items-center gap-2 px-4 py-1.5 flex-none text-[12px]",
       style: {
         background: CD.greenSoft,
         borderBottom: `1px solid ${CD.line}`,
@@ -17201,9 +17479,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRadius: 8,
         background: CD.ink,
         color: 'var(--cd-on-ink)',
-        fontSize: 10.5
+        fontSize: 12
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), /*#__PURE__*/React.createElement("div", {
+    }, current ? initialsOf(current.operator) : '—'), /*#__PURE__*/React.createElement("div", {
       className: "min-w-0 leading-tight"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px]",
@@ -17215,18 +17493,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: reconInk
       }
     }, "On the drawer:"), " ", /*#__PURE__*/React.createElement("b", null, current ? current.operator : '—'), current && current.role ? /*#__PURE__*/React.createElement("span", {
-      className: "text-[11px]",
+      className: "text-[12px]",
       style: {
         color: reconInk
       }
     }, " \xB7 ", current.role) : null), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px]",
+      className: "text-[12px]",
       style: {
         color: reconInk
       }
     }, current && current.since ? `since ${clockOf(current.since)} · ${sinceOperator}` : serverBacked ? 'nobody on this till — no open session on the ledger' : 'unassigned', requireCount ? ' · count required at handoff' : ''))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-1.5 flex-none"
-    }, heldByOther ? /*#__PURE__*/React.createElement("button", {
+    }, heldByOther ? canCountTill ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-takeover": "strip",
       onClick: () => {
@@ -17244,7 +17522,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       n: "users",
       s: 13,
       c: CD.mute
-    }), " Take over till") : /*#__PURE__*/React.createElement("button", {
+    }), " Take over till") : null : /*#__PURE__*/React.createElement("button", {
       onClick: () => setHandoffOpen(true),
       title: serverBacked ? 'Records a handover note and a count for this desk. Who the LEDGER holds responsible stays the operator on the open session. Close it and reopen it as the next person to change that.' : 'Hand the drawer to the next operator',
       className: "flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5",
@@ -17263,8 +17541,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: "Hide operator bar",
       className: "grid place-items-center",
       style: {
-        width: 28,
-        height: 28,
+        width: 44,
+        height: 44,
         borderRadius: 8,
         border: `1px solid ${CD.line}`,
         background: CD.panel,
@@ -17275,7 +17553,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       s: 13,
       c: CD.mute
     })))) : /*#__PURE__*/React.createElement("div", {
-      className: "till-operator flex-none px-4 py-1.5",
+      className: "till-operator flex items-center gap-2 flex-none px-4 py-1.5",
       style: {
         background: 'var(--cd-panel)',
         borderBottom: `1px solid ${CD.line}`
@@ -17283,7 +17561,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setStripOpen(true),
       title: "Show who's on the drawer",
-      className: "flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1",
+      className: "till-operator-chip flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1",
       style: {
         border: `1px solid ${CD.line}`,
         borderRadius: 999,
@@ -17293,14 +17571,32 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("span", {
       className: "grid place-items-center flex-none font-semibold",
       style: {
-        width: 16,
-        height: 16,
-        borderRadius: 5,
+        width: 24,
+        height: 24,
+        borderRadius: 6,
         background: CD.ink,
         color: 'var(--cd-on-ink)',
-        fontSize: 8
+        fontSize: 12
       }
-    }, current ? current.operator.split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer")), /*#__PURE__*/React.createElement("div", {
+    }, current ? initialsOf(current.operator) : '—'), current ? current.operator : 'Operator', " \xB7 on the drawer"), heldByOther && canCountTill && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-takeover": "chip",
+      onClick: () => {
+        setSessionErr('');
+        setTakeoverOpen(true);
+      },
+      className: "flex items-center gap-1.5 text-[13px] font-medium px-2.5 py-1",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 999,
+        color: CD.ink,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "users",
+      s: 12,
+      c: CD.mute
+    }), " Take over till")), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto"
     }, tab === 'count' && /*#__PURE__*/React.createElement("div", {
       className: "till-count-sheet p-4 pb-0"
@@ -17334,7 +17630,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           background: on ? 'var(--cd-panel)' : CD.green
         }
       }));
-    })), /*#__PURE__*/React.createElement("div", {
+    })), mayCount ? /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-count",
       className: "flex items-center justify-between mb-3"
     }, /*#__PURE__*/React.createElement("div", {
@@ -17362,7 +17658,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Clear ", ccy)), ccyMode(ccy) === 'total' ? /*#__PURE__*/React.createElement("div", {
+    }, "Clear ", ccy)) : /*#__PURE__*/React.createElement("p", {
+      "data-count-gate": "",
+      style: {
+        fontSize: 12,
+        color: CD.ink,
+        margin: '4px 0 12px'
+      }
+    }, "Only the person on this till can count it."), mayCount && ccyMode(ccy) === 'total' ? /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       style: {
         background: CD.panel,
@@ -17377,7 +17680,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Skip the breakdown \u2014 just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: {
-        border: `1px solid ${CD.ink}`,
+        border: `1px solid ${shownCountError(ccy) ? CD.flag : CD.ink}`,
         borderRadius: 10,
         maxWidth: 340
       }
@@ -17389,7 +17692,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         borderRight: `1px solid ${CD.line}`
       }
     }, ccy), /*#__PURE__*/React.createElement("input", {
-      type: "number",
+      type: "text",
+      inputMode: window.CDOS.countPlaces(ccy) === 0 ? 'numeric' : 'decimal',
+      "aria-label": `${ccy} counted`,
+      "aria-invalid": shownCountError(ccy) ? 'true' : undefined,
       autoFocus: true,
       value: heldByOther ? '' : quick[ccy] ?? '',
       onChange: e => {
@@ -17400,17 +17706,17 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         stampCount(ccy);
       },
       placeholder: "0.00",
-      className: "flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none",
+      className: "till-count-input flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none",
       style: {
         fontVariantNumeric: 'tabular-nums',
         fontFamily: 'Space Mono, monospace'
       }
-    })), !heldByOther && ccy !== homeCcy && homeOf(parseFloat(quick[ccy]) || 0, ccy) != null && /*#__PURE__*/React.createElement("div", {
+    })), !heldByOther && !countRefusal(ccy) && ccy !== homeCcy && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[12px]",
       style: {
         color: CD.mute
       }
-    }, "\u2248 ", fmt(homeOf(parseFloat(quick[ccy]) || 0, ccy), homeCcy))) : /*#__PURE__*/React.createElement("div", {
+    }, "\u2248 ", fmt(homeOf(ccyTotal(ccy), ccy), homeCcy))) : mayCount ? /*#__PURE__*/React.createElement("div", {
       className: "grid md:grid-cols-2 gap-x-5 gap-y-0"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1 mt-1",
@@ -17436,7 +17742,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       ccy: ccy,
       counts: heldByOther ? {} : counts,
       setCount: setCount
-    }))))), /*#__PURE__*/React.createElement("div", {
+    })))) : null), /*#__PURE__*/React.createElement("div", {
       className: "till-scroll-pad"
     }), /*#__PURE__*/React.createElement("div", {
       className: "till-count-foot",
@@ -17472,9 +17778,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, /*#__PURE__*/React.createElement("input", {
       type: "text",
       inputMode: "decimal",
-      value: heldByOther ? '' : ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
-      readOnly: heldByOther || ccyMode(ccy) !== 'total',
+      value: !mayCount ? '' : ccyMode(ccy) === 'total' ? quick[ccy] ?? '' : unitText(ccyTotal(ccy), ccy),
+      readOnly: !mayCount || ccyMode(ccy) !== 'total',
       onFocus: () => {
+        if (!mayCount) return;
         if (ccyMode(ccy) !== 'total') {
           setMode(o => ({
             ...o,
@@ -17487,13 +17794,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       },
       onChange: e => {
+        if (!mayCount) return;
         setQuick(o => ({
           ...o,
-          [ccy]: e.target.value.replace(/[^0-9.]/g, '')
+          [ccy]: e.target.value
         }));
         stampCount(ccy);
       },
-      className: "min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
+      className: "till-count-input min-w-0 px-2.5 py-1.5 text-lg font-bold text-right outline-none bg-transparent",
       style: {
         width: 150,
         fontVariantNumeric: 'tabular-nums',
@@ -17508,7 +17816,15 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         borderLeft: `1px solid ${CD.line}`
       }
-    }, ccy)), !heldByOther && /*#__PURE__*/React.createElement("div", {
+    }, ccy)), shownCountError(ccy) ? /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-count-refusal": ccy,
+      className: "text-[12px] mt-1.5",
+      style: {
+        color: CD.flag,
+        maxWidth: 260
+      }
+    }, shownCountError(ccy)) : null, !heldByOther && /*#__PURE__*/React.createElement("div", {
       className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
@@ -17587,28 +17903,33 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         lineHeight: 1.1
       },
       title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
-    }, fmtHome(grandHome)), /*#__PURE__*/React.createElement("button", {
+    }, fmtHome(grandHome)), sessionOpen && saveWhy ? /*#__PURE__*/React.createElement("span", {
+      id: "till-save-why",
+      hidden: true
+    }, saveWhy) : null, /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
-      disabled: saved || !sessionOpen || tillBusy === 'count',
-      title: !sessionOpen ? 'Open the till before saving a count' : '',
+      disabled: saved || !sessionOpen || tillBusy === 'count' || !!saveWhy,
+      title: !sessionOpen ? 'Open the till before saving a count' : saveWhy,
+      "aria-describedby": sessionOpen && saveWhy ? 'till-save-why' : undefined,
       className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
-        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
+        background: saved ? CD.green : sessionOpen && !saveWhy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 9,
         marginLeft: 'auto',
-        cursor: sessionOpen ? 'pointer' : 'not-allowed',
+        cursor: sessionOpen && !saveWhy ? 'pointer' : 'not-allowed',
         transition: 'background .25s ease, transform .12s ease'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: saved ? 'checkcircle' : 'checkcircle',
       s: 15,
       c: "var(--cd-on-ink)"
-    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), /*#__PURE__*/React.createElement("div", {
-      className: "till-count-hint text-[10.5px] py-2",
+    }), " ", saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'))), mayCount && /*#__PURE__*/React.createElement("div", {
+      className: "till-count-hint py-2",
       style: {
+        fontSize: 12,
         color: CD.faint
       }
-    }, "Counting denominations updates the total live \xB7 or tap the counted figure to type it in directly \xB7 expected comes from the ledger float."))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
+    }, 'Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.'))), tab === 'reconcile' && (bookClosed ? /*#__PURE__*/React.createElement("div", {
       "data-tour": "till-reconcile",
       className: "p-5 flex flex-col",
       style: {
@@ -18039,7 +18360,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         className: "till-recon-counted"
       }, unitText(r.counted, r.c))), /*#__PURE__*/React.createElement("div", {
         className: "till-recon-expected"
-      }, 'Expected ' + (r.expected == null ? '' : unitText(r.expected, r.c))), chip ? /*#__PURE__*/React.createElement("span", {
+      }, r.expected == null ? 'Expected not shown' : 'Expected ' + unitText(r.expected, r.c)), chip ? /*#__PURE__*/React.createElement("span", {
         className: 'till-recon-chip ' + chip.tone
       }, chip.text) : null)), note ? /*#__PURE__*/React.createElement("div", {
         className: "till-recon-note"
@@ -18066,6 +18387,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       type: "button",
       onClick: clickClose,
       disabled: closing || closeBlocked,
+      title: closeRefusal,
+      "aria-describedby": closeRefusal ? 'till-close-why' : undefined,
       className: "till-recon-close-btn",
       style: {
         background: closing ? CD.green : closeBlocked ? '#D1D1D6' : '#000',
@@ -18076,12 +18399,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       className: "till-recon-close-note"
     }, phoneCloseNote)) : null, /*#__PURE__*/React.createElement("div", {
       className: "till-recon-dock-pad"
-    })), /*#__PURE__*/React.createElement("div", {
+    })), closeRefusal ? /*#__PURE__*/React.createElement("span", {
+      id: "till-close-why",
+      hidden: true
+    }, closeRefusal) : null, /*#__PURE__*/React.createElement("div", {
       className: "till-recon-desk flex items-center gap-3 mt-3"
     }, canCloseDay ? /*#__PURE__*/React.createElement("button", {
       onClick: clickClose,
       disabled: closing || closeBlocked,
-      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer' : '',
+      title: closeBlocked ? !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'There is no open till session to close' : closeRefusal || (serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : '',
+      "aria-describedby": closeRefusal ? 'till-close-why' : undefined,
       className: "till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white",
       style: {
         background: closing ? CD.green : CD.ink,
@@ -18114,7 +18441,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: serverBalanceError ? CD.flag : reconInk
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : closeRefusal || `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
@@ -18549,7 +18876,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           fontFamily: 'Space Mono, monospace'
         }
-      }, num(r.expected)), /*#__PURE__*/React.createElement("td", {
+      }, r.expected == null ? 'not shown' : num(r.expected)), /*#__PURE__*/React.createElement("td", {
         className: "py-1.5 text-right",
         style: {
           fontVariantNumeric: 'tabular-nums',
@@ -36350,6 +36677,34 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [preview, setPreview] = useState(null);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
+    const [serverCode, setServerCode] = useState('');
+    const [holderName, setHolderName] = useState('');
+    const clearServerError = () => {
+      setServerError('');
+      setServerCode('');
+      setHolderName('');
+    };
+    const showServerError = (error, fallback) => {
+      setServerError(error && error.message || fallback);
+      setServerCode(error && error.code || '');
+      setHolderName(error && error.holderName || '');
+    };
+    const mayCountTill = !!(window.CDOS.Backend && window.CDOS.Backend.canCountTill && window.CDOS.Backend.canCountTill(window.CDOS.serverRole));
+    const takeOverTill = serverCode === 'TILL_HELD' && mayCountTill ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-takeover": "deal",
+      onClick: () => {
+        onClose();
+        if (window.CDOS.openTakeover) window.CDOS.openTakeover();
+      },
+      title: holderName ? 'Take over this till from ' + holderName : 'Take over this till',
+      className: "w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
+      style: {
+        borderRadius: 9,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)'
+      }
+    }, "Take over this till") : null;
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -36460,7 +36815,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const rateN = pricing.rate;
     useEffect(() => {
       setServerQuote(null);
-      setServerError('');
+      clearServerError();
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
     useEffect(() => {
       if (!isExchange || !(parseFloat(inAmt) > 0) || !window.CDOS.Backend || !window.CDOS.Backend.previewQuote) {
@@ -36898,7 +37253,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const getServerQuote = async () => {
       if (!canSave || !window.CDOS.Backend) return;
       setServerBusy(true);
-      setServerError('');
+      clearServerError();
       try {
         const synced = await window.CDOS.Backend.syncCustomer(customer, rec);
         setClients(list => ({
@@ -36928,7 +37283,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         }
         setServerQuote(quote);
       } catch (error) {
-        setServerError(error.message || 'The server quote could not be created.');
+        showServerError(error, 'The server quote could not be created.');
       } finally {
         setServerBusy(false);
       }
@@ -36936,7 +37291,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const postServerQuote = async () => {
       if (!serverQuote || serverBusy || !window.CDOS.Backend) return;
       setServerBusy(true);
-      setServerError('');
+      clearServerError();
       try {
         const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
         const serbia = packId === 'pack-rs-v1';
@@ -36977,7 +37332,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         onDone && onDone(row.id);
       } catch (error) {
         if (error.code === 'QUOTE_EXPIRED' || error.code === 'QUOTE_NOT_ACTIVE') setServerQuote(null);
-        setServerError(error.message || 'The transaction was not posted.');
+        showServerError(error, 'The transaction was not posted.');
       } finally {
         setServerBusy(false);
       }
@@ -37106,19 +37461,19 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       const chequeOnLedger = serverBacked && isCheque && _K && _K.ledger();
       if (chequeOnLedger) {
         setServerBusy(true);
-        setServerError('');
+        clearServerError();
         try {
           posted = await postCheque();
           ref = posted.transactionRef;
         } catch (error) {
-          setServerError(error.message || 'The cheque was not cashed.');
+          showServerError(error, 'The cheque was not cashed.');
           setServerBusy(false);
           return;
         }
         setServerBusy(false);
       } else if (serverBacked && (isMO || isBill) && window.CDOS.Backend) {
         setServerBusy(true);
-        setServerError('');
+        clearServerError();
         try {
           posted = await postObligationDeal(ref);
           ref = posted.transactionRef;
@@ -37127,7 +37482,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
              docs/CASH_OWNERSHIP_INVARIANTS.md — so a deal the ledger
              refused is a deal that did not happen, and recording it here
              would be inventing money. */
-          setServerError(error.message || 'The transaction was not posted.');
+          showServerError(error, 'The transaction was not posted.');
           setServerBusy(false);
           return;
         }
@@ -38605,7 +38960,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, "Nothing was posted."), " ", serverError), !isExchange && takeOverTill, serverBacked && isExchange ? /*#__PURE__*/React.createElement(React.Fragment, null, serverQuote && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2 text-[11px]",
       style: {
         background: CD.greenSoft,
@@ -38624,7 +38979,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.flag
       }
-    }, serverError), phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
+    }, serverError), takeOverTill, phoneSheet && !allGreen ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: showMissing,
       disabled: quotePending,
@@ -66177,10 +66532,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const dx = ev.clientX - s.sx,
           dy = ev.clientY - s.sy;
         const box = {};
-        if (dir.indexOf('e') >= 0) box.w = Math.max(300, s.ow + dx);
+        const floor = String(win.id).split('~')[0] === 'till' ? 420 : 300;
+        if (dir.indexOf('e') >= 0) box.w = Math.max(floor, s.ow + dx);
         if (dir.indexOf('s') >= 0) box.h = Math.max(200, s.oh + dy);
         if (dir.indexOf('w') >= 0) {
-          const nw = Math.max(300, s.ow - dx);
+          const nw = Math.max(floor, s.ow - dx);
           box.w = nw;
           box.x = Math.max(0, s.ox + (s.ow - nw));
         }
@@ -67499,7 +67855,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             background: on ? 'var(--ink)' : 'rgba(255,255,255,0.55)',
             color: on ? '#fff' : 'var(--soft)'
           }
-        }, t.name.replace(/\s+—.*/, ''), rec && t.teller === rec.name ? ' · yours' : t.operator ? ' · ' + t.operator + ' on now' : t.teller ? ' · ' + t.teller : ' · free');
+        }, t.name.replace(/\s+—.*/, ''), t.operator ? ' · ' + t.operator + ' on now' : t.teller ? ' · ' + t.teller : ' · free');
       })));
     })), /*#__PURE__*/React.createElement("button", {
       className: "go",
@@ -67596,7 +67952,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     me,
     gate,
     ledgerScope,
-    onSelectLedgerTill
+    onSelectLedgerTill,
+    myId
   }) {
     const [open, setOpen] = useState(false);
     const [pending, setPending] = useState(null); // option key awaiting confirmation
@@ -67612,6 +67969,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [open]);
     const ab = branches.find(b => b.id === station.branchId) || branches[0];
     const occupantOf = session => window.CDOS.Backend && window.CDOS.Backend.tillOccupant ? window.CDOS.Backend.tillOccupant(session) : '';
+    const yours = session => !!(window.CDOS.Backend && window.CDOS.Backend.holdsTill && window.CDOS.Backend.holdsTill(session, myId));
     /* One list, whichever book is in charge. `onLedger` says which, because a
        key from the local list must never be handed to the server as a
        workspace and a workspace id means nothing to the local station. */
@@ -67622,6 +67980,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       occupant: occupantOf(w.session),
       // no session on the ledger means the book cannot say who is there
       note: w.session && w.session.status === 'open' ? '' : w.session ? 'not open' : 'never opened',
+      yours: yours(w.session),
       on: !!(ledgerScope.active && ledgerScope.active.workspaceId === w.workspaceId)
     })) : (ab && ab.tills || []).filter(t => t.status !== 'closed').map(t => ({
       key: t.id,
@@ -67630,6 +67989,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       // as a live session — this browser cannot know who is sitting down
       occupant: '',
       note: t.teller ? 'posted to ' + t.teller : '',
+      yours: false,
       on: station.tillId === t.id
     }));
     const at = options.find(o => o.on) || null;
@@ -67759,7 +68119,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.faint
       }
-    }, o.on ? ' · you' : o.occupant ? ' · ' + o.occupant + ' on now' : o.note ? ' · ' + o.note : '')), o.on && /*#__PURE__*/React.createElement(Ic, {
+    }, o.yours ? ' · you' : o.occupant ? ' · ' + o.occupant + ' on now' : o.note ? ' · ' + o.note : '')), o.on && /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 13,
       c: CD.ink
@@ -69219,7 +69579,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             x: 0,
             y: 0
           };
-          const W = Math.max(320, Math.min(w.w, dw - 16));
+          const floor = String(w.id).split('~')[0] === 'till' && dw >= 1280 ? 420 : 320;
+          const W = Math.max(floor, Math.min(w.w, dw - 16));
           const H = Math.max(240, Math.min(w.h, dh - 16));
           const X = Math.max(8, Math.min(w.x, dw - W - 8));
           const Y = Math.max(8, Math.min(w.y, dh - H - 8));
@@ -69459,6 +69820,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     useEffect(() => {
       meRef.current = me;
     }, [me]);
+
+    /* A person the directory does not know yet still has a posting when
+       the server says so. The stop screen is for someone with no branch
+       at all. The local branch id is this desk's, not the server's. */
+    const postedBranch = user => {
+      const ids = user && user.authorizedBranchIds;
+      if (!Array.isArray(ids) || !ids.length) return {
+        branches: [],
+        home: null
+      };
+      const open = branches.find(b => b.status === 'open' && b.main) || branches.find(b => b.status === 'open') || branches[0];
+      return open ? {
+        branches: [open.id],
+        home: open.id
+      } : {
+        branches: [],
+        home: null
+      };
+    };
+    const withPosting = (rec, user) => {
+      if (!rec || !rec._adopted || rec.branches === '*' || Array.isArray(rec.branches) && rec.branches.length) return rec;
+      const spot = postedBranch(user);
+      return {
+        ...rec,
+        branches: spot.branches,
+        home: spot.home
+      };
+    };
     const routeAfterAuth = rec => {
       if (!rec) {
         setStage('lock');
@@ -69602,14 +69991,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           const u = d.user;
           if (u.mustChangePassword) return; // that has its own screen, and a password we do not have
           const known = ((settingsRef.current || {}).employees || []).find(e => e.code === u.id || e.name === u.id);
+          const spot = postedBranch(u);
           const rec = known || {
             id: 'e_' + Date.now(),
             code: u.id,
             name: u.name || u.id,
             role: SRV2OS[u.role] || 'Cashier',
             active: true,
-            branches: [],
-            home: null,
+            branches: spot.branches,
+            home: spot.home,
             _adopted: true
           };
           if (!known) setSettings(s => ({
@@ -69859,6 +70249,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        figure can be read on the sheet itself. The dock gate is
        unchanged: a cashier still has no Reports icon. */
     window.CDOS.openApp = openApp;
+    window.CDOS.openTakeover = () => {
+      window.CDOS._takeoverPending = true;
+      openApp('till');
+      window.dispatchEvent(new Event('cdos-takeover'));
+    };
     const closeWin = id => {
       if (id === 'store') setEditApps(false);
       setWins(ws => ws.filter(w => w.id !== id));
@@ -70591,7 +70986,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         localStorage.setItem('cdos_submissions_v1', '{}');
         if (oneBranches) localStorage.setItem(_ST.SKEY, JSON.stringify(oneBranches));
         if (oneStation) localStorage.setItem('cdos_station_v1', JSON.stringify(oneStation));
-        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1'].forEach(k => {
+        [_ST.MKEY, 'cdos_transfers_v1', 'cdos_till_history_v2', 'cdos_calc_v1', 'cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => {
           try {
             localStorage.removeItem(k);
           } catch (e) {}
@@ -70656,6 +71051,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         sessionStorage.removeItem(AUTH_KEY);
       } catch (e) {}
       try {
+        ['cdos_till_counts', 'cdos_till_quick', 'cdos_till_counted_at'].forEach(k => localStorage.removeItem(k));
+      } catch (e) {}
+      try {
         window.CDOS_PERSIST.end();
       } catch (e) {}
       hydratedRef.current = false;
@@ -70709,24 +71107,25 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       },
       onComplete: async (rec, srvPlan, srvUser) => {
         setStagingOn(!!(srvUser && srvUser.staging === true));
-        if (rec._adopted) setSettings(s => ({
+        const routed = withPosting(rec, srvUser);
+        if (routed._adopted) setSettings(s => ({
           ...s,
           employees: [...(s.employees || []), {
-            ...rec,
+            ...routed,
             _adopted: undefined
           }]
         }));
-        if (srvPlan && rec.role === 'Owner') setSettings(s => ({
+        if (srvPlan && routed.role === 'Owner') setSettings(s => ({
           ...s,
           billingPlan: srvPlan
         }));
-        markPersistRole(rec.role);
+        markPersistRole(routed.role);
         srvUserRef.current = srvUser || null;
         setSrvUser(srvUser || null);
-        setUser(rec.code || rec.name);
-        setAuthRec(rec);
+        setUser(routed.code || routed.name);
+        setAuthRec(routed);
         await hydrateTenant();
-        routeAfterAuth(rec);
+        routeAfterAuth(routed);
       }
     });
     if (stage === 'signup') return /*#__PURE__*/React.createElement(OnboardWizard, {
@@ -70874,6 +71273,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const storeAvailable = orderedApps.filter(id => hiddenApps.includes(id) && planAllows(id)).map(mkApp);
     const storeLocked = orderedApps.filter(id => !planAllows(id)).map(mkApp);
     function renderApp(id) {
+      window.CDOS.serverRole = srvUser && srvUser.role || '';
       switch (baseApp(id)) {
         case 'rates':
           return /*#__PURE__*/React.createElement("iframe", {
@@ -71070,6 +71470,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             me: me,
             myId: srvUser && srvUser.id,
             canCloseDay: can('canCloseDay'),
+            canCountTill: !!(window.CDOS.Backend && window.CDOS.Backend.canCountTill(srvUser && srvUser.role)),
             baseline: baseline,
             setBaseline: setBaseline,
             receipts: receipts,
@@ -71754,6 +72155,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       setStation: setStation,
       log: log,
       me: me,
+      myId: srvUser && srvUser.id,
       gate: tillGate,
       lockTill: (ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner',
       ledgerScope: ledgerScope,

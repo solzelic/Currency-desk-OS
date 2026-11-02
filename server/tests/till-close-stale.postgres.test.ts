@@ -21,6 +21,15 @@ let pool: pg.Pool;
 let app: FastifyInstance;
 let handle: DbHandle;
 
+/* Every count the till must refuse (#558): too many places, look-alike
+   digits, every comma (none is read as a thousands mark), a European
+   1.500,25, Arabic and full-width commas, a thin space, and a sign. */
+const REFUSED_COUNTS = [
+  "1.999", "1500²", "１５００", "١٥٠٠", "1500₂",
+  "1,500", "1,500.25", "0,500", "00,500", "000,500", "1500,7", "1,50", ",500",
+  "1.500,25", "1\u060C500", "1\uFF0C500", "1\u2009500", "+1500", "-1500",
+];
+
 const scope = [
   DEMO.tenantId,
   DEMO.legalEntityId,
@@ -515,6 +524,78 @@ postgres("a till close after the drawer has moved", () => {
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n,
     ).toBe(0);
+  });
+
+  it("answers a bad count or any comma with 422 on the count and close routes, and changes nothing (#558)", async () => {
+    const teller = await cookie();
+    const manager = await cookie("r.haddad");
+    const before = await holderBook();
+    for (const [n, bad] of REFUSED_COUNTS.entries()) {
+      const counted = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-counts",
+        cookies: teller,
+        payload: { idempotencyKey: `count-${n}`, counts: { CAD: bad } },
+      });
+      expect(counted.statusCode, `count ${bad}: ${counted.body}`).toBe(422);
+      expect(counted.body).not.toContain(bad);
+      const closed = await close(manager, {
+        idempotencyKey: `close-${n}`,
+        counts: { ...before.balances, CAD: bad },
+        balanceGeneration: before.balanceGeneration,
+      });
+      expect(closed.statusCode, `close ${bad}: ${closed.body}`).toBe(422);
+      expect(closed.body).not.toContain(bad);
+    }
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n).toBe(0);
+    const open = await pool.query("SELECT status FROM ledger_till_sessions WHERE session_id='session-1'");
+    expect(open.rows).toEqual([{ status: "open" }]);
+    expect((await holderBook()).balances).toEqual(before.balances);
+  });
+
+  it("refuses a count typed with thousands commas, and stores a plain one exactly", async () => {
+    const teller = await cookie();
+    const grouped = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "grouped-count", counts: { CAD: "1,000.50" } },
+    });
+    expect(grouped.statusCode, grouped.body).toBe(422);
+    expect(grouped.json()).toEqual({ code: "INVALID_REQUEST", message: "A count must be the digits 0 to 9 and at most the currency's decimal places, with no commas." });
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "plain-count", counts: { CAD: "1000.50" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    const row = await pool.query("SELECT counted_amount::text AS counted FROM ledger_till_counts WHERE currency='CAD'");
+    expect(row.rows).toEqual([{ counted: "1000.50" }]);
+  });
+
+  it("asks who is calling before it reads a count or a close (#558)", async () => {
+    const count = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      payload: { idempotencyKey: "anon-count", counts: { CAD: "1500²" } },
+    });
+    expect(count.statusCode, count.body).toBe(401);
+    expect(count.json()).toEqual({ code: "AUTHENTICATION_REQUIRED" });
+    const closed = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/session-1/close",
+      payload: { idempotencyKey: "anon-close", counts: { CAD: "1,500" }, balanceGeneration: "1" },
+    });
+    expect(closed.statusCode, closed.body).toBe(401);
+    expect(closed.json()).toEqual({ code: "AUTHENTICATION_REQUIRED" });
+    const unmarked = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/session-1/close",
+      payload: { idempotencyKey: "anon-unmarked", counts: { CAD: "1,500" } },
+    });
+    expect(unmarked.statusCode, unmarked.body).toBe(401);
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n).toBe(0);
   });
 
   it("refuses a till close when money moved after the count", async () => {

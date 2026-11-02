@@ -218,3 +218,133 @@ test("a refresh in the middle of a count still closes against the mark it starte
   expect((await book.session())?.status).toBe("open");
   expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 });
+
+/* #558, item 11: an empty count turns Save count off and says why, the way
+   an empty field keeps Take over till off. The reason is on the button
+   (title and aria-describedby) while the field is empty, and it shows
+   under the field once the teller has typed and then emptied it. */
+test("an empty count turns Save count off and says why", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  await openTill(page);
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await press(page.getByRole("button", { name: /Enter total/i }).first());
+  const cad = page.locator('input[placeholder="0.00"]').first();
+  const refusal = page.locator('[data-count-refusal="CAD"]').first();
+  const save = page.getByRole("button", { name: /Save count/i }).first();
+  const empty = "Type the CAD count.";
+
+  await cad.fill("1500");
+  await expect(save).toBeEnabled();
+  await expect(refusal).toHaveCount(0);
+
+  await cad.fill("");
+  await expect(cad).toHaveValue("");
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", empty);
+  const id = await save.getAttribute("aria-describedby");
+  expect(id, "aria-describedby names the reason").toBeTruthy();
+  await expect(page.locator(`[id="${id}"]`)).toHaveText(empty);
+  await expect(refusal).toHaveText(empty);
+  await expect(cad).toHaveAttribute("aria-invalid", "true");
+
+  /* Spaces are not a count either. */
+  await cad.fill("   ");
+  await expect(save).toBeDisabled();
+  await expect(refusal).toHaveText(empty);
+
+  await cad.fill("1500");
+  await expect(save).toBeEnabled();
+  await expect(refusal).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-describedby", /.+/);
+});
+
+/* #558: Save count and Close send each count exactly as typed, and refuse
+   one they cannot read. 1.999 used to go out as 2.00, and a pasted 1500²
+   as 1500.00, and the close writes that number back as the balance. */
+test("save count and close send the count as typed, and refuse 1.999 and 1500²", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  const book = ledger(page);
+  await openTill(page);
+  const before = await book.till();
+
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await press(page.getByRole("button", { name: /Enter total/i }).first());
+  const cad = page.locator('input[placeholder="0.00"]').first();
+  const refusal = page.locator('[data-count-refusal="CAD"]').first();
+  const save = page.getByRole("button", { name: /Save count/i }).first();
+
+  const why = async (button: typeof save) => {
+    const id = await button.getAttribute("aria-describedby");
+    expect(id, "aria-describedby names the reason").toBeTruthy();
+    return page.locator(`[id="${id}"]`).textContent();
+  };
+  await cad.fill("1.999");
+  const tooFine = "CAD takes 2 decimal places. You typed 1.999. Remove the extra digit to save.";
+  await expect(refusal).toHaveText(tooFine);
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", tooFine);
+  expect(await why(save)).toBe(tooFine);
+  await cad.fill("1,500");
+  const comma = "CAD amounts are typed without commas. You typed 1,500. Remove the commas to save.";
+  await expect(refusal).toHaveText(comma);
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", comma);
+  expect(await why(save)).toBe(comma);
+  await cad.fill("1500²");
+  await expect(cad).toHaveValue("1500²");
+  await expect(refusal).toHaveText("Type the CAD count with the digits 0 to 9 and one decimal point.");
+  await expect(save).toBeDisabled();
+
+  await cad.fill("1.5");
+  await expect(refusal).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-describedby", /.+/);
+  const counted = page.waitForRequest((r) => r.url().endsWith("/api/ledger/till-counts") && r.method() === "POST");
+  await saveDrawerCount(page);
+  expect(((await counted).postDataJSON() as { counts: Record<string, string> }).counts.CAD).toBe("1.50");
+
+  /* The close: every currency counted at what the book holds. A comma
+     in one of them keeps Close the day off and says why, on the button
+     itself and to a screen reader. Once it is typed plainly, the close
+     sends the exact figures, so the book is unchanged. */
+  /* A yen balance is stored as 150000.00; a teller types 150000. */
+  const typed: Record<string, string> = {};
+  for (const [ccy, amount] of Object.entries(before)) {
+    const whole = await page.evaluate((c) => (window as unknown as { CDOS: { countPlaces: (c: string) => number } }).CDOS.countPlaces(c) === 0, ccy);
+    typed[ccy] = whole ? amount.replace(/\.0+$/, "") : amount;
+    await press(page.locator(`button.till-chip:has-text("${ccy}")`).first());
+    await press(page.getByRole("button", { name: /Enter total/i }).first());
+    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? "25,000.00" : typed[ccy]);
+  }
+  await clickDrawerTab(page, /Reconcile & close/i);
+  const closeDay = page.getByRole("button", { name: /Close day and lock book/i }).first();
+  const commaClose = "CAD amounts are typed without commas. You typed 25,000.00. Remove the commas to save.";
+  await expect(closeDay).toBeDisabled();
+  await expect(closeDay).toHaveAttribute("title", commaClose);
+  expect(await why(closeDay)).toBe(commaClose);
+  /* A refused count is not a count of 0. Its row stays uncounted, no
+     variance is made up for it, and the line under the button says why. */
+  await expect(page.getByRole("button", { name: "count →" })).toHaveCount(1);
+  await expect(page.getByText(commaClose, { exact: true }).filter({ visible: true })).toHaveCount(1);
+  /* The phone's Close the day button carries the same reason. */
+  const phoneClose = page.locator(".till-recon-close-btn").first();
+  await expect(phoneClose).toBeDisabled();
+  await expect(phoneClose).toHaveAttribute("title", commaClose);
+  expect(await why(phoneClose)).toBe(commaClose);
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await page.locator('input[placeholder="0.00"]').first().fill(typed.CAD);
+  await clickDrawerTab(page, /Reconcile & close/i);
+  await expect(closeDay).toBeEnabled();
+  await expect(closeDay).not.toHaveAttribute("aria-describedby", /.+/);
+  const closing = page.waitForRequest((r) => /\/api\/ledger\/till-sessions\/[^/]+\/close$/.test(r.url()) && r.method() === "POST");
+  await closeTheDay(page);
+  const sent = ((await closing).postDataJSON() as { counts: Record<string, string> }).counts;
+  for (const ccy of Object.keys(before)) expect(sent[ccy], ccy).toBe(typed[ccy]);
+  await expect.poll(async () => (await book.session())?.status, { timeout: 15_000 }).toBe("closed");
+  expect(await book.till()).toEqual(before);
+});
+

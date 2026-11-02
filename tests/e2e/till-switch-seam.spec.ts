@@ -288,3 +288,87 @@ test("the till menu names only tills this desk has, and only operators the ledge
   }
   expect(menu).not.toContain("M. Costa");
 });
+
+/* #535, locked by QA: on a phone with two tills on the ledger, the drawer
+   tabs are pinned. The count list scrolls under them; it never takes them
+   off the screen, and Reconcile & close is still the thing under a finger
+   when the list is back at the top. */
+test("on a phone with two tills, the drawer tabs stay on screen while the count list scrolls", async ({ page }) => {
+  await signInAtDesk(page, "a.singh");
+  expect([201, 409]).toContain(await openingBalances(page, SECOND_WORKSPACE, { CAD: "9000.00" }));
+  await openCashDrawer(page);
+  if ((await ledgerTillOnScreen(page)) !== SECOND_TILL) {
+    await switcher(page).click();
+    await switcherMenu(page).getByRole("button").nth(1).click();
+    await page.getByRole("button", { name: /Switch till|Take over till/i }).last().click();
+    await expect.poll(() => ledgerTillOnScreen(page), { timeout: 20_000 }).toBe(SECOND_TILL);
+  }
+  const openButton = page.getByRole("button", { name: /Open the till/i }).first();
+  if (await openButton.isVisible().catch(() => false)) {
+    await openButton.click();
+    await expect(page.getByText(/Session #\d+ open/)).toBeVisible({ timeout: 20_000 });
+  }
+  const roster = await page.evaluate(() => fetch("/api/ledger/till-roster").then((r) => r.json()));
+  expect((roster.workspaces as { tillId: string }[]).map((w) => w.tillId)).toEqual(
+    expect.arrayContaining(["till-01", SECOND_TILL]),
+  );
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  /* A phone opens the drawer from its bottom bar. */
+  const skip = page.locator(".cdos-tour-skip");
+  await page.locator('#phonebar [data-phone-app="till"]').click({ timeout: 45_000 });
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await expect
+    .poll(() => page.locator(".till-screen").first().textContent(), { timeout: 45_000 })
+    .toContain(SECOND_TILL);
+  const denominations = page.getByRole("button", { name: "Count denominations", exact: true });
+  await denominations.click({ timeout: 20_000 });
+  await expect(page.locator(".till-den-row").first()).toBeVisible({ timeout: 20_000 });
+
+  /* Where the tabs are, and whether Reconcile & close is what a tap at
+     its middle lands on. */
+  const tabs = () =>
+    page.evaluate(() => {
+      const bar = document.querySelector(".till-tabwrap .fld-bar");
+      const tab = document.querySelector('[data-tour="till-reconcile-tab"]');
+      if (!(bar instanceof HTMLElement) || !(tab instanceof HTMLElement)) return { found: false, pinned: false, hidden: true, height: 0, onTop: false, inView: false };
+      const box = tab.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + Math.min(24, box.width / 2), box.top + box.height / 2);
+      return {
+        found: true,
+        pinned: bar.classList.contains("fld-pinned"),
+        hidden: bar.classList.contains("fld-hidden"),
+        height: Math.round(bar.getBoundingClientRect().height),
+        onTop: !!hit && tab.contains(hit),
+        inView: box.top >= 0 && box.bottom <= window.innerHeight,
+      };
+    });
+  const shown = { found: true, pinned: true, hidden: false, onTop: true, inView: true };
+  expect(await tabs()).toMatchObject(shown);
+
+  /* Scroll the count list the way a thumb does, down past the fold. */
+  const row = page.locator(".till-den-row").first();
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.wheel(0, 160);
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(400);
+  const down = await tabs();
+  expect(down, "scrolled down").toMatchObject({ found: true, pinned: true, hidden: false });
+  expect(down.height, "scrolled down").toBeGreaterThan(20);
+
+  for (let i = 0; i < 8; i++) {
+    await page.mouse.wheel(0, -160);
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(400);
+  const back = await tabs();
+  expect(back, "back at the top").toMatchObject(shown);
+  expect(back.height, "back at the top").toBeGreaterThan(20);
+
+  await page.locator('[data-tour="till-reconcile-tab"]').click();
+  await expect(page.locator(".till-screen.till-on-reconcile")).toHaveCount(1);
+});

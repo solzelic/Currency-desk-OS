@@ -58,6 +58,91 @@
     }).format(roundMinor(n, places));
   }
 
+  /* A till count, read from the text the teller typed or pasted (#558).
+
+     Read exactly or refused, never rounded and never guessed. 1.999 CAD is
+     refused, because sending 2.00 is a count nobody made. A pasted 1500² is
+     refused, because reading the ² as a 2 is a count of 15002. Only the
+     ASCII digits 0 to 9 and one point are read, so a superscript, a
+     subscript, a full-width or an Arabic-Indic digit is refused, not
+     normalised. Every comma is refused, ASCII, Arabic or full-width:
+     0,500 is not 500 and 1.500,25 is not 1500.25, and a till cannot tell
+     which one the teller meant. A sign or a space inside the number is
+     refused too.
+
+     The work is on the text, not on a Number, so no binary rounding can
+     reach the value. The value is the decimal string the server is sent,
+     padded to the places the till can hold. The server checks the same
+     shape again (countAmount in server/src/ledger/routes.ts), then the
+     currency's minor unit. */
+  var COUNT_MAX_WHOLE = "1000000000";   // a till holds at most 1,000,000,000
+
+  /* The places a till count can carry. The till columns are numeric(24,2),
+     so a three-place currency counts to two here; storing three is its own
+     change. A currency with no minor unit counts whole. */
+  function countPlaces(currency) {
+    return displayPlaces(currency) === 0 ? 0 : 2;
+  }
+
+  function overCap(whole, fraction) {
+    if (whole.length !== COUNT_MAX_WHOLE.length) return whole.length > COUNT_MAX_WHOLE.length;
+    return whole > COUNT_MAX_WHOLE || (whole === COUNT_MAX_WHOLE && /[1-9]/.test(fraction));
+  }
+
+  function overCapReason(ccy, typed) {
+    return ccy + " " + typed + " is more than a till can hold. Check the count and type it again.";
+  }
+
+  function parseCount(text, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var raw = String(text == null ? "" : text).trim();
+    if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
+    if (/[,\u060C\u066C\uFE50\uFF0C]/.test(raw)) {
+      return { ok: false, reason: ccy + " amounts are typed without commas. You typed " + raw + ". Remove the commas to save." };
+    }
+    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
+    if (!m || (m[1] === "" && !m[2])) {
+      return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
+    }
+    var places = countPlaces(ccy);
+    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[2] == null ? "" : m[2];
+    if (places === 0 && m[2] != null) {
+      return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
+    }
+    if (fraction.length > places) {
+      var extra = fraction.length - places;
+      return { ok: false, reason: ccy + " takes " + places + " decimal places. You typed " + raw + ". Remove the extra digit" + (extra === 1 ? "" : "s") + " to save." };
+    }
+    while (fraction.length < places) fraction += "0";
+    if (overCap(whole, fraction)) return { ok: false, reason: overCapReason(ccy, raw) };
+    return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
+  }
+
+  /* A count by denomination: rows of [face value, pieces as typed]. Pieces
+     are whole digits or empty. The total is added in whole minor units with
+     BigInt, so 0.10 x 3 plus 0.20 is 0.50, never 0.5000000000000001. */
+  function countPieces(rows, currency) {
+    var ccy = String(currency || "").toUpperCase();
+    var places = countPlaces(ccy);
+    var scale = Math.pow(10, places);
+    var total = BigInt(0);
+    for (var i = 0; i < (rows || []).length; i++) {
+      var pieces = String(rows[i][1] == null ? "" : rows[i][1]);
+      if (pieces === "") continue;
+      if (!/^[0-9]+$/.test(pieces)) return { ok: false, reason: "Count " + ccy + " pieces with the digits 0 to 9." };
+      total += BigInt(pieces) * BigInt(Math.round(Number(rows[i][0]) * scale));
+    }
+    var text = total.toString();
+    if (places > 0) {
+      while (text.length <= places) text = "0" + text;
+      text = text.slice(0, -places) + "." + text.slice(-places);
+    }
+    var parts = text.split(".");
+    if (overCap(parts[0], parts[1] || "")) return { ok: false, reason: overCapReason(ccy, text) };
+    return { ok: true, value: text };
+  }
+
   function moneyAmount(n, code, scales) {
     if (n == null || n === "" || isNaN(n)) return "";
     var places = displayPlaces(code, scales);
@@ -70,5 +155,5 @@
     }).format(roundMinor(n, places));
   }
 
-  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount };
+  return { displayPlaces: displayPlaces, roundMinor: roundMinor, sumHomeMinor: sumHomeMinor, unitAmount: unitAmount, moneyAmount: moneyAmount, parseCount: parseCount, countPlaces: countPlaces, countPieces: countPieces };
 });

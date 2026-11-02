@@ -296,7 +296,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
 
   await jpy.getByRole("button", { name: /count/i }).evaluate((el: HTMLElement) => el.click());
   await page.getByRole("button", { name: /^Enter total$/ }).click();
-  const total = page.locator('input[type="number"]');
+  const total = page.getByLabel("JPY counted", { exact: true }).first();
   await total.fill("489176");
   await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   const whole = page.locator(".till-count-foot");
@@ -407,7 +407,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
   await expectInk(recon.locator("thead th").first(), "wide header");
   await expectInk(wideExpected, "wide expected total");
   await expectInk(page.getByText("On the drawer:", { exact: true }), "on the drawer");
-  await expectInk(page.locator(".till-operator .text-\\[10\\.5px\\]"), "operator since");
+  await expectInk(page.locator(".till-operator").getByText(/^since /), "operator since");
   await expectInk(page.locator(".till-sessionline"), "session line");
   await expectInk(page.locator(".till-sessionline .ml-auto"), "session count");
   await expectInk(page.locator(".till-pill"), "in drawer");
