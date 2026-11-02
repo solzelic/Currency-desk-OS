@@ -1,6 +1,6 @@
 /* Phone bottom bar. At 390×844 the desk uses the bar. At 1280 the
    desktop chrome is the one a wide window already had. */
-import type { Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 
 /* The denomination rows are on screen only for the person who holds
@@ -231,7 +231,7 @@ async function floatingPlus(page: Page): Promise<number> {
   });
 }
 
-test("a phone has no floating plus", async ({ page }) => {
+test("a phone has no floating plus", async ({ page, request }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
   await expect(page.locator("#phone-fab")).toHaveCount(0);
@@ -243,7 +243,7 @@ test("a phone has no floating plus", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator("#menubar")).toBeVisible();
   await page.setViewportSize(PHONE);
-  await tillOpen(page);
+  await tillOpen(page, request);
   await page.locator('#phonebar [data-phone-app="ledger"]').click();
   await dismissTour(page);
   await settled(page);
@@ -369,10 +369,41 @@ async function rowsBetweenLabels(page: Page): Promise<number> {
   });
 }
 
+/* What the person on the till sees in the drawer. The owner is not shown
+   the book while someone else holds the till, so the test asks the holder,
+   in its own request context, and the page stays signed in as the owner.
+   Approved takeovers are switched off (HANDOVER_APPROVAL_ENABLED), so the
+   owner takes the till with a count that matches, as a shop would. */
+async function holderBalances(request: APIRequestContext, openedBy: string): Promise<Record<string, string>> {
+  const staffId = openedBy.split(":").pop() || "";
+  const login = await request.post("/api/auth/login", {
+    data: { staffId, password: "yorkville", tenantId: "tnt-yorkfx" },
+  });
+  expect(login.ok(), await login.text()).toBeTruthy();
+  const read = async () => {
+    const book = await request.get("/api/ledger/till-balances");
+    expect(book.ok(), await book.text()).toBeTruthy();
+    return (await book.json()).balances as Record<string, string>;
+  };
+  let balances = await read();
+  /* A fresh demo book has no figures yet, and an empty drawer has nothing
+     to count. The holder states the demo opening position, through the
+     same route the other takeover spec uses. */
+  if (Object.keys(balances).length === 0) {
+    const seeded = await request.post("/api/ledger/opening-balances", {
+      data: { balances: { CAD: "25000.00", USD: "12000.00", EUR: "7000.00", GBP: "3500.00" } },
+    });
+    expect(seeded.ok() || seeded.status() === 409, await seeded.text()).toBeTruthy();
+    balances = await read();
+  }
+  expect(Object.keys(balances).length, "the holder sees the drawer").toBeGreaterThan(0);
+  return balances;
+}
+
 /* A fresh book has no open session, and that banner takes the
    rows. Counting starts once the till is open, so the first load
    this checks is that screen. */
-async function tillOpen(page: Page): Promise<void> {
+async function tillOpen(page: Page, request: APIRequestContext): Promise<void> {
   const opened = await page.evaluate(async () => {
     const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => ({}));
     const id = String((me as { user?: { id?: string } }).user?.id ?? "");
@@ -402,6 +433,19 @@ async function tillOpen(page: Page): Promise<void> {
   });
   if (opened.state === "no-ledger") return;
   if (opened.state === "error") expect(opened.state, opened.detail).toBe("open");
+  if (opened.state === "held") {
+    const counts = await holderBalances(request, opened.openedBy);
+    const taken = await page.evaluate(async (body) => {
+      const res = await fetch("/api/ledger/till-sessions/handover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(body),
+      });
+      return res.ok ? "taken" : `${res.status} ${await res.text()}`;
+    }, { idempotencyKey: "phone-owner-" + Date.now(), counts });
+    expect(taken, "the owner takes the till with a count that matches").toBe("taken");
+  }
   const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
   await page.reload();
   await landOnDesktop(page);
@@ -410,15 +454,18 @@ async function tillOpen(page: Page): Promise<void> {
   await settled(page);
 }
 
-test("an owner can bring every denomination fully above the count panel", async ({ page }) => {
+test("an owner can bring every denomination fully above the count panel", async ({ page, request }) => {
   for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "j.masri");
-    await tillOpen(page);
+    await tillOpen(page, request);
     await page.locator('#phonebar [data-phone-app="till"]').click();
     await dismissTour(page);
     await settled(page);
     await expect(page.locator(".phone-till")).toContainText("Till open");
+    /* A takeover's count opens the drawer on its totals. The rows are the
+       breakdown, which a person picks with this toggle. */
+    await page.getByRole("button", { name: "Count denominations", exact: true }).click();
     const dot = await page.locator(".phone-till-dot").evaluate((el) => {
       const style = getComputedStyle(el);
       return { w: style.width, h: style.height, bg: style.backgroundColor, shadow: style.boxShadow };
