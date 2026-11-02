@@ -234,12 +234,14 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   /* parseCount's reasons (#558). */
   const fraction = "JPY has no decimal places. Count whole JPY.";
   const whole = "Type the JPY count with the digits 0 to 9 and one decimal point.";
+  const comma = (typed: string) => `JPY amounts are typed without commas. You typed ${typed}. Remove the commas to save.`;
   const refused: Array<[string, string]> = [
-    ["1500,7", whole],
+    ["1500,7", comma("1500,7")],
     ["1.500", fraction],
     ["1e3", whole],
     ["15e3", whole],
-    ["1,50,0", whole],
+    ["1,50,0", comma("1,50,0")],
+    ["1,500", comma("1,500")],
     ["-1500", whole],
     ["١٥٠٠", whole],
     ["１５００", whole],
@@ -276,8 +278,6 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await yen.fill(" 1500 ");
   await expect(yen).toHaveValue(" 1500 ");
   await expect(sheet.getByText(whole)).toHaveCount(0);
-  await yen.fill("1,500");
-  await expect(yen).toHaveValue("1,500");
   await yen.fill("１５００");
   await expect(yen).toHaveValue("１５００");
   await yen.fill("1500.7");
@@ -288,8 +288,8 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const cad = sheet.getByLabel("CAD counted");
   await cad.pressSequentially("10.5");
   await expect(cad).toHaveValue("10.5");
-  await yen.fill("150,000");
-  await expect(yen).toHaveValue("150,000");
+  await yen.fill("150000");
+  await expect(yen).toHaveValue("150000");
   await shoot(page, "sheet", sheet);
   const others = sheet.locator("input");
   const count = await others.count();
@@ -500,7 +500,7 @@ test("the takeover count refuses 1.999 and a pasted 1500², and sends a count ex
   for (let i = 0; i < count; i++) await inputs.nth(i).fill("100");
 
   await cad.fill("1.999");
-  await expect(sheet.locator("#takeover-CAD-error")).toHaveText("CAD counts to 2 decimal places. 1.999 has 3. Nothing was rounded.");
+  await expect(sheet.locator("#takeover-CAD-error")).toHaveText("CAD takes 2 decimal places. You typed 1.999. Remove the extra digit to save.");
   await expect(cad).toHaveAttribute("aria-invalid", "true");
   await expect(submit).toBeDisabled();
 

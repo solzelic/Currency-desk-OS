@@ -7,6 +7,8 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isoMinorUnits, LEDGER_SCALE, minorUnits } from "../src/ledger/currencies.js";
+import { INDICATIVE_PER_CAD } from "../src/rates/starting-board.js";
 
 type Read = { ok: true; value: string } | { ok: false; reason: string };
 
@@ -18,6 +20,7 @@ const units = require(join(root, "os-src/minor-units-format.js")) as {
   countPieces: (rows: [number, unknown][], currency: string) => Read;
 };
 const { parseCount, countPlaces, countPieces } = units;
+const displayPlaces = (units as unknown as { displayPlaces: (c: string) => number }).displayPlaces;
 
 const refused = (text: string, currency: string) => {
   const result = parseCount(text, currency);
@@ -32,8 +35,8 @@ const read = (text: string, currency: string) => {
 
 describe("a till count as typed", () => {
   it("refuses 1.999 CAD and says why, instead of sending 2.00", () => {
-    expect(refused("1.999", "CAD")).toBe("CAD counts to 2 decimal places. 1.999 has 3. Nothing was rounded.");
-    expect(refused("24990.004", "CAD")).toContain("Nothing was rounded.");
+    expect(refused("1.999", "CAD")).toBe("CAD takes 2 decimal places. You typed 1.999. Remove the extra digit to save.");
+    expect(refused("24990.0049", "CAD")).toBe("CAD takes 2 decimal places. You typed 24990.0049. Remove the extra digits to save.");
   });
 
   it("refuses a pasted 1500² instead of reading it as 15002", () => {
@@ -48,18 +51,27 @@ describe("a till count as typed", () => {
     refused("₁₅₀₀", "CAD");
   });
 
-  it("refuses every other character that is not a digit, a grouping comma or one decimal point", () => {
-    for (const text of ["1500a", "15 00", "1.5.0", "-20", "+20", "1e3", "$1500", "Infinity", ".", ",", "1,500,", ",500"]) {
-      refused(text, "CAD");
+  it("refuses every other character that is not a digit or one decimal point", () => {
+    for (const text of ["1500a", "15 00", "1.5.0", "-20", "+20", "1e3", "$1500", "Infinity", "."]) {
+      expect(refused(text, "CAD"), text).toBe("Type the CAD count with the digits 0 to 9 and one decimal point.");
     }
   });
 
-  it("reads thousands commas and refuses bad grouping", () => {
-    expect(read("1,500.25", "CAD")).toBe("1500.25");
-    expect(read("1,500.7", "CAD")).toBe("1500.70");
-    expect(read("12,345,678", "CAD")).toBe("12345678.00");
-    expect(read("1,500", "JPY")).toBe("1500");
-    for (const text of ["1,50", "15,00", "1,5000", "1,500.999"]) refused(text, "CAD");
+  it("refuses every comma, and reads none of them as a thousands mark", () => {
+    for (const text of ["1,500", "1,500.25", "0,500", "00,500", "000,500", "1500,7", "1,50", ",500", ",", "12,345,678"]) {
+      expect(refused(text, "CAD"), text).toBe(`CAD amounts are typed without commas. You typed ${text}. Remove the commas to save.`);
+    }
+    expect(refused("1,500", "JPY")).toBe("JPY amounts are typed without commas. You typed 1,500. Remove the commas to save.");
+    expect(refused(" 1,500 ", "CAD")).toBe("CAD amounts are typed without commas. You typed 1,500. Remove the commas to save.");
+  });
+
+  it("refuses a European 1.500,25, an Arabic or full-width comma, a thin space and a sign", () => {
+    for (const text of ["1.500,25", "1\u060C500", "1500\u060C25", "1\uFF0C500"]) {
+      expect(refused(text, "CAD"), JSON.stringify(text)).toBe(`CAD amounts are typed without commas. You typed ${text}. Remove the commas to save.`);
+    }
+    for (const text of ["1\u2009500", "1\u2009500.25", "+1500", "-1500", "+1500.00", "-0"]) {
+      expect(refused(text, "CAD"), JSON.stringify(text)).toBe("Type the CAD count with the digits 0 to 9 and one decimal point.");
+    }
   });
 
   it("refuses a decimal on a currency with no minor unit", () => {
@@ -71,14 +83,15 @@ describe("a till count as typed", () => {
     expect(countPlaces("CAD")).toBe(2);
     expect(countPlaces("JPY")).toBe(0);
     expect(countPlaces("KWD")).toBe(2);
-    expect(refused("1.500", "KWD")).toBe("KWD counts to 2 decimal places. 1.500 has 3. Nothing was rounded.");
+    expect(refused("1.500", "KWD")).toBe("KWD takes 2 decimal places. You typed 1.500. Remove the extra digit to save.");
     expect(read("1.50", "KWD")).toBe("1.50");
   });
 
   it("refuses an empty count and an amount the ledger cannot hold", () => {
     expect(refused("", "CAD")).toBe("Type the CAD count.");
     expect(refused("   ", "CAD")).toBe("Type the CAD count.");
-    expect(refused("1000000000.01", "CAD")).toBe("CAD 1000000000.01 is more than a till can hold.");
+    expect(refused("1000000000.01", "CAD")).toBe("CAD 1000000000.01 is more than a till can hold. Check the count and type it again.");
+    expect(refused("99999999999", "JPY")).toBe("JPY 99999999999 is more than a till can hold. Check the count and type it again.");
   });
 
   it("reads what was typed exactly, padded to the currency's places and never rounded", () => {
@@ -104,12 +117,38 @@ describe("a count by denomination", () => {
     expect(countPieces([], "CAD")).toEqual({ ok: true, value: "0.00" });
   });
 
+  it("refuses a total over the cap in the same words", () => {
+    expect(countPieces([[100, "10000001"]], "CAD")).toEqual({
+      ok: false,
+      reason: "CAD 1000000100.00 is more than a till can hold. Check the count and type it again.",
+    });
+  });
+
   it("refuses a piece count that is not whole digits", () => {
-    for (const pieces of ["5²", "2.5", "-1", "１", "3 "]) {
+    for (const pieces of ["5²", "2.5", "-1", "+1", "１", "3 ", "1,000", "1\u2009000"]) {
       expect(countPieces([[20, pieces]], "CAD"), JSON.stringify(pieces)).toEqual({
         ok: false,
         reason: "Count CAD pieces with the digits 0 to 9.",
       });
     }
+  });
+});
+
+/* The places a count may carry are the places the server's ledger takes
+   for that currency: its ISO minor units, capped at the ledger's scale
+   (numeric(24,2)). Every currency the server names is checked, so a code
+   added to server/src/ledger/currencies.ts and not to the client table
+   fails here, not on a teller's close. */
+describe("the client's count places match the server's currencies", () => {
+  const codes = [...new Set([...Object.keys(isoMinorUnits()), ...Object.keys(INDICATIVE_PER_CAD), "CAD", "USD", "EUR", "GBP"])].sort();
+
+  it("walks every currency the server knows", () => {
+    expect(codes.length).toBeGreaterThan(30);
+    for (const code of Object.keys(isoMinorUnits())) expect(codes).toContain(code);
+  });
+
+  it.each(codes)("%s counts to the places the ledger stores", (code) => {
+    expect(displayPlaces(code), `${code} screen places`).toBe(minorUnits(code));
+    expect(countPlaces(code), `${code} count places`).toBe(Math.min(minorUnits(code), LEDGER_SCALE));
   });
 });

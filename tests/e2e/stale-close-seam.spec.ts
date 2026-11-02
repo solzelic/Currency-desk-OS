@@ -236,9 +236,23 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
   const refusal = page.locator('[data-count-refusal="CAD"]').first();
   const save = page.getByRole("button", { name: /Save count/i }).first();
 
+  const why = async (button: typeof save) => {
+    const id = await button.getAttribute("aria-describedby");
+    expect(id, "aria-describedby names the reason").toBeTruthy();
+    return page.locator(`[id="${id}"]`).textContent();
+  };
   await cad.fill("1.999");
-  await expect(refusal).toHaveText("CAD counts to 2 decimal places. 1.999 has 3. Nothing was rounded.");
+  const tooFine = "CAD takes 2 decimal places. You typed 1.999. Remove the extra digit to save.";
+  await expect(refusal).toHaveText(tooFine);
   await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", tooFine);
+  expect(await why(save)).toBe(tooFine);
+  await cad.fill("1,500");
+  const comma = "CAD amounts are typed without commas. You typed 1,500. Remove the commas to save.";
+  await expect(refusal).toHaveText(comma);
+  await expect(save).toBeDisabled();
+  await expect(save).toHaveAttribute("title", comma);
+  expect(await why(save)).toBe(comma);
   await cad.fill("1500²");
   await expect(cad).toHaveValue("1500²");
   await expect(refusal).toHaveText("Type the CAD count with the digits 0 to 9 and one decimal point.");
@@ -246,17 +260,15 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
 
   await cad.fill("1.5");
   await expect(refusal).toHaveCount(0);
+  await expect(save).not.toHaveAttribute("aria-describedby", /.+/);
   const counted = page.waitForRequest((r) => r.url().endsWith("/api/ledger/till-counts") && r.method() === "POST");
   await saveDrawerCount(page);
   expect(((await counted).postDataJSON() as { counts: Record<string, string> }).counts.CAD).toBe("1.50");
 
-  /* The close: every currency counted at what the book holds, CAD typed
-     with thousands commas. It is sent as the exact figure, so the book is
-     unchanged. */
-  const grouped = (amount: string) => {
-    const [whole, cents = ""] = amount.split(".");
-    return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (cents ? "." + cents : "");
-  };
+  /* The close: every currency counted at what the book holds. A comma
+     in one of them keeps Close the day off and says why, on the button
+     itself and to a screen reader. Once it is typed plainly, the close
+     sends the exact figures, so the book is unchanged. */
   /* A yen balance is stored as 150000.00; a teller types 150000. */
   const typed: Record<string, string> = {};
   for (const [ccy, amount] of Object.entries(before)) {
@@ -264,8 +276,25 @@ test("save count and close send the count as typed, and refuse 1.999 and 1500²"
     typed[ccy] = whole ? amount.replace(/\.0+$/, "") : amount;
     await press(page.locator(`button.till-chip:has-text("${ccy}")`).first());
     await press(page.getByRole("button", { name: /Enter total/i }).first());
-    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? grouped(amount) : typed[ccy]);
+    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? "25,000.00" : typed[ccy]);
   }
+  await clickDrawerTab(page, /Reconcile & close/i);
+  const closeDay = page.getByRole("button", { name: /Close day and lock book/i }).first();
+  const commaClose = "CAD amounts are typed without commas. You typed 25,000.00. Remove the commas to save.";
+  await expect(closeDay).toBeDisabled();
+  await expect(closeDay).toHaveAttribute("title", commaClose);
+  expect(await why(closeDay)).toBe(commaClose);
+  /* The phone's Close the day button carries the same reason. */
+  const phoneClose = page.locator(".till-recon-close-btn").first();
+  await expect(phoneClose).toBeDisabled();
+  await expect(phoneClose).toHaveAttribute("title", commaClose);
+  expect(await why(phoneClose)).toBe(commaClose);
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await page.locator('input[placeholder="0.00"]').first().fill(typed.CAD);
+  await clickDrawerTab(page, /Reconcile & close/i);
+  await expect(closeDay).toBeEnabled();
+  await expect(closeDay).not.toHaveAttribute("aria-describedby", /.+/);
   const closing = page.waitForRequest((r) => /\/api\/ledger\/till-sessions\/[^/]+\/close$/.test(r.url()) && r.method() === "POST");
   await closeTheDay(page);
   const sent = ((await closing).postDataJSON() as { counts: Record<string, string> }).counts;

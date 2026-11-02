@@ -21,6 +21,15 @@ let pool: pg.Pool;
 let app: FastifyInstance;
 let handle: DbHandle;
 
+/* Every count the till must refuse (#558): too many places, look-alike
+   digits, every comma (none is read as a thousands mark), a European
+   1.500,25, Arabic and full-width commas, a thin space, and a sign. */
+const REFUSED_COUNTS = [
+  "1.999", "1500²", "１５００", "١٥٠٠", "1500₂",
+  "1,500", "1,500.25", "0,500", "00,500", "000,500", "1500,7", "1,50", ",500",
+  "1.500,25", "1\u060C500", "1\uFF0C500", "1\u2009500", "+1500", "-1500",
+];
+
 const idOf = (staffId: string) => `${DEMO.tenantId}:${staffId}`;
 const headers = { "x-workspace-id": DEMO.workspaceId };
 const BLIND = { CAD: "24990.00", USD: "12010.00" };
@@ -643,17 +652,14 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(whole.statusCode, whole.body).toBe(201);
   });
 
-  it("answers 1.999 CAD and a pasted 1500² with 422, echoes nothing, and moves nothing (#558)", async () => {
+  it("answers 1.999 CAD, a pasted 1500² and every comma with 422, echoes nothing, and moves nothing (#558)", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
     const before = await pool.query(
       "SELECT currency, available_amount::text AS amount FROM ledger_till_balances ORDER BY currency",
     );
-    for (const [count, key] of [
-      ["1.999", "cad-three-places"], ["1500²", "cad-superscript"], ["１５００", "cad-fullwidth"],
-      ["١٥٠٠", "cad-arabic-indic"], ["1500₂", "cad-subscript"], ["1,50", "cad-bad-grouping"],
-    ] as const) {
-      const refused = await handover(costa, { CAD: count, USD: "12000.00" }, key);
+    for (const [n, count] of REFUSED_COUNTS.entries()) {
+      const refused = await handover(costa, { CAD: count, USD: "12000.00" }, `refused-${n}`);
       expect(refused.statusCode, `${count}: ${refused.body}`).toBe(422);
       expect(refused.json().code).toBe("INVALID_REQUEST");
       expect(refused.body).not.toContain(count);
@@ -667,11 +673,16 @@ postgres("a second teller takes a held till by counting it", () => {
     expect((await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n).toBe(0);
   });
 
-  it("reads thousands commas in a handover count", async () => {
+  it("refuses a handover counted with thousands commas, and the till stays held", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
     const handed = await handover(costa, { CAD: "25,000.00", USD: "12,000" }, "grouped");
-    expect(handed.statusCode, handed.body).toBe(201);
+    expect(handed.statusCode, handed.body).toBe(422);
+    expect(handed.json()).toEqual({ code: "INVALID_REQUEST", message: "A count must be the digits 0 to 9 and at most the currency's decimal places, with no commas." });
+    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+    const plain = await handover(costa, { CAD: "25000.00", USD: "12000" }, "plain");
+    expect(plain.statusCode, plain.body).toBe(201);
   });
 
   it("asks who is calling before it reads the count", async () => {

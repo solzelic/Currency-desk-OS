@@ -68,7 +68,7 @@ const COUNT_SAMPLES: Array<[string, { ok: true; value: string } | { ok: false }]
   ["١٥٠٠", { ok: false }],
   ["", { ok: false }],
   ["0", { ok: true, value: "0" }],
-  ["1,500", { ok: true, value: "1500" }],
+  ["1,500", { ok: false }],   // a comma is refused, never read as a thousands mark (#558)
   ["１５００", { ok: false }],   // full-width is refused, not converted (#558)
 ];
 
