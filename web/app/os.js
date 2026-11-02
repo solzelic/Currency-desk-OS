@@ -16545,7 +16545,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       Object.keys(counts).forEach(k => keys.add(k));
       return [...keys].filter(isCounted);
     }, [counts, quick, mode]);
-    const grandHome = useMemo(() => totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]);
+    const grandHome = useMemo(() => countedCcys.some(countRefusal) ? null : totalHome(countedCcys.map(c => [ccyTotal(c), c])), [counts, quick, mode, countedCcys, homeCcy]); // a refused count has no total (docs/ABSENT_FIGURES.md)
+
     const serverBalancesReady = !serverBacked || serverBalances !== null;
     // the currencies the server actually keeps a till balance for. The close
     // must name exactly this set — a superset is rejected, and a subset means
@@ -17676,14 +17677,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontVariantNumeric: 'tabular-nums',
         fontFamily: 'Space Mono, monospace'
       }
-    })), countRefusal(ccy) ? /*#__PURE__*/React.createElement("div", {
-      role: "alert",
-      "data-count-refusal": ccy,
-      className: "mt-2 text-[12px]",
-      style: {
-        color: CD.flag
-      }
-    }, countRefusal(ccy)) : null, !heldByOther && !countRefusal(ccy) && ccy !== homeCcy && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("div", {
+    })), !heldByOther && !countRefusal(ccy) && ccy !== homeCcy && homeOf(ccyTotal(ccy), ccy) != null && /*#__PURE__*/React.createElement("div", {
       className: "mt-2 text-[12px]",
       style: {
         color: CD.mute
@@ -17881,10 +17875,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       title: !sessionOpen ? 'Open the till before saving a count' : '',
       className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
-        background: saved ? CD.green : sessionOpen ? CD.ink : 'var(--cd-disabled)',
+        background: saved ? CD.green : sessionOpen && !countedCcys.some(countRefusal) ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 9,
         marginLeft: 'auto',
-        cursor: sessionOpen ? 'pointer' : 'not-allowed',
+        cursor: sessionOpen && !countedCcys.some(countRefusal) ? 'pointer' : 'not-allowed',
         transition: 'background .25s ease, transform .12s ease'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
