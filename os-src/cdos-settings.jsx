@@ -784,7 +784,7 @@
     const [pw, setPw] = useState('');
     const load = () => fetch('/api/staff/pin', { credentials: 'same-origin' })
       .then(r => r.ok ? r.json() : null)
-      .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); setDefaultPin(!r.hasPin && r.defaultPin === true); } })
+      .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); setDefaultPin(r.defaultPin === true); } })
       .catch(() => {});
     useEffect(() => { let alive = true; load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, []);
     const clean = (v) => (v || '').replace(/\D/g, '').slice(0, 4);
@@ -807,7 +807,7 @@
           setErr('That didn’t save. Try again.'); return;
         }
       } catch (e) { setBusy(false); setErr('No connection — the PIN was not changed.'); return; }
-      setBusy(false); setHasPin(true); setMustChange(false); setDefaultPin(false);
+      setBusy(false); setHasPin(true); setMustChange(false);
       onSave && onSave();
       close();
       setDone(true); setTimeout(() => setDone(false), 1800);
@@ -817,7 +817,7 @@
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? (defaultPin ? 'PIN set. Staging 0000 works too.' : 'PIN set') : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
       const toneInk = !hasPin && !done && !mustChange;
       return (
         <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>

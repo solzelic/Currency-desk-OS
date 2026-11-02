@@ -74,7 +74,7 @@ async function promptAndType(page: Page, pin: string): Promise<void> {
   for (const digit of pin) await page.keyboard.press(digit);
 }
 
-test("a fresh staging shop confirms with 0000, then only with the PIN it chose", async ({ page }) => {
+test("a fresh staging shop confirms with 0000, and after choosing 4826 both work and a wrong one does not", async ({ page }) => {
   await freshShop(page);
 
   const verified = page.waitForResponse((r) => r.url().endsWith("/api/staff/pin/verify"));
@@ -98,9 +98,13 @@ test("a fresh staging shop confirms with 0000, then only with the PIN it chose",
   await expect(page.getByText("PIN updated")).toBeVisible();
   await expect(page.getByText("Staging PIN 0000. Change it any time.")).toHaveCount(0);
 
-  const refused = page.waitForResponse((r) => r.url().endsWith("/api/staff/pin/verify"));
-  await promptAndType(page, "0000");
-  expect((await refused).status()).toBe(401);
-  await expect(page.getByText("Incorrect PIN")).toBeVisible();
-  expect(await page.evaluate(() => (window as unknown as { pinResult?: string }).pinResult)).toBe("");
+  for (const [pin, status] of [["0000", 200], ["4826", 200], ["1357", 401]] as const) {
+    const answered = page.waitForResponse((r) => r.url().endsWith("/api/staff/pin/verify"));
+    await promptAndType(page, pin);
+    expect((await answered).status(), pin).toBe(status);
+    const result = () => page.evaluate(() => (window as unknown as { pinResult?: string }).pinResult);
+    if (status === 200) await expect.poll(result).toBe("ok");
+    else { await expect(page.getByText("Incorrect PIN")).toBeVisible(); expect(await result()).toBe(""); }
+    await page.evaluate(() => (window as unknown as { pinRoot: { unmount(): void } }).pinRoot.unmount());
+  }
 });

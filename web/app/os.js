@@ -7524,7 +7524,7 @@ if (typeof module !== "undefined" && module.exports) {
       if (r) {
         setHasPin(!!r.hasPin);
         setMustChange(!!r.mustChange);
-        setDefaultPin(!r.hasPin && r.defaultPin === true);
+        setDefaultPin(r.defaultPin === true);
       }
     }).catch(() => {});
     useEffect(() => {
@@ -7603,7 +7603,6 @@ if (typeof module !== "undefined" && module.exports) {
       setBusy(false);
       setHasPin(true);
       setMustChange(false);
-      setDefaultPin(false);
       onSave && onSave();
       close();
       setDone(true);
@@ -7625,7 +7624,7 @@ if (typeof module !== "undefined" && module.exports) {
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? defaultPin ? 'PIN set. Staging 0000 works too.' : 'PIN set' : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
       const toneInk = !hasPin && !done && !mustChange;
       return /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2",

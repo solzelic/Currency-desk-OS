@@ -153,9 +153,9 @@ type StaffRow = typeof schema.staffUsers.$inferSelect;
 
 /* The staging default (auth/staging-default-pin.ts). The shop is always the
    signed-in session's own, read now; never one named by the request. */
-async function defaultPinOpen(db: Db, req: FastifyRequest, tenantId: string): Promise<boolean> {
+export async function defaultPinOpen(db: Db, req: FastifyRequest, tenantId: string): Promise<boolean> {
   try {
-    const shop = (await db.select({ isTestShop: schema.tenants.isTestShop }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0];
+    const shop = (await db.select({ id: schema.tenants.id, isTestShop: schema.tenants.isTestShop }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0];
     return stagingDefaultPinAllowed(req.headers.host ?? "", process.env, shop ?? null);
   } catch (err) {
     req.log.error({ err }, "staging default PIN gate failed; it stays shut");
@@ -163,7 +163,7 @@ async function defaultPinOpen(db: Db, req: FastifyRequest, tenantId: string): Pr
   }
 }
 
-async function defaultPinUsed(db: Db, req: FastifyRequest, actorId: string, target: StaffRow, route: "verify" | "get" | "set"): Promise<void> {
+export async function defaultPinUsed(db: Db, req: FastifyRequest, actorId: string, target: StaffRow, route: "verify" | "get" | "set" | "switch"): Promise<void> {
   const detail = { targetId: target.id, route, requestId: String(req.id), host: req.headers.host ?? "" };
   await audit(db, { tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId, actorId, action: "pin.staging_default_used", detail });
   req.log.warn(scrubPinFields({ ...detail, tenantId: target.tenantId, actorId, event: "pin.staging_default_used" }) as object, "pin.staging_default_used");
@@ -183,9 +183,9 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       : (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!target || !target.active) return reply.code(404).send({ error: "not_found" });
 
-    // no PIN on file: say so plainly. On a staging test shop the signed-in
-    // person, and only them, may use the staging default instead.
-    const staged = !target.pinHash && target.id === who.id && await defaultPinOpen(db, req, who.tenantId);
+    // no PIN on file: say so plainly. On the staging demo anyone on this desk
+    // may also use 0000, beside their own PIN.
+    const staged = await defaultPinOpen(db, req, who.tenantId);
     if (!target.pinHash && !staged) return reply.code(409).send({ error: "no_pin", detail: "No PIN is set for this person." });
 
     if (!reservePinAttempt(target.id)) {
@@ -217,8 +217,8 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const me = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
     if (!me) return reply.code(404).send({ error: "not_found" });
-    const staged = !me.pinHash && await defaultPinOpen(db, req, who.tenantId);
-    if (staged) await defaultPinUsed(db, req, me.id, me, "get");
+    const staged = await defaultPinOpen(db, req, who.tenantId);
+    if (staged && !me.pinHash) await defaultPinUsed(db, req, me.id, me, "get");
     return { hasPin: !!me.pinHash, setAt: me.pinSetAt ?? null, mustChange: me.pinMustChange, ...(staged ? { defaultPin: true } : {}) };
   });
 
@@ -263,7 +263,9 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       });
       return { ok: true, mustChange: true };
     }
-    if (me.pinHash) {
+    const staged = await defaultPinOpen(db, req, who.tenantId);
+    const viaDefault = staged && (parsed.data.currentPin === STAGING_DEFAULT_PIN || (!me.pinHash && parsed.data.currentPin === undefined));
+    if (me.pinHash && !viaDefault) {
       if (!parsed.data.currentPin) return reply.code(400).send({ error: "current_required", detail: "Enter your current PIN." });
       if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
       if (!(await verifyPassword(parsed.data.currentPin, me.pinHash))) {
@@ -271,14 +273,13 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
       }
       releasePinAttempt(me.id);
     }
-    const staged = !me.pinHash && await defaultPinOpen(db, req, who.tenantId);
-    if (staged && parsed.data.currentPin !== undefined && parsed.data.currentPin !== STAGING_DEFAULT_PIN) {
+    if (!me.pinHash && staged && !viaDefault) {
       if (!reservePinAttempt(me.id)) return reply.code(429).send({ error: "locked", detail: "Too many wrong PINs. Try again in a few minutes." });
       return reply.code(401).send({ error: "wrong_pin" });
     }
     const weak = weakPinDetail(parsed.data.pin);
     if (weak) return reply.code(422).send({ error: "weak_pin", detail: weak });
-    if (staged) await defaultPinUsed(db, req, me.id, me, "set");
+    if (viaDefault) await defaultPinUsed(db, req, me.id, me, "set");
     await db.update(schema.staffUsers)
       .set({ pinHash: await hashPin(parsed.data.pin), pinSetAt: new Date(), pinMustChange: false })
       .where(eq(schema.staffUsers.id, me.id));
