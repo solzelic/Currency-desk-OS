@@ -710,6 +710,9 @@
       return !r.ok || /[1-9]/.test(r.value);
     };
     const countRefusal = (c) => { const r = countRead(c); return isCounted(c) && !r.ok ? r.reason : ''; };
+    /* The first refused count, as words for a disabled button's title and
+       aria-describedby (#558). Empty when every count reads. */
+    const firstRefusal = (codes) => { const c = codes.find(countRefusal); return c ? countRefusal(c) : ''; };
     const countedCcys = useMemo(() => {
       const keys = new Set(CCYS);
       Object.keys(quick).forEach(k => keys.add(k));
@@ -881,6 +884,7 @@
     const closeBlocked = serverBacked
       ? (!serverBalancesReady || !sessionOpen || !recon.length || countedN < recon.length || recon.some(r => countRefusal(r.c)))
       : (!!(settings && settings.requireCountOnClose) && countedN < recon.length);
+    const closeRefusal = closeBlocked && serverBalancesReady && sessionOpen ? firstRefusal(recon.map(r => r.c)) : '';
     /* Cross-currency totals for the reconcile footer. Null where any row
        cannot be expressed in the desk's own money — a total quietly missing
        two of nine currencies looks complete and is not. */
@@ -1268,7 +1272,7 @@
           {mayCount && ccyMode(ccy) === 'total' ? (
             <div className="p-4" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
               <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Skip the breakdown — just enter the total {ccy} you counted in the drawer.</div>
-              <div className="flex items-center" style={{ border: `1px solid ${CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
+              <div className="flex items-center" style={{ border: `1px solid ${countRefusal(ccy) ? CD.flag : CD.ink}`, borderRadius: 10, maxWidth: 340 }}>
                 <span className="px-3 text-sm" style={{ color: CD.mute, fontFamily: 'Space Mono, monospace', borderRight: `1px solid ${CD.line}` }}>{ccy}</span>
                 <input type="text" inputMode={window.CDOS.countPlaces(ccy) === 0 ? 'numeric' : 'decimal'} aria-label={`${ccy} counted`} aria-invalid={countRefusal(ccy) ? 'true' : undefined} autoFocus value={heldByOther ? '' : (quick[ccy] ?? '')} onChange={e => { setQuick(o => ({ ...o, [ccy]: e.target.value })); stampCount(ccy); }} placeholder="0.00" className="till-count-input flex-1 min-w-0 px-3 py-2.5 text-2xl font-bold text-right outline-none" style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'Space Mono, monospace' }} />
               </div>
@@ -1315,7 +1319,8 @@
               {!heldByOther && <div className="text-right flex-none till-grand">
                 <div className="till-grand-label text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Total drawer{homeCcy ? ' · ' + homeCcy : ''}</div>
                 <div className="till-grand-num" data-absent={grandHome == null ? '1' : undefined} style={{ fontSize: 24, fontWeight: 800, color: grandHome == null ? CD.faint : CD.ink, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }} title={grandHome == null ? (canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against') : ''}>{fmtHome(grandHome)}</div>
-                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count' || countedCcys.some(countRefusal)} title={!sessionOpen ? 'Open the till before saving a count' : ''} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen && !countedCcys.some(countRefusal) ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen && !countedCcys.some(countRefusal) ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
+                {sessionOpen && firstRefusal(countedCcys) ? <span id="till-save-why" hidden>{firstRefusal(countedCcys)}</span> : null}
+                <button onClick={saveSnapshot} disabled={saved || !sessionOpen || tillBusy === 'count' || countedCcys.some(countRefusal)} title={!sessionOpen ? 'Open the till before saving a count' : firstRefusal(countedCcys)} aria-describedby={sessionOpen && firstRefusal(countedCcys) ? 'till-save-why' : undefined} className="till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white" style={{ background: saved ? CD.green : sessionOpen && !countedCcys.some(countRefusal) ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, marginLeft: 'auto', cursor: sessionOpen && !countedCcys.some(countRefusal) ? 'pointer' : 'not-allowed', transition: 'background .25s ease, transform .12s ease' }}><Ic n={saved ? 'checkcircle' : 'checkcircle'} s={15} c="var(--cd-on-ink)" /> {saved ? 'Saved' : tillBusy === 'count' ? 'Saving…' : 'Save count'}</button>
               </div>}
             </div>
             {mayCount && <div className="till-count-hint py-2" style={{ fontSize: 12, color: CD.faint }}>{'Counting denominations updates the total live · or tap the counted figure to type it in directly · expected comes from the ledger float.'}</div>}
@@ -1452,14 +1457,15 @@
               <div className="till-recon-hint">Count every currency to see your total.</div>
             )}
             {canCloseDay ? <div className="till-recon-close">
-              <button type="button" onClick={clickClose} disabled={closing || closeBlocked} className="till-recon-close-btn" style={{ background: closing ? CD.green : closeBlocked ? '#D1D1D6' : '#000', color: closeBlocked && !closing ? '#3C3C43' : '#fff', opacity: 1 }}>{closing ? 'Closing…' : 'Close the day'}</button>
+              <button type="button" onClick={clickClose} disabled={closing || closeBlocked} title={closeRefusal} aria-describedby={closeRefusal ? 'till-close-why' : undefined} className="till-recon-close-btn" style={{ background: closing ? CD.green : closeBlocked ? '#D1D1D6' : '#000', color: closeBlocked && !closing ? '#3C3C43' : '#fff', opacity: 1 }}>{closing ? 'Closing…' : 'Close the day'}</button>
               <span className="till-recon-close-note">{phoneCloseNote}</span>
             </div> : null}
             <div className="till-recon-dock-pad" />
           </div>
+          {closeRefusal ? <span id="till-close-why" hidden>{closeRefusal}</span> : null}
           <div className="till-recon-desk flex items-center gap-3 mt-3">
             {canCloseDay
-              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer') : ''} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day and lock book'}</button>
+              ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : closeRefusal || (serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer')) : ''} aria-describedby={closeRefusal ? 'till-close-why' : undefined} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day and lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}
             {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : reconInk }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`}</span>}
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'}</span>}

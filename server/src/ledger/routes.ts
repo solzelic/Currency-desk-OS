@@ -65,17 +65,12 @@ const decimalString = z.string().regex(DECIMAL, "Expected decimal string with at
 const inRange = (value: string, minimum: Decimal.Value) =>
   DECIMAL.test(value) && new Decimal(value).gte(minimum) && new Decimal(value).lte("1000000000");
 const monetary = (minimum: Decimal.Value) => decimalString.refine((value) => inRange(value, minimum), "Amount is outside the permitted range.");
-/* A till count as the teller wrote it: ASCII digits, thousands commas in
-   groups of three, and at most two places. The commas are dropped before
-   the range check, so 25,000.00 is 25000.00 and 1,50 is refused. Nothing
-   that is not an ASCII digit is read as one. Same rule as parseCount in
-   os-src/minor-units-format.js (#558). */
-const GROUPED = /^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d{1,2})?$/;
-const countAmount = z
-  .string()
-  .refine((value) => DECIMAL.test(value) || GROUPED.test(value), "A count is ASCII digits, thousands commas and at most two places.")
-  .transform((value) => value.replace(/,/g, ""))
-  .refine((value) => inRange(value, "0"), "A count is outside what a till can hold.");
+/* A till count as the teller wrote it: ASCII digits and at most two
+   places. No comma is read, so 0,500 is not 500 and 1.500,25 is not
+   1500.25. Nothing that is not an ASCII digit is read as one. Same rule as
+   parseCount in os-src/minor-units-format.js (#558). The currency's own
+   places are checked after, in the till service. */
+const countAmount = monetary("0");
 const postBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   customerId: z.string().min(1).max(120),
@@ -137,7 +132,7 @@ const countBody = z.object({
    the input back. */
 const BAD_COUNT = {
   code: "INVALID_REQUEST",
-  message: "A count must be digits 0 to 9, thousands commas and at most the currency's decimal places.",
+  message: "A count must be the digits 0 to 9 and at most the currency's decimal places, with no commas.",
 } as const;
 const handoverBody = countBody.extend({
   approverStaffId: z.string().trim().min(1).max(120).optional(),
@@ -753,51 +748,51 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.post("/api/ledger/till-counts", async (req, reply) => {
-    const parsed = countBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(422).send(BAD_COUNT);
     try {
+      /* Who is asking comes first, as on the handover. */
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.code(201).send(
-            await tillControl.recordCount(
-              actor,
-              parsed.data.idempotencyKey,
-              parsed.data.counts,
-            ),
-          )
-        : undefined;
+      if (!actor) return undefined;
+      const parsed = countBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
+      return reply.code(201).send(
+        await tillControl.recordCount(
+          actor,
+          parsed.data.idempotencyKey,
+          parsed.data.counts,
+        ),
+      );
     } catch (error) {
       return failure(reply, error);
     }
   });
 
   app.post("/api/ledger/till-sessions/:sessionId/close", async (req, reply) => {
-    const parsed = closeTillBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(422).send(BAD_COUNT);
-    /* An old tab, still open across the deploy that added the mark,
-       posts the close it always posted: counts, and no generation.
-       There is nothing to compare, so this count cannot be written
-       back. Say that in a sentence and leave the session open. */
-    if (parsed.data.balanceGeneration == null) {
-      return reply.code(422).send({
-        code: "TILL_COUNT_UNMARKED",
-        message: "The desk was updated. Reload, then count again.",
-      });
-    }
     try {
+      /* Who is asking comes first, as on the handover. */
       const actor = await actorOrReply(req, reply);
-      return actor
-        ? reply.send(
-            await tillControl.close(
-              actor,
-              (req.params as { sessionId: string }).sessionId,
-              parsed.data.idempotencyKey,
-              parsed.data.counts,
-              parsed.data.note,
-              parsed.data.balanceGeneration,
-            ),
-          )
-        : undefined;
+      if (!actor) return undefined;
+      const parsed = closeTillBody.safeParse(req.body);
+      if (!parsed.success) return reply.code(422).send(BAD_COUNT);
+      /* An old tab, still open across the deploy that added the mark,
+         posts the close it always posted: counts, and no generation.
+         There is nothing to compare, so this count cannot be written
+         back. Say that in a sentence and leave the session open. */
+      if (parsed.data.balanceGeneration == null) {
+        return reply.code(422).send({
+          code: "TILL_COUNT_UNMARKED",
+          message: "The desk was updated. Reload, then count again.",
+        });
+      }
+      return reply.send(
+        await tillControl.close(
+          actor,
+          (req.params as { sessionId: string }).sessionId,
+          parsed.data.idempotencyKey,
+          parsed.data.counts,
+          parsed.data.note,
+          parsed.data.balanceGeneration,
+        ),
+      );
     } catch (error) {
       return failure(reply, error);
     }

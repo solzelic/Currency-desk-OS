@@ -63,10 +63,12 @@
      Read exactly or refused, never rounded and never guessed. 1.999 CAD is
      refused, because sending 2.00 is a count nobody made. A pasted 1500² is
      refused, because reading the ² as a 2 is a count of 15002. Only the
-     ASCII digits 0 to 9, thousands commas in groups of three, and one point
-     are read, so a superscript, a subscript, a full-width or an Arabic-Indic
-     digit is refused, not normalised. 1,500.25 reads as 1500.25; 1,50 is
-     refused.
+     ASCII digits 0 to 9 and one point are read, so a superscript, a
+     subscript, a full-width or an Arabic-Indic digit is refused, not
+     normalised. Every comma is refused, ASCII, Arabic or full-width:
+     0,500 is not 500 and 1.500,25 is not 1500.25, and a till cannot tell
+     which one the teller meant. A sign or a space inside the number is
+     refused too.
 
      The work is on the text, not on a Number, so no binary rounding can
      reach the value. The value is the decimal string the server is sent,
@@ -87,26 +89,33 @@
     return whole > COUNT_MAX_WHOLE || (whole === COUNT_MAX_WHOLE && /[1-9]/.test(fraction));
   }
 
+  function overCapReason(ccy, typed) {
+    return ccy + " " + typed + " is more than a till can hold. Check the count and type it again.";
+  }
+
   function parseCount(text, currency) {
     var ccy = String(currency || "").toUpperCase();
     var raw = String(text == null ? "" : text).trim();
     if (raw === "") return { ok: false, reason: "Type the " + ccy + " count." };
-    var m = /^(?:([0-9]*)|([0-9]{1,3}(?:,[0-9]{3})+))(?:\.([0-9]*))?$/.exec(raw);
-    var digits = m ? (m[2] != null ? m[2].replace(/,/g, "") : m[1]) : "";
-    if (!m || (digits === "" && !m[3])) {
+    if (/[,\u060C\u066C\uFE50\uFF0C]/.test(raw)) {
+      return { ok: false, reason: ccy + " amounts are typed without commas. You typed " + raw + ". Remove the commas to save." };
+    }
+    var m = /^([0-9]*)(?:\.([0-9]*))?$/.exec(raw);
+    if (!m || (m[1] === "" && !m[2])) {
       return { ok: false, reason: "Type the " + ccy + " count with the digits 0 to 9 and one decimal point." };
     }
     var places = countPlaces(ccy);
-    var whole = digits.replace(/^0+(?=[0-9])/, "") || "0";
-    var fraction = m[3] == null ? "" : m[3];
-    if (places === 0 && m[3] != null) {
+    var whole = m[1].replace(/^0+(?=[0-9])/, "") || "0";
+    var fraction = m[2] == null ? "" : m[2];
+    if (places === 0 && m[2] != null) {
       return { ok: false, reason: ccy + " has no decimal places. Count whole " + ccy + "." };
     }
     if (fraction.length > places) {
-      return { ok: false, reason: ccy + " counts to " + places + " decimal places. " + raw + " has " + fraction.length + ". Nothing was rounded." };
+      var extra = fraction.length - places;
+      return { ok: false, reason: ccy + " takes " + places + " decimal places. You typed " + raw + ". Remove the extra digit" + (extra === 1 ? "" : "s") + " to save." };
     }
     while (fraction.length < places) fraction += "0";
-    if (overCap(whole, fraction)) return { ok: false, reason: ccy + " " + raw + " is more than a till can hold." };
+    if (overCap(whole, fraction)) return { ok: false, reason: overCapReason(ccy, raw) };
     return { ok: true, value: places === 0 ? whole : whole + "." + fraction };
   }
 
@@ -130,7 +139,7 @@
       text = text.slice(0, -places) + "." + text.slice(-places);
     }
     var parts = text.split(".");
-    if (overCap(parts[0], parts[1] || "")) return { ok: false, reason: ccy + " " + text + " is more than a till can hold." };
+    if (overCap(parts[0], parts[1] || "")) return { ok: false, reason: overCapReason(ccy, text) };
     return { ok: true, value: text };
   }
 
