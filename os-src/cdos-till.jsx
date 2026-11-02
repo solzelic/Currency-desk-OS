@@ -869,7 +869,8 @@
     const reconCcys = serverBacked
       ? serverCcys
       : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
-    const recon = reconCcys.map(c => { const expected = expectedOf(c); const counted = countedCcys.includes(c) ? ccyTotal(c) : null; const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c); return { c, expected, counted, variance }; });
+    /* A refused count is not a count of 0; its row stays uncounted (docs/ABSENT_FIGURES.md). */
+    const recon = reconCcys.map(c => { const expected = expectedOf(c); const counted = countedCcys.includes(c) && !countRefusal(c) ? ccyTotal(c) : null; const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c); return { c, expected, counted, variance }; });
     // counted here but not carried by the server ledger — recorded locally only,
     // and deliberately kept out of the close so it can't disturb a real balance
     const offLedgerCcys = serverBacked ? countedCcys.filter(c => !serverCcys.includes(c)) : [];
@@ -1073,6 +1074,8 @@
         ? 'Open the till before closing it'
         : !recon.length
           ? 'This till has no ledger balances yet'
+          : closeRefusal
+            ? closeRefusal
           : phoneRemaining > 0
             ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.'
             : "This locks today's records. You can't edit them after.";
@@ -1467,7 +1470,7 @@
             {canCloseDay
               ? <button onClick={clickClose} disabled={closing || closeBlocked} title={closeBlocked ? (!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'There is no open till session to close' : closeRefusal || (serverBacked ? 'Count every server-backed currency before closing' : 'Count every drawer first — required in Settings › Cash drawer')) : ''} aria-describedby={closeRefusal ? 'till-close-why' : undefined} className="till-save flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white" style={{ background: closing ? CD.green : CD.ink, borderRadius: 9, transition: 'background .22s ease' }} onMouseEnter={e => { if (!closing) e.currentTarget.style.background = CD.flag; }} onMouseLeave={e => { if (!closing) e.currentTarget.style.background = CD.ink; }}><Ic n={closing ? 'checkcircle' : 'lock'} s={14} c="var(--cd-on-ink)" /> {closing ? 'Closing…' : 'Close day and lock book'}</button>
               : <span className="flex items-center gap-2 px-3 py-2 text-[12px]" style={{ background: 'var(--cd-chip)', borderRadius: 9, color: CD.mute }}><Ic n="lock" s={14} c={CD.faint} /> Closing the day isn’t in your role — the owner enables it in Settings › Permissions.</span>}
-            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : reconInk }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`}</span>}
+            {canCloseDay && closeBlocked && <span className="text-[11px]" style={{ color: serverBalanceError ? CD.flag : reconInk }}>{!serverBalancesReady ? (serverBalanceError || 'Waiting for server balances') : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : closeRefusal || `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`}</span>}
             {canCloseDay && offRows.length > 0 && <span className="text-[11px]" style={{ color: CD.flag }}>{offRows.length === 1 ? '1 drawer off' : offRows.length + ' drawers off'}</span>}
             {canCloseDay && offRows.length === 0 && countedN > 0 && <span className="text-[11px]" style={{ color: reconGreen }}>All counted drawers balanced</span>}
           </div>

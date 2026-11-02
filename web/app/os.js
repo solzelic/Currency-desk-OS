@@ -16784,9 +16784,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
        currencies the server holds a till balance for, no more and no less.
        Locally it stays the old derived list. */
     const reconCcys = serverBacked ? serverCcys : CCYS.filter(c => expectedOf(c) || countedCcys.includes(c) || c === homeCcy);
+    /* A refused count is not a count of 0; its row stays uncounted (docs/ABSENT_FIGURES.md). */
     const recon = reconCcys.map(c => {
       const expected = expectedOf(c);
-      const counted = countedCcys.includes(c) ? ccyTotal(c) : null;
+      const counted = countedCcys.includes(c) && !countRefusal(c) ? ccyTotal(c) : null;
       const variance = counted == null || expected == null ? null : cashVariance(counted, expected, c);
       return {
         c,
@@ -16994,7 +16995,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const phoneTotalsKnown = allPhoneCounted && totalExpHome != null && totalCountHome != null && totalVarHome != null;
     const phoneBalanced = phoneTotalsKnown && Math.abs(totalVarHome) <= tolHome + 0.005;
     const phoneDiff = !phoneTotalsKnown ? '' : phoneBalanced ? unitText(totalVarHome, homeCcy) + ' · Balanced' : (totalVarHome > 0 ? '+' : '') + unitText(totalVarHome, homeCcy) + (totalVarHome > 0 ? ' · Over' : ' · Under');
-    const phoneCloseNote = !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : phoneRemaining > 0 ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.' : "This locks today's records. You can't edit them after.";
+    const phoneCloseNote = !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : closeRefusal ? closeRefusal : phoneRemaining > 0 ? 'Count ' + phoneRemaining + ' more ' + (phoneRemaining === 1 ? 'currency' : 'currencies') + ' first.' : "This locks today's records. You can't edit them after.";
     /* Wide reconcile ink. The app mute grey is 4.40:1 and the app green
        on its soft fill is 3.65:1. This screen uses the phone colours. */
     const reconInk = 'var(--till-session, #5E5E63)';
@@ -18426,7 +18427,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: serverBalanceError ? CD.flag : reconInk
       }
-    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
+    }, !serverBalancesReady ? serverBalanceError || 'Waiting for server balances' : !sessionOpen ? 'Open the till before closing it' : !recon.length ? 'This till has no ledger balances yet' : closeRefusal || `Count all ${recon.length} drawer${recon.length === 1 ? '' : 's'} before closing. The close writes your count back as the balance.`), canCloseDay && offRows.length > 0 && /*#__PURE__*/React.createElement("span", {
       className: "text-[11px]",
       style: {
         color: CD.flag
