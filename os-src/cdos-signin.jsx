@@ -429,7 +429,7 @@
     );
 
     const shell = (children) => (
-      <div id="lock" style={{ ...(night ? NIGHT : VARS), ...(night ? {} : PAPER_BG), position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', overflow: 'auto', padding: quick ? '56px 0 28px' : '28px 0' }}>
+      <div id="lock" style={{ ...(night ? NIGHT : VARS), ...(night ? {} : PAPER_BG), position: 'fixed', inset: 0, top: 'var(--cdos-banner, 0px)', display: 'grid', placeItems: 'center', overflow: 'auto', padding: quick ? '56px 0 28px' : '28px 0' }}>
         <style>{'@keyframes cdWinIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}@keyframes cdSpin{to{transform:rotate(360deg)}}'}</style>
         <div style={{ position: 'absolute', top: quick ? 40 : 26, left: 30, display: 'flex', alignItems: 'center', gap: 10 }}>
           <Mark w={30} h={21} cut={night ? '#161512' : '#e7e4dd'} />
