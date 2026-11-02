@@ -1,29 +1,35 @@
-/* Staging test shops: a person with no PIN confirms with 0000 and never has
-   to set one. Only the server decides, and only when the flag, the staging
-   runtime, the request Host and the signed-in session's own shop all agree.
-   Live and real shops never get it, and 0000 is never stored. */
+/* The staging demo: 0000 works as anyone's PIN, beside the one they chose
+   (Sol, 3 Nov 2026). Only the server decides, and only when the flag, the
+   staging runtime, the request Host and the signed-in session's own shop
+   (the staging demo shop or a test shop) all agree. Live and real shops
+   never get it, and 0000 is never stored. */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { createSession } from "../src/auth/sessions.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { verifyPassword } from "../src/auth/password.js";
+import { hashPassword, verifyPassword } from "../src/auth/password.js";
+import { provisionDesk } from "../src/onboarding/provision.js";
 import { clearPinAttempts, isWeakPin, lockState } from "../src/routes/pin.js";
 import { stagingDefaultPinAllowed } from "../src/auth/staging-default-pin.js";
 
 const STAGING_HOST = "currencydesk-staging.onrender.com";
 const STAGING_ENV = { STAGING: "1", RENDER_EXTERNAL_HOSTNAME: STAGING_HOST, STAGING_DEFAULT_PIN: "1" };
-const TEST_SHOP = { isTestShop: true };
+const TEST_SHOP = { id: "tnt-stg-a1b2", isTestShop: true };
+const DEMO_SHOP = { id: "tnt-yorkfx", isTestShop: false };
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe("the gate", () => {
-  it("opens only with the flag, a staging runtime, a staging Host and a test shop", () => {
+  it("opens only with the flag, a staging runtime, a staging Host and the demo or a test shop", () => {
     expect(stagingDefaultPinAllowed(STAGING_HOST, STAGING_ENV, TEST_SHOP)).toBe(true);
+    expect(stagingDefaultPinAllowed(STAGING_HOST, STAGING_ENV, DEMO_SHOP)).toBe(true);
+    expect(stagingDefaultPinAllowed("www.currencydeskos.com", STAGING_ENV, DEMO_SHOP)).toBe(false);
     expect(stagingDefaultPinAllowed("staging.currencydeskos.com", { ...STAGING_ENV, RENDER_EXTERNAL_HOSTNAME: "staging.currencydeskos.com" }, TEST_SHOP)).toBe(true);
   });
 
@@ -36,9 +42,9 @@ describe("the gate", () => {
     ["Host www.currencydeskos.com", "www.currencydeskos.com", STAGING_ENV, TEST_SHOP],
     ["RENDER_EXTERNAL_HOSTNAME currencydesk.onrender.com", STAGING_HOST, { ...STAGING_ENV, RENDER_EXTERNAL_HOSTNAME: "currencydesk.onrender.com" }, TEST_SHOP],
     ["no Host", "", STAGING_ENV, TEST_SHOP],
-    ["a real shop", STAGING_HOST, STAGING_ENV, { isTestShop: false }],
+    ["a real shop", STAGING_HOST, STAGING_ENV, { id: "tnt-harbour", isTestShop: false }],
     ["no shop", STAGING_HOST, STAGING_ENV, null],
-    ["isTestShop \"true\"", STAGING_HOST, STAGING_ENV, { isTestShop: "true" }],
+    ["isTestShop \"true\"", STAGING_HOST, STAGING_ENV, { id: "tnt-harbour", isTestShop: "true" }],
   ])("is closed: %s", (_why, host, env, tenant) => {
     expect(stagingDefaultPinAllowed(host, env as NodeJS.ProcessEnv, tenant as { isTestShop: boolean })).toBe(false);
   });
@@ -63,15 +69,17 @@ describe("the PIN routes", () => {
   let app: FastifyInstance;
   const logs: string[] = [];
   const saved: Record<string, string | undefined> = {};
+  let realShop = { tenantId: "", owner: "owner@harbour.example" };
 
   const staff = (staffId: string) =>
     handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, staffId)).limit(1).then((r) => r[0]!);
   const testShop = (on: boolean) =>
     handle.db.update(schema.tenants).set({ isTestShop: on }).where(eq(schema.tenants.id, "tnt-yorkfx"));
-  const signIn = async (staffId: string) => {
-    const res = await app.inject({ method: "POST", url: "/api/auth/login", payload: { staffId, password: "yorkville", tenantId: "tnt-yorkfx" } });
-    expect(res.statusCode, res.body).toBe(200);
-    return { cdos_session: res.cookies.find((c) => c.name === "cdos_session")!.value };
+  /* A session with no till, so a switch does not reach the ledger tables
+     this embedded database does not have. */
+  const signIn = async (staffId: string, tenantId = "tnt-yorkfx") => {
+    const row = (await handle.db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.staffId, staffId), eq(schema.staffUsers.tenantId, tenantId))).limit(1))[0]!;
+    return { cdos_session: (await createSession(handle.db, row.id, { workspaceId: null })).token };
   };
   const call = (cookies: Record<string, string>, method: "GET" | "POST", url: string, payload?: object, host = STAGING_HOST) =>
     app.inject({ method, url, cookies, payload, headers: { host } });
@@ -86,6 +94,11 @@ describe("the PIN routes", () => {
     await seed(handle.db);
     const stream = new Writable({ write(chunk, _enc, done) { logs.push(String(chunk)); done(); } });
     app = await buildApp(handle.db, {}, stream);
+    const made = await provisionDesk(handle.db, {
+      businessName: "Harbour Exchange", legalName: "Harbour Exchange Inc.", ownerName: "Harbour Owner", email: realShop.owner,
+      slug: "harbour", plan: "pro", setup: {}, msbNumber: null, regulator: "FINTRAC", team: [],
+    }, await hashPassword("yorkville"), "test");
+    realShop = { ...realShop, tenantId: made.tenantId };
   });
   afterAll(async () => {
     await app.close(); await handle.close(); vi.restoreAllMocks();
@@ -131,36 +144,39 @@ describe("the PIN routes", () => {
   });
 
   it("a real shop on staging gets 409, and a test shop id in the body or query changes nothing", async () => {
-    await testShop(false);
-    const me = await signIn("a.singh");
+    const me = await signIn(realShop.owner, realShop.tenantId);
     const res = await call(me, "POST", "/api/staff/pin/verify?tenantId=tnt-stg-test&isTestShop=true", { pin: "0000", tenantId: "tnt-stg-test", isTestShop: true });
     expect([res.statusCode, res.json().error]).toEqual([409, "no_pin"]);
     expect((await call(me, "GET", "/api/staff/pin?tenantId=tnt-stg-test")).json()).not.toHaveProperty("defaultPin");
   });
 
-  it("is only for the signed-in person: naming someone else is 409, and so is switching to them", async () => {
+  it("works for anyone on the demo desk: another person's prompt and switching operators", async () => {
+    await testShop(false);   // the staging demo shop, not a test shop
     const me = await signIn("a.singh");
     const other = await call(me, "POST", "/api/staff/pin/verify", { staffId: "m.costa", pin: "0000" });
-    expect([other.statusCode, other.json().error]).toEqual([409, "no_pin"]);
-    const self = await call(me, "POST", "/api/staff/pin/verify", { staffId: "a.singh", pin: "0000" });
-    expect(self.statusCode, self.body).toBe(200);
+    expect(other.statusCode, other.body).toBe(200);
     const sw = await call(me, "POST", "/api/auth/switch", { staffId: "m.costa", pin: "0000" });
-    expect([sw.statusCode, sw.json().error]).toEqual([409, "no_pin"]);
+    expect(sw.statusCode, sw.body).toBe(200);
+    const rows = await defaultRows();
+    expect(rows.some((r) => (r.detail as { route?: string }).route === "switch")).toBe(true);
+    const live = await call(await signIn("a.singh"), "POST", "/api/auth/switch", { staffId: "m.costa", pin: "0000" }, "www.currencydeskos.com");
+    expect(live.statusCode, live.body).toBe(409);
   });
 
-  it("never stores 0000: setting it is 422, and once the person sets their own, 0000 is 401", async () => {
+  it("never stores 0000; after a person sets their own, both it and 0000 work, and a wrong one is 401", async () => {
     const me = await signIn("a.singh");
     const weak = await call(me, "POST", "/api/staff/pin", { pin: "0000", currentPin: "0000" });
     expect(weak.statusCode, weak.body).toBe(422);
     const set = await call(me, "POST", "/api/staff/pin", { pin: "4826", currentPin: "0000" });
     expect(set.statusCode, set.body).toBe(200);
     expect((await defaultRows()).some((r) => (r.detail as { route?: string }).route === "set")).toBe(true);
-    const after = await call(me, "POST", "/api/staff/pin/verify", { pin: "0000" });
-    expect(after.statusCode, after.body).toBe(401);
-    const mine = (await call(me, "GET", "/api/staff/pin")).json();
-    expect(mine.hasPin && !("defaultPin" in mine)).toBe(true);
-    const own = await call(me, "POST", "/api/staff/pin/verify", { pin: "4826" });
-    expect(own.statusCode, own.body).toBe(200);
+    for (const [pin, status] of [["0000", 200], ["4826", 200], ["1357", 401]] as const) {
+      const res = await call(me, "POST", "/api/staff/pin/verify", { pin });
+      expect(res.statusCode, `${pin} ${res.body}`).toBe(status);
+    }
+    expect((await call(me, "GET", "/api/staff/pin")).json()).toMatchObject({ hasPin: true, defaultPin: true });
+    const sw = await call(await signIn("m.costa"), "POST", "/api/auth/switch", { staffId: "a.singh", pin: "0000" });
+    expect(sw.statusCode, sw.body).toBe(200);
     const rows = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, "tnt-yorkfx"));
     for (const row of rows) if (row.pinHash) expect(await verifyPassword("0000", row.pinHash), row.staffId).toBe(false);
   });
