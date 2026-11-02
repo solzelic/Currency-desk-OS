@@ -19,6 +19,7 @@ g.document = { addEventListener() {}, removeEventListener() {}, getElementById: 
 require("../../shared/lctr-reversal.js");
 require("../../shared/rolling-24h.js");
 require("../../os-src/cdos-desk-time.js");
+require("../../os-src/staging-banner.js");
 require("../../shared/id-document-types.js");
 g.window = { CDOS: g.CDOS, CDOS_ID_TYPES: g.CDOS_ID_TYPES, location: { search: "", pathname: "/app", hash: "", origin: "http://127.0.0.1" }, addEventListener() {}, removeEventListener() {} };
 Object.assign(g.window.CDOS, {
