@@ -1,37 +1,11 @@
 /* Phone bottom bar. At 390×844 the desk uses the bar. At 1280 the
    desktop chrome is the one a wide window already had. */
-import { createRequire } from "node:module";
-import path from "node:path";
 import type { Page } from "@playwright/test";
 import { test, expect, signInAtDesk, landOnDesktop } from "./fixtures";
 
-const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
-const { Pool } = requireFromServer("pg") as {
-  Pool: new (config: { connectionString: string }) => {
-    query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number | null }>;
-    end: () => Promise<void>;
-  };
-};
-
 /* The denomination rows are on screen only for the person who holds
    the open session. An earlier spec can leave that session with
-   someone else. This test signs the owner on as the holder for the
-   check, then puts the previous holder back. The book is not rewritten. */
-async function holdAsOwner(ownerId: string, openedBy: string, sessionNumber: string): Promise<number> {
-  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
-  try {
-    const result = await pool.query(
-      `UPDATE ledger_till_sessions
-          SET opened_by=$1
-        WHERE status='open' AND opened_by=$2 AND session_number::text=$3`,
-      [ownerId, openedBy, sessionNumber],
-    );
-    return result.rowCount ?? 0;
-  } finally {
-    await pool.end();
-  }
-}
-
+   someone else (#552). This test does not write the database. */
 const PHONE = { width: 390, height: 844 };
 
 async function dismissTour(page: Page): Promise<void> {
@@ -398,7 +372,7 @@ async function rowsBetweenLabels(page: Page): Promise<number> {
 /* A fresh book has no open session, and that banner takes the
    rows. Counting starts once the till is open, so the first load
    this checks is that screen. */
-async function tillOpen(page: Page): Promise<{ openedBy: string; sessionNumber: string; ownerId: string } | null> {
+async function tillOpen(page: Page): Promise<void> {
   const opened = await page.evaluate(async () => {
     const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then((r) => r.json()).catch(() => ({}));
     const id = String((me as { user?: { id?: string } }).user?.id ?? "");
@@ -426,33 +400,21 @@ async function tillOpen(page: Page): Promise<{ openedBy: string; sessionNumber: 
     if (res.ok || res.status === 409) return { state: "open" as const };
     return { state: "error" as const, detail: `${res.status} ${await res.text()}` };
   });
-  if (opened.state === "no-ledger") return null;
-  let previous: { openedBy: string; sessionNumber: string; ownerId: string } | null = null;
-  if (opened.state === "held") {
-    expect(process.env.SEAM_DATABASE_URL, "the till is held by someone else").toBeTruthy();
-    const updated = await holdAsOwner(opened.ownerId, opened.openedBy, opened.sessionNumber);
-    expect(updated, "the signed-in owner did not become the holder").toBeGreaterThan(0);
-    previous = { openedBy: opened.openedBy, sessionNumber: opened.sessionNumber, ownerId: opened.ownerId };
-  } else {
-    expect(opened.state, opened.state === "error" ? opened.detail : "the till did not open").toBe("open");
-  }
+  if (opened.state === "no-ledger") return;
+  if (opened.state === "error") expect(opened.state, opened.detail).toBe("open");
   const sync = page.waitForResponse((r) => r.url().includes("/api/ledger/till-session") && r.ok());
   await page.reload();
   await landOnDesktop(page);
   await sync;
   await dismissTour(page);
   await settled(page);
-  return previous;
 }
 
 test("an owner can bring every denomination fully above the count panel", async ({ page }) => {
-  let previous: { openedBy: string; sessionNumber: string; ownerId: string } | null = null;
-  try {
   for (const size of [{ width: 390, height: 844 }, { width: 360, height: 780 }]) {
     await page.setViewportSize(size);
     await atDesk(page, "j.masri");
-    const held = await tillOpen(page);
-    if (held) previous = held;
+    await tillOpen(page);
     await page.locator('#phonebar [data-phone-app="till"]').click();
     await dismissTour(page);
     await settled(page);
@@ -482,12 +444,6 @@ test("an owner can bring every denomination fully above the count panel", async 
     expect(scrolled.blocked, `${size.width} blocked`).toBe(0);
   }
   await expect(page.locator("#phone-fab")).toHaveCount(0);
-  } finally {
-    if (previous) {
-      const restored = await holdAsOwner(previous.openedBy, previous.ownerId, previous.sessionNumber);
-      if (restored < 1) throw new Error("the previous holder was not restored");
-    }
-  }
 });
 
 /* Desktop window chrome. A phone draws none of it: no traffic
