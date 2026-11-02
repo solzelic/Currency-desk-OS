@@ -16557,6 +16557,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const c = codes.find(countRefusal);
       return c ? countRefusal(c) : '';
     };
+    /* An empty field is not a count (#558). Save count stays off while the
+       field in view is empty and says why, as Take over till does. The
+       reason shows under the field once the teller has typed there and
+       emptied it, so a drawer just opened is not shown as an error. */
+    const fieldEmpty = c => ccyMode(c) === 'total' ? String(quick[c] ?? '').trim() === '' : Object.values(counts[c] || {}).join('').trim() === '';
+    const emptyReason = c => fieldEmpty(c) ? window.CDOS.parseCount('', c).reason : '';
+    const emptied = c => Object.prototype.hasOwnProperty.call(ccyMode(c) === 'total' ? quick : counts, c);
+    const shownCountError = c => countRefusal(c) || (emptied(c) ? emptyReason(c) : '');
     const countedCcys = useMemo(() => {
       const keys = new Set(CCYS);
       Object.keys(quick).forEach(k => keys.add(k));
@@ -16575,6 +16583,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, [serverBalances, serverCurrencies]);
     const countCcys = serverBacked ? CCYS.concat(serverCcys.filter(c => CCYS.indexOf(c) < 0)) : CCYS;
     const sessionOpen = !serverBacked || !!(serverSession && serverSession.status === 'open');
+    /* Why Save count is off, in words: a refused count first, then an empty field in view. */
+    const saveWhy = firstRefusal(countedCcys) || emptyReason(ccy);
     const iHold = mine(serverSession);
     const heldByOther = !!(serverBacked && sessionOpen && serverSession && myId && !iHold);
     const mayCount = !serverBacked || !!(iHold && canCountTill);
@@ -16745,6 +16755,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       const refused = countedCcys.find(countRefusal);
       if (refused) {
         setSessionErr(countRefusal(refused));
+        return;
+      }
+      if (emptyReason(ccy)) {
+        setSessionErr(emptyReason(ccy));
         return;
       }
       saveLock.current = now;
@@ -17666,7 +17680,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }, "Skip the breakdown \u2014 just enter the total ", ccy, " you counted in the drawer."), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center",
       style: {
-        border: `1px solid ${countRefusal(ccy) ? CD.flag : CD.ink}`,
+        border: `1px solid ${shownCountError(ccy) ? CD.flag : CD.ink}`,
         borderRadius: 10,
         maxWidth: 340
       }
@@ -17681,7 +17695,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       type: "text",
       inputMode: window.CDOS.countPlaces(ccy) === 0 ? 'numeric' : 'decimal',
       "aria-label": `${ccy} counted`,
-      "aria-invalid": countRefusal(ccy) ? 'true' : undefined,
+      "aria-invalid": shownCountError(ccy) ? 'true' : undefined,
       autoFocus: true,
       value: heldByOther ? '' : quick[ccy] ?? '',
       onChange: e => {
@@ -17802,7 +17816,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         fontFamily: 'Space Mono, monospace',
         borderLeft: `1px solid ${CD.line}`
       }
-    }, ccy)), countRefusal(ccy) ? /*#__PURE__*/React.createElement("div", {
+    }, ccy)), shownCountError(ccy) ? /*#__PURE__*/React.createElement("div", {
       role: "alert",
       "data-count-refusal": ccy,
       className: "text-[12px] mt-1.5",
@@ -17810,7 +17824,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.flag,
         maxWidth: 260
       }
-    }, countRefusal(ccy)) : null, !heldByOther && /*#__PURE__*/React.createElement("div", {
+    }, shownCountError(ccy)) : null, !heldByOther && /*#__PURE__*/React.createElement("div", {
       className: "till-expected-wrap text-[11px] mt-1.5",
       style: {
         color: CD.faint
@@ -17889,20 +17903,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         lineHeight: 1.1
       },
       title: grandHome == null ? canTotal ? 'Nothing counted yet' : 'This desk keeps its books in a currency the rate board cannot total against' : ''
-    }, fmtHome(grandHome)), sessionOpen && firstRefusal(countedCcys) ? /*#__PURE__*/React.createElement("span", {
+    }, fmtHome(grandHome)), sessionOpen && saveWhy ? /*#__PURE__*/React.createElement("span", {
       id: "till-save-why",
       hidden: true
-    }, firstRefusal(countedCcys)) : null, /*#__PURE__*/React.createElement("button", {
+    }, saveWhy) : null, /*#__PURE__*/React.createElement("button", {
       onClick: saveSnapshot,
-      disabled: saved || !sessionOpen || tillBusy === 'count' || countedCcys.some(countRefusal),
-      title: !sessionOpen ? 'Open the till before saving a count' : firstRefusal(countedCcys),
-      "aria-describedby": sessionOpen && firstRefusal(countedCcys) ? 'till-save-why' : undefined,
+      disabled: saved || !sessionOpen || tillBusy === 'count' || !!saveWhy,
+      title: !sessionOpen ? 'Open the till before saving a count' : saveWhy,
+      "aria-describedby": sessionOpen && saveWhy ? 'till-save-why' : undefined,
       className: "till-save mt-2 flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white",
       style: {
-        background: saved ? CD.green : sessionOpen && !countedCcys.some(countRefusal) ? CD.ink : 'var(--cd-disabled)',
+        background: saved ? CD.green : sessionOpen && !saveWhy ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 9,
         marginLeft: 'auto',
-        cursor: sessionOpen && !countedCcys.some(countRefusal) ? 'pointer' : 'not-allowed',
+        cursor: sessionOpen && !saveWhy ? 'pointer' : 'not-allowed',
         transition: 'background .25s ease, transform .12s ease'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
