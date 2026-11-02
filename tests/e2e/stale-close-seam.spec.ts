@@ -218,3 +218,54 @@ test("a refresh in the middle of a count still closes against the mark it starte
   expect((await book.session())?.status).toBe("open");
   expect(Number((await book.till()).CAD)).toBe(Number(before.CAD) + 40);
 });
+
+/* #558: Save count and Close send each count exactly as typed, and refuse
+   one they cannot read. 1.999 used to go out as 2.00, and a pasted 1500²
+   as 1500.00, and the close writes that number back as the balance. */
+test("save count and close send the count as typed, and refuse 1.999 and 1500²", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAtDesk(page);
+  const book = ledger(page);
+  await openTill(page);
+  const before = await book.till();
+
+  await clickDrawerTab(page, /Cash drawer/i);
+  await press(page.locator('button.till-chip:has-text("CAD")').first());
+  await press(page.getByRole("button", { name: /Enter total/i }).first());
+  const cad = page.locator('input[placeholder="0.00"]').first();
+  const refusal = page.locator('[data-count-refusal="CAD"]').first();
+  const save = page.getByRole("button", { name: /Save count/i }).first();
+
+  await cad.fill("1.999");
+  await expect(refusal).toHaveText("CAD counts to 2 decimal places. 1.999 has 3. Nothing was rounded.");
+  await expect(save).toBeDisabled();
+  await cad.fill("1500²");
+  await expect(cad).toHaveValue("1500²");
+  await expect(refusal).toHaveText("Type the CAD count with the digits 0 to 9 and one decimal point.");
+  await expect(save).toBeDisabled();
+
+  await cad.fill("1.5");
+  await expect(refusal).toHaveCount(0);
+  const counted = page.waitForRequest((r) => r.url().endsWith("/api/ledger/till-counts") && r.method() === "POST");
+  await saveDrawerCount(page);
+  expect(((await counted).postDataJSON() as { counts: Record<string, string> }).counts.CAD).toBe("1.50");
+
+  /* The close: every currency counted at what the book holds, CAD typed
+     with thousands commas. It is sent as the exact figure, so the book is
+     unchanged. */
+  const grouped = (amount: string) => {
+    const [whole, cents = ""] = amount.split(".");
+    return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (cents ? "." + cents : "");
+  };
+  for (const [ccy, amount] of Object.entries(before)) {
+    await press(page.locator(`button.till-chip:has-text("${ccy}")`).first());
+    await press(page.getByRole("button", { name: /Enter total/i }).first());
+    await page.locator('input[placeholder="0.00"]').first().fill(ccy === "CAD" ? grouped(amount) : amount);
+  }
+  const closing = page.waitForRequest((r) => /\/api\/ledger\/till-sessions\/[^/]+\/close$/.test(r.url()) && r.method() === "POST");
+  await closeTheDay(page);
+  const sent = ((await closing).postDataJSON() as { counts: Record<string, string> }).counts;
+  for (const [ccy, amount] of Object.entries(before)) expect(sent[ccy], ccy).toBe(amount);
+  await expect.poll(async () => (await book.session())?.status, { timeout: 15_000 }).toBe("closed");
+  expect(await book.till()).toEqual(before);
+});

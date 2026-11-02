@@ -231,16 +231,19 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   const submit = sheet.getByRole("button", { name: "Take over till" });
   await expect.poll(async () => cancel.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await expect.poll(async () => submit.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
-  const fraction = "Yen has no decimals.";
-  const whole = "Enter a whole number, like 1500.";
+  /* parseCount's reasons (#558). */
+  const fraction = "JPY has no decimal places. Count whole JPY.";
+  const whole = "Type the JPY count with the digits 0 to 9 and one decimal point.";
   const refused: Array<[string, string]> = [
-    ["1500,7", fraction],
+    ["1500,7", whole],
     ["1.500", fraction],
     ["1e3", whole],
     ["15e3", whole],
-    ["1,50,0", fraction],
+    ["1,50,0", whole],
     ["-1500", whole],
     ["١٥٠٠", whole],
+    ["１５００", whole],
+    ["1500²", whole],
   ];
   for (const [sample, message] of refused) {
     await yen.fill(sample);
@@ -277,9 +280,8 @@ test("the takeover screens name the holder and hide what the role cannot do", as
   await expect(yen).toHaveValue("1,500");
   await yen.fill("１５００");
   await expect(yen).toHaveValue("１５００");
-  await yen.fill("1500,7");
-  await expect(yen).toHaveValue("1500,7");
-  await expect(yen).not.toHaveValue("15007");
+  await yen.fill("1500.7");
+  await expect(yen).toHaveValue("1500.7");
   await expect(sheet.getByText(fraction)).toBeVisible();
   await shoot(page, "note", sheet.getByText(fraction));
   await page.setViewportSize({ width: 1280, height: 900 });
