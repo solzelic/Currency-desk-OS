@@ -296,7 +296,7 @@ test("a stored yen fraction is named, a whole cad figure is not, and a real gap 
 
   await jpy.getByRole("button", { name: /count/i }).evaluate((el: HTMLElement) => el.click());
   await page.getByRole("button", { name: /^Enter total$/ }).click();
-  const total = page.locator('input[type="number"]');
+  const total = page.getByLabel("JPY counted", { exact: true }).first();
   await total.fill("489176");
   await page.locator(".till-expected").evaluate((el: HTMLElement) => el.click());
   const whole = page.locator(".till-count-foot");
