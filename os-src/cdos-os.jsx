@@ -1502,7 +1502,7 @@
     const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null);   // null = all apps; array = allowlist for the signed-in employee
-    const [pinGate, setPinGate] = useState(null);   // { title, sub, name, expected, onOk } when a PIN is being asked
+    const [pinGate, setPinGate] = useState(null);   // { title, sub, name, onOk } when a PIN is being asked
     /* The bridge must know the role before hydrate, because the first
        save can run inside it. A missing bridge is a boot failure. */
     const markPersistRole = (role) => {
@@ -1527,11 +1527,8 @@
       }
       log('Signed in as', `${s.name} · ${s.role}`);
     };
-    /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
-    /* PINs are checked by the server. This is only the offline fallback the
-       gate falls back to when it cannot reach it — and when a desk's PINs have
-       not been set there yet, which is the shipped default of 0000. */
-    const pinOf = () => '0000';
+    /* ---- transaction PIN gates (rules set in Settings › Employees) ----
+       PINs are checked by the server only. There is no local fallback. */
     const reqPin = (nm) => { const e = (settings.employees || []).find(x => x.name === nm); return e ? e.requirePin !== false : true; };
     const askPin = (opts) => setPinGate(opts);
     /* The menu used to call applyRole and stop. The cookie, and therefore
@@ -1608,7 +1605,7 @@
         onOk: (switched) => { finishSwitch(switched, 'switch'); },
       });
     };
-    const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, expected: pinOf(me.name), onOk: fn }); else fn(); };
+    const tillGate = (fn) => { const need = settings.pinOnTill !== false && reqPin(me.name); if (need) askPin({ title: 'Confirm it’s you', sub: 'Enter your PIN to take this drawer', name: me.name, onOk: fn }); else fn(); };
 
     /* Routing per §04 of the Branch & Access Model spec — a pure function of
        role + assignments. Owner → full picker. One branch + a posted till →
@@ -2431,7 +2428,7 @@
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, serverRole: srvUser && srvUser.role, serverStaffId: srvUser && srvUser.staffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin, pinOf }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, serverRole: srvUser && srvUser.role, serverStaffId: srvUser && srvUser.staffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;

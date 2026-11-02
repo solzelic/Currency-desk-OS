@@ -2113,7 +2113,6 @@
     sub,
     name,
     staffId,
-    expected,
     purpose,
     onOk,
     onCancel
@@ -2123,7 +2122,6 @@
     const [shake, setShake] = React.useState(false);
     const [lockedOut, setLockedOut] = React.useState(false);
     const lockedRef = React.useRef(false);
-    const exp = String(expected == null ? '0000' : expected);
     const ini = nm => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) {
@@ -2151,9 +2149,9 @@
     };
     /* The server decides. Holding the expected PIN in the browser and
        comparing it here made this gate decorative — it could be read out of
-       devtools, or stepped over entirely. A desk whose PINs have not been set
-       on the server yet answers 409, and only then do we fall back to the old
-       local check so nothing breaks mid-migration. */
+       devtools, or stepped over entirely. A person with no PIN on the server
+       is told to set one; this browser never compares a PIN, so 0000 is not
+       a PIN here. A staging test shop's default is the server's alone. */
     const readBody = async res => {
       try {
         return await res.json();
@@ -2240,15 +2238,9 @@
           fail();
           return;
         }
-        if (res.status !== 409) {
-          fail('Could not check that PIN');
-          return;
-        }
-      } catch (e) {/* offline: the local check is all there is */}
-      if (val === exp) {
-        onOk && onOk();
-      } else {
-        fail();
+        fail(res.status === 409 ? 'No PIN is set yet. Set one in Settings › My account.' : 'Could not check that PIN');
+      } catch (e) {
+        fail('Could not reach the desk to check that PIN.');
       }
     };
     const press = dgt => {
@@ -7520,6 +7512,8 @@ if (typeof module !== "undefined" && module.exports) {
     const [busy, setBusy] = useState(false);
     const [hasPin, setHasPin] = useState(!!hasPinProp);
     const [mustChange, setMustChange] = useState(false);
+    // a staging test shop's 0000, said by the server only (GET /api/staff/pin)
+    const [defaultPin, setDefaultPin] = useState(false);
     // forgotten it: prove yourself with your sign-in password instead of the
     // PIN you can't remember, so nobody has to be told a new one
     const [forgot, setForgot] = useState(false);
@@ -7530,6 +7524,7 @@ if (typeof module !== "undefined" && module.exports) {
       if (r) {
         setHasPin(!!r.hasPin);
         setMustChange(!!r.mustChange);
+        setDefaultPin(!r.hasPin && r.defaultPin === true);
       }
     }).catch(() => {});
     useEffect(() => {
@@ -7608,6 +7603,7 @@ if (typeof module !== "undefined" && module.exports) {
       setBusy(false);
       setHasPin(true);
       setMustChange(false);
+      setDefaultPin(false);
       onSave && onSave();
       close();
       setDone(true);
@@ -7629,7 +7625,7 @@ if (typeof module !== "undefined" && module.exports) {
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
       const toneInk = !hasPin && !done && !mustChange;
       return /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2",
@@ -7660,7 +7656,7 @@ if (typeof module !== "undefined" && module.exports) {
           color: CD.ink,
           background: CD.panel
         }
-      }, hasPin ? 'Change PIN' : 'Set PIN'));
+      }, hasPin || defaultPin ? 'Change PIN' : 'Set PIN'));
     }
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
@@ -7682,7 +7678,14 @@ if (typeof module !== "undefined" && module.exports) {
         color: CD.mute,
         lineHeight: 1.5
       }
-    }, "Your sign-in password proves it\u2019s you. The new PIN is yours alone \u2014 nobody here is told it."), /*#__PURE__*/React.createElement("div", {
+    }, "Your sign-in password proves it\u2019s you. The new PIN is yours alone \u2014 nobody here is told it."), defaultPin && !hasPin && /*#__PURE__*/React.createElement("div", {
+      "data-default-pin": true,
+      className: "text-[12px] mb-2.5",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.5
+      }
+    }, "Staging PIN 0000. Change it any time."), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col gap-2"
     }, hasPin && !forgot && /*#__PURE__*/React.createElement("label", {
       className: "flex items-center justify-between gap-3"
@@ -8183,8 +8186,7 @@ if (typeof module !== "undefined" && module.exports) {
     setClients,
     onOpenLedger,
     askPin,
-    reqPin,
-    pinOf
+    reqPin
   }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
@@ -8673,7 +8675,6 @@ if (typeof module !== "undefined" && module.exports) {
         title: 'Confirm export',
         sub: 'Enter your PIN to download the ledger',
         name: me.name,
-        expected: pinOf ? pinOf(me.name) : '0000',
         onOk: exportLedger
       });else exportLedger();
     };
@@ -69344,7 +69345,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     };
     // The role on screen is the role on the session. Owner = all access.
     const [meApps, setMeApps] = useState(null); // null = all apps; array = allowlist for the signed-in employee
-    const [pinGate, setPinGate] = useState(null); // { title, sub, name, expected, onOk } when a PIN is being asked
+    const [pinGate, setPinGate] = useState(null); // { title, sub, name, onOk } when a PIN is being asked
     /* The bridge must know the role before hydrate, because the first
        save can run inside it. A missing bridge is a boot failure. */
     const markPersistRole = role => {
@@ -69385,11 +69386,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
       log('Signed in as', `${s.name} · ${s.role}`);
     };
-    /* ---- transaction PIN gates (rules set in Settings › Employees) ---- */
-    /* PINs are checked by the server. This is only the offline fallback the
-       gate falls back to when it cannot reach it — and when a desk's PINs have
-       not been set there yet, which is the shipped default of 0000. */
-    const pinOf = () => '0000';
+    /* ---- transaction PIN gates (rules set in Settings › Employees) ----
+       PINs are checked by the server only. There is no local fallback. */
     const reqPin = nm => {
       const e = (settings.employees || []).find(x => x.name === nm);
       return e ? e.requirePin !== false : true;
@@ -69482,7 +69480,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         title: 'Confirm it’s you',
         sub: 'Enter your PIN to take this drawer',
         name: me.name,
-        expected: pinOf(me.name),
         onOk: fn
       });else fn();
     };
@@ -71207,8 +71204,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             setClients,
             onOpenLedger: () => openApp('ledger'),
             askPin,
-            reqPin,
-            pinOf
+            reqPin
           });
         case 'calc':
           return /*#__PURE__*/React.createElement(Calc, {

@@ -1,13 +1,8 @@
 /* A staging test shop confirms with 0000 until the person picks their own.
-
-   The normal seam server is on 127.0.0.1, which isStagingRuntime refuses,
-   so this file starts its own server shaped like staging: STAGING=1,
-   RENDER_EXTERNAL_HOSTNAME a staging host, STAGING_DEFAULT_PIN=1. The
-   browser reaches it as http://staging.currencydeskos.com:<port>, which
-   Chromium resolves to 127.0.0.1, so the Host header is a staging host.
-   The shop comes from POST /api/staging/fresh-shop and the real sign-up
-   check, the same pair the Start a fresh shop door uses, so it is a test
-   shop because the server made it one. */
+   The seam server is 127.0.0.1, which isStagingRuntime refuses, so this file
+   starts a staging-shaped server and Chromium maps staging.currencydeskos.com
+   to it. The shop comes from /api/staging/fresh-shop and the real sign-up
+   check, so the server is what makes it a test shop. */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import type { Page } from "@playwright/test";
@@ -62,7 +57,6 @@ async function freshShop(page: Page): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
-/* The desk's own PIN prompt, as the till and export gates open it. */
 async function promptAndType(page: Page, pin: string): Promise<void> {
   await page.evaluate(() => {
     const w = window as unknown as { React: any; ReactDOM: any; CDOS: { PinPrompt: unknown }; pinResult?: string; pinRoot?: { unmount(): void } };

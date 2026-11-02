@@ -1270,13 +1270,12 @@
   /* ---- shared 4-digit PIN gate: reused at account switch, till switch, void.
      A proper mandatory-PIN screen — dot indicators + on-screen keypad, and the
      physical keyboard works too. ---- */
-  function PinPrompt({ title, sub, name, staffId, expected, purpose, onOk, onCancel }) {
+  function PinPrompt({ title, sub, name, staffId, purpose, onOk, onCancel }) {
     const [pin, setPin] = React.useState('');
     const [err, setErr] = React.useState('');
     const [shake, setShake] = React.useState(false);
     const [lockedOut, setLockedOut] = React.useState(false);
     const lockedRef = React.useRef(false);
-    const exp = String(expected == null ? '0000' : expected);
     const ini = (nm) => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) { const s = document.createElement('style'); s.id = 'cdos-pin-kf'; s.textContent = '@keyframes cdosPinShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}'; document.head.appendChild(s); }
@@ -1292,9 +1291,9 @@
     };
     /* The server decides. Holding the expected PIN in the browser and
        comparing it here made this gate decorative — it could be read out of
-       devtools, or stepped over entirely. A desk whose PINs have not been set
-       on the server yet answers 409, and only then do we fall back to the old
-       local check so nothing breaks mid-migration. */
+       devtools, or stepped over entirely. A person with no PIN on the server
+       is told to set one; this browser never compares a PIN, so 0000 is not
+       a PIN here. A staging test shop's default is the server's alone. */
     const readBody = async (res) => {
       try { return await res.json(); }
       catch (e) { return null; }
@@ -1338,9 +1337,8 @@
         if (res.ok) { onOk && onOk(); return; }
         if (res.status === 429) { fail('Too many tries — wait a few minutes'); return; }
         if (res.status === 401) { fail(); return; }
-        if (res.status !== 409) { fail('Could not check that PIN'); return; }
-      } catch (e) { /* offline: the local check is all there is */ }
-      if (val === exp) { onOk && onOk(); } else { fail(); }
+        fail(res.status === 409 ? 'No PIN is set yet. Set one in Settings › My account.' : 'Could not check that PIN');
+      } catch (e) { fail('Could not reach the desk to check that PIN.'); }
     };
     const press = (dgt) => { if (lockedRef.current) return; setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
     const back = () => { if (lockedRef.current) return; setErr(''); setPin(p => p.slice(0, -1)); };

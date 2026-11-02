@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
@@ -103,8 +103,7 @@ describe("the PIN routes", () => {
     const got = await call(me, "GET", "/api/staff/pin");
     expect(got.json()).toMatchObject({ hasPin: false, defaultPin: true });
     const ok = await call(me, "POST", "/api/staff/pin/verify", { pin: "0000" });
-    expect(ok.statusCode, ok.body).toBe(200);
-    expect(ok.json()).toEqual({ ok: true, mustChange: false, defaultPin: true });
+    expect([ok.statusCode, ok.json()]).toEqual([200, { ok: true, mustChange: false, defaultPin: true }]);
     const rows = await defaultRows();
     const verify = rows.find((r) => (r.detail as { route?: string }).route === "verify")!;
     const singh = await staff("a.singh");
@@ -125,8 +124,7 @@ describe("the PIN routes", () => {
     const before = (await defaultRows()).length;
     for (const host of ["www.currencydeskos.com", "currencydeskos.com"]) {
       const res = await call(me, "POST", "/api/staff/pin/verify", { pin: "0000" }, host);
-      expect(res.statusCode, res.body).toBe(409);
-      expect(res.json().error).toBe("no_pin");
+      expect([res.statusCode, res.json().error]).toEqual([409, "no_pin"]);
       expect((await call(me, "GET", "/api/staff/pin", undefined, host)).json()).not.toHaveProperty("defaultPin");
     }
     expect(await defaultRows()).toHaveLength(before);
@@ -136,21 +134,18 @@ describe("the PIN routes", () => {
     await testShop(false);
     const me = await signIn("a.singh");
     const res = await call(me, "POST", "/api/staff/pin/verify?tenantId=tnt-stg-test&isTestShop=true", { pin: "0000", tenantId: "tnt-stg-test", isTestShop: true });
-    expect(res.statusCode, res.body).toBe(409);
-    expect(res.json().error).toBe("no_pin");
+    expect([res.statusCode, res.json().error]).toEqual([409, "no_pin"]);
     expect((await call(me, "GET", "/api/staff/pin?tenantId=tnt-stg-test")).json()).not.toHaveProperty("defaultPin");
   });
 
   it("is only for the signed-in person: naming someone else is 409, and so is switching to them", async () => {
     const me = await signIn("a.singh");
     const other = await call(me, "POST", "/api/staff/pin/verify", { staffId: "m.costa", pin: "0000" });
-    expect(other.statusCode, other.body).toBe(409);
-    expect(other.json().error).toBe("no_pin");
+    expect([other.statusCode, other.json().error]).toEqual([409, "no_pin"]);
     const self = await call(me, "POST", "/api/staff/pin/verify", { staffId: "a.singh", pin: "0000" });
     expect(self.statusCode, self.body).toBe(200);
     const sw = await call(me, "POST", "/api/auth/switch", { staffId: "m.costa", pin: "0000" });
-    expect(sw.statusCode, sw.body).toBe(409);
-    expect(sw.json().error).toBe("no_pin");
+    expect([sw.statusCode, sw.json().error]).toEqual([409, "no_pin"]);
   });
 
   it("never stores 0000: setting it is 422, and once the person sets their own, 0000 is 401", async () => {
@@ -162,8 +157,8 @@ describe("the PIN routes", () => {
     expect((await defaultRows()).some((r) => (r.detail as { route?: string }).route === "set")).toBe(true);
     const after = await call(me, "POST", "/api/staff/pin/verify", { pin: "0000" });
     expect(after.statusCode, after.body).toBe(401);
-    expect((await call(me, "GET", "/api/staff/pin")).json()).toMatchObject({ hasPin: true });
-    expect((await call(me, "GET", "/api/staff/pin")).json()).not.toHaveProperty("defaultPin");
+    const mine = (await call(me, "GET", "/api/staff/pin")).json();
+    expect(mine.hasPin && !("defaultPin" in mine)).toBe(true);
     const own = await call(me, "POST", "/api/staff/pin/verify", { pin: "4826" });
     expect(own.statusCode, own.body).toBe(200);
     const rows = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, "tnt-yorkfx"));
