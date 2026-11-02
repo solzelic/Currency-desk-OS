@@ -517,6 +517,46 @@ postgres("a till close after the drawer has moved", () => {
     ).toBe(0);
   });
 
+  it("answers a bad count with 422 on the count and close routes, and changes nothing (#558)", async () => {
+    const teller = await cookie();
+    const manager = await cookie("r.haddad");
+    const before = await holderBook();
+    for (const bad of ["1.999", "1500²", "１５００", "١٥٠٠", "1500₂", "1,50"]) {
+      const counted = await app.inject({
+        method: "POST",
+        url: "/api/ledger/till-counts",
+        cookies: teller,
+        payload: { idempotencyKey: `count-${bad}`, counts: { CAD: bad } },
+      });
+      expect(counted.statusCode, `count ${bad}: ${counted.body}`).toBe(422);
+      expect(counted.body).not.toContain(bad);
+      const closed = await close(manager, {
+        idempotencyKey: `close-${bad}`,
+        counts: { ...before.balances, CAD: bad },
+        balanceGeneration: before.balanceGeneration,
+      });
+      expect(closed.statusCode, `close ${bad}: ${closed.body}`).toBe(422);
+      expect(closed.body).not.toContain(bad);
+    }
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_till_counts")).rows[0].n).toBe(0);
+    const open = await pool.query("SELECT status FROM ledger_till_sessions WHERE session_id='session-1'");
+    expect(open.rows).toEqual([{ status: "open" }]);
+    expect((await holderBook()).balances).toEqual(before.balances);
+  });
+
+  it("reads thousands commas on a count", async () => {
+    const teller = await cookie();
+    const counted = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-counts",
+      cookies: teller,
+      payload: { idempotencyKey: "grouped-count", counts: { CAD: "1,000.50" } },
+    });
+    expect(counted.statusCode, counted.body).toBe(201);
+    const row = await pool.query("SELECT counted_amount::text AS counted FROM ledger_till_counts WHERE currency='CAD'");
+    expect(row.rows).toEqual([{ counted: "1000.50" }]);
+  });
+
   it("refuses a till close when money moved after the count", async () => {
     const teller = await cookie();
     const manager = await cookie("r.haddad");
