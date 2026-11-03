@@ -1880,7 +1880,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
               </div>
             </td></tr>}
           </tbody></table></div>
-        <p className="mt-3 text-[11px] flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="shield" s={12} /> Records are permanent — a posted transaction can't be edited or deleted, only voided with a reason. Every action is written to the audit trail.</p>
+        <p className="mt-3 text-[11px] flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="shield" s={12} /> Records are permanent. A posted transaction can't be edited or deleted, only voided with a reason. Every action is written to the audit trail.</p>
       </div>
       </>)}
       </div>

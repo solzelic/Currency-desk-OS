@@ -812,6 +812,8 @@ Public `GET /api/health` is process-up only. It returns `{ ok: true, service: "c
 
 ## Last reviewed
 
+**2026-11-03**, PIN rules. A new or changed PIN of one digit repeated (0000 to 9999) is refused on every runtime with "Pick a PIN that isn't one digit repeated, like 1111."; runs and years keep "That PIN is too easy to guess."; 1100 and 0001 are fine. Set PIN and Change PIN show the server's reason. The browser never compares a PIN: a person with no PIN on the server is told to set one in My account, and 0000 is never accepted in the browser. The #609 staging 0000 path was removed before merge.
+
 **2026-11-02**, staging bar. The bar takes its own space above the header on desktop, phone and the sign-in screen, and an X hides it for ten minutes. Staging detection is unchanged.
 
 **2026-10-29**, sign-up secrets. `cdos_onb_v2` holds no password, verify code, card field or backup card, is cleaned on load, and is removed after launch. The server strips `code` and every `card*` field. Four browser tests in `tests/e2e/onboarding-secrets.spec.ts` fail on the old page and pass here. Issue #431.

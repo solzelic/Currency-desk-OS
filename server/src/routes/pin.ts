@@ -111,7 +111,8 @@ export function pinLockedUntil(userId: string): string | null {
 
 /* A PIN nobody would pick: not a repeat, not a run, not a date. Those are
    the first things guessed. Issuing one, and accepting one somebody chose,
-   use the same list. */
+   use the same list, on every runtime. A repeat (0000 to 9999) has its own
+   words (Sol, 3 Nov 2026); 1100 and 0001 are fine. */
 export function isWeakPin(pin: string): boolean {
   if (!/^\d{4}$/.test(pin)) return true;
   const d = pin.split("").map(Number);
@@ -124,8 +125,8 @@ export function isWeakPin(pin: string): boolean {
 
 export function weakPinDetail(pin: string): string | null {
   if (!isWeakPin(pin)) return null;
-  return pin === "0000"
-    ? "0000 is too easy to guess. Pick a different PIN."
+  return /^(\d)\1{3}$/.test(pin)
+    ? "Pick a PIN that isn't one digit repeated, like\u00a01111."   // no-break space: 1111 never wraps alone
     : "That PIN is too easy to guess. Pick a different PIN.";
 }
 
