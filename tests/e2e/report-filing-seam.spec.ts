@@ -18,10 +18,23 @@
      · the correction is a SECOND filing, linked, and the first survives
        it word for word
    ============================================================ */
+import { createRequire } from "node:module";
+import path from "node:path";
 import { test, expect, hasLedger, signInAtDesk, rendered } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL — the embedded database has no ledger");
+
+/* No report can be filed under the seed's placeholder FINTRAC number
+   M12345678 (#609 PR B), and no route sets the number. So this walk files
+   under a real-format test number and puts the placeholder back after. */
+const { Pool } = createRequire(path.join(process.cwd(), "server", "package.json"))("pg") as { Pool: new (c: { connectionString: string }) => any };
+const setYorkNumber = async (msb: string) => {
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try { await pool.query("UPDATE legal_entities SET msb_number = $1 WHERE id = 'le-yorkfx-canada'", [msb]); } finally { await pool.end(); }
+};
+test.beforeAll(async () => { if (hasLedger) await setYorkNumber("M10000001"); });
+test.afterAll(async () => { if (hasLedger) await setYorkNumber("M12345678"); });
 
 type Page = import("@playwright/test").Page;
 

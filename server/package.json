@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "dev:prototype": "STATIC_DIR=.. STATIC_INDEX='CurrencyDesk OS.html' tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "staging": "tsx src/staging/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --no-file-parallelism",
     "seed": "tsx src/seed.ts",

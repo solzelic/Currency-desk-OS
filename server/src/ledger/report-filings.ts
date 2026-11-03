@@ -45,6 +45,7 @@
    field lists: a form that looks official and is wrong is worse than no
    form at all.
    ============================================================ */
+import { fintracNumberFileable } from "../staging/fintrac-placeholder.js";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import type pg from "pg";
@@ -287,6 +288,11 @@ export class ReportFilingService {
       const code = input.reportCode.trim().toUpperCase();
       if (!canSeeStr(role) || !canReleaseFiling(role, code)) {
         throw new LedgerError("AUTHORIZATION_DENIED", "You cannot file this report.");
+      }
+      /* The demo seed's placeholder FINTRAC number can never be filed under (#609 PR B). */
+      const entity = await client.query("SELECT msb_number FROM legal_entities WHERE id = $1", [actor.legalEntityId]);
+      if (!fintracNumberFileable(entity.rows[0]?.msb_number)) {
+        throw new LedgerError("INVALID_REQUEST", "This shop's FINTRAC number is the demo placeholder. Add the real number before filing.");
       }
       /* The pack's own catalogue of forms. Highest version wins: a
          jurisdiction that revises a form adds a version rather than

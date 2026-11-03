@@ -22,6 +22,8 @@ import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval
 import { startRatesSync } from "./rates/sync-schedule.js";
 import { siteDomainRefreshIntervalMs, startSiteDomainRefresh } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
+import { runStagingPinReset } from "./staging/pin-reset.js";
+
 
 for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVERRIDE_MAX_DEVIATION"] as const) {
   const value = process.env[key];
@@ -120,6 +122,15 @@ if (shouldPopulateDemoDesk()) {
     }
   }
 }
+
+  // Staging test shops get the stored PIN 0000 (#609 PR B), after the demo
+  // seed. Three gates inside, never throws; a live database is untouched.
+  if (process.env.DATABASE_URL) {
+    const { default: pg } = await import("pg");
+    // a database that does not answer within 5 s fails the reset (one log line), not boot
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
+    try { await runStagingPinReset(pool); } finally { await pool.end(); }
+  }
 
   const app = await buildApp(handle.db);
   // buildApp loaded the custom-domain map once. A shop save reloads it on

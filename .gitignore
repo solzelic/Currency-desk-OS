@@ -34,6 +34,9 @@ screenshots/
 
 # Backend (server/)
 server/node_modules/
+# a worktree's node_modules can be a symlink, which the folder patterns miss
+node_modules
+server/node_modules
 server/.pgdata/
 server/.env
 
