@@ -1665,6 +1665,15 @@
       return () => { if (watch) watch.disconnect(); document.removeEventListener('cdos-staging-door', onDoor); };
     }, [stagingOn, stagingDoor, stage, bannerHidden]);
 
+    /* On staging the seed shop shows as Test FX; live keeps York FX. */
+    useEffect(() => {
+      const names = window.CDOS.stagingShopName; const tid = srvUser && srvUser.tenantId;
+      if (!names || !names.applies(tid, stagingOn)) return;
+      setSettings(s => names.renameSettings(s, tid, stagingOn));
+      let store = null; try { store = window.localStorage; } catch (e) {}
+      if (names.renameTexts(store, tid, stagingOn)) { try { window.dispatchEvent(new Event('cdos_tg_sync')); } catch (e) {} }
+    }, [stagingOn, srvUser]);
+
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
        long gone — so the header greets you by name and then every app that asks
