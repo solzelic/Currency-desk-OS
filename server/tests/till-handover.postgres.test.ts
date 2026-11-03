@@ -38,7 +38,7 @@ async function login(staffId: string) {
 
 async function resetLedger() {
   await pool.query(
-    "TRUNCATE ledger_till_counts, ledger_till_count_batches, ledger_till_sessions, ledger_audit_events, ledger_till_balances, ledger_till_balance_generations, ledger_principals, ledger_idempotency CASCADE",
+    "TRUNCATE ledger_till_settings, ledger_till_counts, ledger_till_count_batches, ledger_till_sessions, ledger_audit_events, ledger_till_balances, ledger_till_balance_generations, ledger_principals, ledger_idempotency CASCADE",
   );
   await pool.query(
     "DELETE FROM quote_events WHERE quote_id IN (SELECT quote_id FROM quotes WHERE tenant_id=$1)",

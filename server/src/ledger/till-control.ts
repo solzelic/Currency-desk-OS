@@ -8,8 +8,8 @@ import { currentBasis } from "./cost-basis.js";
 import { resolvePack } from "./jurisdiction.js";
 import { assertTradeable, parseMoney, roundTo } from "./currencies.js";
 import { pinDeskName } from "../auth/desk-name.js";
-import { hasBackendPermission } from "../auth/permissions.js";
-import { authorizeLedgerActor } from "./principal.js";
+import { authorizeLedgerActor, authorizeTillAction, refuseNotHolder } from "./principal.js";
+import { readTillSettings } from "./till-settings.js";
 import { LedgerError, refuseTillHeld, type LedgerActor } from "./service.js";
 import { withSerializationRetry } from "./retry.js";
 import {
@@ -99,16 +99,8 @@ export function recordedVariance(
 }
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
-const HANDOVER_MISMATCH = "The count does not match. A supervisor must approve this takeover.";
-/* The approver sheet is not in this release. A request that names an
-   approver or a PIN is refused here, before the PIN is read. */
-const HANDOVER_APPROVAL_ENABLED: boolean = false;
-const handoverRequestHash = (
-  counts: Counts,
-  approval?: { staffId: string; pin: string },
-) => createHash("sha256").update(JSON.stringify({
+const handoverRequestHash = (counts: Counts) => createHash("sha256").update(JSON.stringify({
   counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "")),
 })).digest("hex");
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
@@ -639,7 +631,7 @@ export class TillControlService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "till:close");
+      const { heldOnly } = await authorizeTillAction(client, actor, "till:close");
       const session = await client.query(
         `SELECT *
            FROM ledger_till_sessions
@@ -651,6 +643,7 @@ export class TillControlService {
       if (!session.rowCount) {
         throw new LedgerError("TILL_SESSION_NOT_FOUND", "Till session not found.");
       }
+      refuseNotHolder(heldOnly, session.rows[0].opened_by, actor);
       if (session.rows[0].status === "closed") {
         const existing = await client.query(
           `SELECT batch_id
@@ -771,27 +764,20 @@ export class TillControlService {
     }
   }
 
-  /* A blind count. The incoming teller does not see the book or the
-     variance. Over CAD 20.00, absolute at the board mid, stays held
-     until a different person with till:handover:approve enters a PIN. */
-  handover(
-    actor: LedgerActor,
-    idempotencyKey: string,
-    counts: Counts,
-    approval?: { staffId: string; pin: string },
-  ) {
-    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts, approval));
+  /* #617: a switch is one tap. A count is optional unless the owner
+     requires one. It is blind: the incoming person does not see the book.
+     An off count never blocks; it is logged as a manual override. */
+  handover(actor: LedgerActor, idempotencyKey: string, counts: Counts) {
+    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts));
   }
 
   private async handoverOnce(
     actor: LedgerActor,
     idempotencyKey: string,
     counts: Counts,
-    approval?: { staffId: string; pin: string },
   ): Promise<Awaited<ReturnType<TillControlService["current"]>>> {
     const client = await this.pool.connect();
-    const hash = handoverRequestHash(counts, approval);
-    let settled = false;
+    const hash = handoverRequestHash(counts);
     const remember = (response: unknown) => client.query(
       `UPDATE ledger_idempotency SET response=$1
         WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4
@@ -842,50 +828,20 @@ export class TillControlService {
         await client.query("COMMIT");
         return response;
       }
+      const settings = await readTillSettings(client, actor.tenantId, actor.legalEntityId);
+      const counted = Object.keys(counts).length > 0;
+      if (!counted && settings.requireCountOnSwitch) {
+        throw new LedgerError("HANDOVER_COUNT_REQUIRED", "This shop needs a count to switch the till.");
+      }
       const balances = await this.lockBalances(client, actor);
       const have = balances.map((row) => row.currency.trim()).sort().join(",");
       const gave = Object.keys(counts).sort().join(",");
-      if (!have || have !== gave) {
+      if (counted && (!have || have !== gave)) {
         throw new LedgerError(
           "INCOMPLETE_TILL_COUNT",
           "Every authoritative till currency must be counted before closing.",
         );
       }
-      /* A refusal is committed on its own, so the audit row survives the
-         403. The first submitted count is the one stored on that row.
-         A later count from someone who cannot approve is the same 403. */
-      const refuse = async (): Promise<never> => {
-        const counted = Object.keys(counts).sort().map((currency) => ({
-          currency,
-          counted: String(counts[currency] ?? ""),
-        }));
-        await client.query(
-          `INSERT INTO ledger_audit_events
-            (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
-             action,target_id,correlation_id,created_at,prior_session_id,variances)
-           VALUES ($1,$2,$3,$4,$5,$6,'till.handover.refused',$7,$8,clock_timestamp(),$9,$10::jsonb)`,
-          [
-            randomUUID(),
-            ...scope(actor).slice(0, 4),
-            actor.userId,
-            actor.tillId,
-            randomUUID(),
-            session.session_id,
-            JSON.stringify(counted),
-          ],
-        );
-        await client.query("COMMIT");
-        settled = true;
-        throw new LedgerError("HANDOVER_APPROVAL_REQUIRED", HANDOVER_MISMATCH);
-      };
-      const prior = await client.query(
-        `SELECT 1 FROM ledger_audit_events
-          WHERE action='till.handover.refused' AND prior_session_id=$1
-          LIMIT 1`,
-        [session.session_id],
-      );
-      if (prior.rowCount && !hasBackendPermission(role, "till:handover:approve")) await refuse();
-      if (approval && !HANDOVER_APPROVAL_ENABLED) await refuse();
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
       const board = await client.query(
         `SELECT board_rows FROM rate_boards
@@ -895,22 +851,24 @@ export class TillControlService {
       );
       const boardRows = (board.rows[0]?.board_rows ?? {}) as Record<string, { mid?: unknown }>;
       const lines: { currency: string; expected: string; counted: string; variance: string; mid: string | null }[] = [];
-      let absCad = new Decimal(0);
+      let net = new Decimal(0);
+      let absHome = new Decimal(0);
       let unpriced = false;
-      for (const row of balances) {
+      for (const row of counted ? balances : []) {
         const currency = row.currency.trim();
         const expected = expectedIn(row.available_amount);
-        const counted = countedIn(String(counts[currency]), currency);
-        const variance = recordedVariance(counted, expected, currency);
+        const countedAmount = countedIn(String(counts[currency]), currency);
+        const variance = recordedVariance(countedAmount, expected, currency);
         const raw = currency === home ? 1 : boardRows[currency]?.mid;
         const midDec = raw == null ? null : new Decimal(String(raw));
         const mid = midDec && midDec.gt(0) ? midDec.toDecimalPlaces(12).toFixed(12) : null;
-        const gap = new Decimal(variance).abs();
-        if (gap.gt(0) && !mid) unpriced = true;
-        else if (mid) absCad = absCad.plus(gap.mul(mid));
-        lines.push({ currency, expected, counted, variance, mid });
+        if (!new Decimal(variance).isZero() && !mid) unpriced = true;
+        else if (mid) {
+          net = net.plus(new Decimal(variance).mul(mid));
+          absHome = absHome.plus(new Decimal(variance).abs().mul(mid));
+        }
+        lines.push({ currency, expected, counted: countedAmount, variance, mid });
       }
-      if (unpriced || absCad.gt(new Decimal("20"))) await refuse();
       const opener = session.opened_by as string;
       const writeBatch = async (sessionId: string, kind: "close" | "handover") => {
         const id = `till_${kind}_${randomUUID()}`;
@@ -932,7 +890,7 @@ export class TillControlService {
         }
         return id;
       };
-      const batchId = await writeBatch(session.session_id, "close");
+      const batchId = counted ? await writeBatch(session.session_id, "close") : null;
       for (const line of lines) {
         await client.query(
           `UPDATE ledger_till_balances SET available_amount=$1
@@ -943,9 +901,9 @@ export class TillControlService {
       }
       await client.query(
         `UPDATE ledger_till_sessions
-            SET status='closed', closed_by=$1, closed_at=$2, close_note='Handover count'
-          WHERE session_id=$3`,
-        [actor.userId, now, session.session_id],
+            SET status='closed', closed_by=$1, closed_at=$2, close_note=$3
+          WHERE session_id=$4`,
+        [actor.userId, now, counted ? "Handover count" : "Switch, not counted", session.session_id],
       );
       const next = await client.query(
         `SELECT COALESCE(max(session_number),0)+1 AS session_number
@@ -965,36 +923,32 @@ export class TillControlService {
           clock.day, actor.userId, now,
         ],
       );
-      await writeBatch(sessionId, "handover");
-      await client.query(
+      if (counted) await writeBatch(sessionId, "handover");
+      const record = (action: string, variances: unknown, detail: object) => client.query(
         `INSERT INTO ledger_audit_events
           (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
            action,target_id,reason,correlation_id,created_at,
-           prior_session_id,count_batch_id,actor_role,from_user,
-           approver_id,approver_role,approved_at,variances)
-         VALUES ($1,$2,$3,$4,$5,$6,'till.session.handover',$7,$8,$9,clock_timestamp(),
-           $10,$11,$12,$13,$14,$15,
-           CASE WHEN $14::text IS NULL THEN NULL ELSE clock_timestamp() END,$16::jsonb)`,
+           prior_session_id,count_batch_id,actor_role,from_user,variances,detail)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,clock_timestamp(),$11,$12,$13,$14,$15::jsonb,$16::jsonb)`,
         [
-          randomUUID(),
-          ...scope(actor).slice(0, 4),
-          actor.userId,
-          sessionId,
-          `from=${opener}`,
-          randomUUID(),
-          session.session_id,
-          batchId,
-          role,
-          opener,
-          null,
-          null,
-          JSON.stringify(lines.map((line) => ({
-            currency: line.currency,
-            variance: line.variance,
-            mid: line.mid,
-          }))),
+          randomUUID(), ...scope(actor).slice(0, 4), actor.userId, action, sessionId, `from=${opener}`,
+          randomUUID(), session.session_id, batchId, role, opener,
+          variances == null ? null : JSON.stringify(variances), JSON.stringify(detail),
         ],
       );
+      const varianceLines = lines.map(({ currency, variance, mid }) => ({ currency, variance, mid }));
+      await record("till.session.handover", counted ? varianceLines : null, { counted });
+      if (lines.some((line) => !new Decimal(line.variance).isZero())) {
+        await record("till.handover.override", varianceLines, {
+          homeCurrency: home, homeTotal: fixed(net), homeAbsolute: fixed(absHome), unpriced,
+        });
+        const threshold = new Decimal(settings.largeDifferenceAmount ?? 0);
+        if (settings.largeDifferenceAlert && (unpriced || absHome.gt(threshold))) {
+          await record("till.handover.large_difference", null, {
+            homeCurrency: home, homeAbsolute: fixed(absHome), threshold: fixed(threshold),
+          });
+        }
+      }
       const dropped = await client.query(
         `UPDATE quotes SET status='cancelled'
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
@@ -1015,7 +969,7 @@ export class TillControlService {
       await client.query("COMMIT");
       return response;
     } catch (error) {
-      if (!settled) await client.query("ROLLBACK");
+      await client.query("ROLLBACK");
       if ((error as { code?: string }).code === "23505") {
         throw new LedgerError("IDEMPOTENCY_CONFLICT", "That till operation was already recorded.");
       }
@@ -1038,7 +992,7 @@ export class TillControlService {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
-      await authorizeLedgerActor(client, actor, "till:move");
+      const { heldOnly } = await authorizeTillAction(client, actor, "till:move");
       const existing = await client.query(
         `SELECT *
            FROM ledger_operational_cash_movements
@@ -1058,9 +1012,44 @@ export class TillControlService {
         return response;
       }
       const session = await this.openSession(client, actor);
+      refuseNotHolder(heldOnly, session.opened_by, actor);
       if (String(session.opened_by) !== actor.userId) {
         await refuseTillHeld(client, String(session.opened_by));
       }
+      const row = await this.applyMovement(client, actor, session, input);
+      const response = await this.movementResponse(client, actor, row);
+      await client.query("COMMIT");
+      return response;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      /* Two taps of one form can both pass the "have I seen this key?"
+         read and then one of them loses the unique index. That loser
+         did not move any money (the winner's transaction holds both
+         boxes), so it answers with the winner's movement when the body
+         is the same one. A different body is the same refusal as the
+         read above. A 23505 from any other constraint is not this key. */
+      if (cashMoveKeyConflict(error)) {
+        /* This connection is idle. The move was rolled back. The winner
+           has committed, which is what raised the unique violation.
+           Reading that movement on a new connection waits forever once
+           every connection is a loser of the same race. */
+        const replayed = await this.replayMovement(client, actor, input);
+        if (replayed) return replayed;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /* One movement against the drawer and, for a float, the vault. The
+     caller holds the transaction and has checked the holder. */
+  private async applyMovement(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    session: Record<string, unknown>,
+    input: MovementInput,
+  ) {
       const balance = await client.query(
         `SELECT available_amount
            FROM ledger_till_balances
@@ -1255,24 +1244,62 @@ export class TillControlService {
         `${input.direction} ${fixed(amount)} ${input.currency}; ${input.reason}`,
         now,
       );
-      const response = await this.movementResponse(client, actor, movement.rows[0]);
+      return movement.rows[0] as Record<string, unknown>;
+  }
+
+  /* #617: a float of several currencies from the vault, every line or
+     none, in one transaction. Line keys are the float key and the code. */
+  float(actor: LedgerActor, idempotencyKey: string, lines: { currency: string; amount: string }[]) {
+    return withSerializationRetry(() => this.floatOnce(actor, idempotencyKey, lines));
+  }
+
+  private async floatOnce(actor: LedgerActor, idempotencyKey: string, lines: { currency: string; amount: string }[]) {
+    const inputs: MovementInput[] = lines.map((line) => ({
+      idempotencyKey: `${idempotencyKey}:${line.currency}`, direction: "in", currency: line.currency,
+      amount: line.amount, counterpartyType: "vault", counterpartyRef: `${actor.branchId}:vault`, reason: "float",
+    }));
+    const client = await this.pool.connect();
+    const replay = async () => {
+      const found = await client.query(
+        `SELECT * FROM ledger_operational_cash_movements
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5
+            AND left(idempotency_key, length($6) + 1) = $6 || ':'`,
+        [...scope(actor), idempotencyKey],
+      );
+      if (!found.rowCount) return null;
+      const same = found.rowCount === inputs.length && inputs.every((input) =>
+        found.rows.some((row) => row.idempotency_key === input.idempotencyKey && sameStoredMovement(row, input)));
+      if (!same) throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
+      return this.movementResponse(client, actor, found.rows[0]);
+    };
+    try {
+      await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      const { heldOnly } = await authorizeTillAction(client, actor, "till:move");
+      let response = await replay();
+      if (!response) {
+        const session = await this.openSession(client, actor);
+        refuseNotHolder(heldOnly, session.opened_by, actor);
+        if (String(session.opened_by) !== actor.userId) await refuseTillHeld(client, String(session.opened_by));
+        let row: Record<string, unknown> | null = null;
+        for (const input of inputs) row = await this.applyMovement(client, actor, session, input);
+        await this.audit(client, actor, "till.float", String(session.session_id),
+          lines.map((line) => `${line.currency} ${fixed(line.amount)}`).join(", "), new Date());
+        response = await this.movementResponse(client, actor, row!);
+      }
       await client.query("COMMIT");
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
-      /* Two taps of one form can both pass the "have I seen this key?"
-         read and then one of them loses the unique index. That loser
-         did not move any money — the winner's transaction holds both
-         boxes — so it answers with the winner's movement when the body
-         is the same one. A different body is the same refusal as the
-         read above. A 23505 from any other constraint is not this key. */
       if (cashMoveKeyConflict(error)) {
-        /* This connection is idle. The move was rolled back. The winner
-           has committed, which is what raised the unique violation.
-           Reading that movement on a new connection waits forever once
-           every connection is a loser of the same race. */
-        const replayed = await this.replayMovement(client, actor, input);
-        if (replayed) return replayed;
+        await client.query("BEGIN");
+        try {
+          const replayed = await replay();
+          await client.query("COMMIT");
+          if (replayed) return replayed;
+        } catch (again) {
+          await client.query("ROLLBACK");
+          throw again;
+        }
       }
       throw error;
     } finally {

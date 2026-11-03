@@ -52,8 +52,6 @@ async function heldBySingh(page: Page): Promise<void> {
         body: JSON.stringify({
           idempotencyKey: "seed-singh-" + Date.now(),
           counts,
-          approverStaffId: "j.masri",
-          approverPin: "2468",
         }),
       });
       return handed.ok ? "held" : await handed.text();
