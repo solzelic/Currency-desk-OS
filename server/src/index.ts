@@ -127,7 +127,8 @@ if (shouldPopulateDemoDesk()) {
   // seed. Three gates inside, never throws; a live database is untouched.
   if (process.env.DATABASE_URL) {
     const { default: pg } = await import("pg");
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    // a database that does not answer within 5 s fails the reset (one log line), not boot
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
     try { await runStagingPinReset(pool); } finally { await pool.end(); }
   }
 
