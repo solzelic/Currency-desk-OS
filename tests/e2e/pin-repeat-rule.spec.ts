@@ -30,6 +30,10 @@ test("Set PIN shows why 1111 is refused, and takes 2468", async ({ page }) => {
     await expect(fields.nth(i)).toHaveAttribute("aria-describedby", "pin-set-err");
     await expect(fields.nth(i)).toHaveAttribute("aria-invalid", "true");
   }
+  /* Focus goes back to New PIN with its digits selected, ready to retype. */
+  const newPin = fields.nth(filled - 2);
+  await expect(newPin).toBeFocused();
+  expect(await newPin.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 4]);
   await fields.nth(filled - 2).fill("2468");
   await fields.nth(filled - 1).fill("2468");
   await page.getByRole("button", { name: /Save PIN/ }).click();
