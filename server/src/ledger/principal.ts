@@ -63,3 +63,25 @@ export async function authorizeLedgerActor(
   }
   return principal.role as string;
 }
+
+/* #617: a manager or the owner may float and close any till in scope. A
+   teller may only on a till they hold right now. `heldOnly` tells the
+   caller to check the holder once it has read the session. */
+export async function authorizeTillAction(
+  client: pg.PoolClient,
+  actor: LedgerActor,
+  permission: "till:move" | "till:close",
+): Promise<{ role: string; heldOnly: boolean }> {
+  try {
+    return { role: await authorizeLedgerActor(client, actor, permission), heldOnly: false };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "AUTHORIZATION_DENIED") throw error;
+  }
+  return { role: await authorizeLedgerActor(client, actor, `${permission}:held`), heldOnly: true };
+}
+
+export function refuseNotHolder(heldOnly: boolean, holder: unknown, actor: LedgerActor) {
+  if (heldOnly && String(holder) !== actor.userId) {
+    throw new LedgerError("AUTHORIZATION_DENIED", "Only the person holding this till can do that.");
+  }
+}

@@ -83,6 +83,8 @@ export const migrations: readonly Migration[] = [
   ["059_handover_idempotency_actor", "src/db/migrations/059_handover_idempotency_actor.sql"],
   /* 060 is the insert-only staging marker and tenants.seeded_by (#609 PR B). */
   ["060_db_environment", "src/db/migrations/060_db_environment.sql"],
+  /* 061 is the owner's till settings and a detail column on the audit row (#617). */
+  ["061_till_settings", "src/db/migrations/061_till_settings.sql"],
 ] as const;
 
 type MigrationReader = {

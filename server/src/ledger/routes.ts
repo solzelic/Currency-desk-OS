@@ -18,6 +18,7 @@ import {
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
+import { TillSettingsService } from "./till-settings.js";
 import {
   ThresholdService,
   type ThresholdChanges,
@@ -116,10 +117,23 @@ const countBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
 }).strict();
-const handoverBody = countBody.extend({
-  approverStaffId: z.string().trim().min(1).max(120).optional(),
-  approverPin: z.string().regex(/^\d{4}$/).optional(),
+/* #617: a count on switch is optional. When one is given it names every currency. */
+const handoverBody = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  counts: z.record(z.string().regex(/^[A-Z]{3}$/), monetary("0")).default({}),
 }).strict();
+const floatBody = z.object({
+  /* No colon: a line key is the float key, a colon and the code. */
+  idempotencyKey: z.string().min(1).max(190).regex(/^[^:]+$/),
+  lines: z.array(z.object({ currency: currencyCode, amount: monetary("0.01") }).strict()).min(1).max(20)
+    .refine((lines) => new Set(lines.map((line) => line.currency)).size === lines.length, "One line per currency."),
+}).strict();
+const tillSettingsBody = z.object({
+  requireCountOnSwitch: z.boolean(),
+  largeDifferenceAlert: z.boolean(),
+  largeDifferenceAmount: monetary("0").nullable(),
+  morningFloat: z.enum(["ask", "skip"]),
+}).partial().strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
   counts: tillCounts,
@@ -339,6 +353,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
+  const tillSettings = new TillSettingsService(pool);
   const thresholds = new ThresholdService(pool);
   const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
@@ -386,7 +401,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     const status =
       error.code === "AUTHENTICATION_REQUIRED" || error.code === "WRONG_PIN" ? 401
         : error.code === "PIN_LOCKED" ? 429
-        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" || error.code === "HANDOVER_APPROVAL_REQUIRED" ? 403
+        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
@@ -706,16 +721,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
-      const approval = parsed.data.approverStaffId || parsed.data.approverPin
-        ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "" }
-        : undefined;
       return actor
-        ? reply.code(201).send(await tillControl.handover(
-            actor,
-            parsed.data.idempotencyKey,
-            parsed.data.counts,
-            approval,
-          ))
+        ? reply.code(201).send(await tillControl.handover(actor, parsed.data.idempotencyKey, parsed.data.counts))
         : undefined;
     } catch (error) {
       return failure(reply, error);
@@ -772,6 +779,38 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
             ),
           )
         : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  /* #617: a float of several currencies, every line or none. */
+  app.post("/api/ledger/till-floats", async (req, reply) => {
+    const parsed = floatBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.code(201).send(await tillControl.float(actor, parsed.data.idempotencyKey, parsed.data.lines)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/till-settings", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await tillSettings.get(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/ledger/till-settings", async (req, reply) => {
+    const parsed = tillSettingsBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await tillSettings.set(actor, parsed.data)) : undefined;
     } catch (error) {
       return failure(reply, error);
     }

@@ -11,6 +11,7 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
 const SHOTS = "/opt/cursor/artifacts/screenshots/till-handover/gate";
 const WIDTHS = [360, 390, 430, 600, 1280] as const;
 const DARK = [390, 1280] as const;
+/* The old CAD 20 refusal. #617 removed it; it must never show again. */
 const MISMATCH = "The count does not match. A supervisor must approve this takeover.";
 
 async function dismissTour(page: Page): Promise<void> {
@@ -51,8 +52,6 @@ async function heldBySingh(page: Page): Promise<void> {
         body: JSON.stringify({
           idempotencyKey: "seed-singh-" + Date.now(),
           counts,
-          approverStaffId: "j.masri",
-          approverPin: "2468",
         }),
       });
       return handed.ok ? "held" : await handed.text();
@@ -141,13 +140,12 @@ test("a second teller takes over a held till from the deal form", async ({ page,
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await sheet.getByRole("button", { name: "Take over till" }).click();
-  const alert = sheet.getByRole("alert");
-  await expect(alert).toHaveText(MISMATCH, { timeout: 30_000 });
-  const openedBy = await page.evaluate(async () => {
+  /* #617: an off count never blocks. The switch goes through and the
+     server logs it as a manual override. */
+  await expect.poll(async () => page.evaluate(async () => {
     const body = await fetch("/api/ledger/till-session").then((r) => r.json());
     return String(body.session?.openedBy ?? "");
-  });
-  expect(openedBy.endsWith("a.singh")).toBe(true);
-  await expect(page.locator(".till-sessionline")).toContainText("opened by a.singh");
-  await shoot(page, "takeover-403", alert);
+  }), { timeout: 30_000 }).toMatch(/m\.costa$/);
+  await expect(page.getByText(MISMATCH)).toHaveCount(0);
+  await shoot(page, "takeover-off-count");
 });

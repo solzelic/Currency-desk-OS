@@ -362,7 +362,10 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
         reason: "Issue float",
       },
     });
-    expect(deniedMove.statusCode).toBe(403);
+    /* #617: a teller may move cash on a till they hold. This one gets
+       past the role check to the vault, which has no opening count yet. */
+    expect(deniedMove.statusCode).toBe(422);
+    expect(deniedMove.json().code).toBe("VAULT_NOT_INITIALIZED");
     /* The float names the vault. A vault with no opening count is refused,
        so this case states one first. The movement is still the thing under
        test: one key, one credit to the drawer, one debit to the safe. */

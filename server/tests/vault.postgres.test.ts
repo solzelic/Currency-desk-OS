@@ -571,4 +571,115 @@ postgres("vault control against real PostgreSQL", () => {
     const denied = await openVault({ CAD: "10.00" }, cookies);
     expect(denied.statusCode).toBe(403);
   });
+
+  /* #617: a float carries several currencies in one transaction. */
+  const floatLines = (cookies: Record<string, string>, idempotencyKey: string, lines: { currency: string; amount: string }[]) =>
+    app.inject({ method: "POST", url: "/api/ledger/till-floats", payload: { idempotencyKey, lines }, cookies });
+  const tillCash = async () =>
+    Object.fromEntries((await pool.query("SELECT currency, available_amount::text AS a FROM ledger_till_balances ORDER BY currency")).rows.map((r) => [r.currency.trim(), r.a]));
+  const asTeller = async () => {
+    await pool.query("UPDATE ledger_principals SET role='teller' WHERE user_id=$1||':a.singh'", [DEMO.tenantId]);
+    await handle.db.update(schema.staffUsers).set({ role: "teller" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
+    return cookie();
+  };
+
+  it("a float of several currencies moves every line or none", async () => {
+    const cookies = await cookie();
+    await openVault({ CAD: "50000.00", USD: "1000.00" }, cookies);
+    const short = await floatLines(cookies, "float-short", [{ currency: "CAD", amount: "5000.00" }, { currency: "USD", amount: "1000.01" }]);
+    expect(short.statusCode, short.body).toBe(422);
+    expect(short.json().code).toBe("INSUFFICIENT_VAULT_LIQUIDITY");
+    expect((await vaultOf(cookies)).balances).toMatchObject({ CAD: "50000.00", USD: "1000.00" });
+    expect(await tillCash()).toEqual({ CAD: "25000.00", USD: "12000.00" });
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_operational_cash_movements")).rows[0].n).toBe(0);
+
+    const ok = await floatLines(cookies, "float-two", [{ currency: "CAD", amount: "5000.00" }, { currency: "USD", amount: "500.00" }]);
+    expect(ok.statusCode, ok.body).toBe(201);
+    expect(ok.json().balances).toMatchObject({ CAD: "30000.00", USD: "12500.00" });
+    expect(ok.json().vaultBalances).toMatchObject({ CAD: "45000.00", USD: "500.00" });
+    const audit = await pool.query("SELECT action, reason FROM ledger_audit_events WHERE action='till.float'");
+    expect(audit.rows).toEqual([{ action: "till.float", reason: "CAD 5000.00, USD 500.00" }]);
+  });
+
+  it("a float replays on the same key and refuses a changed body", async () => {
+    const cookies = await cookie();
+    await openVault({ CAD: "50000.00", USD: "1000.00" }, cookies);
+    const lines = [{ currency: "CAD", amount: "100.00" }, { currency: "USD", amount: "50.00" }];
+    const first = await floatLines(cookies, "float-replay", lines);
+    const again = await floatLines(cookies, "float-replay", lines);
+    expect(first.statusCode, first.body).toBe(201);
+    expect(again.statusCode, again.body).toBe(201);
+    expect(again.json().balances).toEqual(first.json().balances);
+    expect(await tillCash()).toEqual({ CAD: "25100.00", USD: "12050.00" });
+    const changed = await floatLines(cookies, "float-replay", [{ currency: "CAD", amount: "200.00" }]);
+    expect(changed.statusCode, changed.body).toBe(409);
+    expect(changed.json().code).toBe("IDEMPOTENCY_CONFLICT");
+  });
+
+  it("a teller floats a till they hold, and gets 403 on a till someone else holds", async () => {
+    await openVault({ CAD: "50000.00" }, await cookie());
+    const teller = await asTeller();
+    const own = await floatLines(teller, "teller-own", [{ currency: "CAD", amount: "100.00" }]);
+    expect(own.statusCode, own.body).toBe(201);
+    await pool.query("UPDATE ledger_till_sessions SET opened_by=$1||':m.costa' WHERE session_id='vault-session-1'", [DEMO.tenantId]);
+    const other = await floatLines(teller, "teller-other", [{ currency: "CAD", amount: "100.00" }]);
+    expect(other.statusCode, other.body).toBe(403);
+    const single = await float(teller, { idempotencyKey: "teller-other-one", direction: "in", currency: "CAD", amount: "1.00" });
+    expect(single.statusCode, single.body).toBe(403);
+    expect(await tillCash()).toMatchObject({ CAD: "25100.00" });
+  });
+
+  /* #638 review: a teller's only movement is a float in from the vault. */
+  it("a teller holding the till gets 403 for any movement but a float in from the vault; a manager does not", async () => {
+    await openVault({ CAD: "50000.00" }, await cookie());
+    const moves = [
+      { direction: "out", counterpartyType: "other", counterpartyRef: "petty" },
+      { direction: "out", counterpartyType: "bank", counterpartyRef: "bank-1" },
+      { direction: "out", counterpartyType: "vault", counterpartyRef: `${DEMO.branchId}:vault` },
+      { direction: "in", counterpartyType: "bank", counterpartyRef: "bank-1" },
+    ];
+    const teller = await asTeller();
+    for (const [i, move] of moves.entries()) {
+      const refused = await float(teller, { idempotencyKey: `teller-move-${i}`, currency: "CAD", amount: "10.00", ...move });
+      expect(refused.statusCode, JSON.stringify(move)).toBe(403);
+    }
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_operational_cash_movements")).rows[0].n).toBe(0);
+    expect(await tillCash()).toEqual({ CAD: "25000.00", USD: "12000.00" });
+    expect((await vaultOf(teller)).balances).toMatchObject({ CAD: "50000.00" });
+    await pool.query("UPDATE ledger_principals SET role='branch_manager' WHERE user_id=$1||':a.singh'", [DEMO.tenantId]);
+    await handle.db.update(schema.staffUsers).set({ role: "branch_manager" }).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:a.singh`));
+    const manager = await cookie();
+    for (const [i, move] of moves.entries()) {
+      const done = await float(manager, { idempotencyKey: `manager-move-${i}`, currency: "CAD", amount: "10.00", ...move });
+      expect(done.statusCode, JSON.stringify(move)).toBe(201);
+    }
+  });
+
+  it("a float key never replays another movement's key, and a key with a colon is 400", async () => {
+    const cookies = await cookie();
+    await openVault({ CAD: "50000.00" }, cookies);
+    const single = await float(cookies, { idempotencyKey: "p:CAD", direction: "in", currency: "CAD", amount: "100.00" });
+    expect(single.statusCode, single.body).toBe(201);
+    const clash = await floatLines(cookies, "p", [{ currency: "CAD", amount: "100.00" }]);
+    expect(clash.statusCode, clash.body).toBe(409);
+    expect(clash.json().code).toBe("IDEMPOTENCY_CONFLICT");
+    expect(await tillCash()).toMatchObject({ CAD: "25100.00" });
+    expect((await pool.query("SELECT count(*)::int AS n FROM ledger_operational_cash_movements")).rows[0].n).toBe(1);
+    const colon = await floatLines(cookies, "a:b", [{ currency: "CAD", amount: "1.00" }]);
+    expect(colon.statusCode, colon.body).toBe(400);
+  });
+
+  it("a teller who no longer holds the till cannot replay a stored float or movement", async () => {
+    await openVault({ CAD: "50000.00" }, await cookie());
+    const teller = await asTeller();
+    const lines = [{ currency: "CAD", amount: "100.00" }];
+    const one = { idempotencyKey: "teller-one", direction: "in", currency: "CAD", amount: "5.00" };
+    expect((await floatLines(teller, "teller-replay", lines)).statusCode).toBe(201);
+    expect((await float(teller, one)).statusCode).toBe(201);
+    await pool.query("UPDATE ledger_till_sessions SET opened_by=$1||':m.costa' WHERE session_id='vault-session-1'", [DEMO.tenantId]);
+    for (const replayed of [await floatLines(teller, "teller-replay", lines), await float(teller, one)]) {
+      expect(replayed.statusCode, replayed.body).toBe(403);
+      expect(replayed.json()).not.toHaveProperty("balances");
+    }
+  });
 });
