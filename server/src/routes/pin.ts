@@ -126,7 +126,7 @@ export function isWeakPin(pin: string): boolean {
 export function weakPinDetail(pin: string): string | null {
   if (!isWeakPin(pin)) return null;
   return /^(\d)\1{3}$/.test(pin)
-    ? "Pick a PIN that isn't one digit repeated, like 1111."
+    ? "Pick a PIN that isn't one digit repeated, like\u00a01111."   // no-break space: 1111 never wraps alone
     : "That PIN is too easy to guess. Pick a different PIN.";
 }
 

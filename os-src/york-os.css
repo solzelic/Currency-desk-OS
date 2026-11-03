@@ -2161,6 +2161,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     box-shadow: 0 0 0 2px #fff;
   }
   .phone-head .mb-acct-wrap { grid-column: 2; grid-row: 1 / span 2; }
+  /* Dark: the ink surface with paper text, as the desktop dark bar. */
+  html[data-cdtheme="dark"] .phone-head { background: #17140F; border-bottom-color: #2B2720; }
+  html[data-cdtheme="dark"] .phone-head .phone-shop,
+  html[data-cdtheme="dark"] .phone-head .phone-till,
+  html[data-cdtheme="dark"] .phone-head .phone-tx-back,
+  html[data-cdtheme="dark"] .phone-head .mb-acct,
+  html[data-cdtheme="dark"] .phone-head .mb-acct-id b,
+  html[data-cdtheme="dark"] .phone-head .mb-acct-id i { color: #F7F4ED; }
+  html[data-cdtheme="dark"] .phone-head .phone-till-dot { box-shadow: 0 0 0 2px #17140F; }
   /* The name stays. A refused fee save has to show who is signed in,
      not only an avatar. The chevron does not fit beside it. */
   .phone-head .mb-acct > svg { display: none; }

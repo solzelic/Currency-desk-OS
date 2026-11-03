@@ -7586,7 +7586,7 @@ if (typeof module !== "undefined" && module.exports) {
             return;
           }
           if (res.status === 429) {
-            setErr('Too many wrong tries — wait a few minutes.');
+            setErr('Too many wrong tries. Wait a few minutes.');
             return;
           }
           // the server says why a PIN is refused (#615): a repeat, a run, a missing current PIN
@@ -7600,7 +7600,7 @@ if (typeof module !== "undefined" && module.exports) {
         }
       } catch (e) {
         setBusy(false);
-        setErr('No connection — the PIN was not changed.');
+        setErr('No connection. The PIN was not changed.');
         return;
       }
       setBusy(false);
@@ -7733,6 +7733,8 @@ if (typeof module !== "undefined" && module.exports) {
       }
     }, "New PIN"), /*#__PURE__*/React.createElement("input", {
       value: a,
+      "aria-describedby": err ? 'pin-set-err' : undefined,
+      "aria-invalid": err ? 'true' : undefined,
       onChange: e => {
         setA(clean(e.target.value));
         setErr('');
@@ -7752,6 +7754,8 @@ if (typeof module !== "undefined" && module.exports) {
       }
     }, "Confirm new PIN"), /*#__PURE__*/React.createElement("input", {
       value: b,
+      "aria-describedby": err ? 'pin-set-err' : undefined,
+      "aria-invalid": err ? 'true' : undefined,
       onChange: e => {
         setB(clean(e.target.value));
         setErr('');
@@ -7762,6 +7766,8 @@ if (typeof module !== "undefined" && module.exports) {
       placeholder: "\u2022\u2022\u2022\u2022",
       style: fld
     }))), err && /*#__PURE__*/React.createElement("div", {
+      id: "pin-set-err",
+      role: "alert",
       className: "text-[11px] mt-2 flex items-center gap-1.5",
       style: {
         color: CD.flag
@@ -34786,7 +34792,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "shield",
       s: 12
-    }), " Records are permanent \u2014 a posted transaction can't be edited or deleted, only voided with a reason. Every action is written to the audit trail.")))), modal && /*#__PURE__*/React.createElement(Portal, null, React.createElement(window.CDOS && window.CDOS.TxModal || TxModal, {
+    }), " Records are permanent. A posted transaction can't be edited or deleted, only voided with a reason. Every action is written to the audit trail.")))), modal && /*#__PURE__*/React.createElement(Portal, null, React.createElement(window.CDOS && window.CDOS.TxModal || TxModal, {
       rows,
       clients,
       setClients,

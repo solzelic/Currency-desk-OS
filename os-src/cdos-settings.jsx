@@ -801,13 +801,13 @@
         if (!res.ok) {
           setBusy(false);
           if (res.status === 401) { setErr(forgot ? 'That’s not your sign-in password.' : 'Your current PIN isn’t right.'); return; }
-          if (res.status === 429) { setErr('Too many wrong tries — wait a few minutes.'); return; }
+          if (res.status === 429) { setErr('Too many wrong tries. Wait a few minutes.'); return; }
           // the server says why a PIN is refused (#615): a repeat, a run, a missing current PIN
           const why = await res.json().catch(() => null);
           if (why && why.detail && (why.error === 'weak_pin' || why.error === 'current_required')) { setErr(why.detail); return; }
           setErr('That didn’t save. Try again.'); return;
         }
-      } catch (e) { setBusy(false); setErr('No connection — the PIN was not changed.'); return; }
+      } catch (e) { setBusy(false); setErr('No connection. The PIN was not changed.'); return; }
       setBusy(false); setHasPin(true); setMustChange(false);
       onSave && onSave();
       close();
@@ -834,10 +834,10 @@
         <div className="flex flex-col gap-2">
           {hasPin && !forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
           {hasPin && forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Your password</span><input value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} type="password" autoComplete="current-password" placeholder="••••••••" autoFocus style={{ ...fld, letterSpacing: 'normal', width: 150 }} /></label>}
-          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input value={a} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
-          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Confirm new PIN</span><input value={b} onChange={e => { setB(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" style={fld} /></label>
+          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input value={a} aria-describedby={err ? 'pin-set-err' : undefined} aria-invalid={err ? 'true' : undefined} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
+          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Confirm new PIN</span><input value={b} aria-describedby={err ? 'pin-set-err' : undefined} aria-invalid={err ? 'true' : undefined} onChange={e => { setB(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" style={fld} /></label>
         </div>
-        {err && <div className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}
+        {err && <div id="pin-set-err" role="alert" className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}
         {hasPin && <button onClick={() => { setForgot(f => !f); setErr(''); setCur(''); setPw(''); }} className="text-[11px] mt-2" style={{ color: CD.mute, textDecoration: 'underline' }}>
           {forgot ? 'I remember it after all' : 'I’ve forgotten my PIN'}</button>}
         <div className="flex items-center justify-end gap-2 mt-3">
