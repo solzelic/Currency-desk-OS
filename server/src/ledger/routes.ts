@@ -123,7 +123,8 @@ const handoverBody = z.object({
   counts: z.record(z.string().regex(/^[A-Z]{3}$/), monetary("0")).default({}),
 }).strict();
 const floatBody = z.object({
-  idempotencyKey: z.string().min(1).max(190),
+  /* No colon: a line key is the float key, a colon and the code. */
+  idempotencyKey: z.string().min(1).max(190).regex(/^[^:]+$/),
   lines: z.array(z.object({ currency: currencyCode, amount: monetary("0.01") }).strict()).min(1).max(20)
     .refine((lines) => new Set(lines.map((line) => line.currency)).size === lines.length, "One line per currency."),
 }).strict();

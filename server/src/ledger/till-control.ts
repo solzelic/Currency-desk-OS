@@ -99,6 +99,13 @@ export function recordedVariance(
 }
 const countedIn = (value: string, currency: string) =>
   fixed(parseMoney(value, currency, "Count", "0"));
+/* #638: a teller's only movement is a float in from the vault. A drawer
+   goes back to the vault through close, not a movement. */
+const refuseTellerMove = (heldOnly: boolean, input: { direction: string; counterpartyType: string }) => {
+  if (heldOnly && !(input.counterpartyType === "vault" && input.direction === "in")) {
+    throw new LedgerError("AUTHORIZATION_DENIED", "A teller can only take a float in from the vault.");
+  }
+};
 const handoverRequestHash = (counts: Counts) => createHash("sha256").update(JSON.stringify({
   counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
 })).digest("hex");
@@ -993,6 +1000,12 @@ export class TillControlService {
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       const { heldOnly } = await authorizeTillAction(client, actor, "till:move");
+      /* Before the replay, so a teller who no longer holds the till
+         cannot read a stored movement. */
+      if (heldOnly) {
+        refuseNotHolder(true, (await this.openSession(client, actor)).opened_by, actor);
+        refuseTellerMove(true, input);
+      }
       const existing = await client.query(
         `SELECT *
            FROM ledger_operational_cash_movements
@@ -1258,48 +1271,58 @@ export class TillControlService {
       idempotencyKey: `${idempotencyKey}:${line.currency}`, direction: "in", currency: line.currency,
       amount: line.amount, counterpartyType: "vault", counterpartyRef: `${actor.branchId}:vault`, reason: "float",
     }));
+    const hash = createHash("sha256").update(JSON.stringify(lines.map((line) => [line.currency, fixed(line.amount)]))).digest("hex");
     const client = await this.pool.connect();
-    const replay = async () => {
-      const found = await client.query(
-        `SELECT * FROM ledger_operational_cash_movements
-          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4 AND till_id=$5
-            AND left(idempotency_key, length($6) + 1) = $6 || ':'`,
-        [...scope(actor), idempotencyKey],
-      );
-      if (!found.rowCount) return null;
-      const same = found.rowCount === inputs.length && inputs.every((input) =>
-        found.rows.some((row) => row.idempotency_key === input.idempotencyKey && sameStoredMovement(row, input)));
-      if (!same) throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
-      return this.movementResponse(client, actor, found.rows[0]);
-    };
     try {
       await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
       const { heldOnly } = await authorizeTillAction(client, actor, "till:move");
-      let response = await replay();
-      if (!response) {
-        const session = await this.openSession(client, actor);
-        refuseNotHolder(heldOnly, session.opened_by, actor);
-        if (String(session.opened_by) !== actor.userId) await refuseTillHeld(client, String(session.opened_by));
-        let row: Record<string, unknown> | null = null;
-        for (const input of inputs) row = await this.applyMovement(client, actor, session, input);
-        await this.audit(client, actor, "till.float", String(session.session_id),
-          lines.map((line) => `${line.currency} ${fixed(line.amount)}`).join(", "), new Date());
-        response = await this.movementResponse(client, actor, row!);
+      const session = await this.openSession(client, actor);
+      refuseNotHolder(heldOnly, session.opened_by, actor);
+      for (const input of inputs) refuseTellerMove(heldOnly, input);
+      /* The float key is claimed on its own row, bound to the actor and
+         the lines, so it never replays a movement that only shares a key. */
+      const claim = await client.query(
+        `SELECT response, actor_id, request_hash FROM ledger_idempotency
+          WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3 AND workspace_id=$4
+            AND till_id=$5 AND operation='till-float' AND idempotency_key=$6
+          FOR UPDATE`,
+        [...scope(actor), idempotencyKey],
+      );
+      if (claim.rowCount) {
+        const row = claim.rows[0] as { response?: unknown; actor_id?: string | null; request_hash?: string | null };
+        if (row.actor_id !== actor.userId || row.request_hash !== hash) {
+          throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
+        }
+        if (!row.response) throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
+        await client.query("COMMIT");
+        return row.response as Awaited<ReturnType<TillControlService["movementResponse"]>>;
       }
+      const claimed = await client.query(
+        `INSERT INTO ledger_idempotency
+          (tenant_id,legal_entity_id,branch_id,workspace_id,till_id,operation,idempotency_key,actor_id,request_hash)
+         VALUES ($1,$2,$3,$4,$5,'till-float',$6,$7,$8) ON CONFLICT DO NOTHING`,
+        [...scope(actor), idempotencyKey, actor.userId, hash],
+      );
+      if (!claimed.rowCount) throw new LedgerError("IDEMPOTENCY_IN_PROGRESS", "Request is already in progress.");
+      if (String(session.opened_by) !== actor.userId) await refuseTillHeld(client, String(session.opened_by));
+      let row: Record<string, unknown> | null = null;
+      for (const input of inputs) row = await this.applyMovement(client, actor, session, input);
+      await this.audit(client, actor, "till.float", String(session.session_id),
+        lines.map((line) => `${line.currency} ${fixed(line.amount)}`).join(", "), new Date());
+      const response = await this.movementResponse(client, actor, row!);
+      await client.query(
+        `UPDATE ledger_idempotency SET response=$1
+          WHERE tenant_id=$2 AND legal_entity_id=$3 AND branch_id=$4 AND workspace_id=$5
+            AND till_id=$6 AND operation='till-float' AND idempotency_key=$7`,
+        [response, ...scope(actor), idempotencyKey],
+      );
       await client.query("COMMIT");
       return response;
     } catch (error) {
       await client.query("ROLLBACK");
-      if (cashMoveKeyConflict(error)) {
-        await client.query("BEGIN");
-        try {
-          const replayed = await replay();
-          await client.query("COMMIT");
-          if (replayed) return replayed;
-        } catch (again) {
-          await client.query("ROLLBACK");
-          throw again;
-        }
+      /* A line key already used by another movement is not this float. */
+      if ((error as { code?: string }).code === "23505") {
+        throw new LedgerError("IDEMPOTENCY_CONFLICT", CHANGED_MOVEMENT_MESSAGE);
       }
       throw error;
     } finally {
