@@ -780,6 +780,9 @@
     // PIN you can't remember, so nobody has to be told a new one
     const [forgot, setForgot] = useState(false);
     const [pw, setPw] = useState('');
+    // a refusal puts focus back on New PIN with its digits selected, ready to retype
+    const newPinRef = React.useRef(null);
+    useEffect(() => { if (err && newPinRef.current) { newPinRef.current.focus(); newPinRef.current.select(); } }, [err]);
     const load = () => fetch('/api/staff/pin', { credentials: 'same-origin' })
       .then(r => r.ok ? r.json() : null)
       .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); } })
@@ -834,7 +837,7 @@
         <div className="flex flex-col gap-2">
           {hasPin && !forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
           {hasPin && forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Your password</span><input value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} type="password" autoComplete="current-password" placeholder="••••••••" autoFocus style={{ ...fld, letterSpacing: 'normal', width: 150 }} /></label>}
-          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input value={a} aria-describedby={err ? 'pin-set-err' : undefined} aria-invalid={err ? 'true' : undefined} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
+          <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>New PIN</span><input ref={newPinRef} value={a} aria-describedby={err ? 'pin-set-err' : undefined} aria-invalid={err ? 'true' : undefined} onChange={e => { setA(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus={!hasPin} style={fld} /></label>
           <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Confirm new PIN</span><input value={b} aria-describedby={err ? 'pin-set-err' : undefined} aria-invalid={err ? 'true' : undefined} onChange={e => { setB(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" style={fld} /></label>
         </div>
         {err && <div id="pin-set-err" role="alert" className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="alert" s={12} c={CD.flag} /> {err}</div>}

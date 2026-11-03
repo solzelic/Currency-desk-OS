@@ -7516,6 +7516,14 @@ if (typeof module !== "undefined" && module.exports) {
     // PIN you can't remember, so nobody has to be told a new one
     const [forgot, setForgot] = useState(false);
     const [pw, setPw] = useState('');
+    // a refusal puts focus back on New PIN with its digits selected, ready to retype
+    const newPinRef = React.useRef(null);
+    useEffect(() => {
+      if (err && newPinRef.current) {
+        newPinRef.current.focus();
+        newPinRef.current.select();
+      }
+    }, [err]);
     const load = () => fetch('/api/staff/pin', {
       credentials: 'same-origin'
     }).then(r => r.ok ? r.json() : null).then(r => {
@@ -7732,6 +7740,7 @@ if (typeof module !== "undefined" && module.exports) {
         color: CD.mute
       }
     }, "New PIN"), /*#__PURE__*/React.createElement("input", {
+      ref: newPinRef,
       value: a,
       "aria-describedby": err ? 'pin-set-err' : undefined,
       "aria-invalid": err ? 'true' : undefined,
