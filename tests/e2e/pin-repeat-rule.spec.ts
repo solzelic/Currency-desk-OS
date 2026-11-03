@@ -2,7 +2,7 @@
    It used to say "That didn't save. Try again." */
 import { test, expect, signInAtDesk } from "./fixtures";
 
-const REPEAT = "Pick a PIN that isn't one digit repeated, like 1111.";
+const REPEAT = "Pick a PIN that isn't one digit repeated, like\u00a01111.";
 
 test("Set PIN shows why 1111 is refused, and takes 1100", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -20,8 +20,31 @@ test("Set PIN shows why 1111 is refused, and takes 1100", async ({ page }) => {
   await page.getByRole("button", { name: /Save PIN/ }).click();
   await expect(page.getByText(REPEAT)).toBeVisible();
   await expect(page.getByText(/didn.t save/)).toHaveCount(0);
+  /* The error is announced, and both new PIN fields point at it. */
+  const err = page.locator("#pin-set-err");
+  await expect(err).toHaveAttribute("role", "alert");
+  await expect(err).toContainText(REPEAT);
+  for (const i of [filled - 2, filled - 1]) {
+    await expect(fields.nth(i)).toHaveAttribute("aria-describedby", "pin-set-err");
+    await expect(fields.nth(i)).toHaveAttribute("aria-invalid", "true");
+  }
   await fields.nth(filled - 2).fill("1100");
   await fields.nth(filled - 1).fill("1100");
   await page.getByRole("button", { name: /Save PIN/ }).click();
   await expect(page.getByText("PIN updated")).toBeVisible();
 });
+
+/* Dark theme on a phone: the top bar is the ink surface with paper text,
+   as the desktop dark bar is. */
+for (const width of [360, 390, 430]) {
+  test(`the dark phone top bar is ink with paper text at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await signInAtDesk(page, "a.singh");
+    await page.evaluate(() => (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("dark"));
+    const head = page.locator(".phone-head");
+    await expect(head).toHaveCSS("background-color", "rgb(23, 20, 15)");
+    for (const sel of [".phone-shop", ".phone-till", ".mb-acct-id b"]) {
+      await expect(head.locator(sel).first(), sel).toHaveCSS("color", "rgb(247, 244, 237)");
+    }
+  });
+}

@@ -15,7 +15,8 @@ import { createSession } from "../src/auth/sessions.js";
 import { clearPinAttempts, weakPinDetail } from "../src/routes/pin.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const REPEAT = "Pick a PIN that isn't one digit repeated, like 1111.";
+/* A no-break space keeps "1111." from wrapping onto a line alone. */
+const REPEAT = "Pick a PIN that isn't one digit repeated, like\u00a01111.";
 const EASY = "That PIN is too easy to guess. Pick a different PIN.";
 const REPEATS = Array.from({ length: 10 }, (_, d) => String(d).repeat(4));
 const STAGING_HOST = "currencydesk-staging.onrender.com";
@@ -137,5 +138,9 @@ describe("the desk bundle", () => {
     expect(bundle).not.toMatch(/===\s*["']0000["']|["']0000["']\s*===/);
     expect(bundle).not.toContain("defaultPin");
     expect(bundle).not.toContain("Staging PIN 0000");
+    for (const words of ["Too many wrong tries. Wait a few minutes.", "No connection. The PIN was not changed.", "Records are permanent. A posted transaction"]) {
+      expect(bundle, words).toContain(words);
+    }
+    expect(bundle).not.toMatch(/Too many wrong tries \u2014|No connection \u2014|Records are permanent \u2014/);
   });
 });
