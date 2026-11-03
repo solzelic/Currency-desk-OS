@@ -128,6 +128,30 @@ describe("PIN writers", () => {
     for (const f of ["routes/admin.ts", "routes/staff.ts"]) expect(readFileSync(join(root, f), "utf8")).toMatch(/const pin = generatePin\(\);/);
     expect(files(root).some((p) => p.endsWith("staging-default-pin.ts"))).toBe(false);
   });
+
+  /* #609 PR B: the staging reset is the one writer that skips the rule, by
+     name. A raw SQL PIN write anywhere else fails here. */
+  it("allows exactly one raw PIN write: writeStagingResetPin in staging/pin-reset.ts", () => {
+    const root = join(here, "../src");
+    const raw = files(root).filter((p) => /pin_hash\s*=\s*\$/i.test(readFileSync(p, "utf8"))).map((p) => p.slice(root.length + 1));
+    expect(raw).toEqual(["staging/pin-reset.ts"]);
+    const text = readFileSync(join(root, "staging/pin-reset.ts"), "utf8");
+    expect(text.match(/pin_hash\s*=\s*\$/gi)).toHaveLength(1);
+    const body = text.slice(text.indexOf("async function writeStagingResetPin("));
+    expect(body.slice(0, body.indexOf("\n}\n"))).toMatch(/pin_hash\s*=\s*\$/i);
+  });
+
+  it("only the CLI inserts into db_environment, no route names it, and only the reset writes seeded_by", () => {
+    const root = join(here, "../src");
+    const all = files(root).filter((p) => !p.includes("/db/migrations/"));
+    const named = (re: RegExp) => all.filter((p) => re.test(readFileSync(p, "utf8"))).map((p) => p.slice(root.length + 1));
+    expect(named(/insert\s+into\s+db_environment/i)).toEqual(["staging/cli.ts"]);
+    expect(named(/db_environment/).filter((p) => p.startsWith("routes/") || p === "app.ts")).toEqual([]);
+    expect(named(/seeded_by\s*=/i)).toEqual(["staging/pin-reset.ts"]);
+    /* is_test_shop: provisioning from the two staging fresh-shop doors, and the reset marking the seed shop. */
+    expect(named(/isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|isTestShop\s*=(?!=)|is_test_shop\s*=\s*true/)).toEqual(
+      ["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
+  });
 });
 
 /* The browser never compares a PIN, and shows the server's reason. */
