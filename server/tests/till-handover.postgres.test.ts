@@ -2,7 +2,6 @@
    over. Opening again does not move the hold. A mid-day count does
    not either. The handover is the write that closes the old session
    on a blind count and opens the next one for the person who counted. */
-import { createHash } from "node:crypto";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -11,7 +10,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { staffUsers } from "../src/db/schema.js";
 import { hasBackendPermission } from "../src/auth/permissions.js";
-import { clearPinAttempts, hashPin, lockState } from "../src/routes/pin.js";
+import { clearPinAttempts, hashPin } from "../src/routes/pin.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -100,14 +99,13 @@ async function handover(
   cookies: Record<string, string>,
   counts: Record<string, string>,
   key: string,
-  approval?: { approverStaffId: string; approverPin: string },
 ) {
   return app.inject({
     method: "POST",
     url: "/api/ledger/till-sessions/handover",
     cookies,
     headers,
-    payload: { idempotencyKey: key, counts, ...approval },
+    payload: { idempotencyKey: key, counts },
   });
 }
 
@@ -636,243 +634,126 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(whole.statusCode, whole.body).toBe(201);
   });
 
-  it("CAD 20.00 exactly proceeds, and a short plus an over do not cancel", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const under = await handover(costa, { CAD: "24980.01", USD: "12000.00" }, "under-20");
-    expect(under.statusCode, under.body).toBe(201);
-    await resetLedger();
-    await publishMid("1");
-    await openAs("a.singh");
-    const atLine = await login("m.costa");
-    const exact = await handover(atLine, { CAD: "24980.00", USD: "12000.00" }, "exactly-20");
-    expect(exact.statusCode, exact.body).toBe(201);
-    expect(exact.json()).not.toHaveProperty("countResult");
-    const flagged = await app.inject({
-      method: "GET",
-      url: "/api/ledger/till-session",
-      cookies: await login("a.singh"),
-      headers,
-    });
-    expect(flagged.json().handoverFlags[0].lines).toEqual([
-      { currency: "CAD", variance: "-20.00" },
-      { currency: "USD", variance: "0.00" },
-    ]);
-
-    await resetLedger();
-    await publishMid("1");
-    await openAs("a.singh");
-    const cent = await login("m.costa");
-    const penny = await handover(cent, { CAD: "24979.99", USD: "12000.00" }, "over-by-a-cent");
-    expect(penny.statusCode, penny.body).toBe(403);
-    expect(penny.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    const still = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(still.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-
-    await resetLedger();
-    await publishMid("1.5");
-    await openAs("a.singh");
-    const again = await login("m.costa");
-    const mixed = await handover(again, BLIND, "mixed-no-cancel");
-    expect(mixed.statusCode, mixed.body).toBe(403);
-    expect(mixed.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-  });
-
-  it("over CAD 20 with no approver is refused and the till stays held", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "over-20");
-    expect(refused.statusCode, refused.body).toBe(403);
-    expect(refused.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    expect(JSON.stringify(refused.json())).not.toMatch(/24970|25000|30\.00|book/);
-    const book = await pool.query(
-      "SELECT currency, available_amount::text AS amount FROM ledger_till_balances ORDER BY currency",
-    );
-    expect(book.rows).toEqual([
-      { currency: "CAD", amount: "25000.00" },
-      { currency: "USD", amount: "12000.00" },
-    ]);
-  });
-
-  it("the incoming teller cannot approve their own takeover", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "self-approve", {
-      approverStaffId: "m.costa",
-      approverPin: "1357",
-    });
-    expect(refused.statusCode, refused.body).toBe(403);
-    expect(refused.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    expect(lockState(idOf("m.costa")).remaining).toBe(5);
-    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-  });
-
-  it("a wrong approver PIN leaves the lockout counter where it was", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "wrong-pin", {
-      approverStaffId: "a.singh",
-      approverPin: "0000",
-    });
-    expect(refused.statusCode, refused.body).toBe(403);
-    expect(refused.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    expect(lockState(idOf("a.singh")).remaining).toBe(5);
-    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-  });
-
-  it("a right approver PIN does not move the till", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const taken = await handover(costa, { CAD: "24970.00", USD: "12010.00" }, "approved", {
-      approverStaffId: "a.singh",
-      approverPin: "1357",
-    });
-    expect(taken.statusCode, taken.body).toBe(403);
-    expect(taken.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    expect(lockState(idOf("a.singh")).remaining).toBe(5);
-    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-    const audit = await pool.query(
-      "SELECT count(*)::int AS n FROM ledger_audit_events WHERE action='till.session.handover'",
-    );
-    expect(audit.rows[0].n).toBe(0);
-  });
-
   it("a branch manager has till:handover:approve", () => {
     expect(hasBackendPermission("branch_manager", "till:handover:approve")).toBe(true);
     expect(hasBackendPermission("teller", "till:handover:approve")).toBe(false);
   });
 
-  it("two handover requests that differ only in the PIN share a hash, and the hash input has no PIN", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const counts: Record<string, string> = { CAD: "24970.00", USD: "12000.00" };
-    const pinA = "1357";
-    const pinB = "2468";
-    const first = await handover(costa, counts, "pin-hash-a", {
-      approverStaffId: "a.singh",
-      approverPin: pinA,
-    });
-    const second = await handover(costa, counts, "pin-hash-b", {
-      approverStaffId: "a.singh",
-      approverPin: pinB,
-    });
-    expect(first.statusCode, first.body).toBe(403);
-    expect(second.statusCode, second.body).toBe(403);
-    const stored = await pool.query(
-      `SELECT idempotency_key, request_hash
-         FROM ledger_idempotency
-        WHERE operation='till-handover' AND idempotency_key IN ('pin-hash-a','pin-hash-b')
-        ORDER BY idempotency_key`,
-    );
-    expect(stored.rows).toHaveLength(2);
-    expect(stored.rows[0].request_hash).toBe(stored.rows[1].request_hash);
-    const input = JSON.stringify({
-      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-      approverPresent: true,
-    });
-    for (const pin of [pinA, pinB]) expect(input).not.toContain(pin);
-    expect(input).not.toContain("approverPin");
-    const hash = createHash("sha256").update(input).digest("hex");
-    expect(stored.rows[0].request_hash).toBe(hash);
-    expect(stored.rows[1].request_hash).toBe(hash);
-    const withPin = createHash("sha256").update(JSON.stringify({
-      counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-      approverStaffId: "a.singh",
-      approverPin: pinA,
-    })).digest("hex");
-    expect(withPin).not.toBe(stored.rows[0].request_hash);
-  });
+  /* #617, Sol: a switch is one tap, a count is optional, an off count
+     never blocks and is logged as a manual override. */
+  const settings = (cookies: Record<string, string>, payload?: Record<string, unknown>) =>
+    app.inject({ method: payload ? "PUT" : "GET", url: "/api/ledger/till-settings", cookies, headers, payload });
+  const actions = async () =>
+    (await pool.query("SELECT action FROM ledger_audit_events ORDER BY created_at, action")).rows.map((r) => r.action);
 
-  it("an approver and a PIN are refused before the PIN is checked", async () => {
-    await openAs("a.singh");
-    const costa = await login("m.costa");
-    const before = lockState(idOf("a.singh")).remaining;
-    const counts = { CAD: "24970.00", USD: "12000.00" };
-    const wrong = await handover(costa, counts, "pin-wrong", {
-      approverStaffId: "a.singh",
-      approverPin: "0000",
-    });
-    const right = await handover(costa, counts, "pin-right", {
-      approverStaffId: "a.singh",
-      approverPin: "1357",
-    });
-    expect(wrong.statusCode, wrong.body).toBe(403);
-    expect(right.statusCode, right.body).toBe(403);
-    expect(wrong.json()).toEqual(right.json());
-    expect(wrong.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
-    expect(lockState(idOf("a.singh")).remaining).toBe(before);
-    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
-    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-  });
-
-  it("the first refused count is kept, and a teller cannot submit another", async () => {
+  it("a switch with no count is one tap: old session closed, new one open, one audit row", async () => {
     const first = await openAs("a.singh");
     const costa = await login("m.costa");
-    const before = await pool.query("SELECT clock_timestamp() AS t");
-    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "refuse-first");
-    const again = await handover(costa, { CAD: "25000.00", USD: "12000.00" }, "refuse-second");
-    const after = await pool.query("SELECT clock_timestamp() AS t");
-    expect(refused.statusCode, refused.body).toBe(403);
-    expect(again.statusCode, again.body).toBe(403);
-    expect(again.json()).toEqual(refused.json());
-    expect(refused.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
-    });
+    const taken = await handover(costa, {}, "switch-no-count");
+    expect(taken.statusCode, taken.body).toBe(201);
+    expect(taken.json().session.openedBy).toBe(idOf("m.costa"));
+    const old = await pool.query("SELECT status, closed_by FROM ledger_till_sessions WHERE session_id=$1", [first.body.session.sessionId]);
+    expect(old.rows[0]).toEqual({ status: "closed", closed_by: idOf("m.costa") });
+    const batches = await pool.query("SELECT count(*)::int AS n FROM ledger_till_count_batches");
+    expect(batches.rows[0].n).toBe(0);
+    const audit = await pool.query(
+      "SELECT actor_id, from_user, prior_session_id, variances, detail FROM ledger_audit_events WHERE action='till.session.handover'",
+    );
+    expect(audit.rows).toEqual([{
+      actor_id: idOf("m.costa"), from_user: idOf("a.singh"), prior_session_id: first.body.session.sessionId,
+      variances: null, detail: { counted: false },
+    }]);
+    expect(await actions()).not.toContain("till.handover.override");
+  });
+
+  it("when the owner requires a count, a switch without one is 422 and the till stays held", async () => {
+    await openAs("a.singh");
+    const owner = await login("j.masri");
+    expect((await settings(owner, { requireCountOnSwitch: true })).statusCode).toBe(200);
+    const costa = await login("m.costa");
+    const skipped = await handover(costa, {}, "skip-required");
+    expect(skipped.statusCode, skipped.body).toBe(422);
+    expect(skipped.json().code).toBe("HANDOVER_COUNT_REQUIRED");
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
-    const book = await pool.query(
-      "SELECT currency, available_amount::text AS amount FROM ledger_till_balances ORDER BY currency",
+    expect((await handover(costa, BLIND, "counted-required")).statusCode).toBe(201);
+  });
+
+  it("an off count never blocks: the switch goes through and is logged as a manual override", async () => {
+    await publishMid("1.4");
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const taken = await handover(costa, { CAD: "24900.00", USD: "12010.00" }, "off-count");
+    expect(taken.statusCode, taken.body).toBe(201);
+    expect(taken.json().session.openedBy).toBe(idOf("m.costa"));
+    const override = await pool.query(
+      "SELECT actor_id, actor_role, from_user, variances, detail FROM ledger_audit_events WHERE action='till.handover.override'",
     );
-    expect(book.rows).toEqual([
-      { currency: "CAD", amount: "25000.00" },
-      { currency: "USD", amount: "12000.00" },
-    ]);
-    const audits = await pool.query(
-      `SELECT actor_id, target_id, prior_session_id, variances, created_at
-         FROM ledger_audit_events
-        WHERE action='till.handover.refused'
-        ORDER BY created_at ASC`,
-    );
-    expect(audits.rows).toHaveLength(2);
-    expect(audits.rows[0]).toMatchObject({
-      actor_id: idOf("m.costa"),
-      target_id: "till-01",
-      prior_session_id: first.body.session.sessionId,
+    expect(override.rows).toEqual([{
+      actor_id: idOf("m.costa"), actor_role: "teller", from_user: idOf("a.singh"),
       variances: [
-        { currency: "CAD", counted: "24970.00" },
-        { currency: "USD", counted: "12000.00" },
+        { currency: "CAD", variance: "-100.00", mid: "1.000000000000" },
+        { currency: "USD", variance: "10.00", mid: "1.400000000000" },
       ],
-    });
-    const at = new Date(audits.rows[0].created_at).getTime();
-    expect(at).toBeGreaterThanOrEqual(new Date(before.rows[0].t).getTime() - 1000);
-    expect(at).toBeLessThanOrEqual(new Date(after.rows[0].t).getTime() + 1000);
+      detail: { homeCurrency: "CAD", homeTotal: "-86.00", homeAbsolute: "114.00", unpriced: false },
+    }]);
+    expect(await actions()).not.toContain("till.handover.large_difference");
+  });
+
+  it("the large difference alert flags a big difference and never blocks", async () => {
+    await publishMid("1.4");
+    await openAs("a.singh");
+    const owner = await login("j.masri");
+    expect((await settings(owner, { largeDifferenceAlert: true, largeDifferenceAmount: "100.00" })).statusCode).toBe(200);
+    const costa = await login("m.costa");
+    expect((await handover(costa, { CAD: "24900.00", USD: "12010.00" }, "large-off")).statusCode).toBe(201);
+    const flag = await pool.query("SELECT actor_id, detail FROM ledger_audit_events WHERE action='till.handover.large_difference'");
+    expect(flag.rows).toEqual([{ actor_id: idOf("m.costa"), detail: { homeCurrency: "CAD", homeAbsolute: "114.00", threshold: "100.00" } }]);
+    const singh = await login("a.singh");
+    expect((await handover(singh, { CAD: "24900.00", USD: "12010.00" }, "counted-back")).statusCode).toBe(201);
+    const flags = await pool.query("SELECT count(*)::int AS n FROM ledger_audit_events WHERE action='till.handover.large_difference'");
+    expect(flags.rows[0].n).toBe(1);
+  });
+
+  it("till settings default to off and ask, are owner only, and each change is audited with old, new and actor", async () => {
+    const owner = await login("j.masri");
+    const read = await settings(await login("m.costa"));
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json()).toEqual({ requireCountOnSwitch: false, largeDifferenceAlert: false, largeDifferenceAmount: null, morningFloat: "ask" });
+    for (const staffId of ["a.singh", "r.haddad", "m.costa"]) {
+      const refused = await settings(await login(staffId), { requireCountOnSwitch: true });
+      expect(refused.statusCode, staffId).toBe(403);
+    }
+    const saved = await settings(owner, { requireCountOnSwitch: true, morningFloat: "ask" });
+    expect(saved.json()).toMatchObject({ requireCountOnSwitch: true, morningFloat: "ask" });
+    const audit = await pool.query(
+      "SELECT actor_id, actor_role, target_id, detail FROM ledger_audit_events WHERE action='till.settings.change'",
+    );
+    expect(audit.rows).toEqual([{
+      actor_id: idOf("j.masri"), actor_role: "administrator", target_id: "till-settings",
+      detail: { field: "requireCountOnSwitch", old: false, new: true },
+    }]);
+    expect((await settings(owner, { largeDifferenceAmount: "-1" })).statusCode).toBe(400);
+  });
+
+  it("a teller closes a till they hold, and gets 403 on a till someone else holds", async () => {
+    const close = async (cookies: Record<string, string>, key: string) => {
+      const session = (await app.inject({ method: "GET", url: "/api/ledger/till-session", cookies, headers })).json();
+      const book = (await app.inject({ method: "GET", url: "/api/ledger/till-balances", cookies, headers })).json();
+      return app.inject({
+        method: "POST", url: `/api/ledger/till-sessions/${session.session.sessionId}/close`, cookies, headers,
+        payload: { idempotencyKey: key, counts: { CAD: "25000.00", USD: "12000.00" }, note: "", balanceGeneration: book.balanceGeneration },
+      });
+    };
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const refused = await close(costa, "teller-close-other");
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(await actions()).not.toContain("till.session.close");
+    expect((await handover(costa, {}, "teller-takes")).statusCode).toBe(201);
+    const closed = await close(costa, "teller-close-own");
+    expect(closed.statusCode, closed.body).toBe(200);
+    expect(await actions()).toContain("till.session.close");
   });
 
   it("a non-holder does not receive the holder's counted figures", async () => {
