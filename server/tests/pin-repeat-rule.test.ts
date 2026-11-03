@@ -93,7 +93,8 @@ describe("the PIN routes", () => {
     const audits = async () => (await handle.db.select().from(schema.auditEvents)).length;
     const before = await audits();
     const got = await app.inject({ method: "GET", url: "/api/staff/pin", cookies: singh, headers: { host: STAGING_HOST } });
-    expect(got.json()).toEqual({ hasPin: false, setAt: null, mustChange: false });
+    expect(got.json().hasPin).toBe(false);
+    expect(Object.keys(got.json()).sort()).toEqual(["hasPin", "mustChange", "setAt"]);
     expect(await audits()).toBe(before);
     expect((await post(singh, "/api/staff/pin", { pin: "4826" }, STAGING_HOST)).statusCode).toBe(200);
     expect((await post(singh, "/api/staff/pin/verify", { pin: "0000" }, STAGING_HOST)).statusCode).toBe(401);

@@ -776,15 +776,13 @@
     const [busy, setBusy] = useState(false);
     const [hasPin, setHasPin] = useState(!!hasPinProp);
     const [mustChange, setMustChange] = useState(false);
-    // a staging test shop's 0000, said by the server only (GET /api/staff/pin)
-    const [defaultPin, setDefaultPin] = useState(false);
     // forgotten it: prove yourself with your sign-in password instead of the
     // PIN you can't remember, so nobody has to be told a new one
     const [forgot, setForgot] = useState(false);
     const [pw, setPw] = useState('');
     const load = () => fetch('/api/staff/pin', { credentials: 'same-origin' })
       .then(r => r.ok ? r.json() : null)
-      .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); setDefaultPin(r.defaultPin === true); } })
+      .then(r => { if (r) { setHasPin(!!r.hasPin); setMustChange(!!r.mustChange); } })
       .catch(() => {});
     useEffect(() => { let alive = true; load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, []);
     const clean = (v) => (v || '').replace(/\D/g, '').slice(0, 4);
@@ -804,6 +802,9 @@
           setBusy(false);
           if (res.status === 401) { setErr(forgot ? 'That’s not your sign-in password.' : 'Your current PIN isn’t right.'); return; }
           if (res.status === 429) { setErr('Too many wrong tries — wait a few minutes.'); return; }
+          // the server says why a PIN is refused (#615): a repeat, a run, a missing current PIN
+          const why = await res.json().catch(() => null);
+          if (why && why.detail && (why.error === 'weak_pin' || why.error === 'current_required')) { setErr(why.detail); return; }
           setErr('That didn’t save. Try again.'); return;
         }
       } catch (e) { setBusy(false); setErr('No connection — the PIN was not changed.'); return; }
@@ -817,12 +818,12 @@
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? (defaultPin ? 'PIN set. Staging 0000 works too.' : 'PIN set') : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : 'No PIN yet';
       const toneInk = !hasPin && !done && !mustChange;
       return (
         <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
           <span className="text-[12px] flex items-center gap-1.5" style={{ color: toneInk ? CD.ink : tone }}><Ic n={mustChange ? 'alert' : (done || hasPin) ? 'checkcircle' : 'lock'} s={13} c={toneInk ? CD.ink : (done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.ink)} />{label}</span>
-          <button type="button" onClick={() => { setDone(false); setOpen(true); }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${mustChange ? CD.amber : CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{hasPin || defaultPin ? 'Change PIN' : 'Set PIN'}</button>
+          <button type="button" onClick={() => { setDone(false); setOpen(true); }} className="text-[13px] font-semibold" style={{ minHeight: 44, padding: '0 14px', border: `1px solid ${mustChange ? CD.amber : CD.line}`, borderRadius: 8, color: CD.ink, background: CD.panel }}>{hasPin ? 'Change PIN' : 'Set PIN'}</button>
         </div>
       );
     }
@@ -830,7 +831,6 @@
       <div className="p-3.5" style={{ border: `1px solid ${CD.ink}`, borderRadius: 12, background: 'var(--cd-panel)', width: 300 }}>
         <div className="text-[10px] uppercase tracking-widest mb-2.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{forgot ? 'Reset your PIN' : hasPin ? 'Change your PIN' : 'Set your PIN'}</div>
         {forgot && <div className="text-[11px] mb-2.5" style={{ color: CD.mute, lineHeight: 1.5 }}>Your sign-in password proves it’s you. The new PIN is yours alone — nobody here is told it.</div>}
-        {defaultPin && !hasPin && <div data-default-pin className="text-[12px] mb-2.5" style={{ color: CD.ink, lineHeight: 1.5 }}>Staging PIN 0000. Change it any time.</div>}
         <div className="flex flex-col gap-2">
           {hasPin && !forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Current PIN</span><input value={cur} onChange={e => { setCur(clean(e.target.value)); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} inputMode="numeric" type="password" placeholder="••••" autoFocus style={fld} /></label>}
           {hasPin && forgot && <label className="flex items-center justify-between gap-3"><span className="text-[12px]" style={{ color: CD.mute }}>Your password</span><input value={pw} onChange={e => { setPw(e.target.value); setErr(''); }} onKeyDown={e => e.key === 'Enter' && save()} type="password" autoComplete="current-password" placeholder="••••••••" autoFocus style={{ ...fld, letterSpacing: 'normal', width: 150 }} /></label>}

@@ -7512,8 +7512,6 @@ if (typeof module !== "undefined" && module.exports) {
     const [busy, setBusy] = useState(false);
     const [hasPin, setHasPin] = useState(!!hasPinProp);
     const [mustChange, setMustChange] = useState(false);
-    // a staging test shop's 0000, said by the server only (GET /api/staff/pin)
-    const [defaultPin, setDefaultPin] = useState(false);
     // forgotten it: prove yourself with your sign-in password instead of the
     // PIN you can't remember, so nobody has to be told a new one
     const [forgot, setForgot] = useState(false);
@@ -7524,7 +7522,6 @@ if (typeof module !== "undefined" && module.exports) {
       if (r) {
         setHasPin(!!r.hasPin);
         setMustChange(!!r.mustChange);
-        setDefaultPin(r.defaultPin === true);
       }
     }).catch(() => {});
     useEffect(() => {
@@ -7592,6 +7589,12 @@ if (typeof module !== "undefined" && module.exports) {
             setErr('Too many wrong tries — wait a few minutes.');
             return;
           }
+          // the server says why a PIN is refused (#615): a repeat, a run, a missing current PIN
+          const why = await res.json().catch(() => null);
+          if (why && why.detail && (why.error === 'weak_pin' || why.error === 'current_required')) {
+            setErr(why.detail);
+            return;
+          }
           setErr('That didn’t save. Try again.');
           return;
         }
@@ -7624,7 +7627,7 @@ if (typeof module !== "undefined" && module.exports) {
       /* A PIN somebody else issued is a way back in, not an identity — say so
          plainly until they've picked their own. */
       const tone = done ? CD.green : mustChange ? CD.amber : hasPin ? CD.green : CD.mute;
-      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? defaultPin ? 'PIN set. Staging 0000 works too.' : 'PIN set' : defaultPin ? 'Staging PIN 0000. Change it any time.' : 'No PIN yet';
+      const label = done ? 'PIN updated' : mustChange ? 'Issued to you. Pick your own.' : hasPin ? 'PIN set' : 'No PIN yet';
       const toneInk = !hasPin && !done && !mustChange;
       return /*#__PURE__*/React.createElement("div", {
         className: "flex items-center gap-2",
@@ -7655,7 +7658,7 @@ if (typeof module !== "undefined" && module.exports) {
           color: CD.ink,
           background: CD.panel
         }
-      }, hasPin || defaultPin ? 'Change PIN' : 'Set PIN'));
+      }, hasPin ? 'Change PIN' : 'Set PIN'));
     }
     return /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
@@ -7677,14 +7680,7 @@ if (typeof module !== "undefined" && module.exports) {
         color: CD.mute,
         lineHeight: 1.5
       }
-    }, "Your sign-in password proves it\u2019s you. The new PIN is yours alone \u2014 nobody here is told it."), defaultPin && !hasPin && /*#__PURE__*/React.createElement("div", {
-      "data-default-pin": true,
-      className: "text-[12px] mb-2.5",
-      style: {
-        color: CD.ink,
-        lineHeight: 1.5
-      }
-    }, "Staging PIN 0000. Change it any time."), /*#__PURE__*/React.createElement("div", {
+    }, "Your sign-in password proves it\u2019s you. The new PIN is yours alone \u2014 nobody here is told it."), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col gap-2"
     }, hasPin && !forgot && /*#__PURE__*/React.createElement("label", {
       className: "flex items-center justify-between gap-3"

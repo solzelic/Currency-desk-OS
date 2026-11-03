@@ -29,8 +29,7 @@ import { stagingTestOwnerOnScreen } from "./staging-fresh-shop.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
 import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
-import { clearPinAttempts, defaultPinOpen, defaultPinUsed, lockState, releasePinAttempt, reservePinAttempt } from "./pin.js";
-import { STAGING_DEFAULT_PIN } from "../auth/staging-default-pin.js";
+import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
@@ -555,16 +554,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     }
     const deskName = pinDeskName(target.name);
     const lockedDetail = "Too many wrong tries. This clears on its own in 5 minutes.";
-    /* On the staging demo, 0000 switches to anyone on this desk, beside
-       their own PIN (auth/staging-default-pin.ts). Live never gets here. */
-    const staged = pin === STAGING_DEFAULT_PIN && await defaultPinOpen(db, req, who.tenantId);
-    if (!staged && !target.pinHash) {
+    if (!target.pinHash) {
       return reply.code(409).send({
         error: "no_pin",
         detail: `${deskName} has no PIN yet. They need to choose their own PIN before switching in.`,
       });
     }
-    if (!staged && target.pinMustChange) {
+    if (target.pinMustChange) {
       return reply.code(409).send({
         error: "must_change",
         detail: `${deskName} needs to choose their own PIN before switching in.`,
@@ -573,7 +569,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     /* 0000 is the old browser fallback. It is refused before the hash is
        read, and it is not a wrong try, so it does not walk the keypad
        toward the lock. A locked keypad still says locked. */
-    if (!staged && pin === "0000") {
+    if (pin === "0000") {
       if (lockState(target.id).locked) {
         return reply.code(429).send({ error: "locked", detail: lockedDetail });
       }
@@ -585,7 +581,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     if (!reservePinAttempt(target.id)) {
       return reply.code(429).send({ error: "locked", detail: lockedDetail });
     }
-    const pinOk = staged || (!!target.pinHash && await verifyPassword(pin, target.pinHash));
+    const pinOk = await verifyPassword(pin, target.pinHash);
     if (!pinOk) {
       const after = lockState(target.id);
       await audit(db, {
@@ -599,10 +595,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         ...(after.locked ? { detail: lockedDetail } : {}),
       });
     }
-    if (staged) {
-      releasePinAttempt(target.id);   // a right 0000 gives back its own guess only
-      await defaultPinUsed(db, req, who.id, target, "switch");
-    } else clearPinAttempts(target.id);
+    clearPinAttempts(target.id);
 
     /* Branch membership is not ownership. The session stays on this till
        when they counted it, when nobody has, or when their role is only
