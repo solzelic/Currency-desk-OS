@@ -66,7 +66,7 @@ describe("a chosen PIN is not one people guess first", () => {
       const res = await app.inject({ method: "POST", url: "/api/staff/pin", cookies, payload: { pin } });
       expect(res.statusCode, `${pin} ${res.body}`).toBe(422);
       expect(res.json().error).toBe("weak_pin");
-      if (pin === "0000") expect(res.json().detail).toBe("0000 is too easy to guess. Pick a different PIN.");
+      if (pin === "0000") expect(res.json().detail).toBe("Pick a PIN that isn't one digit repeated, like 1111.");
     }
     const ok = await app.inject({ method: "POST", url: "/api/staff/pin", cookies, payload: { pin: "4829" } });
     expect(ok.statusCode, ok.body).toBe(200);
@@ -455,7 +455,7 @@ describe("PINs are checked by the server", () => {
       });
       expect(res.statusCode, `${easy} ${res.body}`).toBe(422);
       expect(res.json().error).toBe("weak_pin");
-      if (easy === "0000") expect(res.json().detail).toBe("0000 is too easy to guess. Pick a different PIN.");
+      if (easy === "0000") expect(res.json().detail).toBe("Pick a PIN that isn't one digit repeated, like 1111.");
     }
     const again = await app.inject({
       method: "POST", url: "/api/staff/pin", cookies: costaCookie,
