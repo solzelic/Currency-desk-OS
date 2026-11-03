@@ -30,6 +30,7 @@ import { createSession, replaceSession, resolveSession, resolveSessionState, rev
 import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
+import { stagingTestShop } from "../staging/pin-reset.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
@@ -566,10 +567,11 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         detail: `${deskName} needs to choose their own PIN before switching in.`,
       });
     }
-    /* 0000 is the old browser fallback. It is refused before the hash is
-       read, and it is not a wrong try, so it does not walk the keypad
-       toward the lock. A locked keypad still says locked. */
-    if (pin === "0000") {
+    /* 0000 is the old browser fallback. It is refused, and it is not a wrong
+       try, so it does not walk the keypad toward the lock. A locked keypad
+       still says locked. The one exception is a staging test shop, where the
+       reset stores 0000 for everyone; all three gates must pass (#609 PR B). */
+    if (pin === "0000" && !(await stagingTestShop(db, who.tenantId, req.headers.host ?? ""))) {
       if (lockState(target.id).locked) {
         return reply.code(429).send({ error: "locked", detail: lockedDetail });
       }

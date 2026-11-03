@@ -81,6 +81,8 @@ export const migrations: readonly Migration[] = [
   ["058_handover_approver_and_variances", "src/db/migrations/058_handover_approver_and_variances.sql"],
   /* 059 binds a till handover key to the actor and a hash of the body. 058 is on this branch. */
   ["059_handover_idempotency_actor", "src/db/migrations/059_handover_idempotency_actor.sql"],
+  /* 060 is the insert-only staging marker and tenants.seeded_by (#609 PR B). */
+  ["060_db_environment", "src/db/migrations/060_db_environment.sql"],
 ] as const;
 
 type MigrationReader = {

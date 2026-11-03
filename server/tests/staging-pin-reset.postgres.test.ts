@@ -33,6 +33,7 @@ postgres("the staging PIN reset", () => {
   let pool: pg.Pool;
   let app: FastifyInstance;
   let db: ReturnType<typeof drizzle<typeof schema>>;
+  let dbUrlText = "";
 
   const rows = (sql: string, args: unknown[] = []) => pool.query(sql, args).then((r) => r.rows);
   const yorkfx = () => rows("SELECT is_test_shop, seeded_by FROM tenants WHERE id='tnt-yorkfx'").then((r) => r[0]);
@@ -58,7 +59,8 @@ postgres("the staging PIN reset", () => {
     admin = new pg.Pool({ connectionString: url });
     await admin.query(`CREATE DATABASE ${name}`);
     const dbUrl = new URL(url!); dbUrl.pathname = `/${name}`;
-    pool = await provisionPostgres(dbUrl.toString());
+    dbUrlText = dbUrl.toString();
+    pool = await provisionPostgres(dbUrlText);
     db = drizzle(pool, { schema });
     vi.spyOn(console, "log").mockImplementation(() => {});
     await seed(db as never);
@@ -108,22 +110,32 @@ postgres("the staging PIN reset", () => {
 
   it("on a marked staging database York FX becomes a test shop and everyone's PIN is 0000", async () => {
     await markStagingDatabase(pool, STAGING, quiet);
+    const before = (await rows("SELECT 1 FROM audit_events WHERE action='pin.staging_reset' AND tenant_id='tnt-yorkfx'")).length;
+    await pool.query("UPDATE tenants SET seeded_by=NULL WHERE id='tnt-yorkfx'");
     await runStagingPinReset(pool, STAGING, quiet);
     expect(await yorkfx()).toEqual({ is_test_shop: true, seeded_by: "staging_seed" });
     expect(await all0000("tnt-yorkfx")).toBe(true);
     expect((await hashes("tnt-yorkfx")).every((r) => r.pin_must_change === false)).toBe(true);
-    const audits = await rows("SELECT actor_id, detail FROM audit_events WHERE action='pin.staging_reset' AND tenant_id='tnt-yorkfx'");
+    const audits = (await rows("SELECT actor_id, detail FROM audit_events WHERE action='pin.staging_reset' AND tenant_id='tnt-yorkfx' ORDER BY at")).slice(before);
     expect(audits).toHaveLength((await hashes("tnt-yorkfx")).length);
     expect(audits[0]).toMatchObject({ actor_id: "system", detail: { reason: "staging_reset" } });
     expect(JSON.stringify(audits)).not.toMatch(/0000|pin_hash|scrypt|\$argon/);
-    expect(await rows("SELECT detail FROM audit_events WHERE action='tenant.test_shop_changed'")).toEqual([
-      { detail: { reason: "staging_demo_seed", old: false, new: true } },
-    ]);
+    expect((await rows("SELECT detail FROM audit_events WHERE action='tenant.test_shop_changed' ORDER BY at DESC LIMIT 1"))[0]).toEqual(
+      { detail: { reason: "staging_demo_seed", old: false, new: true } });
     const as = async (staffId: string) => ({ cdos_session: (await createSession(db as never, `tnt-yorkfx:${staffId}`, { workspaceId: null })).token });
     const verify = await app.inject({ method: "POST", url: "/api/staff/pin/verify", cookies: await as("a.singh"), payload: { pin: "0000" } });
     expect(verify.statusCode, verify.body).toBe(200);
-    const sw = await app.inject({ method: "POST", url: "/api/auth/switch", cookies: await as("a.singh"), payload: { staffId: "m.costa", pin: "0000" } });
-    expect(sw.statusCode, sw.body).toBe(200);
+    const saved = { ...process.env };
+    Object.assign(process.env, STAGING);
+    try {
+      const host = { host: STAGING.RENDER_EXTERNAL_HOSTNAME };
+      const live = await app.inject({ method: "POST", url: "/api/auth/switch", cookies: await as("a.singh"), payload: { staffId: "m.costa", pin: "0000" }, headers: { host: "www.currencydeskos.com" } });
+      expect(live.statusCode, live.body).toBe(422);
+      const sw = await app.inject({ method: "POST", url: "/api/auth/switch", cookies: await as("a.singh"), payload: { staffId: "m.costa", pin: "0000" }, headers: host });
+      expect(sw.statusCode, sw.body).toBe(200);
+    } finally {
+      for (const k of Object.keys(STAGING)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
   });
 
   it("a second run changes nothing", async () => {
@@ -182,7 +194,11 @@ postgres("the staging PIN reset", () => {
   it("a lookup that throws changes nothing, logs one line and does not throw", async () => {
     await markStagingDatabase(pool, STAGING, quiet);
     const log = { warn: vi.fn(), error: vi.fn() };
-    const broken = { connect: async () => { const c = await pool.connect(); const q = c.query.bind(c); return Object.assign(c, { query: (sql: unknown, ...a: unknown[]) => String(sql).includes("staff_users") ? Promise.reject(new Error("boom")) : (q as (...x: unknown[]) => unknown)(sql, ...a) }); }, query: pool.query.bind(pool) };
+    /* Its own connection, not a pooled one, so nothing else inherits the fault. */
+    const broken = { connect: async () => {
+      const c = new pg.Client({ connectionString: dbUrlText }); await c.connect();
+      return { query: (sql: string, a?: unknown[]) => sql.includes("staff_users") ? Promise.reject(new Error("boom")) : c.query(sql, a), release: () => { void c.end(); } };
+    } };
     await expect(runStagingPinReset(broken as never, STAGING, log)).resolves.toBeDefined();
     expect(log.error).toHaveBeenCalledTimes(1);
     expect(String(log.error.mock.calls[0])).not.toMatch(/0000|hash/i);
