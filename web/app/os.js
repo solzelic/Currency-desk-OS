@@ -57703,13 +57703,16 @@ ${snap}`;
    until the owner turns it on.
 
    The owner names the shop's public rate page (/r/<address>) and takes it
-   live; staff who may change rates edit what it says, and add and retire
-   window screens (/s/<token>). The server decides every one of these
-   (auth/permissions.ts: PUT /api/rate-page and the regulator block need
-   site:publish; the page content and the screen routes need
-   rates:change); this tab only shows each person what they can do, and
-   says plainly when the server refuses. Changes save as you type; the
-   preview reloads after each save.
+   live; staff who may change rates add and retire window screens
+   (/s/<token>). The server decides every one of these (PUT /api/rate-page
+   needs site:publish, the screen routes need rates:change); this tab only
+   shows each person what they can do, and says plainly when the server
+   refuses.
+
+   Since the editor: staff who may change rates also edit what the page
+   says (PATCH /api/rate-page/content, rates:change), and the regulator
+   block is the owner's (site:publish), as in auth/permissions.ts. Changes
+   save as you type; the preview reloads after each save.
    ============================================================ */
 (function () {
   const {
@@ -58916,15 +58919,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
    desk buys and sells at, and whether it is on the board. Pricing & rates
    is the existing Pricing console, unchanged.
 
+   Publish sends the board to the server (POST /api/rates/publish,
+   append-only rate_boards), and every surface the shop's customers see
+   reads that publish.
+
    The server is the record. The board loads from GET /api/rates (this
    desk's own branch), the market from GET /api/rates/market (raw mids,
    converted to the shop's home currency without rounding), recent
-   publishes from GET /api/rates/history, and the shop's window screens
-   from GET /api/window-screens. Publish sends POST /api/rates/publish
-   (append-only rate_boards); every surface the shop's customers see reads
-   that publish. The publish rights are the server's (rates:change); the
-   screen only mirrors them so nobody types into a board they cannot
-   publish.
+   publishes from GET /api/rates/history. The shop's window screens come
+   from GET /api/window-screens, for Open full screen.
+   The publish rights are the server's (rates:change); the screen only
+   mirrors them so nobody types into a board they cannot publish.
    ============================================================ */
 (function () {
   const {

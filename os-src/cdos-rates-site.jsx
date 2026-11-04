@@ -8,13 +8,16 @@
    until the owner turns it on.
 
    The owner names the shop's public rate page (/r/<address>) and takes it
-   live; staff who may change rates edit what it says, and add and retire
-   window screens (/s/<token>). The server decides every one of these
-   (auth/permissions.ts: PUT /api/rate-page and the regulator block need
-   site:publish; the page content and the screen routes need
-   rates:change); this tab only shows each person what they can do, and
-   says plainly when the server refuses. Changes save as you type; the
-   preview reloads after each save.
+   live; staff who may change rates add and retire window screens
+   (/s/<token>). The server decides every one of these (PUT /api/rate-page
+   needs site:publish, the screen routes need rates:change); this tab only
+   shows each person what they can do, and says plainly when the server
+   refuses.
+
+   Since the editor: staff who may change rates also edit what the page
+   says (PATCH /api/rate-page/content, rates:change), and the regulator
+   block is the owner's (site:publish), as in auth/permissions.ts. Changes
+   save as you type; the preview reloads after each save.
    ============================================================ */
 (function () {
   const { useState, useEffect, useCallback, useRef } = React;
