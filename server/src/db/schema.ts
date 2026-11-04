@@ -467,7 +467,7 @@ export const rateBoards = pgTable(
    from the newest snapshot, preserving staff margins/spreads/order. */
 /* Rates v2.5 (migration 062). Where a shop's published board is shown. */
 export const shopRatePages = pgTable("shop_rate_pages", {
-  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id, { onDelete: "cascade" }),
   slug: text("slug").notNull(),
   live: boolean("live").notNull().default(false),
   /* What the shop wrote for its page (migration 063). See rates/rate-page.ts. */
