@@ -140,7 +140,10 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
     /* Rates v2.5 public pages (/r/<address>, /s/<token>). They hold no shop
        data: each reads the shop's published board from /api/public/. */
     file === "/rates-public/rate-page.html" ||
-    file === "/rates-public/window-screen.html"
+    file === "/rates-public/window-screen.html" ||
+    /* The one set of currency flags and names, for the desk and those
+       pages. The flag images are under /assets/. */
+    file === "/shared/currency-face.js"
   );
 };
 
