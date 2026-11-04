@@ -39,6 +39,8 @@ const EXPECTED: Record<string, { status: number; reason: string }> = {
   "/api/site/rates": { status: 404, reason: "The host is not a customer domain, so this door has no site." },
   "/api/site/config": { status: 404, reason: "The host is not a customer domain, so this door has no site." },
   "/api/onboarding/:ref/places/details": { status: 400, reason: "Address details need a provider place id, and this call has none." },
+  "/api/public/rate-pages/:slug": { status: 404, reason: "No shop has opened a rate page at the sweep slug." },
+  "/api/public/screens/:token": { status: 404, reason: "No window screen holds the sweep token." },
 };
 type Hit = { route: string; field: string; sample: string };
 
