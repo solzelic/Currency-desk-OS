@@ -57702,11 +57702,14 @@ ${snap}`;
    page. Every shop already has a rate page at its own address, private
    until the owner turns it on.
 
-   The server decides every change (auth/permissions.ts): what the page
-   says and the screens need rates:change; the address, going live and
-   the regulator block are the owner's (site:publish). This tab only
-   shows each person what they can do, and says plainly when the server
-   refuses. Changes save as you type; the preview reloads after each save.
+   The owner names the shop's public rate page (/r/<address>) and takes it
+   live; staff who may change rates edit what it says, and add and retire
+   window screens (/s/<token>). The server decides every one of these
+   (auth/permissions.ts: PUT /api/rate-page and the regulator block need
+   site:publish; the page content and the screen routes need
+   rates:change); this tab only shows each person what they can do, and
+   says plainly when the server refuses. Changes save as you type; the
+   preview reloads after each save.
    ============================================================ */
 (function () {
   const {
@@ -58908,6 +58911,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
    customers see now" keep the design's own markup, copy and style strings.
    The design's style strings are kept word for word and turned into React
    styles by css() below, so a reviewer can hold the two side by side.
+
+   The Board tab shows every currency the desk trades: the market, what the
+   desk buys and sells at, and whether it is on the board. Pricing & rates
+   is the existing Pricing console, unchanged.
 
    The server is the record. The board loads from GET /api/rates (this
    desk's own branch), the market from GET /api/rates/market (raw mids,
