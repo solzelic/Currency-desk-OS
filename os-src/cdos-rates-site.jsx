@@ -109,7 +109,17 @@
     </button>);
   }
 
-  function RatesSite({ serverRole, onToast }) {
+  /* The business profile as the desk's Settings keeps it (cdos-settings.jsx,
+     Business profile). Those fields are the owner's (server/src/state/
+     owner-settings.ts), so only the owner's desk copies a saved profile
+     into Settings; a manager's change is offered to the owner there. */
+  const settingsFromProfile = (p) => ({
+    bizPhone: p.phone || '', bizEmail: p.email || '', bizAddress: p.address || '', bizCity: p.city || '',
+    bizRegion: p.region || '', bizPostal: p.postal || '',
+    hours: p.hours || [], hoursWeek: p.week || null, siteConfigAt: p.updatedAt || null,
+  });
+
+  function RatesSite({ serverRole, onToast, setSettings }) {
     const ui = window.CDOS.ratesUi;
     const { css, Switch, useWidth, seg, pill } = ui;
     const owner = serverRole === 'administrator';
@@ -154,17 +164,25 @@
     const saveContent = useCallback(async (patch) => {
       if (!Object.keys(patch).length) return;
       const r = await call('PATCH', '/api/rate-page/content', patch);
-      if (r.ok) { setPage(r.data); setFrame(f => f + 1); return; }
+      if (r.ok) {
+        setPage(r.data); setFrame(f => f + 1);
+        if (patch.profile && owner && setSettings) setSettings(s => ({ ...s, ...settingsFromProfile(r.data.profile) }));
+        return;
+      }
       say(r.status === 403 ? 'Only the owner can change that.' : `Not saved: ${(r.data && r.data.detail) || 'the server answered ' + r.status}.`);
       load();
-    }, [say, load]);
+    }, [say, load, owner, setSettings]);
     const queue = useDebouncedSave(saveContent);
     const edit = (key, value, now) => { setDraft(d => ({ ...d, [key]: value })); queue({ [key]: value }, now); };
     const editProfile = (key, value, now) => {
       setDraft(d => ({ ...d, profile: { ...d.profile, [key]: value } }));
-      /* The whole profile goes each time; an unset week (null) is left out. */
-      const { week, ...rest } = draft.profile || {};
-      queue({ profile: { ...rest, ...(Array.isArray(week) ? { week } : {}), [key]: value } }, now);
+      /* The whole editable profile goes each time; an unset week (null) is
+         left out, and so are the lines and time the server sends back. */
+      const p = draft.profile || {};
+      const fields = {};
+      ['phone', 'email', 'address', 'city', 'region', 'postal'].forEach(f => { fields[f] = p[f] || ''; });
+      if (Array.isArray(p.week)) fields.week = p.week;
+      queue({ profile: { ...fields, [key]: value } }, now);
     };
     const uploadLogo = async (e) => {
       const file = e.target.files && e.target.files[0];

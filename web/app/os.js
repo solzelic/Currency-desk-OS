@@ -8583,7 +8583,10 @@ if (typeof module !== "undefined" && module.exports) {
     const [siteBusy, setSiteBusy] = useState(false);
     const [pubMsg, setPubMsg] = useState('');
     const [pubBusy, setPubBusy] = useState(false);
+    /* Read again each time Business profile is opened, so a change made
+       on the rate page while this desk was open shows here. */
     useEffect(() => {
+      if (tab !== 'business') return;
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', {
         credentials: 'same-origin'
@@ -8604,32 +8607,93 @@ if (typeof module !== "undefined" && module.exports) {
             if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
           });
           if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+          /* Rates v2.5: the week (hours by day), into a blank like the
+             rest, and when this desk first saw the published profile
+             (siteConfigAt). After that, siteConfigAt moves only when this
+             desk publishes or takes the profile, so a later change from
+             the rate page editor shows as newer. */
+          if (Array.isArray(cfg.week) && !Array.isArray(s.hoursWeek)) patch.hoursWeek = cfg.week;
+          if (cfg.updatedAt && !s.siteConfigAt) patch.siteConfigAt = cfg.updatedAt;
           return Object.keys(patch).length ? {
             ...s,
             ...patch
           } : s;
         });
       });
-    }, []);
+    }, [tab]);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
-    const HOURS_SEED = [{
-      days: 'Mon–Fri',
-      hours: '9:30am–6:00pm'
-    }, {
-      days: 'Sat–Sun & holidays',
-      hours: '10:00am–5:00pm'
-    }];
-    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
-    const setHours = next => setSettings(s => ({
+    /* Rates v2.5: hours by day are the source (the rate page's week:
+       seven days, Sunday first, [opens, closes] in hours or null). The
+       server makes the storefront's lines from them when they are
+       published (server/src/rates/rate-page.ts hoursFromWeek), the same
+       lines shown below. The template week is the old two template rows:
+       Monday to Friday 9:30 am to 6 pm, Saturday and Sunday 10 am to 5 pm. */
+    const WEEK_SEED = [[10, 17], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [10, 17]];
+    const week = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 ? settings.hoursWeek : siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week) ? siteInfo.siteConfig.week : WEEK_SEED;
+    const setWeek = next => setSettings(s => ({
       ...s,
-      hours: next
+      hoursWeek: next
     }));
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const clockOf = v => {
+      const h = Math.floor(v),
+        m = Math.round((v - h) * 60),
+        h12 = h % 12 || 12;
+      return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 || h === 24 ? ' am' : ' pm');
+    };
+    const weekLines = w => {
+      const order = [1, 2, 3, 4, 5, 6, 0],
+        key = d => d ? d[0] + '-' + d[1] : 'closed',
+        out = [];
+      let i = 0;
+      while (i < 7) {
+        let j = i;
+        while (j + 1 < 7 && key(w[order[j + 1]]) === key(w[order[i]])) j++;
+        const d = w[order[i]];
+        out.push({
+          days: i === j ? DAY_NAMES[order[i]] : DAY_SHORT[order[i]] + ' to ' + DAY_SHORT[order[j]],
+          hours: d ? clockOf(d[0]) + ' to ' + clockOf(d[1]) : 'Closed'
+        });
+        i = j + 1;
+      }
+      return out;
+    };
+    const TIME_OPTS = [];
+    for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push(t);
+    /* The rate page editor published newer contact details or hours than
+       this desk last took or published (a manager's change, or another
+       desk's): say so, and ask before publishing over them. */
+    const published = siteInfo && siteInfo.siteConfig;
+    const serverNewer = !!(published && published.updatedAt && settings.siteConfigAt && published.updatedAt > settings.siteConfigAt);
+    const usePublished = () => {
+      if (!published) return;
+      setSettings(s => ({
+        ...s,
+        bizPhone: published.phone || '',
+        bizEmail: published.email || '',
+        bizAddress: published.address || '',
+        bizCity: published.city || '',
+        bizRegion: published.region || '',
+        bizPostal: published.postal || '',
+        ...(Array.isArray(published.hours) ? {
+          hours: published.hours
+        } : {}),
+        ...(Array.isArray(published.week) ? {
+          hoursWeek: published.week
+        } : {}),
+        siteConfigAt: published.updatedAt
+      }));
+      log('Public site', 'took the published contact & hours');
+    };
     // one source of truth: the same phone/email/address/hours the desk shows
     // are what the public site publishes
     const publishSiteConfig = () => {
+      if (serverNewer && !window.confirm('Your rate page has newer contact details or hours than these. Publish these over them?')) return;
       setPubBusy(true);
       setPubMsg('');
+      /* The week goes; the server makes the hours lines from it. */
       const body = {
         siteConfig: {
           phone: settings.bizPhone || '',
@@ -8638,7 +8702,7 @@ if (typeof module !== "undefined" && module.exports) {
           city: settings.bizCity || '',
           region: settings.bizRegion || '',
           postal: settings.bizPostal || '',
-          hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim())
+          week
         }
       };
       fetch('/api/tenant', {
@@ -8655,6 +8719,13 @@ if (typeof module !== "undefined" && module.exports) {
             ...siteInfo,
             ...d.tenant
           } : siteInfo);
+          const cfg = d.tenant && d.tenant.siteConfig;
+          if (cfg) setSettings(s => ({
+            ...s,
+            hours: cfg.hours || s.hours,
+            hoursWeek: week,
+            siteConfigAt: cfg.updatedAt
+          }));
           setPubMsg('Published \u2014 the site shows this now.');
           log('Public site', 'contact & hours published');
         } else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');else setPubMsg(d && d.detail || 'Couldn\u2019t publish (' + r.status + ').');
@@ -11909,63 +11980,90 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         maxWidth: 560
       }
-    }, "When you're open. Shown on your public site's Visit page \u2014 each row is a set of days and the hours for it."), hoursList.map((h, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "flex items-center gap-2 mb-1.5"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: h.days || '',
-      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
-        ...x,
-        days: ev.target.value
-      } : x)),
-      placeholder: "Mon\u2013Fri",
-      className: "text-[13px] px-2.5 py-2 outline-none",
+    }, "When you're open, day by day. Shown on your public site's Visit page and your rate page, which says open or closed from it. The same hours as Rates \u2192 Website & window."), serverNewer && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "flex items-center gap-2 flex-wrap p-2.5 mb-3 text-[11.5px]",
       style: {
-        ...inSty,
-        width: 190
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10,
+        background: 'var(--cd-paper-soft)',
+        color: CD.ink
       }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12px] flex-none",
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "flex-1",
       style: {
-        color: CD.faint
+        minWidth: 220
       }
-    }, "\u2192"), /*#__PURE__*/React.createElement("input", {
-      value: h.hours || '',
-      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
-        ...x,
-        hours: ev.target.value
-      } : x)),
-      placeholder: "9:30am\u20136:00pm",
-      className: "flex-1 text-[13px] px-2.5 py-2 outline-none",
-      style: inSty
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setHours(hoursList.filter((_, j) => j !== i)),
-      title: "Remove row",
-      className: "grid place-items-center flex-none",
+    }, "Your rate page has newer contact details or hours than these (changed in Rates \u2192 Website & window)."), /*#__PURE__*/React.createElement("button", {
+      onClick: usePublished,
+      className: "text-[12px] px-2.5 py-1.5 font-semibold",
       style: {
-        width: 30,
-        height: 30,
-        borderRadius: 7,
-        color: CD.faint
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8
       }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "trash",
-      s: 14
-    })))), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setHours([...hoursList, {
-        days: '',
-        hours: ''
-      }]),
-      className: "text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1",
-      style: {
-        border: `1px dashed ${CD.line}`,
-        borderRadius: 8,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "plus",
-      s: 13
-    }), " Add hours row")), siteInfo && siteInfo.siteSlug && (() => {
+    }, "Use the published details")), /*#__PURE__*/React.createElement("div", {
+      role: "group",
+      "aria-label": "Opening hours by day"
+    }, [1, 2, 3, 4, 5, 6, 0].map(di => {
+      const d = week[di];
+      return /*#__PURE__*/React.createElement("div", {
+        key: di,
+        className: "flex items-center gap-2.5 mb-1.5 flex-wrap"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[13px] font-semibold",
+        style: {
+          width: 96,
+          color: CD.ink
+        }
+      }, DAY_NAMES[di]), /*#__PURE__*/React.createElement(IdSwitch, {
+        on: !!d,
+        label: 'Open on ' + DAY_NAMES[di],
+        onFlip: () => setWeek(week.map((x, j) => j === di ? x ? null : [9.5, 18] : x))
+      }), d ? /*#__PURE__*/React.createElement("span", {
+        className: "flex items-center gap-1.5"
+      }, /*#__PURE__*/React.createElement("select", {
+        "aria-label": DAY_NAMES[di] + ' opens',
+        value: String(d[0]),
+        onChange: ev => {
+          const v = +ev.target.value;
+          setWeek(week.map((x, j) => j === di ? [v, Math.max(v + 0.5, d[1])] : x));
+        },
+        className: "text-[12.5px] px-2 py-1.5 outline-none",
+        style: {
+          ...inSty,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, TIME_OPTS.map(t => /*#__PURE__*/React.createElement("option", {
+        key: t,
+        value: String(t)
+      }, clockOf(t)))), /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px]",
+        style: {
+          color: CD.faint
+        }
+      }, "to"), /*#__PURE__*/React.createElement("select", {
+        "aria-label": DAY_NAMES[di] + ' closes',
+        value: String(d[1]),
+        onChange: ev => {
+          const v = +ev.target.value;
+          setWeek(week.map((x, j) => j === di ? [Math.min(d[0], v - 0.5), v] : x));
+        },
+        className: "text-[12.5px] px-2 py-1.5 outline-none",
+        style: {
+          ...inSty,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, TIME_OPTS.map(t => /*#__PURE__*/React.createElement("option", {
+        key: t,
+        value: String(t)
+      }, clockOf(t))))) : /*#__PURE__*/React.createElement("span", {
+        className: "text-[12.5px]",
+        style: {
+          color: CD.faint
+        }
+      }, "Closed"));
+    }))), siteInfo && siteInfo.siteSlug && (() => {
       const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
       return /*#__PURE__*/React.createElement("div", {
         className: "mt-5 pt-4",
@@ -12074,7 +12172,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.ink
         }
-      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), hoursList.filter(h => h.days && h.hours).map((h, i) => /*#__PURE__*/React.createElement("div", {
+      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), weekLines(week).map((h, i) => /*#__PURE__*/React.createElement("div", {
         key: i
       }, h.days, " ", h.hours))), /*#__PURE__*/React.createElement("button", {
         onClick: publishSiteConfig,
@@ -57900,9 +57998,26 @@ ${snap}`;
       style: css('flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:' + (picking ? 'grid' : 'none') + ';place-items:center;font-family:var(--m);font-size:10.5px;font-weight:700;background:' + (on ? 'var(--primary)' : 'rgba(23,20,15,0.06)') + ';color:' + (on ? '#fff' : 'var(--mute)') + ';')
     }, picking ? on ? String(at + 1) : '+' : ''));
   }
+
+  /* The business profile as the desk's Settings keeps it (cdos-settings.jsx,
+     Business profile). Those fields are the owner's (server/src/state/
+     owner-settings.ts), so only the owner's desk copies a saved profile
+     into Settings; a manager's change is offered to the owner there. */
+  const settingsFromProfile = p => ({
+    bizPhone: p.phone || '',
+    bizEmail: p.email || '',
+    bizAddress: p.address || '',
+    bizCity: p.city || '',
+    bizRegion: p.region || '',
+    bizPostal: p.postal || '',
+    hours: p.hours || [],
+    hoursWeek: p.week || null,
+    siteConfigAt: p.updatedAt || null
+  });
   function RatesSite({
     serverRole,
-    onToast
+    onToast,
+    setSettings
   }) {
     const ui = window.CDOS.ratesUi;
     const {
@@ -57970,11 +58085,15 @@ ${snap}`;
       if (r.ok) {
         setPage(r.data);
         setFrame(f => f + 1);
+        if (patch.profile && owner && setSettings) setSettings(s => ({
+          ...s,
+          ...settingsFromProfile(r.data.profile)
+        }));
         return;
       }
       say(r.status === 403 ? 'Only the owner can change that.' : `Not saved: ${r.data && r.data.detail || 'the server answered ' + r.status}.`);
       load();
-    }, [say, load]);
+    }, [say, load, owner, setSettings]);
     const queue = useDebouncedSave(saveContent);
     const edit = (key, value, now) => {
       setDraft(d => ({
@@ -57993,17 +58112,17 @@ ${snap}`;
           [key]: value
         }
       }));
-      /* The whole profile goes each time; an unset week (null) is left out. */
-      const {
-        week,
-        ...rest
-      } = draft.profile || {};
+      /* The whole editable profile goes each time; an unset week (null) is
+         left out, and so are the lines and time the server sends back. */
+      const p = draft.profile || {};
+      const fields = {};
+      ['phone', 'email', 'address', 'city', 'region', 'postal'].forEach(f => {
+        fields[f] = p[f] || '';
+      });
+      if (Array.isArray(p.week)) fields.week = p.week;
       queue({
         profile: {
-          ...rest,
-          ...(Array.isArray(week) ? {
-            week
-          } : {}),
+          ...fields,
           [key]: value
         }
       }, now);
@@ -59742,7 +59861,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onOpenSite: () => setTab('site')
     }), tab === 'site' && /*#__PURE__*/React.createElement(window.CDOS.RatesSite, {
       serverRole: serverRole,
-      onToast: flash
+      onToast: flash,
+      setSettings: setSettings
     }), tab === 'rules' && /*#__PURE__*/React.createElement(Pricing, {
       settings: settings,
       setSettings: setSettings,

@@ -76,6 +76,10 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
            saw was a branch named after the demo tenant. Their own data,
            asked for by a signed-in member of their own desk. */
         setup: t.setup ?? null,
+        /* The contact details and hours the shop publishes (also public on
+           its storefront and rate page). Settings reads them to take what
+           was published and to see a change made on the rate page. */
+        siteConfig: t.siteConfig ?? null,
       },
     };
   });

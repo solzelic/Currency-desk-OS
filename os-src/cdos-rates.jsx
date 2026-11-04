@@ -402,7 +402,7 @@
       <div style={css('flex:1;min-height:0;overflow-y:auto;')}>
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
           {tab === 'board' && <Board settings={settings} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
-          {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} />}
+          {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} setSettings={setSettings} />}
           {tab === 'rules' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />}
         </div>
       </div>
