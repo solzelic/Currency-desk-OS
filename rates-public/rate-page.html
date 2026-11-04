@@ -342,6 +342,7 @@
     var selling = state.dir === "sell", home = d.shop.home;
     $("calc-swap-label").textContent = selling ? "I want to buy" : "I have foreign cash";
     if (!r) return;
+    /* Selling foreign cash: we buy it. Buying foreign cash: we sell it. */
     var at = selling ? r.sell : r.buy;
     $("calc-direction").textContent = r.code + " → " + home;
     $("calc-label").textContent = selling ? "You pay us" : "You get";
