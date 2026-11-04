@@ -39,9 +39,13 @@ test("the owner opens the rate page and a stranger sees the shop's published rat
   await stranger.close();
 });
 
-test("an address that is not live says so", async ({ page }) => {
+test("an address that is not live, or is not an address at all, says so", async ({ page }) => {
   await page.goto("/r/no-such-shop-here");
   await expect(page.getByText("This rate page is not available.")).toBeVisible();
+  /* A stray % is a malformed escape: the server refuses it before any page. */
+  for (const url of ["/r/broken%E0%A4%A", "/s/broken%ZZaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]) {
+    expect((await page.request.get(url)).status(), url).toBe(400);
+  }
 });
 
 test("the window screen shows the top six in two columns, dark, and goes blank when retired", async ({ page, browser }) => {
