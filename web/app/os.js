@@ -57692,14 +57692,15 @@ ${snap}`;
     const h = Math.round(m / 60);
     return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
   }
+  /* The desk's one clock (cdos-desk-time.js): today's publishes by the
+     time on the branch clock, older ones by their civil date there. */
   function when(ms, settings) {
-    const d = new Date(ms);
-    const sameDay = new Date().toDateString() === d.toDateString();
-    const t = window.CDOS.deskTime ? window.CDOS.deskTime(d, settings && settings.timeFormat) : d.toLocaleTimeString();
-    return sameDay ? t : d.toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short'
-    });
+    const zone = settings && settings.timezone;
+    const {
+      deskTime,
+      deskDay
+    } = window.CDOS;
+    return deskDay(ms, zone) === deskDay(Date.now(), zone) ? deskTime(ms, settings && settings.timeFormat, zone) : deskDay(ms, zone);
   }
   const six = n => n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6);
   function Toggle({
