@@ -32,8 +32,12 @@ test("a manager takes a currency off the board and publishes it, and customers s
      publish from here carries today's market rates. */
   const found = await board(page);
   try {
-    const code = "GBP";
-    expect(found.rows[code]?.show).not.toBe(false);
+    /* What customers see now is the first six of the published board, in
+       its order, and the order depends on what published last (CI's board
+       is alphabetical). Take the first currency shown there. */
+    const code: string = (found.order ?? Object.keys(found.rows)).filter((c: string) => found.rows[c] && found.rows[c].show !== false)[0];
+    expect(code, "the published board shows at least one currency").toBeTruthy();
+    await expect(page.getByRole("region", { name: "What customers see now" })).toContainText(code);
     await toggle(page, code).click();
     await expect(page.getByText("Unpublished changes")).toBeVisible();
     await expect(page.getByText("Your changes aren't live yet.")).toBeVisible();
