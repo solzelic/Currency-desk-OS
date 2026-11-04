@@ -80,6 +80,12 @@ describe("what Publish sends", () => {
     } });
   });
 
+  it("marks a pinned rate, so the market sync leaves it alone", () => {
+    const rows = board().draftRows({ codes: ["USD", "GBP"], home: "CAD", board: null, market: { USD: "1.3641", GBP: "1.70" }, settings: { spotOverride: { GBP: 1.8 } } });
+    const out = board().publishBody(rows, 1.5);
+    expect(out.ok && out.body.rows).toEqual({ USD: { mid: 1.3641, show: true }, GBP: { mid: 1.8, show: true, pinned: true } });
+  });
+
   it("refuses a shown currency with no rate, and names it", () => {
     const rows = board().draftRows({ codes: ["USD", "MXN"], home: "CAD", board: null, market: { USD: "1.36" }, settings: {} });
     expect(board().publishBody(rows, 1.5)).toEqual({ ok: false, missing: ["MXN"] });
