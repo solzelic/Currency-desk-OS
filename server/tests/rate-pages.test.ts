@@ -11,6 +11,7 @@ import { eq, sql } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { forgetPublicAnswers } from "../src/rates/public-board.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -44,6 +45,7 @@ beforeEach(async () => {
   await handle.db.execute(sql`DELETE FROM window_screens`);
   await handle.db.execute(sql`DELETE FROM shop_rate_pages`);
   await handle.db.update(schema.tenants).set({ suspended: false }).where(eq(schema.tenants.id, DEMO.tenantId));
+  forgetPublicAnswers();
 });
 
 describe("the public rate page", () => {
@@ -59,17 +61,20 @@ describe("the public rate page", () => {
     expect(page.headers["cache-control"]).toBe("public, max-age=60");
   });
 
-  it("shows only the latest published board, buy and sell priced on the server, in the desk's order", async () => {
+  /* The desk's own lines (quotes/terms.ts): we buy at mid x (1 - margin),
+     and a customer buying foreign gets (1 - margin) / mid units, so we sell
+     at mid / (1 - margin). Not the website's older mid x (1 + margin). */
+  it("shows only the latest published board, priced on the server the way the desk charges, in the desk's order", async () => {
     await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test", live: true });
     await publish({ buyMargin: 0.02, sellMargin: 0.03, rows: { USD: { mid: 2 }, EUR: { mid: 1.5, spread: 0.1 }, JPY: { mid: 0.01, show: false } }, order: ["EUR", "USD", "JPY"] });
     const body = (await pub("/api/public/rate-pages/york-test")).json();
-    expect(body.rates).toEqual([{ code: "EUR", buy: 1.35, sell: 1.65 }, { code: "USD", buy: 1.96, sell: 2.06 }]);
+    expect(body.rates).toEqual([{ code: "EUR", buy: 1.35, sell: 1.666667 }, { code: "USD", buy: 1.96, sell: 2.061856 }]);
     expect(body.publishedAt).toEqual(expect.any(Number));
     expect(JSON.stringify(body)).not.toMatch(/margin|mid|spread/i);
   });
 
   it("is named and opened by the owner only, and each change is audited with old and new", async () => {
-    for (const staffId of ["r.haddad", "a.singh", "m.costa", "c.adebayo"]) {
+    for (const staffId of ["r.haddad", "a.singh", "m.costa", "s.iqbal"]) {
       expect((await as(staffId, "PUT", "/api/rate-page", { slug: "york-test", live: true })).statusCode, staffId).toBe(403);
     }
     expect((await as("m.costa", "GET", "/api/rate-page")).json()).toEqual({ slug: null, live: false });
@@ -89,6 +94,18 @@ describe("the public rate page", () => {
     await handle.db.execute(sql`INSERT INTO shop_rate_pages (tenant_id, slug, live) VALUES (${OTHER}, 'taken-name', true)`);
     const clash = await as("j.masri", "PUT", "/api/rate-page", { slug: "taken-name" });
     expect(clash.statusCode).toBe(409);
+  });
+
+  it("answers from memory, and a new publish shows at once", async () => {
+    await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test", live: true });
+    await publish({ buyMargin: 0.01, sellMargin: 0.01, rows: { USD: { mid: 2 } }, order: ["USD"] });
+    expect((await pub("/api/public/rate-pages/york-test")).json().rates[0].buy).toBe(1.98);
+    // A write behind the server's back is not seen until the memory is cleared.
+    await handle.db.execute(sql`UPDATE shop_rate_pages SET live = false`);
+    expect((await pub("/api/public/rate-pages/york-test")).statusCode).toBe(200);
+    await handle.db.execute(sql`UPDATE shop_rate_pages SET live = true`);
+    await publish({ buyMargin: 0.05, sellMargin: 0.05, rows: { USD: { mid: 2 } }, order: ["USD"] });
+    expect((await pub("/api/public/rate-pages/york-test")).json().rates[0].buy).toBe(1.9);
   });
 
   it("goes dark when the shop is suspended", async () => {
