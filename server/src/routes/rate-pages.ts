@@ -229,6 +229,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     return {
       slug: page.slug,
       live: page.live,
+      logo: page.logo && page.logoAt ? `/api/rate-page/logo?v=${page.logoAt.getTime()}` : null,
       content: await resolvedContent(db, tenantId, shop.name, page.content ?? {}),
       profile: { ...profile, week: validWeek(config.week) },
     };
@@ -301,7 +302,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.shopRatePages.tenantId, who.tenantId));
     await audit(db, who, "rate_page.logo", { set: true, bytes: checked.bytes.length });
     forgetPublicAnswers();
-    return { logo: true };
+    return deskView(who.tenantId);
   });
 
   app.delete("/api/rate-page/logo", async (req, reply) => {
@@ -311,7 +312,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.shopRatePages.tenantId, who.tenantId));
     await audit(db, who, "rate_page.logo", { set: false });
     forgetPublicAnswers();
-    return { logo: false };
+    return deskView(who.tenantId);
   });
 
   app.get("/api/rate-page/logo", async (req, reply) => {
