@@ -107,6 +107,12 @@ postgres("naming a till, against real PostgreSQL", () => {
   });
 
   afterAll(async () => {
+    /* A balance written on a till bumps its row in
+       ledger_till_balance_generations, which no reset truncates.
+       ledger.routes opens its own till-02 and expects a fresh one. */
+    await pool.query("DELETE FROM ledger_till_balance_generations WHERE workspace_id = ANY($1::text[])", [
+      [SECOND_WORKSPACE, FOREIGN_WORKSPACE],
+    ]);
     await app.close();
     await handle.close();
     await pool.end();
