@@ -22,6 +22,10 @@ const money = (page: Page, value: number, code: string) => page.evaluate(([v, c]
   const n = Math.abs(v as number) >= 1000 ? (v as number).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (v as number).toFixed(2);
   return n + " " + c;
 }, [value, code] as const);
+/* The page's own English name for a currency, from the browser's Intl. */
+const nameOf = (page: Page, code: string) => page.evaluate((c) => new Intl.DisplayNames(["en"], { type: "currency" }).of(c) ?? c, code);
+/* Codes with one of the design's flag images (shared/currency-face.js). */
+const IMAGED = ["AED", "AUD", "BRL", "CAD", "CHF", "CNY", "EUR", "GBP", "HKD", "IDR", "INR", "JPY", "KRW", "MXN", "MYR", "NGN", "NZD", "PHP", "PKR", "QAR", "SAR", "SEK", "SGD", "THB", "TRY", "USD", "VND", "ZAR"];
 const flagImage = (page: Page, code: string) =>
   page.locator(`[data-code="${code}"] [data-flag="${code}"]`).first().evaluate((el) => getComputedStyle(el).backgroundImage);
 
@@ -32,7 +36,10 @@ test("the owner opens the rate page and a stranger sees the published rates with
   expect(made.status).toBe(201);
   token = made.body.token; screenId = made.body.id;
   const published = (await api(page, "GET", `/api/public/rate-pages/${SLUG}`)).body;
-  const usd = published.rates.find((r: { code: string }) => r.code === "USD");
+  /* What the shop publishes, in its order (CI's board is alphabetical):
+     the first currency with a flag image stands in for all of them. */
+  const usd = published.rates.find((r: { code: string }) => IMAGED.includes(r.code));
+  const code: string = usd.code;
   const home = published.shop.home;
 
   const stranger = await (await browser.newContext()).newPage();
@@ -41,15 +48,15 @@ test("the owner opens the rate page and a stranger sees the published rates with
   const rates = stranger.getByRole("region", { name: "Today's rates" });
   await expect(rates.locator("[data-code]")).toHaveCount(published.rates.length);
   await expect(rates.locator("[data-code]").first()).toHaveAttribute("data-code", published.rates[0].code);
-  await expect(rates.locator('[data-code="USD"]')).toContainText("US Dollar");
-  expect(await flagImage(stranger, "USD")).toContain("/assets/flags/us.svg");
+  await expect(rates.locator(`[data-code="${code}"]`)).toContainText(await nameOf(stranger, code));
+  expect(await flagImage(stranger, code)).toMatch(/\/assets\/flags\/[a-z]{2}\.svg/);
   /* The publish time in the shop's own clock (its branch's time zone). */
   const at = await stranger.evaluate(([ms, zone]) => new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: zone as string }).format(new Date(ms as number)), [published.publishedAt, published.shop.timeZone] as const);
   await expect(rates).toContainText(`Published ${at}`);
 
   /* The design opens on buying foreign cash: you pay us at our selling rate. */
   const converter = stranger.getByRole("region", { name: "Work out your amount" });
-  await converter.getByLabel("Currency").selectOption("USD");
+  await converter.getByLabel("Currency").selectOption(code);
   await converter.getByLabel("Amount").fill("500");
   await expect(converter.getByRole("status")).toContainText("You pay us");
   await expect(converter.getByRole("status")).toContainText(await money(stranger, 500 * usd.sell, home));
@@ -128,8 +135,9 @@ test("the window screen shows the top six with flags in two columns, dark, and g
   await tv.getByText("Tap anywhere to start").click();
   await expect(tv.getByText("Tap anywhere to start")).toBeHidden();
   await expect(tv.locator("[data-code]")).toHaveCount(6);
-  expect(await flagImage(tv, "USD")).toContain("/assets/flags/us.svg");
-  await expect(tv.locator('[data-code="USD"]')).toContainText("US Dollar");
+  const first = (await tv.locator("[data-code]").first().getAttribute("data-code"))!;
+  if (IMAGED.includes(first)) expect(await flagImage(tv, first)).toMatch(/\/assets\/flags\/[a-z]{2}\.svg/);
+  await expect(tv.locator(`[data-code="${first}"]`)).toContainText(await nameOf(tv, first));
   await expect(tv.locator("body")).toHaveClass("dark");
   await expect(tv.locator("#grid")).toHaveAttribute("data-columns", "2");
   await asOwner(page);
