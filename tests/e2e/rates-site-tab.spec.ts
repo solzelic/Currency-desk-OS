@@ -8,9 +8,13 @@ import { test, expect, signInAtDesk } from "./fixtures";
 test.describe.configure({ mode: "serial" });
 const SLUG = "e2e-site-tab";
 
-async function openTab(page: Page, staffId: string): Promise<void> {
+async function openTab(page: Page, staffId: string, privatePage = false): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signInAtDesk(page, staffId);
+  /* Other files share this seed shop; the owner test starts from a private page. */
+  if (privatePage) {
+    await page.evaluate(async () => { await fetch("/api/rate-page", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ live: false }) }); });
+  }
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("rates"));
@@ -19,7 +23,7 @@ async function openTab(page: Page, staffId: string): Promise<void> {
 }
 
 test("the owner names the rate page and takes it live, and the link opens it", async ({ page, browser }) => {
-  await openTab(page, "j.masri");
+  await openTab(page, "j.masri", true);
   const card = page.getByRole("region", { name: "Rate page" });
   await card.getByLabel("Page address").fill(SLUG);
   await card.getByRole("button", { name: "Save address" }).click();
