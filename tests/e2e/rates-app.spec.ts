@@ -60,11 +60,29 @@ test("a manager takes a currency off the board and publishes it, and customers s
   }
 });
 
+test("a manager switches Auto-publish on and off, and the rail says the board follows the market", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  const auto = page.getByRole("switch", { name: "Auto-publish" });
+  await expect(auto).toHaveAttribute("aria-checked", "false");
+  const on = page.waitForResponse((r) => r.url().endsWith("/api/rates/auto-publish") && r.request().method() === "PUT");
+  await auto.click();
+  expect((await on).status()).toBe(200);
+  await expect(auto).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText(/^Auto · updates with the market · last /)).toBeVisible();
+  expect((await page.evaluate(async () => (await fetch("/api/rates")).json())).autoPublish).toBe(true);
+  /* Put it back: the sync would otherwise republish this shared board. */
+  const off = page.waitForResponse((r) => r.url().endsWith("/api/rates/auto-publish") && r.request().method() === "PUT");
+  await auto.click();
+  expect((await off).status()).toBe(200);
+  await expect(auto).toHaveAttribute("aria-checked", "false");
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
   await expect(toggle(page, "USD")).toBeDisabled();
+  await expect(page.getByRole("switch", { name: "Auto-publish" })).toBeDisabled();
   const refused = await page.evaluate(async () => (await fetch("/api/rates/publish", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ buyMargin: 0.01, sellMargin: 0.01, rows: { USD: { mid: 1.3 } } }),
