@@ -8,6 +8,10 @@
    The design's style strings are kept word for word and turned into React
    styles by css() below, so a reviewer can hold the two side by side.
 
+   The Board tab shows every currency the desk trades: the market, what the
+   desk buys and sells at, and whether it is on the board. Pricing & rates
+   is the existing Pricing console, unchanged.
+
    The server is the record. The board loads from GET /api/rates (this
    desk's own branch), the market from GET /api/rates/market (raw mids,
    converted to the shop's home currency without rounding), recent
