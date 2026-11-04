@@ -83,6 +83,21 @@ describe("str and watch role sets", () => {
 let pool: pg.Pool;
 let app: FastifyInstance;
 let handle: DbHandle;
+
+/* Filing refuses the demo seed's placeholder FINTRAC number. Whether
+   the demo entity holds it here depends on which file seeded this
+   database first, so this file sets a fileable test number before it
+   runs and puts back what it found after. */
+const FILEABLE_TEST_MSB = "M00000042";
+let foundMsb: string | null | undefined;
+async function useFileableMsb(db: pg.Pool) {
+  const found = await db.query("SELECT msb_number FROM legal_entities WHERE id=$1", [DEMO.legalEntityId]);
+  foundMsb = found.rows[0] ? (found.rows[0].msb_number as string | null) : undefined;
+  await db.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, FILEABLE_TEST_MSB]);
+}
+async function restoreMsb(db: pg.Pool) {
+  if (foundMsb !== undefined) await db.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, foundMsb]);
+}
 const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
 
 async function cookie(staffId = "m.costa") {
@@ -251,11 +266,13 @@ postgres("str filing and the transaction field strip", () => {
        ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-ca-v1', home_currency='CAD', jurisdiction_pack_version=1`,
       [DEMO.legalEntityId, DEMO.tenantId],
     );
+    await useFileableMsb(pool);
     app = await buildApp(handle.db);
   });
 
   afterAll(async () => {
     await clearBook();
+    await restoreMsb(pool);
     await app.close();
     await handle.close();
     await pool.end();

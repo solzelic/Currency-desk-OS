@@ -36,6 +36,21 @@ let pool: pg.Pool;
 let app: FastifyInstance;
 let handle: DbHandle;
 
+/* Filing refuses the demo seed's placeholder FINTRAC number. Whether
+   the demo entity holds it here depends on which file seeded this
+   database first, so this file sets a fileable test number before it
+   runs and puts back what it found after. */
+const FILEABLE_TEST_MSB = "M00000042";
+let foundMsb: string | null | undefined;
+async function useFileableMsb(db: pg.Pool) {
+  const found = await db.query("SELECT msb_number FROM legal_entities WHERE id=$1", [DEMO.legalEntityId]);
+  foundMsb = found.rows[0] ? (found.rows[0].msb_number as string | null) : undefined;
+  await db.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, FILEABLE_TEST_MSB]);
+}
+async function restoreMsb(db: pg.Pool) {
+  if (foundMsb !== undefined) await db.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, foundMsb]);
+}
+
 async function cookie(staffId = "r.haddad") {
   const login = await app.inject({
     method: "POST",
@@ -127,6 +142,7 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
     await runMigrations(pool);
     handle = await createDb();
     await seed(handle.db);
+    await useFileableMsb(pool);
     app = await buildApp(handle.db);
   });
 
@@ -154,6 +170,7 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
       expect(desk.jurisdiction_pack_id).toBe("pack-ca-v1");
       expect(desk.jurisdiction_pack_version).toBe(1);
     } finally {
+      await restoreMsb(pool);
       await app.close();
       await handle.close();
       await pool.end();

@@ -108,28 +108,46 @@ function clockLabel(timeZone: string, at: Date): string {
   return `${pick("year")}-${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`;
 }
 
+/* Everything this file adds to the demo shop: the book, the bd.* staff
+   and their sessions, and the extra branches with their workspaces and
+   boards. Run before, for a run that stopped half way, and after, so the
+   next file finds the shop as the seed left it: sign-in reads the shop's
+   first branch for its clock, and must not find Jerusalem there.
+   Sessions go by workspace as well as by user: a session anyone opened
+   on one of these workspaces would refuse the workspace's delete. */
+async function removeWhatThisFileAdds() {
+  await pool.query(
+    "TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
+  );
+  await pool.query(
+    "DELETE FROM sessions WHERE user_id LIKE $1 OR workspace_id IN (SELECT id FROM workspaces WHERE tenant_id=$2 AND id<>$3)",
+    [`${DEMO.tenantId}:bd.%`, DEMO.tenantId, DEMO.workspaceId],
+  );
+  await pool.query("DELETE FROM staff_users WHERE tenant_id=$1 AND staff_id LIKE 'bd.%'", [DEMO.tenantId]);
+  await pool.query("DELETE FROM rate_boards WHERE tenant_id=$1 AND branch_id<>$2", [DEMO.tenantId, DEMO.branchId]);
+  await pool.query("DELETE FROM workspaces WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.workspaceId]);
+  await pool.query("DELETE FROM branches WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.branchId]);
+}
+
 postgres("a till session takes the branch's civil day", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     handle = await createDb();
     pool = new pg.Pool({ connectionString: url });
-    await pool.query(
-      "TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
-    );
-    await pool.query("DELETE FROM sessions WHERE user_id LIKE $1", [`${DEMO.tenantId}:bd.%`]);
-    await pool.query("DELETE FROM staff_users WHERE tenant_id=$1 AND staff_id LIKE 'bd.%'", [DEMO.tenantId]);
-    await pool.query("DELETE FROM rate_boards WHERE tenant_id=$1 AND branch_id<>$2", [DEMO.tenantId, DEMO.branchId]);
-    await pool.query("DELETE FROM workspaces WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.workspaceId]);
-    await pool.query("DELETE FROM branches WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.branchId]);
+    await removeWhatThisFileAdds();
     await seed(handle.db);
     app = await buildApp(handle.db);
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
-    await handle.close();
-    await pool.end();
-    delete process.env.DATABASE_URL;
+    try {
+      await removeWhatThisFileAdds();
+    } finally {
+      await app.close();
+      await handle.close();
+      await pool.end();
+      delete process.env.DATABASE_URL;
+    }
   });
 
   afterEach(() => {
