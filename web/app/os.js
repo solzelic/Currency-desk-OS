@@ -57839,33 +57839,34 @@ ${snap}`;
   const SHOWS = [['flags', 'Flags'], ['names', 'Currency names'], ['clock', 'Clock'], ['hours', 'Opening hours'], ['logo', 'Your logo']];
 
   /* Whatever the owner picks is drawn onto a 240px square and sent as a
-     PNG: the server takes nothing else. */
-  function logoPng(file) {
+     PNG: the server takes nothing else. Drawing it also turns any picture,
+     an SVG logo included, into plain pixels. */
+  function pngFrom(src, done) {
     return new Promise((resolve, reject) => {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
-        reject(new Error('Use a PNG, JPG or WebP picture.'));
-        return;
-      }
-      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         const size = 240,
           c = document.createElement('canvas');
         c.width = size;
         c.height = size;
-        const scale = Math.min(size / img.width, size / img.height);
-        const w = img.width * scale,
-          h = img.height * scale;
+        const scale = Math.min(size / (img.width || size), size / (img.height || size));
+        const w = (img.width || size) * scale,
+          h = (img.height || size) * scale;
         c.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        URL.revokeObjectURL(url);
+        if (done) done();
         resolve(c.toDataURL('image/png'));
       };
       img.onerror = () => {
-        URL.revokeObjectURL(url);
+        if (done) done();
         reject(new Error('That picture could not be read.'));
       };
-      img.src = url;
+      img.src = src;
     });
+  }
+  function logoPng(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return Promise.reject(new Error('Use a PNG, JPG or WebP picture.'));
+    const url = URL.createObjectURL(file);
+    return pngFrom(url, () => URL.revokeObjectURL(url));
   }
   async function call(method, url, body) {
     const res = await fetch(url, body ? {
@@ -58017,6 +58018,7 @@ ${snap}`;
   function RatesSite({
     serverRole,
     onToast,
+    settings,
     setSettings
   }) {
     const ui = window.CDOS.ratesUi;
@@ -58127,13 +58129,10 @@ ${snap}`;
         }
       }, now);
     };
-    const uploadLogo = async e => {
-      const file = e.target.files && e.target.files[0];
-      e.target.value = '';
-      if (!file || readOnly) return;
+    const sendLogo = async pngPromise => {
       try {
         const r = await call('PUT', '/api/rate-page/logo', {
-          dataUrl: await logoPng(file)
+          dataUrl: await pngPromise
         });
         if (!r.ok) throw new Error(r.status === 403 ? 'Only the owner and managers can change the logo.' : 'The logo was not saved. Try a smaller picture.');
         setPage(r.data);
@@ -58142,6 +58141,18 @@ ${snap}`;
       } catch (err) {
         say(err.message);
       }
+    };
+    const uploadLogo = e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file || readOnly) return;
+      sendLogo(logoPng(file));
+    };
+    /* The logo the desk already has (Settings → Business profile, a data
+       URL the owner set), so the shop does not upload it twice. */
+    const deskLogo = settings && typeof settings.logo === 'string' && settings.logo.startsWith('data:image/') ? settings.logo : null;
+    const useDeskLogo = () => {
+      if (deskLogo && !readOnly) sendLogo(pngFrom(deskLogo));
     };
     const removeLogo = async () => {
       const r = await call('DELETE', '/api/rate-page/logo');
@@ -58454,7 +58465,11 @@ ${snap}`;
         style: {
           display: 'none'
         }
-      })), page.logo && !readOnly && /*#__PURE__*/React.createElement("button", {
+      })), deskLogo && !readOnly && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: useDeskLogo,
+        style: css('flex:none;appearance:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;')
+      }, "Use your desk logo"), page.logo && !readOnly && /*#__PURE__*/React.createElement("button", {
         type: "button",
         onClick: removeLogo,
         style: css('appearance: none; border: 0; background: none; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--mute); padding: 6px 2px;')
@@ -59862,6 +59877,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }), tab === 'site' && /*#__PURE__*/React.createElement(window.CDOS.RatesSite, {
       serverRole: serverRole,
       onToast: flash,
+      settings: settings,
       setSettings: setSettings
     }), tab === 'rules' && /*#__PURE__*/React.createElement(Pricing, {
       settings: settings,
