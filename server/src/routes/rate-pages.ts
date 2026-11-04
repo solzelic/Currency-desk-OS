@@ -117,7 +117,8 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     if (!page || !shop) return null;
     const board = await publishedRates(db, shop.id);
     const { contact, hours } = publicContact(shop);
-    return { shop: { name: shop.name, slug: page.slug, home: board.home, contact, hours }, publishedAt: board.publishedAt, rates: board.rates };
+    const zone = board.timeZone ? { timeZone: board.timeZone } : {};
+    return { shop: { name: shop.name, slug: page.slug, home: board.home, ...zone, contact, hours }, publishedAt: board.publishedAt, rates: board.rates };
   };
 
   const screenAnswer = async (token: string) => {
@@ -130,7 +131,12 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       ? screen.currencies.flatMap((code) => board.rates.filter((rate) => rate.code === code))
       : board.rates.slice(0, DEFAULT_SCREEN_COUNT);
     return {
-      shop: { name: shop.name, home: board.home, ...(screen.showHours ? { hours: publicContact(shop).hours } : {}) },
+      shop: {
+        name: shop.name,
+        home: board.home,
+        ...(board.timeZone ? { timeZone: board.timeZone } : {}),
+        ...(screen.showHours ? { hours: publicContact(shop).hours } : {}),
+      },
       screen: { name: screen.name, kind: screen.kind, layout: screen.layout, theme: screen.theme, showHours: screen.showHours },
       publishedAt: board.publishedAt,
       rates: picked,
