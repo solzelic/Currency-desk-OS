@@ -69,6 +69,16 @@
     const data = await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, data };
   }
+  /* A screen's sighting as the design says it: On while it asked in the
+     last ten minutes, then Last seen, or Not opened yet. */
+  function sighting(ms) {
+    if (!ms) return { on: false, seen: false, text: 'Not opened yet' };
+    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    const txt = m < 2 ? 'just now' : (m < 60 ? m + ' min ago' : (m < 1440 ? Math.floor(m / 60) + 'h ago' : Math.floor(m / 1440) + 'd ago'));
+    return m < 10 ? { on: true, seen: true, text: 'On · seen ' + txt } : { on: false, seen: true, text: 'Last seen ' + txt };
+  }
+  const sightDot = (s) => 'flex:none;width:7px;height:7px;border-radius:50%;background:' + (s.on ? '#2EA36B' : (s.seen ? '#D9A441' : 'rgba(23,20,15,0.25)')) + ';' + (s.on ? 'animation:rtLive 2s infinite;' : '');
+
   function fmtT(v) { const h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + ':' + String(m).padStart(2, '0') + (h < 12 ? ' am' : ' pm'); }
   const TIME_OPTS = []; for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push({ v: String(t), l: fmtT(t) });
   function initials(name) { return String(name || 'Shop').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase(); }
@@ -158,6 +168,14 @@
       } catch (e) { setErr(`Your website and screens could not be loaded (${e.message}).`); }
     }, []);
     useEffect(() => { load(); }, [load]);
+    /* On the screens page, ask again every 30 seconds, so a screen that
+       has just been switched on shows as On. */
+    useEffect(() => {
+      if (view !== 'screen') return undefined;
+      load();
+      const every = setInterval(load, 30 * 1000);
+      return () => clearInterval(every);
+    }, [view, load]);
 
     const copy = async (key, path) => {
       try { await navigator.clipboard.writeText(location.origin + path); setCopied(key); setTimeout(() => setCopied(c => (c === key ? null : c)), 1600); }
@@ -280,7 +298,7 @@
       const tH = Math.round(Math.min(260, tileW * 0.6));
       const first = screens[0];
       const tiles = [
-        { k: 'win', title: 'Window screens', tag: screens.length + (screens.length === 1 ? ' screen' : ' screens'), path: first ? `/s/${first.token}` : null, note: 'Each screen gets its own link. Open it on the TV, tap once and leave it. No login, always on.', vw: 1280, vh: 720, open: 'Open on this screen ↗', edit: first ? 'Set up' : 'Add a screen', go: first ? () => setView('screen') : addScreen, live: !!first },
+        { k: 'win', title: 'Window screens', tag: screens.length + (screens.length === 1 ? ' screen' : ' screens'), path: first ? `/s/${first.token}` : null, note: 'Each screen gets its own link. Open it on the TV, tap once and leave it. No login, always on.', vw: 1280, vh: 720, open: 'Open on this screen ↗', edit: first ? 'Set up' : 'Add a screen', go: first ? () => setView('screen') : addScreen, live: screens.some(x => sighting(x.lastSeenAt).on) },
         { k: 'site', title: 'Rate page', tag: page.live ? 'Your website' : 'Private', path: pagePath, src: previewPath, note: page.live ? 'Rates, hours, map and a converter. Share it, put it on Google, link to it from anywhere.' : 'Private: only your staff can see it. The owner turns it on in Edit.', vw: 520, vh: 900, open: 'Open page ↗', edit: 'Edit', go: () => setView('web'), live: page.live },
       ];
       return wrap(<div style={css('display: flex; flex-direction: column; gap: 18px; max-width: 980px;')}>
@@ -453,13 +471,15 @@
         {screens.map(x => { const on = x.id === sel; const ki = { tv: [22, 13], portrait: [11, 19], tablet: [19, 14], strip: [24, 6] }[x.kind] || [22, 13]; return (
           <button key={x.id} role="listitem" type="button" onClick={() => { setSel(x.id); setMenu(false); }} style={css('appearance:none;display:block;width:100%;padding:13px 14px;border-radius:14px;cursor:pointer;background:#fff;transition:border-color .2s ease,box-shadow .2s ease;border:' + (on ? '1.5px solid var(--primary)' : '1px solid var(--line)') + ';box-shadow:' + (on ? '0 10px 24px -18px rgba(29,107,69,0.6)' : 'none') + ';')}>
             <span style={css('display: flex; align-items: center; gap: 10px;')}><span style={css('flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:' + (on ? 'rgba(29,107,69,0.1)' : 'rgba(23,20,15,0.05)') + ';')}><span style={css('display:block;width:' + ki[0] + 'px;height:' + ki[1] + 'px;border-radius:2px;border:1.6px solid ' + (on ? 'var(--primary)' : 'var(--mute)') + ';')} /></span><b style={css('flex: 1; min-width: 0; font-size: 14px; color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')}>{x.name}</b></span>
-            <span style={css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')}>{({ tv: 'TV · landscape', portrait: 'Screen on its side', tablet: 'Tablet', strip: 'Strip ticker' }[x.kind] || 'Screen') + ' · ' + x.theme}</span>
+            <span style={css('display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--mute); text-align: left;')}><span style={css(sightDot(sighting(x.lastSeenAt)))} />{sighting(x.lastSeenAt).text}</span>
+            <span style={css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 4px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')}>{({ tv: 'TV · landscape', portrait: 'Screen on its side', tablet: 'Tablet', strip: 'Strip ticker' }[x.kind] || 'Screen') + ' · ' + x.theme}</span>
           </button>); })}
         <button type="button" onClick={addScreen} disabled={readOnly} style={css('appearance:none;display:flex;align-items:center;justify-content:center;gap:8px;min-height:72px;padding:13px 14px;border-radius:14px;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';background:transparent;border:1.5px dashed rgba(23,20,15,0.22);font-size:13.5px;font-weight:700;color:var(--mute);transition:all .2s ease;')}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>Add a screen</button>
       </div>
 
       {screen && <section aria-label="Screen setup" style={css('border-radius: 18px; background: #fff; border: 1px solid var(--line); overflow: hidden;')}>
         <div style={css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line);')}>
+          <span title={sighting(screen.lastSeenAt).text} style={css(sightDot(sighting(screen.lastSeenAt)).replace('7px;height:7px', '8px;height:8px'))} />
           <label style={css('flex: 0 1 240px; min-width: 150px; position: relative; display: block; cursor: text;')}>
             <input value={screen.name} onChange={e => renameScreen(screen.id, e.target.value)} disabled={readOnly} maxLength={60} aria-label="Screen name" placeholder="Name this screen" style={css('width: 100%; height: 36px; padding: 0 34px 0 11px; border-radius: 10px; border: 1px solid var(--line); background: #fff; outline: none; font-size: 15px; font-weight: 800; color: var(--ink); box-shadow: inset 0 1px 2px rgba(23,20,15,0.05);')} />
           </label>
@@ -536,7 +556,7 @@
         <div style={css('display: flex; flex-direction: column; gap: 14px;')}>
           <div style={css('padding: 18px; border-radius: 16px; background: #fff; border: 1px solid var(--line);')}>
             <div style={head}>Once it's running</div>
-            <div style={css('display: flex; flex-direction: column; gap: 9px; margin-top: 12px;')}>{['Updates within a minute of every publish', 'If the wifi drops it keeps showing your last rates, then catches up', 'Turn off the TV’s own sleep timer so it stays on all day'].map(f => <span key={f} style={css('display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5;')}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#1D6B45" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={css('flex: none; margin-top: 3px;')}><path d="M4 12.5l5 5L20 6.5" /></svg>{f}</span>)}</div>
+            <div style={css('display: flex; flex-direction: column; gap: 9px; margin-top: 12px;')}>{['Updates within a minute of every publish', 'If the wifi drops it keeps showing your last rates, then catches up', 'Shows “On” here while it’s running, so you know it’s working', 'Turn off the TV’s own sleep timer so it stays on all day'].map(f => <span key={f} style={css('display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5;')}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#1D6B45" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={css('flex: none; margin-top: 3px;')}><path d="M4 12.5l5 5L20 6.5" /></svg>{f}</span>)}</div>
           </div>
           <div style={css('display: flex; align-items: flex-start; gap: 12px; padding: 15px 16px; border-radius: 16px; background: rgba(23,20,15,0.04); border: 1px solid var(--line);')}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--ink)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={css('flex: none; margin-top: 1px;')}><path d="M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z" /></svg>

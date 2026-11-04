@@ -114,3 +114,22 @@ export async function remembered<T>(key: string, load: () => Promise<T | null>):
 export function forgetPublicAnswers(): void {
   answers.clear();
 }
+
+/* ---- a window screen that is on ----
+   A screen asks for its rates every minute. Its last sighting is written
+   to window_screens.last_seen_at so the desk can show it as On, at most
+   once a minute per screen whatever answers the request (the memory above
+   or the database), so a screen cannot be made to write more often. */
+const SIGHTING_GAP_MS = 60_000;
+const sightings = new Map<string, number>();
+
+export function screenSighted(id: string, now = Date.now()): boolean {
+  const last = sightings.get(id);
+  if (last !== undefined && now - last < SIGHTING_GAP_MS) return false;
+  sightings.set(id, now);
+  return true;
+}
+
+export function forgetScreenSightings(): void {
+  sightings.clear();
+}

@@ -742,6 +742,9 @@ export async function createDb(): Promise<DbHandle> {
   await client.exec(
     await readFile(new URL("./migrations/064_rate_page_logo_and_screen_options.sql", import.meta.url), "utf8"),
   );
+  await client.exec(
+    await readFile(new URL("./migrations/066_window_screen_last_seen.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }

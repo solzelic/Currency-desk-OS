@@ -32,7 +32,7 @@ import { hasBackendPermission, type BackendPermission } from "../auth/permission
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { schema, type Db } from "../db/index.js";
 import type { OpeningDay } from "../db/schema.js";
-import { forgetPublicAnswers, publishedRates, remembered } from "../rates/public-board.js";
+import { forgetPublicAnswers, publishedRates, remembered, screenSighted } from "../rates/public-board.js";
 import { contentPatch, ensureRatePage, hoursFromWeek, resolvedContent, validWeek } from "../rates/rate-page.js";
 import { checkLogo, LOGO_HEADERS, logoBytes } from "../rates/logo.js";
 
@@ -123,6 +123,7 @@ const screenJson = (row: typeof schema.windowScreens.$inferSelect) => ({
   showHours: row.showHours,
   show: shownOn(row.show),
   token: row.token,
+  lastSeenAt: row.lastSeenAt ? row.lastSeenAt.getTime() : null,
   createdAt: row.createdAt.getTime(),
 });
 
@@ -188,6 +189,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       ? screen.currencies.flatMap((code) => board.rates.filter((rate) => rate.code === code))
       : board.rates.slice(0, DEFAULT_SCREEN_COUNT);
     return {
+      screenId: screen.id,
       shop: {
         name: shop.name,
         home: board.home,
@@ -213,8 +215,13 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
 
   app.get("/api/public/screens/:token", async (req, reply) => {
     const { token } = req.params as { token: string };
-    const body = /^[A-Za-z0-9_-]{32,64}$/.test(token) ? await remembered(`screen:${token}`, () => screenAnswer(token)) : null;
-    if (!body) return reply.code(404).send({ error: "not_found" });
+    const answer = /^[A-Za-z0-9_-]{32,64}$/.test(token) ? await remembered(`screen:${token}`, () => screenAnswer(token)) : null;
+    if (!answer) return reply.code(404).send({ error: "not_found" });
+    /* The screen is on. The desk's own preview (?preview) does not count. */
+    const { screenId, ...body } = answer;
+    if (!("preview" in (req.query as Record<string, unknown>)) && screenSighted(screenId)) {
+      await db.update(schema.windowScreens).set({ lastSeenAt: new Date() }).where(eq(schema.windowScreens.id, screenId));
+    }
     reply.header("cache-control", "public, max-age=30");
     return body;
   });

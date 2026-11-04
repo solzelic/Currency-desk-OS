@@ -317,7 +317,9 @@
   }
 
   function load() {
-    fetch("/api/public/screens/" + encodeURIComponent(token))
+    /* The desk's own preview asks with ?preview, so it does not count as
+       the screen being on. */
+    fetch("/api/public/screens/" + encodeURIComponent(token) + (embedded ? "?preview" : ""))
       .then(function (res) { if (res.status === 404) return null; if (!res.ok) throw new Error("screen answered " + res.status); return res.json(); })
       .then(function (d) {
         if (d) {
