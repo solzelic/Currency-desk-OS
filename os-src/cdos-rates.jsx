@@ -12,15 +12,17 @@
    desk buys and sells at, and whether it is on the board. Pricing & rates
    is the existing Pricing console, unchanged.
 
+   Publish sends the board to the server (POST /api/rates/publish,
+   append-only rate_boards), and every surface the shop's customers see
+   reads that publish.
+
    The server is the record. The board loads from GET /api/rates (this
    desk's own branch), the market from GET /api/rates/market (raw mids,
    converted to the shop's home currency without rounding), recent
-   publishes from GET /api/rates/history, and the shop's window screens
-   from GET /api/window-screens. Publish sends POST /api/rates/publish
-   (append-only rate_boards); every surface the shop's customers see reads
-   that publish. The publish rights are the server's (rates:change); the
-   screen only mirrors them so nobody types into a board they cannot
-   publish.
+   publishes from GET /api/rates/history. The shop's window screens come
+   from GET /api/window-screens, for Open full screen.
+   The publish rights are the server's (rates:change); the screen only
+   mirrors them so nobody types into a board they cannot publish.
    ============================================================ */
 (function () {
   const { useState, useEffect, useMemo, useCallback, useRef } = React;
