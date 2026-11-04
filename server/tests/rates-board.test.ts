@@ -73,6 +73,12 @@ describe("what Publish sends", () => {
     rows[0]!.show = false;
     expect(board().sameAsPublished(rows, published, 1.5)).toBe(false);
   });
+
+  it("ignores the home currency in the published order, which the seed board lists first", async () => {
+    const published = { rows: { USD: { mid: 1.36 } }, order: ["CAD", "USD"], buyMargin: 0.015, sellMargin: 0.015 };
+    const rows = board().draftRows({ codes: ["CAD", "USD"], home: "CAD", board: published, market: {}, settings: { defaultSpread: 1.5 } });
+    expect(board().sameAsPublished(rows, published, 1.5)).toBe(true);
+  });
 });
 
 it("ships in the desk", () => {
