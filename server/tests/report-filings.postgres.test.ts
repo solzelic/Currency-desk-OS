@@ -176,6 +176,18 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
     await entityUnderPack("pack-ca-v1");
   });
 
+  /* The other side of SHOP_FINTRAC: under the seed's placeholder the
+     filing is refused and nothing is kept. The next beforeEach states
+     the shop's number again. */
+  it("refuses to file under the demo seed's placeholder FINTRAC number, and keeps nothing", async () => {
+    await pool.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, SEED_PLACEHOLDER_FINTRAC]);
+    const response = await file(AGGREGATE);
+    expect(response.statusCode).toBe(422);
+    expect(response.json().message).toBe("This shop's FINTRAC number is the demo placeholder. Add the real number before filing.");
+    const kept = await pool.query("SELECT count(*)::int AS n FROM ledger_report_filings WHERE tenant_id=$1", [DEMO.tenantId]);
+    expect(kept.rows[0].n).toBe(0);
+  });
+
   it("writes the sealed report to the database, not to a browser", async () => {
     const response = await file(AGGREGATE);
     expect(response.statusCode).toBe(201);
