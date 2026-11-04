@@ -17,6 +17,7 @@ const board = () => require("../../os-src/rates-board.js") as {
     market: Record<string, string>; settings: { spreads?: Record<string, unknown>; defaultSpread?: unknown; spotOverride?: Record<string, unknown> };
   }) => Row[];
   publishBody: (rows: Row[], defaultSpreadPct: number) => { ok: true; body: { buyMargin: number; sellMargin: number; rows: Record<string, unknown>; order: string[] } } | { ok: false; missing: string[] };
+  homeMarket: (mids: Record<string, unknown> | null | undefined, home: string) => Record<string, number>;
   sameAsPublished: (rows: Row[], published: { rows: Record<string, { mid: number; spread?: number; show?: boolean }>; order?: string[] } | null, defaultSpreadPct: number) => boolean;
 };
 
@@ -25,6 +26,26 @@ describe("the desk's two lines", () => {
     expect(board().deskPair(2, 3, 3)).toEqual({ buy: 1.94, sell: 2.061856 });
     expect(board().deskPair(1.5, 10, 10)).toEqual({ buy: 1.35, sell: 1.666667 });
     expect(board().deskPair(0.0091, 1.5, 1.5)).toEqual({ buy: 0.008964, sell: 0.009239 });
+  });
+});
+
+/* Found on a running desk: the ticker rounds to six places, which moved
+   the dong 0.56% and the won 0.03% off the market. The board takes the raw
+   market mids (CAD per unit) and only divides, never rounds. */
+describe("the market in the shop's home currency", () => {
+  const mids = { CAD: 1, USD: 1.3994195, EUR: 1.5665, VND: 0.000054305116, KRW: 0.0010406816, BAD: -1, ALSO: "x" };
+  it("keeps every digit for a CAD shop and leaves out the home currency and nonsense", () => {
+    expect(board().homeMarket(mids, "CAD")).toEqual({ USD: 1.3994195, EUR: 1.5665, VND: 0.000054305116, KRW: 0.0010406816 });
+  });
+  it("crosses through the home currency for any other shop", () => {
+    const usd = board().homeMarket(mids, "USD");
+    expect(usd.CAD).toBe(1 / 1.3994195);
+    expect(usd.EUR).toBe(1.5665 / 1.3994195);
+    expect(usd).not.toHaveProperty("USD");
+  });
+  it("has no market when the feed cannot price the home currency", () => {
+    expect(board().homeMarket(mids, "AED")).toEqual({});
+    expect(board().homeMarket(null, "CAD")).toEqual({});
   });
 });
 
