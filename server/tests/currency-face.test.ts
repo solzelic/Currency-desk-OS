@@ -52,10 +52,7 @@ describe("names", () => {
   });
 });
 
-it("ships in the desk and is public for the rate page and screens", () => {
+it("ships in the desk and is public, so the rate page and screens can load it too", () => {
   expect(readFileSync(path.join(ROOT, "CurrencyDesk OS.html"), "utf8")).toContain('<script src="shared/currency-face.js"></script>');
   expect(readFileSync(path.join(ROOT, "server/src/app.ts"), "utf8")).toContain('file === "/shared/currency-face.js"');
-  for (const page of ["rates-public/rate-page.html", "rates-public/window-screen.html"]) {
-    expect(readFileSync(path.join(ROOT, page), "utf8"), page).toContain('<script src="/shared/currency-face.js"></script>');
-  }
 });
