@@ -85,6 +85,13 @@ function publicContact(shop: typeof schema.tenants.$inferSelect) {
   return { contact, hours: Array.isArray(config.hours) ? config.hours : [] };
 }
 
+/* A unique constraint refused the write: Postgres code 23505, which the
+   drivers report on the error or on its cause. */
+function uniqueViolation(error: unknown): boolean {
+  const e = error as { code?: string; cause?: { code?: string } };
+  return e?.code === "23505" || e?.cause?.code === "23505";
+}
+
 async function liveShop(db: Db, tenantId: string) {
   const shop = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0];
   return shop && !shop.suspended ? shop : null;
@@ -161,17 +168,19 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     const before = (await db.select().from(schema.shopRatePages).where(eq(schema.shopRatePages.tenantId, who.tenantId)).limit(1))[0];
     const next = { slug: parsed.data.slug ?? before?.slug ?? null, live: parsed.data.live ?? before?.live ?? false };
     if (!next.slug) return reply.code(422).send({ error: "slug_required", detail: "Choose an address before the page goes live." });
-    if (next.slug !== before?.slug) {
-      const holder = (await db.select({ tenantId: schema.shopRatePages.tenantId }).from(schema.shopRatePages)
-        .where(eq(schema.shopRatePages.slug, next.slug)).limit(1))[0];
-      if (holder && holder.tenantId !== who.tenantId) return reply.code(409).send({ error: "slug_taken" });
+    /* The address is unique in the database, so two shops asking for it at
+       the same moment cannot both have it. The loser is told so, not 500. */
+    try {
+      await db.insert(schema.shopRatePages)
+        .values({ tenantId: who.tenantId, slug: next.slug, live: next.live, updatedBy: who.id })
+        .onConflictDoUpdate({
+          target: schema.shopRatePages.tenantId,
+          set: { slug: next.slug, live: next.live, updatedBy: who.id, updatedAt: new Date() },
+        });
+    } catch (error) {
+      if (uniqueViolation(error)) return reply.code(409).send({ error: "slug_taken" });
+      throw error;
     }
-    await db.insert(schema.shopRatePages)
-      .values({ tenantId: who.tenantId, slug: next.slug, live: next.live, updatedBy: who.id })
-      .onConflictDoUpdate({
-        target: schema.shopRatePages.tenantId,
-        set: { slug: next.slug, live: next.live, updatedBy: who.id, updatedAt: new Date() },
-      });
     for (const field of ["slug", "live"] as const) {
       const old = before ? before[field] : field === "live" ? false : null;
       if (old !== next[field]) await audit(db, who, "rate_page.change", { field, old, new: next[field] });
@@ -206,7 +215,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
   app.patch("/api/window-screens/:id", async (req, reply) => {
     const who = await staff(req, reply, db, "rates:change");
     if (!who) return;
-    const parsed = screenFields.partial().safeParse(req.body);
+    const parsed = screenFields.partial().refine((patch) => Object.keys(patch).length > 0, "Nothing to change.").safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     const { id } = req.params as { id: string };
     const [row] = await db.update(schema.windowScreens).set(parsed.data)

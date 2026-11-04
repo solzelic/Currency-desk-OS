@@ -29,12 +29,20 @@
   .head span:first-child { text-align: left; }
   .rate .sell { font-weight: 700; }
   footer { display: flex; justify-content: space-between; gap: 2vw; flex-wrap: wrap; font-size: clamp(12px, 1.4vw, 20px); color: var(--mute); margin-top: 2vh; }
-  #missing { margin: auto; font-size: clamp(18px, 2.4vw, 32px); text-align: center; }
+  #missing { margin: auto; text-align: center; max-width: 34em; }
+  #missing b { display: block; font-size: clamp(22px, 3vw, 40px); margin-bottom: 1vh; }
+  #missing span { font-size: clamp(14px, 1.8vw, 24px); color: var(--mute); }
+  #start { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 1.5vh; background: var(--bg); cursor: pointer; padding: 6vw; }
+  #start b { font-size: clamp(22px, 3.2vw, 44px); }
+  #start span { color: var(--mute); max-width: 34em; }
+  #offline { position: fixed; left: 50%; bottom: 3vh; transform: translateX(-50%); padding: 1vh 2vw; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: clamp(12px, 1.4vw, 20px); white-space: nowrap; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body data-window-screen>
-<p id="missing" hidden>This screen link is not active. Ask the shop for a new one.</p>
+<div id="missing" hidden><b>This screen link was replaced</b><span>The shop reset it. Open the new link from Rates → Website &amp; window → Window screens.</span></div>
+<div id="start" role="button" tabindex="0"><b id="start-name">Tap anywhere to start</b><span>Goes full screen and keeps the screen awake. No login. It updates by itself whenever the shop publishes new rates.</span></div>
+<div id="offline" role="status" hidden></div>
 <header id="top" hidden><b id="shop"></b><span id="updated"></span><span id="clock"></span></header>
 <div class="grid" id="grid"></div>
 <footer id="foot" hidden><span id="note"></span><span id="hours"></span></footer>
@@ -42,8 +50,29 @@
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
+  /* The server refuses a malformed escape (400) before this page loads,
+     so the path here always decodes. */
   var token = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
   var shown = false;
+  var shownAt = null;
+
+  /* One tap: full screen, and a wake lock so the TV does not sleep. Both
+     are best effort; a browser that refuses either still shows the rates. */
+  var wake = null;
+  function keepAwake() {
+    if (!navigator.wakeLock || document.visibilityState !== "visible") return;
+    navigator.wakeLock.request("screen").then(function (lock) { wake = lock; }, function (e) { console.warn("[window screen] wake lock refused", e); });
+  }
+  function start() {
+    $("start").hidden = true;
+    var el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(function (e) { console.warn("[window screen] full screen refused", e); });
+    keepAwake();
+  }
+  $("start").addEventListener("click", start);
+  $("start").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") start(); });
+  /* A wake lock is released when the tab is hidden; take it again on return. */
+  document.addEventListener("visibilitychange", function () { if (!$("start").hidden || wake === null) return; keepAwake(); });
 
   function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -60,6 +89,8 @@
 
   function render(d) {
     shown = true;
+    shownAt = d.publishedAt || Date.now();
+    $("offline").hidden = true;
     document.body.className = d.screen.theme === "dark" ? "dark" : "";
     document.title = d.shop.name + " · Rates";
     $("shop").textContent = d.shop.name;
@@ -81,10 +112,17 @@
       .then(function (d) {
         if (d) return render(d);
         /* Retired or never real: clear the board rather than leave old prices up. */
-        shown = false; $("grid").textContent = ""; $("top").hidden = true; $("foot").hidden = true; $("missing").hidden = false;
+        shown = false; $("grid").textContent = ""; $("top").hidden = true; $("foot").hidden = true; $("offline").hidden = true;
+        $("start").hidden = true; $("missing").hidden = false;
       })
-      /* A failed refresh keeps the last rates up; a screen that never loaded says so. */
-      .catch(function (e) { console.warn("[window screen]", e); if (!shown) $("missing").hidden = false; });
+      /* A failed refresh keeps the last rates up and says how old they are;
+         the next poll tries again. A screen that never loaded says so. */
+      .catch(function (e) {
+        console.warn("[window screen]", e);
+        if (!shown) { $("start").hidden = true; $("missing").hidden = false; return; }
+        $("offline").textContent = "Offline · showing rates from " + time(shownAt) + " · reconnecting";
+        $("offline").hidden = false;
+      });
   }
   tick(); setInterval(tick, 15 * 1000);
   load(); setInterval(load, 60 * 1000);

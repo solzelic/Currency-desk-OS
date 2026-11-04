@@ -39,15 +39,23 @@ test("the owner opens the rate page and a stranger sees the shop's published rat
   await stranger.close();
 });
 
-test("an address that is not live says so", async ({ page }) => {
+test("an address that is not live, or is not an address at all, says so", async ({ page }) => {
   await page.goto("/r/no-such-shop-here");
   await expect(page.getByText("This rate page is not available.")).toBeVisible();
+  /* A stray % is a malformed escape: the server refuses it before any page. */
+  for (const url of ["/r/broken%E0%A4%A", "/s/broken%ZZaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]) {
+    expect((await page.request.get(url)).status(), url).toBe(400);
+  }
 });
 
 test("the window screen shows the top six in two columns, dark, and goes blank when retired", async ({ page, browser }) => {
   const tv = await (await browser.newContext()).newPage();
   await tv.setViewportSize({ width: 1440, height: 810 });
   await tv.goto(`/s/${token}`);
+  /* The design's start screen: one tap goes full screen and keeps it awake. */
+  await expect(tv.getByText("Tap anywhere to start")).toBeVisible();
+  await tv.getByText("Tap anywhere to start").click();
+  await expect(tv.getByText("Tap anywhere to start")).toBeHidden();
   await expect(tv.locator(".rate")).toHaveCount(6);
   await expect(tv.locator("body")).toHaveClass("dark");
   await expect(tv.locator(".grid.two")).toBeVisible();
@@ -59,9 +67,28 @@ test("the window screen shows the top six in two columns, dark, and goes blank w
      the next poll sees. */
   const later = await (await browser.newContext()).newPage();
   await later.goto(`/s/${token}`);
-  await expect(later.getByText("This screen link is not active. Ask the shop for a new one.")).toBeVisible();
+  await expect(later.getByText("This screen link was replaced")).toBeVisible();
+  await expect(later.getByText("The shop reset it. Open the new link from Rates → Website & window → Window screens.")).toBeVisible();
   await expect(later.locator(".rate")).toHaveCount(0);
   await later.close();
+});
+
+test("a screen that loses the connection keeps its rates up and says so", async ({ page, browser }) => {
+  await asOwner(page);
+  const made = await api(page, "POST", "/api/window-screens", { name: "Offline check", kind: "tv", layout: "one", theme: "light", currencies: [], showHours: false });
+  const tv = await (await browser.newContext()).newPage();
+  await tv.clock.install();
+  await tv.goto(`/s/${made.body.token}`);
+  await expect(tv.locator(".rate").first()).toBeVisible();
+  await tv.route("**/api/public/screens/**", (route) => route.abort());
+  await tv.clock.runFor(61_000);
+  await expect(tv.getByText(/^Offline · showing rates from .+ · reconnecting$/)).toBeVisible();
+  await expect(tv.locator(".rate").first()).toBeVisible();
+  await tv.unroute("**/api/public/screens/**");
+  await tv.clock.runFor(61_000);
+  await expect(tv.getByText(/^Offline/)).toBeHidden();
+  await tv.close();
+  await api(page, "POST", `/api/window-screens/${made.body.id}/retire`);
 });
 
 test("shots: the rate page at six widths, and a window screen", async ({ page, browser }) => {
@@ -79,6 +106,7 @@ test("shots: the rate page at six widths, and a window screen", async ({ page, b
     const screen = await api(page, "POST", "/api/window-screens", { name: "Shot", kind: "tv", layout: "two", theme, currencies: [], showHours: true });
     await stranger.setViewportSize({ width: 1440, height: 810 });
     await stranger.goto(`/s/${screen.body.token}`);
+    await stranger.getByText("Tap anywhere to start").click();
     await expect(stranger.locator(".rate").first()).toBeVisible();
     await stranger.screenshot({ path: `docs/pr-shots/rates-public/window-screen-${theme}.png` });
     await api(page, "POST", `/api/window-screens/${screen.body.id}/retire`);

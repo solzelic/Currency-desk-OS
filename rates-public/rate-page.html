@@ -76,6 +76,8 @@
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
+  /* The server refuses a malformed escape (400) before this page loads,
+     so the path here always decodes. */
   var slug = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
   var state = { data: null, selling: true };
 
