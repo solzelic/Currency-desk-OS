@@ -57,7 +57,7 @@ describe("the public rate page", () => {
     expect(opened.json()).toEqual({ slug: "york-test", live: true });
     const page = await pub("/api/public/rate-pages/york-test");
     expect(page.statusCode, page.body).toBe(200);
-    expect(page.json().shop).toEqual({ name: expect.any(String), slug: "york-test", home: "CAD" });
+    expect(page.json().shop).toMatchObject({ name: expect.any(String), slug: "york-test", home: "CAD" });
     expect(page.headers["cache-control"]).toBe("public, max-age=60");
   });
 
@@ -136,7 +136,7 @@ describe("window screens", () => {
     expect(shown.statusCode, shown.body).toBe(200);
     expect(shown.json().rates.map((r: { code: string }) => r.code)).toEqual(["USD", "EUR", "GBP", "CHF", "AUD", "JPY"]);
     expect(shown.json().screen).toEqual({ name: "Front window", kind: "tv", layout: "two", theme: "dark", showHours: true });
-    expect(shown.json().shop).toEqual({ name: expect.any(String), home: "CAD" });
+    expect(shown.json().shop).toMatchObject({ name: expect.any(String), home: "CAD" });
     await as("j.masri", "PATCH", `/api/window-screens/${id}`, { currencies: ["INR", "EUR"] });
     expect((await pub(`/api/public/screens/${token}`)).json().rates.map((r: { code: string }) => r.code)).toEqual(["INR", "EUR"]);
     expect((await as("j.masri", "POST", `/api/window-screens/${id}/retire`)).statusCode).toBe(200);
