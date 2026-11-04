@@ -23,7 +23,7 @@ test("the owner names the rate page and takes it live, and the link opens it", a
   const card = page.getByRole("region", { name: "Rate page" });
   await card.getByLabel("Page address").fill(SLUG);
   await card.getByRole("button", { name: "Save address" }).click();
-  await expect(card.getByText("Private. Only you can see this address until you turn it on.")).toBeVisible();
+  await expect(card.getByText("Private. Nobody can open this address until you turn it on.")).toBeVisible();
   await card.getByRole("switch", { name: "Rate page live" }).click();
   await expect(card.getByText("Live. Anyone with the link sees your published rates.")).toBeVisible();
   await expect(card.getByRole("link", { name: "Open page" })).toHaveAttribute("href", `/r/${SLUG}`);
