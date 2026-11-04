@@ -144,6 +144,12 @@ describe("window screens", () => {
     expect((await pub("/api/public/screens/not-a-real-token-but-long-enough-xx")).statusCode).toBe(404);
   });
 
+  it("refuse a change with nothing in it, or a field they do not have", async () => {
+    const { id } = (await as("j.masri", "POST", "/api/window-screens", screen)).json();
+    expect((await as("j.masri", "PATCH", `/api/window-screens/${id}`, {})).statusCode).toBe(400);
+    expect((await as("j.masri", "PATCH", `/api/window-screens/${id}`, { token: "mine-now" })).statusCode).toBe(400);
+  });
+
   it("belong to one shop: another shop's screen cannot be seen or changed", async () => {
     await handle.db.execute(sql`INSERT INTO window_screens (id, tenant_id, name, kind, layout, theme, currencies, show_hours, token)
       VALUES ('scr-other', ${OTHER}, 'Theirs', 'tv', 'one', 'light', '[]'::jsonb, false, 'othertokenothertokenothertoken12')`);
