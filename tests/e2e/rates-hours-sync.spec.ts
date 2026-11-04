@@ -1,4 +1,4 @@
-/* Rates v2.5: one set of opening hours and contact details for the shop.
+/* Rates v2.5: one set of opening hours, contact details and logo for the shop.
 
    The rate page editor and Settings (Business profile) edit the same
    business profile. Hours by day are the source: the rate page says open
@@ -80,4 +80,21 @@ test("a manager's change on the rate page is offered to the owner in Settings, a
   await notice.getByRole("button", { name: "Use the published details" }).click();
   await expect(page.getByLabel("Phone")).toHaveValue("+1 416 555 0199");
   await expect(notice).toBeHidden();
+});
+
+test("the rate page takes the logo the desk already has", async ({ page }) => {
+  await openDesk(page, "j.masri");
+  /* A logo set in Settings → Business profile. */
+  await openApp(page, "settings");
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await page.locator('input[type="file"][accept="image/*"]').first().setInputFiles({ name: "desk.png", mimeType: "image/png", buffer: PNG });
+  await expect(page.locator('img[alt="logo"]').first()).toBeVisible();
+
+  await openApp(page, "rates");
+  await page.getByRole("tab", { name: "Website & window" }).click();
+  await page.getByRole("region", { name: "Rate page" }).getByRole("button", { name: "Edit" }).click();
+  const sent = page.waitForResponse((r) => r.url().endsWith("/api/rate-page/logo") && r.request().method() === "PUT");
+  await page.getByRole("button", { name: "Use your desk logo" }).click();
+  expect((await sent).status()).toBe(200);
+  expect((await api(page, "GET", "/api/rate-page")).body.logo).toMatch(/^\/api\/rate-page\/logo\?v=\d+$/);
 });
