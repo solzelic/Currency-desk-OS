@@ -52,6 +52,14 @@ test("the owner edits the private page, sees it in the preview, names it and tak
   await expect(preview.locator("#tagline")).toHaveText("Fair rates since 2009");
   await expect(preview.locator("#open-line")).toBeVisible();
 
+  /* The logo: any picture, drawn to a 240px PNG by the desk. */
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const logo = page.waitForResponse((r) => r.url().endsWith("/api/rate-page/logo") && r.request().method() === "PUT");
+  await page.getByLabel("Logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: PNG });
+  expect((await logo).status()).toBe(200);
+  await expect(page.getByRole("region", { name: "Your brand" }).getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await expect(preview.locator("#mark img")).toHaveAttribute("src", /^\/api\/rate-page\/logo\?v=\d+$/);
+
   /* The owner holds the address and the switch. */
   await page.getByLabel("Page address").fill(SLUG);
   await page.getByRole("button", { name: "Save address" }).click();
@@ -64,6 +72,7 @@ test("the owner edits the private page, sees it in the preview, names it and tak
   await stranger.reload();
   await expect(stranger.locator("#tagline")).toHaveText("Fair rates since 2009");
   await expect(stranger.locator("[data-code]").first()).toBeVisible();
+  await expect(stranger.locator("#mark img")).toHaveAttribute("src", new RegExp(`^/api/public/rate-pages/${SLUG}/logo\\?v=\\d+$`));
   await stranger.close();
 });
 
@@ -88,9 +97,19 @@ test("a manager edits the page and runs the screens, but not the address, the sw
   const renamed = page.waitForResponse((r) => /\/api\/window-screens\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH" && (r.request().postData() ?? "").includes("Counter tablet"));
   await setup.getByLabel("Screen name").fill("Counter tablet");
   expect((await renamed).status()).toBe(200);
+  await expect(page.getByRole("list", { name: "Your screens" })).toContainText("Counter tablet");
+
+  /* The design's other screens and options: a strip ticker without flags. */
+  await setup.getByRole("button", { name: /Strip above the counter/ }).click();
+  const flagsOff = page.waitForResponse((r) => /\/api\/window-screens\/[^/]+$/.test(r.url()) && r.request().method() === "PATCH" && (r.request().postData() ?? "").includes('"flags":false'));
+  await setup.getByRole("button", { name: "Flags", exact: true }).click();
+  expect((await flagsOff).status()).toBe(200);
+  await expect(setup.getByRole("button", { name: "Flags", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.frameLocator('iframe[title="Window screen preview"]').locator("#strip")).toBeVisible();
+  const strip = (await api(page, "GET", "/api/window-screens")).body.screens.find((s: { name: string }) => s.name === "Counter tablet");
+  expect(strip).toMatchObject({ kind: "strip", show: { flags: false, names: true, clock: true } });
   await setup.getByRole("button", { name: /Tablet on the counter/ }).click();
   await expect(setup.getByRole("button", { name: /Tablet on the counter/ })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("list", { name: "Your screens" })).toContainText("Counter tablet");
 
   /* Reset: a new link, the old one stops. */
   const before = (await api(page, "GET", "/api/window-screens")).body.screens.find((s: { name: string }) => s.name === "Counter tablet");
