@@ -13,6 +13,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
+import { forgetPublicAnswers } from "./public-board.js";
 
 // non-fiat provider symbols we never offer (metals, IMF SDR, crypto)
 const NON_FIAT = new Set(["XAU", "XAG", "XPT", "XPD", "XDR", "BTC"]);
@@ -110,6 +111,8 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
     publishedBy: `market-sync (${pull.provider})`,
     marketSnapshotId: marketSnapshotId ?? null,
   });
+  // The public rate page and screens show this board from now on.
+  forgetPublicAnswers();
   return id;
 }
 

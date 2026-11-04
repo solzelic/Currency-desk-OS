@@ -463,6 +463,33 @@ export const rateBoards = pgTable(
 /* Market-rate snapshots — APPEND-ONLY. One row per provider pull; mids are
    CAD per 1 unit (board convention). The scheduler publishes a fresh board
    from the newest snapshot, preserving staff margins/spreads/order. */
+/* Rates v2.5 (migration 062). Where a shop's published board is shown. */
+export const shopRatePages = pgTable("shop_rate_pages", {
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  slug: text("slug").notNull(),
+  live: boolean("live").notNull().default(false),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type WindowScreenKind = "tv" | "tablet";
+export type WindowScreenLayout = "one" | "two";
+export type WindowScreenTheme = "light" | "dark";
+export const windowScreens = pgTable("window_screens", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  kind: text("kind").$type<WindowScreenKind>().notNull(),
+  layout: text("layout").$type<WindowScreenLayout>().notNull(),
+  theme: text("theme").$type<WindowScreenTheme>().notNull(),
+  currencies: jsonb("currencies").$type<string[]>().notNull().default([]),
+  showHours: boolean("show_hours").notNull().default(true),
+  token: text("token").notNull(),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
+});
+
 export const marketRates = pgTable(
   "market_rates",
   {

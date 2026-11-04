@@ -31,6 +31,7 @@ import { registerEnquiryRoutes } from "./routes/enquiries.js";
 import { registerEarlyAccessRoutes } from "./routes/early-access.js";
 import { registerPinRoutes } from "./routes/pin.js";
 import { registerRatesRoutes } from "./routes/rates.js";
+import { registerRatePageRoutes } from "./routes/rate-pages.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
 import { registerQuoteRoutes } from "./quotes/routes.js";
@@ -201,8 +202,13 @@ export async function buildApp(
      tests/e2e/obligation-seam.spec.ts). This hook stays because it is
      correct on its own terms and was verified doing its job on a
      read-after-write, not because it fixed that. */
+  /* The one exception: /api/public/ answers hold published rates only,
+     the same for every visitor, and a route there may say "public" itself.
+     Anything else under /api/public/ (a 404, an error) is still no-store. */
   app.addHook("onSend", async (req, reply) => {
-    if (req.url.startsWith("/api/")) {
+    const publicCache = req.url.startsWith("/api/public/")
+      && String(reply.getHeader("cache-control") ?? "").startsWith("public,");
+    if (req.url.startsWith("/api/") && !publicCache) {
       reply.header("cache-control", "no-store, no-cache, must-revalidate");
       reply.header("pragma", "no-cache");
     }
@@ -245,6 +251,7 @@ export async function buildApp(
   registerPublicOnboardingRoutes(app, db);
   registerPublicSiteRoutes(app, db);
   registerRatesRoutes(app, db);
+  registerRatePageRoutes(app, db);
   registerBillingRoutes(app, db);
   /* Per-shop identity-verification settings. Off until an owner turns them on. */
   registerIdvShopConfigRoutes(app, db);

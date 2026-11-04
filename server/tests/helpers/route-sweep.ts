@@ -84,6 +84,9 @@ export function fillRoute(route: string, ids: SweepIds): string {
     ["quoteId", ids.quoteId],
     ["filingId", ids.filingId],
     ["id", ids.tenantId],
+    /* A window screen token. No screen holds this one, so the public
+       screen route answers 404, which is all a sweep needs from it. */
+    ["token", "sweep".padEnd(32, "0")],
   ]);
   if (route.startsWith("/api/admin/enquiries/")) params.set("id", ids.enquiryId);
   else if (route.startsWith("/api/admin/staff/")) params.set("id", ids.staffId);
