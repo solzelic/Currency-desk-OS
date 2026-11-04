@@ -131,6 +131,10 @@ postgres("a till close after the drawer has moved", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = url;
     const real = await createDb();
+    /* The yen board is a Postgres row, and its branch has to be there.
+       Seed the desk on this side too, rather than count on an earlier
+       file having done it. */
+    await seed(real.db);
     await real.close();
     delete process.env.DATABASE_URL;
     process.env.PGLITE_MEMORY = "1";

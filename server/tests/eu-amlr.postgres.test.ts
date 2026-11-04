@@ -4,7 +4,7 @@
 import pg from "pg";
 import Decimal from "decimal.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runMigrations } from "../src/db/migrations.js";
+import { provisionPostgres } from "../src/db/index.js";
 import { EU_AMLR_PACK_ID, EU_V1_PACK_ID, resolvePack } from "../src/ledger/jurisdiction.js";
 import { LedgerError, requireIdentification, type LedgerActor } from "../src/ledger/service.js";
 import { ThresholdService } from "../src/ledger/threshold-control.js";
@@ -52,8 +52,11 @@ async function onPack(packId: string, version: number) {
 
 postgres("EU AMLR 2027 pack on PostgreSQL", () => {
   beforeAll(async () => {
-    pool = new pg.Pool({ connectionString: url });
-    await runMigrations(pool);
+    /* The boot's tables and then the migrations, as a server starts.
+       legal_entities and rate_boards come from the boot, not from a
+       migration, so the migrations alone fail on a database no other
+       file has opened. */
+    pool = await provisionPostgres(url!);
     await onPack(EU_AMLR_PACK_ID, 2);
   });
 
