@@ -54,21 +54,21 @@ test("a week set on the rate page shows in Settings, and Settings publishes it b
   expect(profile.hours[0]).toEqual({ days: "Mon to Tue", hours: "9:30 am to 6 pm" });
 });
 
-test("a manager's change on the rate page is offered to the owner in Settings, and not published over without asking", async ({ page }) => {
-  /* The owner publishes a phone from Settings. */
+test("a manager's change on the rate page is offered to the owner in Settings, and not published over without asking", async ({ page, browser }) => {
+  /* The owner's desk is open on Business profile. */
   await openDesk(page, "j.masri");
   await openApp(page, "settings");
-  await page.getByLabel("Phone").fill("+1 416 555 0100");
-  const published = page.waitForResponse((r) => r.url().endsWith("/api/tenant") && r.request().method() === "PATCH");
-  await page.getByRole("button", { name: /Publish contact & hours/ }).click();
-  expect((await published).status()).toBe(200);
+  await expect(page.getByRole("group", { name: "Opening hours by day" })).toBeVisible();
 
-  /* A manager changes it on the rate page. */
-  await openDesk(page, "r.haddad");
-  expect((await api(page, "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0199" } })).status).toBe(200);
+  /* Meanwhile a manager, at another desk, changes the phone on the rate page. */
+  const other = await (await browser.newContext()).newPage();
+  await signInAtDesk(other, "r.haddad");
+  expect((await api(other, "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0199" } })).status).toBe(200);
+  await other.close();
 
-  await openDesk(page, "j.masri");
-  await openApp(page, "settings");
+  /* Opening Business profile again reads what was published. */
+  await page.getByRole("button", { name: /My account/ }).click();
+  await page.getByRole("button", { name: "Business profile" }).click();
   const notice = page.getByRole("status").filter({ hasText: "Your rate page has newer contact details or hours" });
   await expect(notice).toBeVisible();
 
