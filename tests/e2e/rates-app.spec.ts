@@ -23,34 +23,33 @@ test("a manager takes a currency off the board and publishes it, and customers s
   await openRates(page, "r.haddad");
   const tabs = page.locator(".fld-bar", { has: page.getByRole("button", { name: "Pricing & rates" }) }).locator(".fld-tab");
   await expect(tabs).toHaveText(["Board", "Pricing & rates"]);
-  /* Other files publish boards of their own on this seed shop. Bring the
-     board to a known state first: whatever is on screen, published. */
-  const live = page.getByText("Live on your site and window");
-  if (!(await live.isVisible())) await page.getByRole("button", { name: "Publish" }).click();
-  await expect(live).toBeVisible();
-  const before = await board(page);
-  const code = "GBP";
-  expect(before.rows[code]?.show).not.toBe(false);
+  /* The board this test found, put back exactly at the end even if the
+     test fails: later files price their tills off this seed board, and a
+     publish from here carries today's market rates. */
+  const found = await board(page);
+  try {
+    const code = "GBP";
+    expect(found.rows[code]?.show).not.toBe(false);
+    await toggle(page, code).click();
+    await expect(page.getByText("Unpublished changes")).toBeVisible();
+    await expect(page.getByText("Your changes aren't live yet.")).toBeVisible();
+    const preview = page.getByRole("region", { name: "What customers see now" });
+    await expect(preview).toContainText(code);
 
-  await toggle(page, code).click();
-  await expect(page.getByText("Unpublished changes")).toBeVisible();
-  await expect(page.getByText("Your changes aren't live yet.")).toBeVisible();
-  const preview = page.getByRole("region", { name: "What customers see now" });
-  await expect(preview).toContainText(code);
-
-  await page.getByRole("button", { name: "Publish" }).click();
-  await expect(page.getByRole("status")).toHaveText("Published. Your site and window screens show it now.");
-  await expect(page.getByText("Live on your site and window")).toBeVisible();
-  const after = await board(page);
-  expect(after.publicationId).not.toBe(before.publicationId);
-  expect(after.rows[code].show).toBe(false);
-  expect(after.publishedBy).toBe("r.haddad");
-
-  /* Put the board back the way this test found it. */
-  await toggle(page, code).click();
-  await page.getByRole("button", { name: "Publish" }).click();
-  await expect(page.getByText("Live on your site and window")).toBeVisible();
-  expect((await board(page)).rows[code].show).not.toBe(false);
+    await page.getByRole("button", { name: "Publish" }).click();
+    await expect(page.getByRole("status")).toHaveText("Published. Your site and window screens show it now.");
+    await expect(page.getByText("Live on your site and window")).toBeVisible();
+    const after = await board(page);
+    expect(after.publicationId).not.toBe(found.publicationId);
+    expect(after.rows[code].show).toBe(false);
+    expect(after.publishedBy).toBe("r.haddad");
+  } finally {
+    const restored = await page.evaluate(async (b) => (await fetch("/api/rates/publish", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ buyMargin: b.buyMargin, sellMargin: b.sellMargin, rows: b.rows, ...(b.order ? { order: b.order } : {}) }),
+    })).status, found);
+    expect(restored, "the board this test found is published again").toBe(200);
+  }
 });
 
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
