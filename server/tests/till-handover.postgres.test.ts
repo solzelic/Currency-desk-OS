@@ -2,14 +2,14 @@
    over. Opening again does not move the hold. A mid-day count does
    not either. The handover is the write that closes the old session
    on a blind count and opens the next one for the person who counted. */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
-import { staffUsers } from "../src/db/schema.js";
+import { staffUsers, workspaces } from "../src/db/schema.js";
 import { hasBackendPermission } from "../src/auth/permissions.js";
 import { clearPinAttempts, hashPin, lockState } from "../src/routes/pin.js";
 import { DEMO, seed } from "../src/seed.js";
@@ -198,6 +198,13 @@ postgres("a second teller takes a held till by counting it", () => {
         passwordHash: known.passwordHash,
       }).onConflictDoNothing();
     }
+    await handle.db.insert(workspaces).values({
+      id: "ws-yorkville-till-02",
+      tenantId: DEMO.tenantId,
+      legalEntityId: DEMO.legalEntityId,
+      branchId: DEMO.branchId,
+      tillId: "till-02",
+    }).onConflictDoNothing();
     app = await buildApp(handle.db);
   }, 120_000);
 
@@ -720,6 +727,108 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(lockState(idOf("m.costa")).remaining).toBe(5);
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+  });
+
+  it("the holder is told who is waiting, without the count or a second copy of it", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "waiting-costa");
+    expect(refused.statusCode, refused.body).toBe(403);
+    const singh = await login("a.singh");
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: singh,
+      headers,
+    });
+    expect(session.statusCode, session.body).toBe(200);
+    expect(session.json().pendingTakeover).toEqual({ name: "M.\u00A0Costa" });
+    expect(JSON.stringify(session.json())).not.toContain("24970");
+    const incoming = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: costa,
+      headers,
+    });
+    expect(incoming.statusCode, incoming.body).toBe(200);
+    expect(incoming.json().pendingTakeover).toBeUndefined();
+    expect(JSON.stringify(incoming.json())).not.toContain("24970");
+  });
+
+  it("a waiting takeover on one till is not the waiting takeover on the other", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "till-01-wait");
+    expect(refused.statusCode, refused.body).toBe(403);
+    const singh = await login("a.singh");
+    const first = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: singh,
+      headers,
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().pendingTakeover).toEqual({ name: "M.\u00A0Costa" });
+    await pool.query(
+      `INSERT INTO ledger_audit_events
+        (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+         action,target_id,correlation_id,created_at,prior_session_id,variances)
+       VALUES ($1,$2,$3,$4,$5,$6,'till.handover.refused',$7,$8,clock_timestamp(),$9,'[]'::jsonb)`,
+      [
+        randomUUID(),
+        DEMO.tenantId,
+        DEMO.legalEntityId,
+        DEMO.branchId,
+        DEMO.workspaceId,
+        idOf("j.masri"),
+        "till-02",
+        randomUUID(),
+        first.json().session.sessionId,
+      ],
+    );
+    const still = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: singh,
+      headers,
+    });
+    expect(still.json().pendingTakeover).toEqual({ name: "M.\u00A0Costa" });
+    await pool.query(
+      "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'CAD','9000.00'), ($1,$2,$3,$4,$5,'USD','1000.00')",
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, "ws-yorkville-till-02", "till-02"],
+    );
+    const second = { "x-workspace-id": "ws-yorkville-till-02" };
+    const haddad = await login("r.haddad");
+    const opened = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/open",
+      cookies: haddad,
+      headers: second,
+    });
+    expect(opened.statusCode, opened.body).toBe(201);
+    const otherRefusal = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/handover",
+      cookies: singh,
+      headers: second,
+      payload: { idempotencyKey: "till-02-wait", counts: { CAD: "8900.00", USD: "1000.00" } },
+    });
+    expect(otherRefusal.statusCode, otherRefusal.body).toBe(403);
+    const other = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: haddad,
+      headers: second,
+    });
+    expect(other.statusCode, other.body).toBe(200);
+    expect(other.json().pendingTakeover).toEqual({ name: "A.\u00A0Singh" });
+    const home = await app.inject({
+      method: "GET",
+      url: "/api/ledger/till-session",
+      cookies: singh,
+      headers,
+    });
+    expect(home.json().pendingTakeover).toEqual({ name: "M.\u00A0Costa" });
   });
 
   it("a wrong approver PIN leaves the lockout counter where it was", async () => {
