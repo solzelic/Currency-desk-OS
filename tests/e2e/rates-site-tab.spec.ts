@@ -111,6 +111,15 @@ test("a manager edits the page and runs the screens, but not the address, the sw
   await setup.getByRole("button", { name: /Tablet on the counter/ }).click();
   await expect(setup.getByRole("button", { name: /Tablet on the counter/ })).toHaveAttribute("aria-pressed", "true");
 
+  /* A screen says it is on once it has asked for its rates. */
+  await expect(page.getByRole("list", { name: "Your screens" }).getByRole("listitem").filter({ hasText: "Counter tablet" })).toContainText("Not opened yet");
+  const opened = (await api(page, "GET", "/api/window-screens")).body.screens.find((s: { name: string }) => s.name === "Counter tablet");
+  expect((await page.request.get(`/api/public/screens/${opened.token}`)).status()).toBe(200);
+  await page.getByRole("button", { name: "Website & window" }).click();
+  await page.getByRole("region", { name: "Window screens" }).getByRole("button", { name: "Set up" }).click();
+  await page.getByRole("list", { name: "Your screens" }).getByRole("listitem").filter({ hasText: "Counter tablet" }).click();
+  await expect(page.getByRole("list", { name: "Your screens" }).getByRole("listitem").filter({ hasText: "Counter tablet" })).toContainText(/On · seen just now/);
+
   /* Reset: a new link, the old one stops. */
   const before = (await api(page, "GET", "/api/window-screens")).body.screens.find((s: { name: string }) => s.name === "Counter tablet");
   await setup.getByRole("button", { name: "More" }).click();
