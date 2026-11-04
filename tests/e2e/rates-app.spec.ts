@@ -23,7 +23,11 @@ test("a manager takes a currency off the board and publishes it, and customers s
   await openRates(page, "r.haddad");
   const tabs = page.locator(".fld-bar", { has: page.getByRole("button", { name: "Pricing & rates" }) }).locator(".fld-tab");
   await expect(tabs).toHaveText(["Board", "Website & window", "Pricing & rates"]);
-  await expect(page.getByText("Live on your site and window")).toBeVisible();
+  /* Other files publish boards of their own on this seed shop. Bring the
+     board to a known state first: whatever is on screen, published. */
+  const live = page.getByText("Live on your site and window");
+  if (!(await live.isVisible())) await page.getByRole("button", { name: "Publish" }).click();
+  await expect(live).toBeVisible();
   const before = await board(page);
   const code = "GBP";
   expect(before.rows[code]?.show).not.toBe(false);

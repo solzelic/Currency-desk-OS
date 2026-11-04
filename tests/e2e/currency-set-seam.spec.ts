@@ -132,7 +132,8 @@ test("a teller cannot reach the setting, and could not use it if they did", asyn
   expect(await book(page).reset()).toBe(200);
 
   await signInAtDesk(page, "a.singh");
-  await page.getByText(/Rate Board/i).first().waitFor({ timeout: 45_000 });
+  /* The desk is open once a window is (the Rates window was titled "Rate Board"). */
+  await page.locator("#desktop .win.show").first().waitFor({ timeout: 45_000 });
   /* A teller has no Settings screen. That is a courtesy, not the
      protection — which is the next assertion. */
   await expect(page.getByText(/^Settings$/i)).toHaveCount(0);
