@@ -66,6 +66,10 @@
   /* The server refuses a malformed escape (400) before this page loads,
      so the path here always decodes. */
   var token = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+  /* Shown inside the desk as a preview: no start screen, no offline note,
+     as the design does for an embedded screen. */
+  var embedded = (function () { try { return window.self !== window.top; } catch (e) { return true; } })();
+  if (embedded) document.getElementById("start").hidden = true;
   var data = null;
   var shownAt = null;
   var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -254,7 +258,7 @@
         console.warn("[window screen]", e);
         if (!data) { $("start").hidden = true; $("missing").hidden = false; return; }
         $("offline-text").textContent = "Offline · showing rates from " + clockOf(shownAt, data.shop.timeZone) + " · reconnecting";
-        $("offline").hidden = false;
+        $("offline").hidden = embedded;
       });
   }
   var resized = null;

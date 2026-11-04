@@ -32,6 +32,7 @@ import { audit } from "../audit.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
+import { ensureRatePage } from "../rates/rate-page.js";
 
 /* The design sells three plans; the server gates on three tiers. They are
    not the same axis — "AI Bundle" is Full System plus an assistant, not a
@@ -374,6 +375,9 @@ export async function provisionDesk(
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
     isTestShop: spec.isTestShop === true,
   }).onConflictDoNothing();
+  /* Rates v2.5: every shop has a rate page from the day it opens, at its
+     own address and private until the owner turns it on. */
+  await ensureRatePage(db, tenantId);
   /* "When should the desk ask for ID?" — screen four of onboarding, and the
      answer used to land in `tenants.setup` and stop there. The browser read
      it once into its own saved state on first run; the ledger, which is

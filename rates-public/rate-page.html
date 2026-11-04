@@ -249,6 +249,9 @@
   /* The server refuses a malformed escape (400) before this page loads,
      so the path here always decodes. */
   var slug = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+  /* ?preview: the desk's own preview of its page, live or not. It reads
+     the signed-in answer, which only the shop's own staff get. */
+  var preview = new URLSearchParams(location.search).has("preview");
   /* "sell": the customer buys foreign cash, at our selling rate. "buy":
      the customer has foreign cash, at our buying rate. The design opens
      on "sell". The amount is always in the foreign currency. */
@@ -577,8 +580,8 @@
   $("to-compliance").addEventListener("click", function () { location.hash = "#compliance"; });
 
   function load() {
-    fetch("/api/public/rate-pages/" + encodeURIComponent(slug))
-      .then(function (res) { if (res.status === 404) return null; if (!res.ok) throw new Error("rates answered " + res.status); return res.json(); })
+    fetch(preview ? "/api/rate-page/preview" : "/api/public/rate-pages/" + encodeURIComponent(slug))
+      .then(function (res) { if (res.status === 404 || res.status === 401) return null; if (!res.ok) throw new Error("rates answered " + res.status); return res.json(); })
       .then(function (d) {
         if (d) return render(d);
         if (!state.data) { $("missing").hidden = false; $("home").hidden = true; $("compliance").hidden = true; $("footer").hidden = true; }

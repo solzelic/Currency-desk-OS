@@ -6,12 +6,16 @@
      GET /api/public/screens/:token     one window screen, by its token
 
    Desk, signed in, always the caller's own shop:
-     GET   /api/rate-page               anyone at the desk
+     GET   /api/rate-page               anyone at the desk (made on first ask)
      PUT   /api/rate-page               the owner (site:publish)
+     PATCH /api/rate-page/content       rates:change; the regulator block
+                                        is the owner's (site:publish)
+     GET   /api/rate-page/preview       anyone at the desk, live or not
      GET   /api/window-screens          anyone at the desk
      POST  /api/window-screens          rates:change
      PATCH /api/window-screens/:id      rates:change
      POST  /api/window-screens/:id/retire  rates:change
+     POST  /api/window-screens/:id/reset   rates:change (a new link)
 
    A suspended shop answers 404 everywhere public, the same as a page
    that does not exist, so nothing says whether the name is taken.
@@ -24,6 +28,7 @@ import { hasBackendPermission, type BackendPermission } from "../auth/permission
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { schema, type Db } from "../db/index.js";
 import { forgetPublicAnswers, publishedRates, remembered } from "../rates/public-board.js";
+import { contentPatch, ensureRatePage, resolvedContent, validWeek } from "../rates/rate-page.js";
 
 /* Lowercase letters, digits and inner hyphens, 3 to 40 long. The database
    holds the same rule, so a direct write cannot store a bad address. */
@@ -109,16 +114,46 @@ const screenJson = (row: typeof schema.windowScreens.$inferSelect) => ({
   createdAt: row.createdAt.getTime(),
 });
 
+/* An empty or unset list on the rate page means the top six of the board. */
+const DEFAULT_PAGE_COUNT = 6;
+
 export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
+  /* What the rate page shows: the shop's published board and what the
+     shop wrote for its page. The same answer for the public page and the
+     desk's preview, so the preview is the page. */
+  const answerFor = async (page: typeof schema.shopRatePages.$inferSelect, shop: typeof schema.tenants.$inferSelect) => {
+    const board = await publishedRates(db, shop.id);
+    const content = await resolvedContent(db, shop.id, shop.name, page.content ?? {});
+    const { contact, hours } = publicContact(shop);
+    const week = validWeek(shop.siteConfig?.week);
+    const rates = content.codes?.length
+      ? content.codes.flatMap((code) => board.rates.filter((rate) => rate.code === code))
+      : board.rates.slice(0, DEFAULT_PAGE_COUNT);
+    const reg = content.regulator;
+    return {
+      shop: {
+        name: content.name,
+        slug: page.slug,
+        home: board.home,
+        ...(board.timeZone ? { timeZone: board.timeZone } : {}),
+        ...(content.tagline ? { tagline: content.tagline } : {}),
+        contact,
+        hours,
+        ...(week ? { week } : {}),
+        show: content.show,
+        /* A regulator is shown only with both its name and the number. */
+        ...(reg.name && reg.number ? { regulator: reg } : {}),
+      },
+      publishedAt: board.publishedAt,
+      rates,
+    };
+  };
+
   const pageAnswer = async (address: string) => {
     const page = (await db.select().from(schema.shopRatePages)
       .where(and(eq(schema.shopRatePages.slug, address), eq(schema.shopRatePages.live, true))).limit(1))[0];
     const shop = page ? await liveShop(db, page.tenantId) : null;
-    if (!page || !shop) return null;
-    const board = await publishedRates(db, shop.id);
-    const { contact, hours } = publicContact(shop);
-    const zone = board.timeZone ? { timeZone: board.timeZone } : {};
-    return { shop: { name: shop.name, slug: page.slug, home: board.home, ...zone, contact, hours }, publishedAt: board.publishedAt, rates: board.rates };
+    return page && shop ? answerFor(page, shop) : null;
   };
 
   const screenAnswer = async (token: string) => {
@@ -159,11 +194,69 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     return body;
   });
 
+  /* The desk's view of its page: the address, live or not, what the shop
+     wrote with defaults filled in, and the business profile it shares
+     with Settings. */
+  const deskView = async (tenantId: string) => {
+    const page = await ensureRatePage(db, tenantId);
+    const shop = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0]!;
+    const config = shop.siteConfig ?? {};
+    const profile = Object.fromEntries((["phone", "email", "address", "city", "region", "postal"] as const).map((f) => [f, config[f] ?? ""]));
+    return {
+      slug: page.slug,
+      live: page.live,
+      content: await resolvedContent(db, tenantId, shop.name, page.content ?? {}),
+      profile: { ...profile, week: validWeek(config.week) },
+    };
+  };
+
   app.get("/api/rate-page", async (req, reply) => {
     const who = await staff(req, reply, db);
     if (!who) return;
-    const page = (await db.select().from(schema.shopRatePages).where(eq(schema.shopRatePages.tenantId, who.tenantId)).limit(1))[0];
-    return { slug: page?.slug ?? null, live: page?.live ?? false };
+    return deskView(who.tenantId);
+  });
+
+  app.patch("/api/rate-page/content", async (req, reply) => {
+    const who = await staff(req, reply, db, "rates:change");
+    if (!who) return;
+    const parsed = contentPatch.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    /* The regulator block is what the law asks the page to say: the
+       owner's to change. */
+    if (parsed.data.regulator && !hasBackendPermission(who.role, "site:publish")) {
+      return reply.code(403).send({ error: "permission_denied", detail: "site:publish required" });
+    }
+    const page = await ensureRatePage(db, who.tenantId);
+    const { profile, ...written } = parsed.data;
+    if (Object.keys(written).length) {
+      await db.update(schema.shopRatePages)
+        .set({ content: { ...(page.content ?? {}), ...written }, updatedBy: who.id, updatedAt: new Date() })
+        .where(eq(schema.shopRatePages.tenantId, who.tenantId));
+    }
+    /* Contact and hours live in the business profile, so Settings and the
+       page always say the same. Fields not sent are kept. */
+    if (profile) {
+      const shop = (await db.select({ config: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0];
+      await db.update(schema.tenants)
+        .set({ siteConfig: { ...(shop?.config ?? {}), ...profile, updatedAt: new Date().toISOString() } })
+        .where(eq(schema.tenants.id, who.tenantId));
+    }
+    await audit(db, who, "rate_page.content", {
+      fields: Object.keys(parsed.data),
+      ...(parsed.data.regulator ? { regulator: { old: page.content?.regulator ?? null, new: parsed.data.regulator } } : {}),
+    });
+    forgetPublicAnswers();
+    return deskView(who.tenantId);
+  });
+
+  /* The page as it will look, before it is live: signed in only, and
+     never cached anywhere but this browser (the /api no-store rule). */
+  app.get("/api/rate-page/preview", async (req, reply) => {
+    const who = await staff(req, reply, db);
+    if (!who) return;
+    const page = await ensureRatePage(db, who.tenantId);
+    const shop = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]!;
+    return answerFor(page, shop);
   });
 
   app.put("/api/rate-page", async (req, reply) => {
@@ -229,6 +322,21 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       .returning();
     if (!row) return reply.code(404).send({ error: "not_found" });
     await audit(db, who, "window_screen.change", { screenId: id, fields: Object.keys(parsed.data) });
+    forgetPublicAnswers();
+    return screenJson(row);
+  });
+
+  /* A screen link that ended up somewhere it should not: a new token, and
+     the old one answers 404 from this moment. */
+  app.post("/api/window-screens/:id/reset", async (req, reply) => {
+    const who = await staff(req, reply, db, "rates:change");
+    if (!who) return;
+    const { id } = req.params as { id: string };
+    const [row] = await db.update(schema.windowScreens).set({ token: newToken() })
+      .where(and(eq(schema.windowScreens.id, id), eq(schema.windowScreens.tenantId, who.tenantId), isNull(schema.windowScreens.retiredAt)))
+      .returning();
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    await audit(db, who, "window_screen.reset", { screenId: id });
     forgetPublicAnswers();
     return screenJson(row);
   });

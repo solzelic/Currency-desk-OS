@@ -109,7 +109,10 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
     }
 
     if (parsed.data.siteConfig !== undefined) {
-      const config = { ...parsed.data.siteConfig, updatedAt: new Date().toISOString() };
+      /* Settings sends its own fields. The hours by day come from the rate
+         page editor, which Settings does not show, so they are kept. */
+      const before = (await db.select({ config: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]?.config;
+      const config = { ...(before?.week ? { week: before.week } : {}), ...parsed.data.siteConfig, updatedAt: new Date().toISOString() };
       await db.update(schema.tenants).set({ siteConfig: config }).where(eq(schema.tenants.id, who.tenantId));
       await audit(db, { ...scope, action: "tenant.site_config_changed", detail: { fields: Object.keys(parsed.data.siteConfig) } });
     }
