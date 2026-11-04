@@ -425,6 +425,27 @@
     return { buy: sixPlaces(buy), sell: sixPlaces(sell) };
   }
 
+  /* The market in the shop's home currency, from the feed's raw mids
+     (GET /api/rates/market: Canadian dollars per 1 unit, every digit).
+     A CAD shop takes them as they are; any other shop divides by its own
+     currency's mid. Nothing is rounded here: the ticker's six places moved
+     the dong 0.56% off the market, and a publish would have carried that.
+     A feed that cannot price the home currency gives no market at all, so
+     the board falls back to the last publish rather than guess. */
+  function homeMarket(mids, home) {
+    var code = String(home || "").toUpperCase();
+    if (!mids || typeof mids !== "object" || !/^[A-Z]{3}$/.test(code)) return {};
+    var per = code === "CAD" ? (positive(mids.CAD) || 1) : positive(mids[code]);
+    if (per === null) return {};
+    var out = {};
+    Object.keys(mids).forEach(function (c) {
+      var cad = positive(mids[c]);
+      if (c !== code && /^[A-Z]{3}$/.test(c) && cad !== null) out[c] = cad / per;
+    });
+    if (code !== "CAD" && !out.CAD) out.CAD = 1 / per;
+    return out;
+  }
+
   /* One row per currency the desk shows or has published, in the
      published order first, then the desk's other currencies. */
   function draftRows(input) {
@@ -506,7 +527,7 @@
     });
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
 });
 
 
@@ -57641,8 +57662,9 @@ ${snap}`;
    publish. Pricing & rates is the existing Pricing console, unchanged.
 
    The server is the record. The board loads from GET /api/rates (this
-   desk's own branch), the market from GET /api/rates/ticker (already in
-   the shop's home currency), recent publishes from GET /api/rates/history.
+   desk's own branch), the market from GET /api/rates/market (raw mids,
+   converted to the shop's home currency without rounding), recent
+   publishes from GET /api/rates/history.
    The publish rights are the server's (rates:change); the screen only
    mirrors them so nobody types into a board they cannot publish.
    ============================================================ */
@@ -57761,11 +57783,8 @@ ${snap}`;
     const [notice, setNotice] = useState(null);
     const load = useCallback(async () => {
       try {
-        const [rates, history, ticker] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/ticker')]);
-        const market = {};
-        (ticker.priced ? ticker.quotes : []).forEach(t => {
-          market[t.code] = t.mid;
-        });
+        const [rates, history, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market')]);
+        const market = B.homeMarket(feed.mids, home);
         setData({
           loading: false,
           error: null,

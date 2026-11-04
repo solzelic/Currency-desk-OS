@@ -56,6 +56,27 @@
     return { buy: sixPlaces(buy), sell: sixPlaces(sell) };
   }
 
+  /* The market in the shop's home currency, from the feed's raw mids
+     (GET /api/rates/market: Canadian dollars per 1 unit, every digit).
+     A CAD shop takes them as they are; any other shop divides by its own
+     currency's mid. Nothing is rounded here: the ticker's six places moved
+     the dong 0.56% off the market, and a publish would have carried that.
+     A feed that cannot price the home currency gives no market at all, so
+     the board falls back to the last publish rather than guess. */
+  function homeMarket(mids, home) {
+    var code = String(home || "").toUpperCase();
+    if (!mids || typeof mids !== "object" || !/^[A-Z]{3}$/.test(code)) return {};
+    var per = code === "CAD" ? (positive(mids.CAD) || 1) : positive(mids[code]);
+    if (per === null) return {};
+    var out = {};
+    Object.keys(mids).forEach(function (c) {
+      var cad = positive(mids[c]);
+      if (c !== code && /^[A-Z]{3}$/.test(c) && cad !== null) out[c] = cad / per;
+    });
+    if (code !== "CAD" && !out.CAD) out.CAD = 1 / per;
+    return out;
+  }
+
   /* One row per currency the desk shows or has published, in the
      published order first, then the desk's other currencies. */
   function draftRows(input) {
@@ -137,5 +158,5 @@
     });
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
 });

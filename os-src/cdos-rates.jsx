@@ -9,8 +9,9 @@
    publish. Pricing & rates is the existing Pricing console, unchanged.
 
    The server is the record. The board loads from GET /api/rates (this
-   desk's own branch), the market from GET /api/rates/ticker (already in
-   the shop's home currency), recent publishes from GET /api/rates/history.
+   desk's own branch), the market from GET /api/rates/market (raw mids,
+   converted to the shop's home currency without rounding), recent
+   publishes from GET /api/rates/history.
    The publish rights are the server's (rates:change); the screen only
    mirrors them so nobody types into a board they cannot publish.
    ============================================================ */
@@ -69,9 +70,8 @@
 
     const load = useCallback(async () => {
       try {
-        const [rates, history, ticker] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/ticker')]);
-        const market = {};
-        (ticker.priced ? ticker.quotes : []).forEach(t => { market[t.code] = t.mid; });
+        const [rates, history, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market')]);
+        const market = B.homeMarket(feed.mids, home);
         setData({ loading: false, error: null, board: rates.board, history: history.publications || [], market });
       } catch (e) {
         setData(d => ({ ...d, loading: false, error: 'The board could not be loaded (' + e.message + '). Nothing has changed for customers.' }));
