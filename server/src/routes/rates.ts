@@ -20,6 +20,7 @@ import type { Db } from "../db/index.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { jsonMargin } from "../sites/storefront-hold.js";
 import { quoteHomeMarket } from "../rates/ticker-quotes.js";
+import { forgetPublicAnswers } from "../rates/public-board.js";
 
 const DEMO_BRANCH = "br-yorkville";
 
@@ -199,6 +200,8 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       action: "rates.publish",
       detail: { publicationId: id, currencies: Object.keys(body.rows).length, buyMargin: body.buyMargin, sellMargin: body.sellMargin },
     });
+    // The public rate page and screens show this board from now on.
+    forgetPublicAnswers();
     return { board: toBoardJson(inserted[0]!) };
   });
 }

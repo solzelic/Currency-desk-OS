@@ -57,6 +57,9 @@ export type BackendPermission =
      business is one person. A compliance officer or a manager who wants it
      moved asks the owner, which is a conversation worth having out loud. */
   | "compliance:thresholds"
+  /* Naming the shop's public rate page and taking it live. What a stranger
+     on the internet sees under the shop's name is the owner's call. */
+  | "site:publish"
   /* Shop earnings, P&L, cost of sale, the booked spread, unrealized
      P&L, cost basis, market value, the market mid, and the per-teller
      money split. Closing the day (`till:close`) is what opens these
@@ -72,7 +75,7 @@ export const backendRolePermissions: Readonly<Record<string, readonly BackendPer
   supervisor: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "filing:view"],
   compliance_officer: ["quote:view", "customer:view", "customer:write", "ledger:view", "vault:view", "compliance:file", "filing:view"],
   branch_manager: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:tills", "compliance:file", "filing:view"],
-  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "filing:view", "compliance:thresholds"],
+  administrator: ["quote:create", "quote:view", "quote:cancel", "quote:post", "transaction:post", "transaction:reverse", "customer:view", "customer:write", "ledger:view", "till:initialize", "till:count", "till:handover:approve", "till:close", "till:move", "vault:view", "vault:initialize", "vault:move", "rates:change", "rates:override", "accounting:cost_method", "desk:locations", "desk:tills", "compliance:file", "filing:view", "compliance:thresholds", "site:publish"],
   auditor: ["quote:view", "customer:view", "ledger:view", "vault:view"],
 };
 

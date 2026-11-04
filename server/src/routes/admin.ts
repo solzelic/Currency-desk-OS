@@ -42,6 +42,7 @@ import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { VERIFY_CHANNEL } from "./onboarding-public.js";
 import { DISPATCHES, DISPATCH, SILENT, delivery, sendableTo, type Recipient } from "../comms.js";
 import { tenantPlan } from "./tenant.js";
+import { forgetPublicAnswers } from "../rates/public-board.js";
 
 const PLAN = z.enum(["trial", "basic", "pro", "premium"]);
 const patchEnquiryBody = z
@@ -1469,6 +1470,8 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (parsed.data.plan !== undefined) set.plan = parsed.data.plan;
     if (parsed.data.suspended !== undefined) set.suspended = parsed.data.suspended;
     await db.update(schema.tenants).set(set).where(eq(schema.tenants.id, id));
+    // A suspended shop's public rate page and screens go dark now.
+    if (parsed.data.suspended !== undefined) forgetPublicAnswers();
     const action = parsed.data.suspended !== undefined ? (parsed.data.suspended ? "admin.desk_suspended" : "admin.desk_unsuspended") : "admin.plan_changed";
     await audit(db, { tenantId: id, legalEntityId: "-", branchId: "-", actorId: who.id, action, detail: parsed.data });
     return { ok: true };
