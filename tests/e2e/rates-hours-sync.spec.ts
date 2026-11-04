@@ -55,6 +55,15 @@ test("a week set on the rate page shows in Settings, and Settings publishes it b
 });
 
 test("a manager's change on the rate page is offered to the owner in Settings, and not published over without asking", async ({ page }) => {
+  /* The owner publishes a phone from Settings. */
+  await openDesk(page, "j.masri");
+  await openApp(page, "settings");
+  await page.getByLabel("Phone").fill("+1 416 555 0100");
+  const published = page.waitForResponse((r) => r.url().endsWith("/api/tenant") && r.request().method() === "PATCH");
+  await page.getByRole("button", { name: /Publish contact & hours/ }).click();
+  expect((await published).status()).toBe(200);
+
+  /* A manager changes it on the rate page. */
   await openDesk(page, "r.haddad");
   expect((await api(page, "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0199" } })).status).toBe(200);
 
