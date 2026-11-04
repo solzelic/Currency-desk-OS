@@ -187,6 +187,19 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
     await entityUnderPack("pack-ca-v1");
   });
 
+  it("refuses to file under the demo seed's placeholder FINTRAC number, and nothing is written", async () => {
+    await pool.query("UPDATE legal_entities SET msb_number='M12345678' WHERE id=$1", [DEMO.legalEntityId]);
+    try {
+      const response = await file(AGGREGATE);
+      expect(response.statusCode).toBe(422);
+      expect(response.json().message).toBe("This shop's FINTRAC number is the demo placeholder. Add the real number before filing.");
+      const kept = await pool.query("SELECT count(*)::int AS n FROM ledger_report_filings WHERE tenant_id=$1", [DEMO.tenantId]);
+      expect(kept.rows[0].n).toBe(0);
+    } finally {
+      await pool.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, FILEABLE_TEST_MSB]);
+    }
+  });
+
   it("writes the sealed report to the database, not to a browser", async () => {
     const response = await file(AGGREGATE);
     expect(response.statusCode).toBe(201);
