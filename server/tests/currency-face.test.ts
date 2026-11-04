@@ -56,3 +56,9 @@ it("ships in the desk and is public, so the rate page and screens can load it to
   expect(readFileSync(path.join(ROOT, "CurrencyDesk OS.html"), "utf8")).toContain('<script src="shared/currency-face.js"></script>');
   expect(readFileSync(path.join(ROOT, "server/src/app.ts"), "utf8")).toContain('file === "/shared/currency-face.js"');
 });
+
+it("is loaded by the public rate page and the window screen, which show the same flags and names", () => {
+  for (const page of ["rates-public/rate-page.html", "rates-public/window-screen.html"]) {
+    expect(readFileSync(path.join(ROOT, page), "utf8"), page).toContain('<script src="/shared/currency-face.js"></script>');
+  }
+});

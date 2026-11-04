@@ -108,6 +108,31 @@ describe("the public rate page", () => {
     expect((await pub("/api/public/rate-pages/york-test")).json().rates[0].buy).toBe(1.9);
   });
 
+  it("carries the shop's own time zone, the publishing branch's, and none rather than a wrong one", async () => {
+    /* The page shows when the board was published and whether the shop is
+       open. Both are the shop's clock, not the visitor's. */
+    await publish({ buyMargin: 0.01, sellMargin: 0.01, rows: { USD: { mid: 1.3 } } });
+    const board = (await handle.db.select().from(schema.rateBoards).where(eq(schema.rateBoards.tenantId, DEMO.tenantId))
+      .orderBy(sql`published_at desc`).limit(1))[0]!;
+    const branch = (await handle.db.select().from(schema.branches).where(eq(schema.branches.id, board.branchId)))[0]!;
+    await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test", live: true });
+    /* Made directly, not through the desk: the window screen tests below
+       count the audit rows the desk writes. */
+    const token = "tz-test-token-0123456789abcdefghijk";
+    await handle.db.insert(schema.windowScreens).values({ id: "scr_tz_test", tenantId: DEMO.tenantId, name: "Front window", kind: "tv", layout: "two", theme: "dark", currencies: [], showHours: true, token, createdBy: "j.masri" });
+    try {
+      await handle.db.update(schema.branches).set({ timezone: "Asia/Dubai" }).where(eq(schema.branches.id, branch.id));
+      forgetPublicAnswers();
+      expect((await pub("/api/public/rate-pages/york-test")).json().shop.timeZone).toBe("Asia/Dubai");
+      expect((await pub(`/api/public/screens/${token}`)).json().shop.timeZone).toBe("Asia/Dubai");
+      await handle.db.update(schema.branches).set({ timezone: "Not/AZone" }).where(eq(schema.branches.id, branch.id));
+      forgetPublicAnswers();
+      expect((await pub("/api/public/rate-pages/york-test")).json().shop).not.toHaveProperty("timeZone");
+    } finally {
+      await handle.db.update(schema.branches).set({ timezone: branch.timezone }).where(eq(schema.branches.id, branch.id));
+    }
+  });
+
   it("goes dark when the shop is suspended", async () => {
     await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test", live: true });
     await handle.db.update(schema.tenants).set({ suspended: true }).where(eq(schema.tenants.id, DEMO.tenantId));
