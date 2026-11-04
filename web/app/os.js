@@ -57702,11 +57702,14 @@ ${snap}`;
    page. Every shop already has a rate page at its own address, private
    until the owner turns it on.
 
-   The server decides every change (auth/permissions.ts): what the page
-   says and the screens need rates:change; the address, going live and
-   the regulator block are the owner's (site:publish). This tab only
-   shows each person what they can do, and says plainly when the server
-   refuses. Changes save as you type; the preview reloads after each save.
+   The owner names the shop's public rate page (/r/<address>) and takes it
+   live; staff who may change rates edit what it says, and add and retire
+   window screens (/s/<token>). The server decides every one of these
+   (auth/permissions.ts: PUT /api/rate-page and the regulator block need
+   site:publish; the page content and the screen routes need
+   rates:change); this tab only shows each person what they can do, and
+   says plainly when the server refuses. Changes save as you type; the
+   preview reloads after each save.
    ============================================================ */
 (function () {
   const {
