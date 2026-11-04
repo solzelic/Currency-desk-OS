@@ -472,6 +472,9 @@ export const shopRatePages = pgTable("shop_rate_pages", {
   live: boolean("live").notNull().default(false),
   /* What the shop wrote for its page (migration 063). See rates/rate-page.ts. */
   content: jsonb("content").$type<RatePageContent>().notNull().default({}),
+  /* The shop's logo, a checked PNG data URL, and when it changed (064). */
+  logo: text("logo"),
+  logoAt: timestamp("logo_at", { withTimezone: true }),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -488,8 +491,10 @@ export type RatePageContent = {
   regulator?: { name: string; number: string; officer: string };
 };
 
-export type WindowScreenKind = "tv" | "tablet";
-export type WindowScreenLayout = "one" | "two";
+export type WindowScreenKind = "tv" | "portrait" | "tablet" | "strip";
+export type WindowScreenLayout = "one" | "two" | "rotate";
+/* What shows on a screen; an absent key means shown (064). */
+export type WindowScreenShow = { flags?: boolean; names?: boolean; clock?: boolean; logo?: boolean };
 export type WindowScreenTheme = "light" | "dark";
 export const windowScreens = pgTable("window_screens", {
   id: text("id").primaryKey(),
@@ -500,6 +505,7 @@ export const windowScreens = pgTable("window_screens", {
   theme: text("theme").$type<WindowScreenTheme>().notNull(),
   currencies: jsonb("currencies").$type<string[]>().notNull().default([]),
   showHours: boolean("show_hours").notNull().default(true),
+  show: jsonb("show").$type<WindowScreenShow>().notNull().default({}),
   token: text("token").notNull(),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
