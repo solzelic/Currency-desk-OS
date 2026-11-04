@@ -28,6 +28,8 @@ const rowSchema = z.object({
   mid: z.number().positive().finite(),
   spread: z.number().min(0).max(0.2).optional(),
   show: z.boolean().optional(),
+  /* A rate the shop pinned: the market sync leaves it alone. */
+  pinned: z.literal(true).optional(),
 });
 
 const publishBody = z.object({
@@ -140,7 +142,40 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.rateBoards.branchId, branchId))
       .orderBy(desc(schema.rateBoards.publishedAt))
       .limit(1);
-    return { board: rows[0] ? toBoardJson(rows[0]) : null, serverTime: Date.now() };
+    /* Signed-in staff also see whether the board follows the market. */
+    const branch = who
+      ? (await db.select({ on: schema.branches.autoPublishRates }).from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1))[0]
+      : undefined;
+    return { board: rows[0] ? toBoardJson(rows[0]) : null, serverTime: Date.now(), ...(branch ? { autoPublish: branch.on } : {}) };
+  });
+
+  /* Auto-publish: every market pull publishes this branch's board again,
+     in the shop's home currency, keeping its margins, spreads, shown
+     currencies, order and pinned rates (rates/market.ts). Staff who may
+     change rates switch it; each change is in the audit log. */
+  app.put("/api/rates/auto-publish", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (!hasBackendPermission(who.role, "rates:change")) {
+      return reply.code(403).send({ error: "permission_denied", detail: "rates:change required" });
+    }
+    const parsed = z.object({ on: z.boolean() }).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const before = (await db.select({ on: schema.branches.autoPublishRates }).from(schema.branches).where(eq(schema.branches.id, who.branchId)).limit(1))[0];
+    if (!before) return reply.code(404).send({ error: "not_found" });
+    await db.update(schema.branches).set({ autoPublishRates: parsed.data.on }).where(eq(schema.branches.id, who.branchId));
+    if (before.on !== parsed.data.on) {
+      await db.insert(schema.auditEvents).values({
+        id: randomUUID(),
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "rates.auto_publish",
+        detail: { old: before.on, new: parsed.data.on },
+      });
+    }
+    return { autoPublish: parsed.data.on };
   });
 
   app.get("/api/rates/history", async (req, reply) => {

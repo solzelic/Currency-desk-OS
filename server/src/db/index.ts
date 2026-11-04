@@ -360,6 +360,8 @@ CREATE TABLE IF NOT EXISTS branches (
 -- Serbia airside or casino counter. Migration 033 on Postgres. Default
 -- false so a branch that never sets it does not demand ID on every deal.
 ALTER TABLE branches ADD COLUMN IF NOT EXISTS airside_or_casino boolean NOT NULL DEFAULT false;
+-- Rates v2.5 Auto-publish. Migration 065 on Postgres. Off until staff turn it on.
+ALTER TABLE branches ADD COLUMN IF NOT EXISTS auto_publish_rates boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS branches_entity_idx ON branches(legal_entity_id);
 CREATE TABLE IF NOT EXISTS workspaces (
   id text PRIMARY KEY,
