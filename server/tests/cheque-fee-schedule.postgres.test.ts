@@ -96,6 +96,12 @@ postgres("cheque fee schedule is owner or manager", () => {
   afterAll(async () => {
     if (pool) {
       await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
+      /* The platform rows and the fee. staff are this file's. Left
+         behind, J. Masri stays a platform owner for every later file. */
+      const feeStaff = platformRoles.map((role) => `${DEMO.tenantId}:fee.${role}`);
+      await pool.query("DELETE FROM sessions WHERE user_id = ANY($1::text[])", [feeStaff]);
+      await pool.query("DELETE FROM staff_users WHERE id = ANY($1::text[])", [feeStaff]);
+      await pool.query("DELETE FROM platform_users WHERE email = ANY($1::text[])", [[...platformRoles.map((role) => `fee.${role}`), "j.masri"]]);
       await pool.end();
     }
     if (app) await app.close();

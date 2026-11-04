@@ -202,6 +202,8 @@ postgres("a second teller takes a held till by counting it", () => {
   }, 120_000);
 
   afterAll(async () => {
+    /* The seed gives nobody a PIN. These two were given one above. */
+    await pool.query("UPDATE staff_users SET pin_hash=NULL WHERE id = ANY($1::text[])", [[idOf("a.singh"), idOf("j.masri")]]);
     await app.close();
     await handle.close();
     await pool.end();

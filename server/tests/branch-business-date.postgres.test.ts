@@ -20,6 +20,7 @@ import { civilTodayInZone } from "../src/civil-date.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { backToSeededDesk } from "./helpers/seeded-desk.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -116,19 +117,18 @@ postgres("a till session takes the branch's civil day", () => {
     await pool.query(
       "TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
     );
-    await pool.query("DELETE FROM sessions WHERE user_id LIKE $1", [`${DEMO.tenantId}:bd.%`]);
-    await pool.query("DELETE FROM staff_users WHERE tenant_id=$1 AND staff_id LIKE 'bd.%'", [DEMO.tenantId]);
-    await pool.query("DELETE FROM rate_boards WHERE tenant_id=$1 AND branch_id<>$2", [DEMO.tenantId, DEMO.branchId]);
-    await pool.query("DELETE FROM workspaces WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.workspaceId]);
-    await pool.query("DELETE FROM branches WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.branchId]);
+    await backToSeededDesk(pool);
     await seed(handle.db);
     app = await buildApp(handle.db);
   }, 120_000);
 
   afterAll(async () => {
-    await app.close();
-    await handle.close();
-    await pool.end();
+    /* The three branches, their tills and the bd. staff are this
+       file's. Two of the branches are on Jerusalem time. */
+    if (pool) await backToSeededDesk(pool);
+    if (app) await app.close();
+    if (handle) await handle.close();
+    if (pool) await pool.end();
     delete process.env.DATABASE_URL;
   });
 

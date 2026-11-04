@@ -188,6 +188,10 @@ async function priorCash(
 ) {
   const scope = scopeOf(entityId);
   const third = opts.onBehalfOf?.trim() || null;
+  /* A receipt with no time given is a minute old. now() is when the
+     transaction began, often under a millisecond before the check, and
+     the window ends at a JS Date, which has no microseconds. The receipt
+     could land just past the end and stop counting. */
   await client.query(
     `INSERT INTO ledger_transactions
        (transaction_id, transaction_ref, tenant_id, legal_entity_id, branch_id, workspace_id, till_id,
@@ -195,7 +199,7 @@ async function priorCash(
         fee_cad, spread_cad, purpose, source_of_funds, posted_at,
         deal_kind, received_instrument, disbursed_instrument,
         cash_in_home, cash_out_home, home_currency, third_party, third_party_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',COALESCE($18::timestamptz, now()),
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'USD',$11,$12,1,0,0,'Travel','Salary',COALESCE($18::timestamptz, now() - interval '1 minute'),
              $13,$19,$20,$14,$21,$15,$16,$17)`,
     [
       id,
