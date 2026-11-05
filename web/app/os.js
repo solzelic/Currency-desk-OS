@@ -531,7 +531,31 @@
     });
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+  /* Commission tiers (Rates v2.5, Pricing & rates): the flat fee on every
+     deal (defaultFee), and a deal over a tier's amount pays that tier's
+     fee instead; the highest tier it is over wins. The amount is the deal's
+     size in the shop's own currency. Typed values may carry commas; a tier
+     that is not two numbers, or a negative fee, is ignored. Null when the
+     shop charges no fee at that size. */
+  function feeFor(settings, homeAmount) {
+    function num(v) {
+      if (v === null || v === undefined || v === "") return null;
+      var n = Number(String(v).replace(/,/g, ""));
+      return isFinite(n) ? n : null;
+    }
+    var s = settings || {};
+    var fee = num(s.defaultFee);
+    if (fee !== null && fee < 0) fee = null;
+    var amount = Number(homeAmount) || 0;
+    var tiers = (Array.isArray(s.feeTiers) ? s.feeTiers : [])
+      .map(function (t) { return t ? { over: num(t.over), fee: num(t.fee) } : null; })
+      .filter(function (t) { return t && t.over !== null && t.fee !== null && t.over >= 0 && t.fee >= 0; })
+      .sort(function (a, b) { return a.over - b.over; });
+    tiers.forEach(function (t) { if (amount > t.over) fee = t.fee; });
+    return fee;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor };
 });
 
 
@@ -36686,6 +36710,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [lock, setLock] = useState(null);
     const [nowMs, setNowMs] = useState(Date.now());
     const [fee, setFee] = useState(settings && settings.defaultFee != null ? String(settings.defaultFee) : '');
+    /* Commission tiers (Rates v2.5, Pricing & rates): the fee follows the
+       deal's size in the shop's own currency until the teller types one. */
+    const [feeTyped, setFeeTyped] = useState(false);
 
     // remittance
     const [dest, setDest] = useState(DEST[0]);
@@ -36735,7 +36762,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        An empty sheet still closes. The desk keeps the old close: Cancel
        is still there, and this confirm is not on that dialog. */
     const feeDefault = settings && settings.defaultFee != null ? String(settings.defaultFee) : '';
-    const dealDirty = !!(String(customer || '').trim() || String(query || '').trim() || String(inAmt || '').trim() || type !== 'Currency Exchange' || inCcy !== home || outCcy !== 'USD' || override || tq || String(purpose || '').trim() || String(memo || '').trim() || String(cap.source || '').trim() || cap.thirdParty || String(benName || '').trim() || String(recvRef || '').trim() || String(chequeNumber || '').trim() || String(maker || '').trim() || String(draweeBank || '').trim() || chequeImage || endorsed || String(payee || '').trim() || String(biller || '').trim() || String(account || '').trim() || String(fee || '') !== feeDefault || marginAck || String(marginReason || '').trim() || String(identityNumber || '').trim() || reportSuspicion || usdLargeNotes != null || String(usdSerials || '').trim());
+    const dealDirty = !!(String(customer || '').trim() || String(query || '').trim() || String(inAmt || '').trim() || type !== 'Currency Exchange' || inCcy !== home || outCcy !== 'USD' || override || tq || String(purpose || '').trim() || String(memo || '').trim() || String(cap.source || '').trim() || cap.thirdParty || String(benName || '').trim() || String(recvRef || '').trim() || String(chequeNumber || '').trim() || String(maker || '').trim() || String(draweeBank || '').trim() || chequeImage || endorsed || String(payee || '').trim() || String(biller || '').trim() || String(account || '').trim() || feeTyped && String(fee || '') !== feeDefault || marginAck || String(marginReason || '').trim() || String(identityNumber || '').trim() || reportSuspicion || usdLargeNotes != null || String(usdSerials || '').trim());
     const requestClose = () => {
       if (phoneSheet && dealDirty) {
         setDiscardAsk(true);
@@ -36919,6 +36946,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
     const collectCad = isExchange ? toHome(amtN, inCcy) : isMO || isBill ? amtN + feeN : isCheque ? amtN : amtN; // send/receive amounts are already in the desk's currency
     const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
+    const tierFee = window.CDOS.ratesBoard && window.CDOS.ratesBoard.feeFor ? window.CDOS.ratesBoard.feeFor(settings, inCadEquiv) : null;
+    useEffect(() => {
+      if (!feeTyped) setFee(tierFee == null ? '' : String(tierFee));
+    }, [tierFee, feeTyped]);
 
     // margin (exchange + send carry FX spread; others are fee-only)
     const spreadCadLive = isExchange ? liveQuote && liveQuote.spreadCad != null ? +liveQuote.spreadCad : 0 : isSend ? pricing.marginCad || 0 : 0;
@@ -38079,7 +38110,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.amber
     }), lockClock))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        setFeeTyped(true);
+        setFee(e.target.value);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -38341,7 +38375,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "mt-3 grid grid-cols-2 gap-2"
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        setFeeTyped(true);
+        setFee(e.target.value);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -38392,7 +38429,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        setFeeTyped(true);
+        setFee(e.target.value);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -38517,7 +38557,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        setFeeTyped(true);
+        setFee(e.target.value);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -38569,7 +38612,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       autoFocus: true
     })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Fee (", home, ")"), /*#__PURE__*/React.createElement("input", {
       value: fee,
-      onChange: e => setFee(e.target.value),
+      onChange: e => {
+        setFeeTyped(true);
+        setFee(e.target.value);
+      },
       inputMode: "decimal",
       placeholder: "0.00",
       className: "w-full text-sm px-2.5 py-2 outline-none text-right",
@@ -59175,6 +59221,1070 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/cdos-rates-pricing.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS: Rates, the Pricing & rates tab (Rates v2.5)
+
+   A port of the design's Pricing & rates tab (handoff rates-v2.5,
+   "CurrencyDesk Rates v2.5", the isRules section): the design's markup,
+   copy and style strings, turned into React styles by the Rates app's
+   css(), so a reviewer can hold the two side by side.
+
+   What the desk pays and charges, in the shop's own currency:
+   - Rate source: the market feed the server pulls (GET /api/rates/market).
+   - Default spread, and each currency's own spread and pinned market rate
+     (Settings: defaultSpread, spreads, spotOverride, the keys the Board
+     reads).
+   - Default commission with tiers (Settings: defaultFee, feeTiers). The
+     new-deal screen fills the fee in from the deal's size
+     (ratesBoard.feeFor).
+   - The guardrails, summarised; they are edited on the Guardrails tab.
+   - A live deal preview, priced the way the desk prices (deskPair).
+   - How cost is worked out (GET/PUT /api/ledger/cost-method) and pay-out
+     rounding, on plans with deals.
+   Publish to Rate Board sends the board as it stands
+   (POST /api/rates/publish), as the Board's Publish does.
+
+   Who may change what is the server's rule (state/owner-settings.ts): a
+   teller sees it, a manager prices, the owner also sets the cost method.
+   Locked rates (Lock rates) take no changes. Where the design and the
+   code differ, the code wins: prices use the desk's formula, amounts are
+   in the shop's home currency, and the feed is the one the server pulls.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useCallback
+  } = React;
+  const B = window.CDOS.ratesBoard;
+  const FACE = window.CurrencyFace;
+  const num = v => {
+    const n = Number(String(v == null ? '' : v).replace(/,/g, ''));
+    return isFinite(n) ? n : NaN;
+  };
+  const money = v => Number(v).toLocaleString('en-CA', {
+    maximumFractionDigits: 2
+  });
+  function RatesPricing({
+    settings,
+    setSettings,
+    serverRole,
+    me,
+    log,
+    onToast,
+    onGoGuard,
+    locked,
+    w
+  }) {
+    const ui = window.CDOS.ratesUi;
+    const {
+      css,
+      Flag,
+      track,
+      seg,
+      fx,
+      ago,
+      getJson,
+      publishRows,
+      PUBLISHERS
+    } = ui;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    /* The server decides; without a server role (the offline prototype)
+       the desk's own role stands in. */
+    const role = serverRole || (me && me.role === 'Owner' ? 'administrator' : me && me.role === 'Manager' ? 'branch_manager' : 'teller');
+    const canPrice = PUBLISHERS.includes(role);
+    const owns = role === 'administrator';
+    const readOnly = !canPrice || !!locked;
+    /* A Rates plan prices its board; deals, commission and cost come with
+       Full System (the ledger refuses a Rates plan on the server). */
+    const hasDeals = (settings.billingPlan || 'premium') !== 'basic';
+    const defPct = settings.defaultSpread != null && settings.defaultSpread !== '' && isFinite(+settings.defaultSpread) ? +settings.defaultSpread : B.DEFAULT_SPREAD_PCT;
+    const floor = settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    const target = settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
+    const wideTable = (w || 1280) >= 880;
+    const [data, setData] = useState({
+      loading: true,
+      board: null,
+      market: {},
+      feed: null
+    });
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState(null);
+    /* What is being typed, until the field is left: "5,000" stays as typed. */
+    const [raw, setRaw] = useState({});
+    const typed = (k, fallback) => raw[k] != null ? raw[k] : fallback;
+    const typing = (k, v) => setRaw(r => ({
+      ...r,
+      [k]: v
+    }));
+    const leave = k => setRaw(r => {
+      const n = {
+        ...r
+      };
+      delete n[k];
+      return n;
+    });
+    const [method, setMethod] = useState(null);
+    const [infoOpen, setInfoOpen] = useState(false);
+    const [sim, setSim] = useState({
+      in: home,
+      out: '',
+      amt: '500'
+    });
+    const [simFee, setSimFee] = useState(true);
+    const load = useCallback(async () => {
+      try {
+        const [rates, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/market')]);
+        setData({
+          loading: false,
+          board: rates.board,
+          market: B.homeMarket(feed.mids, home),
+          feed
+        });
+      } catch (e) {
+        setData(d => ({
+          ...d,
+          loading: false
+        }));
+        setNotice('The board could not be loaded (' + e.message + '). Nothing has changed for customers.');
+      }
+    }, [home]);
+    useEffect(() => {
+      load();
+    }, [load]);
+    useEffect(() => {
+      if (!hasDeals) return;
+      getJson('/api/ledger/cost-method').then(m => setMethod(m && m.method), () => setMethod(null));
+    }, [hasDeals]);
+    const set = (patch, note) => {
+      if (readOnly) return;
+      setSettings(s => ({
+        ...s,
+        ...patch
+      }));
+      if (note && log) log('Pricing updated', note);
+    };
+    const setOwnSpread = (code, v) => {
+      if (readOnly) return;
+      setSettings(s => {
+        const sp = {
+          ...(s.spreads || {})
+        };
+        if (v === null) delete sp[code];else sp[code] = v;
+        return {
+          ...s,
+          spreads: sp
+        };
+      });
+    };
+    const setPin = (code, v) => {
+      if (readOnly) return;
+      setSettings(s => {
+        const o = {
+          ...(s.spotOverride || {})
+        };
+        if (v === null) delete o[code];else o[code] = v;
+        return {
+          ...s,
+          spotOverride: o
+        };
+      });
+    };
+    const rows = B.draftRows({
+      codes: window.CDOS.CCY || [],
+      home,
+      board: data.board,
+      market: data.market,
+      settings
+    });
+    const onBoard = rows.filter(r => r.show && r.mid);
+    const atPublishedMids = data.board ? rows.map(r => !r.pinned && data.board.rows[r.code] ? {
+      ...r,
+      mid: Number(data.board.rows[r.code].mid)
+    } : r) : rows;
+    const dirty = !B.sameAsPublished(atPublishedMids, data.board, defPct);
+    const moved = !dirty && !B.sameAsPublished(rows, data.board, defPct);
+    const pubOff = readOnly || !(dirty || moved) || busy;
+    const publish = async () => {
+      if (pubOff) return;
+      setNotice(null);
+      setBusy(true);
+      try {
+        const done = await publishRows(rows, defPct, {
+          me,
+          log
+        });
+        if (!done.ok) {
+          setNotice(done.message);
+          return;
+        }
+        onToast('Published · your site and window updated');
+        await load();
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    /* ---- the design's pieces ---- */
+    const card = 'padding:18px;border-radius:16px;background:#fff;border:1px solid var(--line);min-width:0;';
+    const cardHead = 'display:flex;align-items:center;gap:9px;font-family:var(--m);font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;color:var(--ink);';
+    const stepBtn = css('width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:18px;color:var(--ink);cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';');
+    const pubBtnSm = 'flex:none;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 15px;border:0;border-radius:11px;font-size:13px;font-weight:700;cursor:' + (pubOff ? 'default' : 'pointer') + ';background:' + (pubOff ? 'rgba(23,20,15,0.08)' : 'var(--ink)') + ';color:' + (pubOff ? 'rgba(23,20,15,0.35)' : '#fff') + ';';
+    const saveLabel = dirty ? 'Saved · not published' : 'Saved · live';
+    const saveChip = 'display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 13px;border-radius:999px;font-size:12.5px;font-weight:600;background:' + (dirty ? 'var(--amber-soft)' : 'var(--green-soft)') + ';color:' + (dirty ? 'var(--amber)' : 'var(--primary-deep)') + ';';
+    const feed = data.feed;
+    const live = !!(feed && feed.provider);
+    const refreshedLine = live ? 'Live market · refreshed ' + (feed.fetchedAt ? ago(feed.fetchedAt) : 'just now') : 'No market feed · rates hold at the last publish';
+    const feedDot = 'flex:none;width:8px;height:8px;border-radius:50%;background:' + (live ? '#2EA36B' : '#9a938a') + ';' + (live ? 'animation:rtLive 2s infinite;' : '');
+    /* The server pulls the market on its own schedule; Refresh reads the
+       newest pull it has. */
+    const refresh = async () => {
+      const before = feed && feed.fetchedAt;
+      await load();
+      onToast(before && data.feed && data.feed.fetchedAt === before ? 'Up to date · the market is pulled every hour' : 'Market rates refreshed');
+    };
+
+    /* Default spread: the design's stepper, typed or stepped by 0.1. */
+    const stepSpread = v => set({
+      defaultSpread: Math.min(20, Math.max(0, Math.round(v * 10) / 10))
+    }, 'default spread ' + v + '%');
+    const avgSp = onBoard.length ? onBoard.reduce((a, r) => a + r.spreadPct, 0) / onBoard.length : defPct;
+
+    /* Commission: the flat fee on every deal, and tiers for bigger deals. */
+    const tiersRaw = Array.isArray(settings.feeTiers) ? settings.feeTiers : [];
+    const tiers = tiersRaw.map((t, i) => ({
+      i,
+      over: t ? t.over : '',
+      fee: t ? t.fee : ''
+    })).sort((a, b) => (num(a.over) || 0) - (num(b.over) || 0));
+    const setTier = (i, patch) => set({
+      feeTiers: tiersRaw.map((t, k) => k === i ? {
+        ...t,
+        ...patch
+      } : t)
+    });
+    const addTier = () => {
+      if (readOnly) return;
+      const top = tiers.length ? num(tiers[tiers.length - 1].over) || 0 : 0;
+      const lastFee = tiers.length ? num(tiers[tiers.length - 1].fee) || 0 : num(settings.defaultFee) || 0;
+      set({
+        feeTiers: tiersRaw.concat([{
+          over: top ? top * 2 : 5000,
+          fee: Math.round(lastFee * 2) || 10
+        }])
+      }, 'commission tier added');
+    };
+    const removeTier = i => set({
+      feeTiers: tiersRaw.filter((t, k) => k !== i)
+    }, 'commission tier removed');
+    const big = Math.max(12000, Math.round((tiers.length ? num(tiers[tiers.length - 1].over) || 0 : 0) * 1.2));
+    const feeExample = [750].concat(tiers.length ? [big] : []).map(a => {
+      const f = B.feeFor(settings, a);
+      return 'A ' + home + ' ' + a.toLocaleString('en-CA') + ' deal pays ' + (f ? home + ' ' + money(f) : 'no fee');
+    }).join(' · ') + ', plus the spread.';
+    const feeInput = 'width:44px;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:14px;color:var(--ink);';
+    const feeBox = 'display:inline-flex;align-items:center;gap:4px;height:34px;padding:0 9px;border-radius:9px;border:1px solid var(--line);background:#fff;';
+
+    /* The guardrails, summarised; the Guardrails tab edits them. */
+    const enforce = settings.marginEnforce || 'block';
+    const guardSummary = 'Floor ' + floor.toFixed(1) + '%, target ' + target.toFixed(1) + '%' + (hasDeals ? ' · below the floor, ' + (enforce === 'warn' ? 'warn only' : 'a reason is required') + '.' : ' · checked on your board.');
+    const below = onBoard.filter(r => {
+      const p = B.deskPair(r.mid, r.spreadPct, r.spreadPct);
+      return (p.sell - r.mid) / r.mid * 100 < floor;
+    }).map(r => r.code);
+    const guardNote = below.length ? below.join(', ') + (below.length === 1 ? ' is' : ' are') + ' below your floor right now.' : 'Everything on your board is above your floor.';
+
+    /* Spread by currency. */
+    const nCustom = rows.filter(r => r.custom).length;
+    const customCount = nCustom === 0 ? 'All on the default' : nCustom + ' custom spread' + (nCustom === 1 ? '' : 's');
+    const spCols = 'display:grid;grid-template-columns:minmax(150px,1.6fr) minmax(96px,1fr) 150px minmax(84px,1fr) minmax(84px,1fr) minmax(90px,1fr);gap:14px;';
+    const spreadRows = rows.map((r, i) => {
+      const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
+      const sp = settings.spreads || {};
+      return {
+        r,
+        pair,
+        name: FACE.currencyName(r.code),
+        sub: (r.pinned ? 'market pinned' : r.custom ? 'custom spread' : 'default ' + defPct.toFixed(1) + '%') + (r.show ? '' : ' · off board'),
+        spIn: typed('sp-' + r.code, r.custom ? String(sp[r.code]) : ''),
+        spBox: css('display:inline-flex;align-items:center;gap:4px;width:96px;height:40px;padding:0 11px;border-radius:10px;background:#fff;border:' + (r.custom ? '1.5px solid var(--ink)' : '1px solid var(--line)') + ';'),
+        spotBox: css('width:100px;height:40px;padding:0 10px;border-radius:10px;text-align:right;outline:none;font-family:var(--m);font-size:15px;border:' + (r.pinned ? '1.5px solid var(--amber)' : '1px solid var(--line)') + ';background:' + (r.pinned ? 'var(--amber-soft)' : readOnly ? 'rgba(23,20,15,0.03)' : '#fff') + ';color:' + (readOnly ? 'var(--faint)' : 'var(--ink)') + ';'),
+        row: css(spCols + 'align-items:center;padding:12px 18px;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.6;')),
+        card: css('padding:14px 16px;' + (i ? 'border-top:1px solid var(--hair);' : 'border-top:1px solid var(--line);') + (r.show ? '' : 'opacity:0.6;'))
+      };
+    });
+    const onSp = code => e => {
+      const v = e.target.value;
+      typing('sp-' + code, v);
+      const n = num(v);
+      if (v.trim() === '') setOwnSpread(code, null);else if (isFinite(n)) setOwnSpread(code, Math.min(20, Math.max(0, n)));
+    };
+    const onSpot = code => e => {
+      const v = e.target.value;
+      typing('spot-' + code, v);
+      const n = num(v);
+      if (n > 0) setPin(code, n);
+    };
+    const spInput = x => /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      step: "0.1",
+      "aria-label": x.r.code + ' spread',
+      value: x.spIn,
+      placeholder: defPct.toFixed(1),
+      disabled: readOnly,
+      onChange: onSp(x.r.code),
+      onBlur: () => leave('sp-' + x.r.code),
+      style: css('width:100%;min-width:0;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:15px;color:var(--ink);')
+    });
+    const clearBtn = x => x.r.custom && !readOnly ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        leave('sp-' + x.r.code);
+        setOwnSpread(x.r.code, null);
+      },
+      title: "Back to default",
+      "aria-label": 'Use the default spread for ' + x.r.code,
+      style: css('flex:none;appearance:none;border:0;background:none;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:4px;')
+    }, "\xD7") : null;
+
+    /* The live deal preview, priced the way the desk prices. */
+    const simCodes = [home].concat(onBoard.map(r => r.code)).filter(Boolean);
+    const simIn = simCodes.includes(sim.in) ? sim.in : simCodes[0];
+    const simOut = simCodes.includes(sim.out) && sim.out !== simIn ? sim.out : simCodes.find(c => c !== simIn) || simIn;
+    const find = k => rows.find(r => r.code === k && r.mid);
+    const priced = r => B.deskPair(r.mid, r.spreadPct, r.spreadPct);
+    const amt = num(sim.amt) || 0;
+    const step = num(settings.payoutRoundTo) > 0 ? num(settings.payoutRoundTo) : 0.01;
+    const mode = settings.payoutRoundMode || 'nearest';
+    const rnd = v => {
+      const q = v / step;
+      return (mode === 'down' ? Math.floor(q) : mode === 'up' ? Math.ceil(q) : Math.round(q)) * step;
+    };
+    const xin = find(simIn),
+      xout = find(simOut),
+      same = simIn === simOut;
+    const withFee = hasDeals && simFee;
+    const size = simIn === home ? amt : amt * (xin ? xin.mid : 0);
+    const fee = withFee ? B.feeFor(settings, size) || 0 : 0;
+    let recv = 0,
+      rate = '',
+      margin = 0,
+      base = amt;
+    if (!same) {
+      if (simIn === home && xout) {
+        const pr = priced(xout);
+        recv = Math.max(0, amt - fee) / pr.sell;
+        margin = recv * (pr.sell - xout.mid);
+        rate = '1 ' + xout.code + ' = ' + fx(pr.sell);
+      } else if (xin && simOut === home) {
+        const pr = priced(xin);
+        recv = Math.max(0, amt * pr.buy - fee);
+        margin = amt * (xin.mid - pr.buy);
+        base = amt * xin.mid;
+        rate = '1 ' + xin.code + ' = ' + fx(pr.buy);
+      } else if (xin && xout) {
+        const pi = priced(xin),
+          po = priced(xout);
+        recv = amt * pi.buy / po.sell;
+        margin = amt * (xin.mid - pi.buy) + recv * (po.sell - xout.mid);
+        base = amt * xin.mid;
+        rate = '1 ' + xin.code + ' = ' + (pi.buy / po.sell).toFixed(4) + ' ' + xout.code;
+      }
+    }
+    const ok = !same && amt > 0 && recv > 0,
+      r2 = ok ? rnd(recv) : 0,
+      dp = step >= 1 ? 0 : 2,
+      pct = ok ? margin / base * 100 : 0;
+    const total = margin + fee,
+      tPct = ok ? total / base * 100 : 0;
+    const vs = tone => css('font-family:var(--m);font-size:14px;font-weight:700;margin-top:4px;color:' + tone + ';');
+    const toneVar = p => p < floor ? 'var(--clay)' : p < target ? 'var(--amber)' : 'var(--primary-deep)';
+    const simStats = withFee ? [{
+      label: 'Rate',
+      value: ok ? rate : '·',
+      vStyle: vs('var(--ink)')
+    }, {
+      label: 'Flat fee',
+      value: ok ? fee ? money(fee) + ' ' + home : 'None' : '·',
+      vStyle: vs('var(--ink)')
+    }, {
+      label: 'Spread margin',
+      value: ok ? margin.toFixed(2) + ' ' + home : '·',
+      vStyle: vs('var(--mute)')
+    }, {
+      label: 'You make',
+      value: ok ? total.toFixed(2) + ' ' + home : '·',
+      vStyle: vs('var(--primary-deep)')
+    }, {
+      label: 'Effective %',
+      value: ok ? tPct.toFixed(2) + '%' : '·',
+      vStyle: vs(toneVar(tPct))
+    }] : [{
+      label: 'Rate',
+      value: ok ? rate : '·',
+      vStyle: vs('var(--ink)')
+    }, {
+      label: 'Margin · ' + home,
+      value: ok ? margin.toFixed(2) : '·',
+      vStyle: vs('var(--primary-deep)')
+    }, {
+      label: 'Margin %',
+      value: ok ? pct.toFixed(2) + '%' : '·',
+      vStyle: vs(toneVar(pct))
+    }, {
+      label: 'Rounding',
+      value: ok ? (r2 - recv >= 0 ? '+' : '−') + Math.abs(r2 - recv).toFixed(2) + ' ' + simOut : '·',
+      vStyle: vs('var(--mute)')
+    }];
+    const simNote = same ? 'Pick two different currencies.' : 'Pay-out rounded ' + mode + ' to ' + step + '. ' + (withFee ? (simIn === home ? 'The fee comes off what they pay before it is converted. ' : 'The fee comes off what they receive. ') + 'Effective % is spread plus fee, over the deal size.' : 'Margin is what you capture against the market, before any fee.');
+    const ft = track(withFee, false);
+    const simSelect = css('flex:none;border:0;border-right:1px solid var(--line);background:rgba(23,20,15,0.04);padding:0 10px;font-family:var(--m);font-size:13px;font-weight:700;outline:none;');
+    const simLabel = css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:6px;');
+
+    /* How cost is worked out (owner), and pay-out rounding. */
+    const methodName = method === 'fifo' ? 'FIFO' : 'Average';
+    const setCostMethod = async m => {
+      if (!owns || readOnly) return;
+      const want = m === 'FIFO' ? 'fifo' : 'weighted_average';
+      try {
+        const res = await fetch('/api/ledger/cost-method', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            method: want
+          })
+        });
+        if (!res.ok) {
+          onToast('The cost method did not change (the server answered ' + res.status + ').');
+          return;
+        }
+        const body = await res.json();
+        setMethod(body && body.method ? body.method : want);
+        if (log) log('Cost method changed', m);
+      } catch (e) {
+        onToast('The cost method did not change. Check the connection and try again.');
+      }
+    };
+    const methods = seg(['Average', 'FIFO'], methodName, setCostMethod, !owns || readOnly);
+    const methodNote = (methodName === 'FIFO' ? 'First in, first out: each sale uses your oldest notes first.' : 'Every purchase blends into one average price per currency.') + (owns ? '' : ' Only the owner can change this.');
+    const infoBtn = css('flex:none;appearance:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;cursor:pointer;font-family:var(--m);font-size:11px;font-weight:700;line-height:1;transition:all .2s ease;border:1.5px solid ' + (infoOpen ? 'var(--primary)' : 'rgba(23,20,15,0.3)') + ';background:' + (infoOpen ? 'var(--primary)' : '#fff') + ';color:' + (infoOpen ? '#fff' : 'var(--mute)') + ';');
+    const infoCases = [{
+      name: 'Average',
+      how: 'Both purchases blend: 2,000 USD for 2,730 ' + home + '.',
+      cost: '1.365',
+      keep: '17.50 ' + home
+    }, {
+      name: 'FIFO',
+      how: 'The 500 you sell come from Monday’s batch first.',
+      cost: '1.350',
+      keep: '25.00 ' + home
+    }];
+    const ROUND_TO = ['0.01', '0.05', '0.25', '1.00', '5.00'];
+    const roundToNow = ROUND_TO.find(o => num(o) === step) || String(step);
+    const roundRows = [{
+      label: 'Round what the customer gets to',
+      hint: 'So the drawer never has to find a coin it doesn’t have.',
+      opts: seg(ROUND_TO.includes(roundToNow) ? ROUND_TO : ROUND_TO.concat([roundToNow]), roundToNow, v => set({
+        payoutRoundTo: num(v)
+      }, 'pay-out rounding ' + v), readOnly)
+    }, {
+      label: 'Which way',
+      hint: 'Down always favours the shop. Up favours the customer. Nearest is fairest.',
+      opts: seg(['Nearest', 'Down', 'Up'], mode.charAt(0).toUpperCase() + mode.slice(1), v => set({
+        payoutRoundMode: v.toLowerCase()
+      }, 'pay-out rounding ' + v.toLowerCase()), readOnly)
+    }];
+    const upgrade = () => {
+      if (window.CDOS.openSettingsTab) window.CDOS.openSettingsTab('billing');else if (window.CDOS.openApp) window.CDOS.openApp('settings');
+    };
+    if (data.loading) return /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
+    }, "Loading your pricing\u2026");
+    return /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;flex-direction:column;gap:14px;max-width:1080px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 260px;min-width:0;font-size:13.5px;line-height:1.5;color:var(--mute);')
+    }, 'What the desk pays and charges. ' + (hasDeals ? 'Every change here prices your board and the next deal in the Ledger.' : 'Every change here prices your board.')), /*#__PURE__*/React.createElement("span", {
+      style: css(saveChip)
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:7px;height:7px;border-radius:50%;background:currentColor;')
+    }), saveLabel), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: publish,
+      disabled: pubOff,
+      style: css(pubBtnSm)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 15V4M7.5 8.5 12 4l4.5 4.5M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15"
+    })), busy ? 'Publishing…' : 'Publish to Rate Board')), notice && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      style: css('padding:11px 14px;border-radius:12px;background:var(--clay-soft);color:var(--clay);font-size:13px;font-weight:600;')
+    }, notice), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(card)
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.9",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: "12",
+      cy: "12",
+      r: "9"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18"
+    })), "Rate source"), /*#__PURE__*/React.createElement("div", {
+      style: css('width:100%;display:flex;align-items:center;gap:10px;margin-top:13px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:rgba(23,20,15,0.03);text-align:left;box-sizing:border-box;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1;min-width:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+    }, live ? feed.provider + ' · hourly' : 'No market feed')), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;margin-top:12px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css(feedDot)
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;font-size:13px;color:var(--mute);')
+    }, refreshedLine), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: refresh,
+      style: css('flex:none;appearance:none;height:34px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:700;cursor:pointer;')
+    }, "Refresh")), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin:11px 0 0;')
+    }, "Spreads below sit on top of this rate. The same feed drives your board, website and window.")), /*#__PURE__*/React.createElement("div", {
+      style: css(card)
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M19 5 5 19"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "7",
+      cy: "7",
+      r: "2.5"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "17",
+      cy: "17",
+      r: "2.5"
+    })), "Default spread"), /*#__PURE__*/React.createElement("div", {
+      style: css('margin-top:13px;')
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:7px;')
+    }, "Above and below market"), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Lower the default spread",
+      disabled: readOnly,
+      onClick: () => stepSpread(defPct - 0.1),
+      style: stepBtn
+    }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;justify-content:center;gap:2px;min-width:80px;height:38px;padding:0 9px;border-radius:10px;background:rgba(23,20,15,0.05);')
+    }, /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Default spread",
+      value: typed('defaultSpread', defPct.toFixed(1)),
+      inputMode: "decimal",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        typing('defaultSpread', v);
+        const n = parseFloat(v);
+        if (!isNaN(n)) set({
+          defaultSpread: Math.min(20, Math.max(0, n))
+        });
+      },
+      onBlur: () => leave('defaultSpread'),
+      style: css('width:46px;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:16px;font-weight:700;color:var(--ink);')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:14px;color:var(--mute);')
+    }, "%")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Raise the default spread",
+      disabled: readOnly,
+      onClick: () => stepSpread(defPct + 0.1),
+      style: stepBtn
+    }, "+")))), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin:11px 0 0;')
+    }, "Applied above and below the market to any currency without its own. Average across your board ", /*#__PURE__*/React.createElement("b", {
+      style: css('color:var(--ink);')
+    }, avgSp.toFixed(2) + '%'), ".")), hasDeals && /*#__PURE__*/React.createElement("div", {
+      style: css(card + ' padding-bottom: 6px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: "9",
+      cy: "9",
+      r: "6"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M15.5 9.2A6 6 0 1 1 9.2 15.5"
+    })), "Default commission"), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin:9px 0 0;')
+    }, "A flat fee on top of the spread. Bigger deals can pay a different fee."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;flex-direction:column;gap:6px;margin-top:12px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 10px;border-radius:11px;background:rgba(23,20,15,0.035);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:12.5px;font-weight:600;min-width:74px;')
+    }, "Every deal"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:12.5px;color:var(--mute);')
+    }, "pay"), /*#__PURE__*/React.createElement("span", {
+      style: css(feeBox)
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);')
+    }, home), /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Fee on every deal",
+      value: typed('fee', settings.defaultFee == null ? '' : String(settings.defaultFee)),
+      inputMode: "decimal",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        typing('fee', v);
+        set({
+          defaultFee: v === '' ? '' : Number(v)
+        });
+      },
+      onBlur: () => leave('fee'),
+      style: css(feeInput)
+    }))), tiers.map((t, n) => /*#__PURE__*/React.createElement("div", {
+      key: t.i,
+      style: css('display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 10px;border-radius:11px;background:rgba(23,20,15,0.035);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:12.5px;font-weight:600;min-width:74px;')
+    }, "Deals over"), /*#__PURE__*/React.createElement("span", {
+      style: css(feeBox)
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);')
+    }, home), /*#__PURE__*/React.createElement("input", {
+      "aria-label": 'Tier ' + (n + 1) + ' starts over',
+      value: typed('over-' + t.i, isFinite(num(t.over)) && String(t.over) !== '' ? num(t.over).toLocaleString('en-CA') : String(t.over)),
+      inputMode: "numeric",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9,]/g, '');
+        typing('over-' + t.i, v);
+        setTier(t.i, {
+          over: v === '' ? '' : num(v)
+        });
+      },
+      onBlur: () => leave('over-' + t.i),
+      style: css('width:64px;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:14px;color:var(--ink);')
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:12.5px;color:var(--mute);')
+    }, "pay"), /*#__PURE__*/React.createElement("span", {
+      style: css(feeBox)
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);')
+    }, home), /*#__PURE__*/React.createElement("input", {
+      "aria-label": 'Tier ' + (n + 1) + ' fee',
+      value: typed('tfee-' + t.i, String(t.fee)),
+      inputMode: "decimal",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        typing('tfee-' + t.i, v);
+        setTier(t.i, {
+          fee: v === '' ? '' : Number(v)
+        });
+      },
+      onBlur: () => leave('tfee-' + t.i),
+      style: css(feeInput)
+    })), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), !readOnly && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => removeTier(t.i),
+      title: "Remove this tier",
+      "aria-label": "Remove this tier",
+      style: css('appearance:none;border:0;background:none;color:var(--faint);cursor:pointer;font-size:17px;line-height:1;padding:4px;')
+    }, "\xD7"))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: addTier,
+      disabled: readOnly,
+      style: css('align-self:flex-start;appearance:none;border:1px dashed rgba(23,20,15,0.25);background:none;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;color:var(--mute);cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';')
+    }, "+ Add a tier")), /*#__PURE__*/React.createElement("div", {
+      style: css('margin-top:12px;padding:10px 12px;border-radius:11px;background:var(--green-soft);font-size:12.5px;line-height:1.55;color:var(--primary-deep);')
+    }, feeExample), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12px;line-height:1.5;color:var(--faint);margin:8px 0 12px;')
+    }, "Filled in on the new-deal screen. Tellers can remove it for a regular."))), /*#__PURE__*/React.createElement("div", {
+      style: css(card + ' display: flex; align-items: center; gap: 14px; flex-wrap: wrap;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M3 12h4l3-8 4 16 3-8h4"
+    })), "Margin guardrails"), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:13px;line-height:1.5;color:var(--mute);margin-top:8px;')
+    }, guardSummary), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;font-weight:600;margin-top:4px;')
+    }, guardNote)), onGoGuard && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onGoGuard,
+      style: css('flex:none;appearance:none;height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;cursor:pointer;')
+    }, "Open guardrails \u2192")), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "Spread by currency",
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;padding:16px 18px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead + ' flex: 1;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M4 20V10M10 20V4M16 20v-7M22 20H2"
+    })), "Spread by currency"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:12.5px;color:var(--mute);')
+    }, customCount)), wideTable && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: css(spCols + 'padding:11px 18px;background:rgba(23,20,15,0.035);border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, 'Market · ' + home), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'center'
+      }
+    }, "Spread"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We sell"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "Margin / unit")), spreadRows.map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.r.code,
+      style: x.row
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;align-items:center;gap:11px;min-width:0;')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: x.r.code,
+      size: 28
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:14.5px;')
+    }, x.name), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+    }, x.r.code + ' · ' + x.sub))), /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;align-items:center;justify-content:flex-end;gap:4px;')
+    }, x.r.pinned && !readOnly && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        leave('spot-' + x.r.code);
+        setPin(x.r.code, null);
+      },
+      title: "Back to the feed",
+      "aria-label": 'Back to the feed for ' + x.r.code,
+      style: css('flex:none;appearance:none;border:0;background:none;color:var(--amber);cursor:pointer;font-size:15px;line-height:1;padding:3px;')
+    }, "\u21BA"), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      step: "0.0001",
+      "aria-label": x.r.code + ' market rate',
+      value: typed('spot-' + x.r.code, x.r.mid ? fx(x.r.mid) : ''),
+      readOnly: readOnly,
+      onChange: onSpot(x.r.code),
+      onBlur: () => leave('spot-' + x.r.code),
+      style: x.spotBox
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;align-items:center;justify-content:center;gap:6px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: x.spBox
+    }, spInput(x), /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--faint);font-size:12px;')
+    }, "%")), clearBtn(x)), /*#__PURE__*/React.createElement("span", {
+      style: css('text-align:right;font-family:var(--m);font-size:15px;color:var(--clay);')
+    }, x.pair ? fx(x.pair.buy) : '·'), /*#__PURE__*/React.createElement("span", {
+      style: css('text-align:right;font-family:var(--m);font-size:15px;color:var(--primary);')
+    }, x.pair ? fx(x.pair.sell) : '·'), /*#__PURE__*/React.createElement("span", {
+      style: css('text-align:right;font-family:var(--m);font-size:15px;font-weight:700;')
+    }, x.pair ? fx(x.pair.sell - x.r.mid) : '·')))), !wideTable && spreadRows.map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.r.code,
+      style: x.card
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:11px;')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: x.r.code,
+      size: 28
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('font-size:14.5px;')
+    }, x.name), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12px;color:var(--mute);')
+    }, x.r.code + ' · ' + x.sub)), /*#__PURE__*/React.createElement("span", {
+      style: x.spBox
+    }, spInput(x), /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--faint);font-size:12px;')
+    }, "%")), clearBtn(x)), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:8px;margin-top:11px;')
+    }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, "Market"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:13px;color:var(--mute);')
+    }, x.r.mid ? fx(x.r.mid) : '·')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:13px;color:var(--clay);')
+    }, x.pair ? fx(x.pair.buy) : '·')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, "We sell"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:13px;color:var(--primary);')
+    }, x.pair ? fx(x.pair.sell) : '·')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, "Margin"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:13px;font-weight:700;')
+    }, x.pair ? fx(x.pair.sell - x.r.mid) : '·')))))), /*#__PURE__*/React.createElement("div", {
+      style: css('padding:18px;border-radius:16px;background:#fff;border:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;font-family:var(--m);font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: "5",
+      y: "3",
+      width: "14",
+      height: "18",
+      rx: "2"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2M16 11v4"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;display:inline-flex;align-items:center;gap:9px;')
+    }, "Live deal preview"), hasDeals && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": withFee,
+      onClick: () => setSimFee(!withFee),
+      style: css('display:inline-flex;align-items:center;gap:9px;appearance:none;border:0;background:none;cursor:pointer;padding:0;font:inherit;letter-spacing:0.1em;color:var(--mute);')
+    }, "Include fee", /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...ft.track,
+        width: 34,
+        height: 20
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...ft.knob,
+        width: 14,
+        height: 14,
+        transform: 'translateX(' + (withFee ? 14 : 0) + 'px)'
+      }
+    })))), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin:6px 0 0;')
+    }, "Try a deal against the rates above. Changes to spreads show here straight away."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px;margin-top:14px;align-items:end;')
+    }, /*#__PURE__*/React.createElement("label", {
+      style: css('display:block;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: simLabel
+    }, "Customer pays"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fff;')
+    }, /*#__PURE__*/React.createElement("select", {
+      "aria-label": "Customer pays in",
+      value: simIn,
+      onChange: e => setSim(s => ({
+        ...s,
+        in: e.target.value
+      })),
+      style: simSelect
+    }, simCodes.map(c => /*#__PURE__*/React.createElement("option", {
+      key: c,
+      value: c
+    }, c))), /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Customer pays",
+      value: sim.amt,
+      onChange: e => setSim(s => ({
+        ...s,
+        amt: e.target.value.replace(/[^0-9.,]/g, '')
+      })),
+      inputMode: "decimal",
+      style: css('flex:1;min-width:0;height:42px;border:0;outline:none;padding:0 12px;text-align:right;font-family:var(--m);font-size:16px;color:var(--ink);')
+    }))), /*#__PURE__*/React.createElement("label", {
+      style: css('display:block;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: simLabel
+    }, "Receives"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:rgba(29,107,69,0.05);')
+    }, /*#__PURE__*/React.createElement("select", {
+      "aria-label": "Receives in",
+      value: simOut,
+      onChange: e => setSim(s => ({
+        ...s,
+        out: e.target.value
+      })),
+      style: simSelect
+    }, simCodes.map(c => /*#__PURE__*/React.createElement("option", {
+      key: c,
+      value: c
+    }, c))), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;height:42px;display:flex;align-items:center;justify-content:flex-end;padding:0 12px;font-family:var(--m);font-size:16px;font-weight:700;color:var(--primary-deep);')
+    }, ok ? r2.toLocaleString('en-CA', {
+      minimumFractionDigits: dp,
+      maximumFractionDigits: dp
+    }) : '·')))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:1px;margin-top:12px;border-radius:11px;overflow:hidden;background:var(--line);border:1px solid var(--line);')
+    }, simStats.map(g => /*#__PURE__*/React.createElement("div", {
+      key: g.label,
+      style: css('padding:10px 12px;background:#fff;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, g.label), /*#__PURE__*/React.createElement("div", {
+      style: g.vStyle
+    }, g.value)))), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12px;line-height:1.5;color:var(--mute);margin-top:9px;')
+    }, simNote)), hasDeals && /*#__PURE__*/React.createElement("div", {
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px 18px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 240px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:flex;align-items:center;gap:7px;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('font-size:14px;')
+    }, "How cost is worked out"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setInfoOpen(!infoOpen),
+      title: "How this works",
+      "aria-label": "How this works",
+      "aria-expanded": infoOpen,
+      style: infoBtn
+    }, "i")), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:2px;')
+    }, methodNote)), /*#__PURE__*/React.createElement("span", {
+      role: "group",
+      "aria-label": "Cost method",
+      style: css('display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:rgba(23,20,15,0.06);')
+    }, methods.map(m => /*#__PURE__*/React.createElement("button", {
+      key: m.label,
+      type: "button",
+      "aria-pressed": m.label === methodName,
+      disabled: !owns || readOnly,
+      onClick: m.onPick,
+      style: m.style
+    }, m.label)))), infoOpen && /*#__PURE__*/React.createElement("div", {
+      style: css('margin:0 18px 16px;padding:14px 15px;border-radius:13px;background:rgba(23,20,15,0.035);border:1px solid var(--hair);animation:rtIn .22s ease both;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, "Worked example \xB7 USD"), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:13px;line-height:1.55;margin-top:6px;')
+    }, "You buy ", /*#__PURE__*/React.createElement("b", null, "1,000 USD at 1.35"), " on Monday, then ", /*#__PURE__*/React.createElement("b", null, "1,000 at 1.38"), " on Thursday. On Friday you sell ", /*#__PURE__*/React.createElement("b", null, "500"), " at 1.40."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:10px;margin-top:12px;')
+    }, infoCases.map(c => /*#__PURE__*/React.createElement("div", {
+      key: c.name,
+      style: css('padding:12px 13px;border-radius:11px;background:#fff;border:1px solid ' + (methodName === c.name ? 'var(--primary)' : 'var(--line)') + ';')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:7px;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('font-size:13.5px;')
+    }, c.name), methodName === c.name && /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary-deep);background:var(--green-soft);padding:2px 7px;border-radius:999px;')
+    }, "You use this")), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:4px;')
+    }, c.how), /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:12px;margin-top:6px;')
+    }, 'Cost ' + c.cost + ' · you keep ' + c.keep)))), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12px;line-height:1.5;color:var(--mute);margin-top:10px;')
+    }, "Neither changes the price on your board, only how much profit each sale shows. Most shops use the average. Your accountant may prefer FIFO.")), roundRows.map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.label,
+      style: css('display:flex;align-items:center;gap:12px 14px;flex-wrap:wrap;padding:13px 18px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 220px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:14px;')
+    }, r.label), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:2px;')
+    }, r.hint)), /*#__PURE__*/React.createElement("span", {
+      role: "group",
+      "aria-label": r.label,
+      style: css('display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:rgba(23,20,15,0.06);flex-wrap:wrap;')
+    }, r.opts.map(o => /*#__PURE__*/React.createElement("button", {
+      key: o.label,
+      type: "button",
+      "aria-pressed": o.on,
+      disabled: readOnly,
+      onClick: o.onPick,
+      style: o.style
+    }, o.label)))))), !hasDeals && owns && /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 18px;border-radius:16px;border:1px dashed rgba(23,20,15,0.22);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:14px;')
+    }, "Commission, real profit and deal guardrails come with Full System"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:3px;')
+    }, "On Rates you price your board. Full System adds deals, what you paid for your cash, and a check on every deal before it posts.")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: upgrade,
+      style: css('flex:none;appearance:none;height:40px;padding:0 16px;border-radius:11px;border:0;background:var(--ink);color:#fff;font-size:13px;font-weight:700;cursor:pointer;')
+    }, "See Full System")));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    RatesPricing
+  });
+})();
+
 /* ---- os-src/cdos-rates.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -59342,6 +60452,73 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       "aria-label": `What is ${TIPS[tipKey][0].toLowerCase()}?`,
       style: btn
     }, "i");
+  }
+
+  /* Publish a board (POST /api/rates/publish): the Board's Publish and
+     Pricing & rates' Publish to Rate Board. Answers { ok } or { ok: false,
+     status, message } in words for the screen. */
+  async function publishRows(rows, defPct, {
+    me,
+    log
+  } = {}) {
+    const out = B.publishBody(rows, defPct);
+    if (!out.ok) {
+      return {
+        ok: false,
+        status: 0,
+        message: out.missing.length ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.` : 'A spread is over 20%. Lower it in Pricing & rates.'
+      };
+    }
+    let res;
+    try {
+      res = await fetch('/api/rates/publish', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify(out.body)
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        message: 'No connection. Nothing was published.'
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        message: res.status === 409 ? 'Rates are locked. Unlock them to publish. Customers still see your last publish.' : res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`
+      };
+    }
+    const saved = (await res.json()).board;
+    /* The desk's rate engine reads this browser cache (cdos-os.jsx,
+       publishedBook). The server board is the record; this only spares
+       the desk a reload before its next deal prices off the new board. */
+    try {
+      const cache = JSON.stringify({
+        buyMargin: saved.buyMargin,
+        sellMargin: saved.sellMargin,
+        rows: saved.rows,
+        publishedAt: saved.publishedAt,
+        publishedBy: saved.publishedBy
+      });
+      localStorage.setItem('yorkfx_rates_v1', cache);
+      localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'yorkfx_rates_v1',
+        newValue: cache
+      }));
+    } catch (e) {
+      console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e);
+    }
+    if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
+    return {
+      ok: true,
+      board: saved
+    };
   }
 
   /* The design's tone for a margin: red under the floor (or a loss),
@@ -59796,52 +60973,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const publish = async () => {
       if (pubOff) return;
       setNotice(null);
-      const out = B.publishBody(rows, defPct);
-      if (!out.ok) {
-        setNotice(out.missing.length ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.` : 'A spread is over 20%. Lower it in Pricing & rates.');
-        return;
-      }
       setBusy(true);
       try {
-        const res = await fetch('/api/rates/publish', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify(out.body)
+        const done = await publishRows(rows, defPct, {
+          me,
+          log
         });
-        if (!res.ok) {
-          if (res.status === 409) {
-            await load();
-            setNotice('Rates are locked. Unlock them to publish. Customers still see your last publish.');
-            return;
-          }
-          setNotice(res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`);
+        if (!done.ok) {
+          if (done.status === 409) await load();
+          setNotice(done.message);
           return;
         }
-        const saved = (await res.json()).board;
-        /* The desk's rate engine reads this browser cache (cdos-os.jsx,
-           publishedBook). The server board is the record; this only spares
-           the desk a reload before its next deal prices off the new board. */
-        try {
-          const cache = JSON.stringify({
-            buyMargin: saved.buyMargin,
-            sellMargin: saved.sellMargin,
-            rows: saved.rows,
-            publishedAt: saved.publishedAt,
-            publishedBy: saved.publishedBy
-          });
-          localStorage.setItem('yorkfx_rates_v1', cache);
-          localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
-          window.dispatchEvent(new StorageEvent('storage', {
-            key: 'yorkfx_rates_v1',
-            newValue: cache
-          }));
-        } catch (e) {
-          console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e);
-        }
-        if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
         setEdits({
           order: null,
           show: {},
@@ -59849,8 +60991,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         });
         onToast('Published · your site and window updated');
         await load();
-      } catch (e) {
-        setNotice('No connection. Nothing was published.');
       } finally {
         setBusy(false);
       }
@@ -60304,7 +61444,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const w = useWidth(rootRef);
     const cards = w < 880;
     const readOnly = !PUBLISHERS.includes(serverRole);
-    const Pricing = window.CDOS.Pricing;
     const flash = useCallback(t => {
       setToast(t);
       clearTimeout(flash.t);
@@ -60531,12 +61670,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onToast: flash,
       settings: settings,
       setSettings: setSettings
-    }), tab === 'rules' && /*#__PURE__*/React.createElement(Pricing, {
+    }), tab === 'rules' && /*#__PURE__*/React.createElement(window.CDOS.RatesPricing, {
       settings: settings,
       setSettings: setSettings,
       me: me,
       log: log,
-      serverRole: serverRole
+      serverRole: serverRole,
+      onToast: flash,
+      locked: isLocked,
+      w: w
     }))), tip && TIPS[tip] && /*#__PURE__*/React.createElement("div", {
       role: "dialog",
       "aria-label": TIPS[tip][0],
@@ -60618,7 +61760,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       Switch,
       useWidth,
       seg,
-      pill
+      pill,
+      fx,
+      ago,
+      getJson,
+      chip,
+      toneOf,
+      publishRows,
+      PUBLISHERS
     }
   });
 })();
@@ -73306,6 +74455,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       });
       openApp('settings');
     };
+    /* Rates' "See Full System" opens Settings on Billing. */
+    window.CDOS.openSettingsTab = openSettingsTab;
     const openLedgerRefs = (refs, label) => {
       setLedgerFocus({
         refs,

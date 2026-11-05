@@ -1944,6 +1944,8 @@
     const openClientProfile = (name, txRef) => { setClientToOpen({ name, txRef: txRef || null, n: Date.now() }); openApp('clients'); };
     const openTransaction = (id) => { setTxToOpen({ id, n: Date.now() }); openApp('ledger'); };
     const openSettingsTab = (t) => { setSettingsJump({ t, n: Date.now() }); openApp('settings'); };
+    /* Rates' "See Full System" opens Settings on Billing. */
+    window.CDOS.openSettingsTab = openSettingsTab;
     const openLedgerRefs = (refs, label) => { setLedgerFocus({ refs, label, n: Date.now() }); openApp('ledger'); };
     // open the Compliance app straight into the LCTR/EFTR filing worksheet for one report
     const openComplianceFiling = (report) => { setComplianceFiling({ report, n: Date.now() }); openApp('compliance'); };

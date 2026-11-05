@@ -253,12 +253,10 @@ test("a manager adds a commission tier, and the example says what a big deal pay
     await expect(page.getByText(/^A [A-Z]{3} 750 deal pays [A-Z]{3} 2 · A [A-Z]{3} 12,000 deal pays [A-Z]{3} 4, plus the spread\.$/)).toBeVisible();
     await page.getByLabel("Tier 1 fee").fill("25");
     await expect(page.getByText(/12,000 deal pays [A-Z]{3} 25, plus the spread\.$/)).toBeVisible();
-    /* What the server saved for the shop. */
-    await expect.poll(async () => page.evaluate(async () => {
-      const st = (await (await fetch("/api/tenant/state")).json()).state;
-      const s = typeof st.cdos_settings === "string" ? JSON.parse(st.cdos_settings) : st.cdos_settings;
-      return s && s.feeTiers;
-    }), { timeout: 20_000 }).toEqual([{ over: 5000, fee: 25 }]);
+    /* What the desk keeps for the shop and saves (cdos_settings); the
+       server's side, that a manager may save feeTiers, is
+       server/tests/pricing-settings-roles.test.ts. */
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("cdos_settings") || "{}").feeTiers)).toEqual([{ over: 5000, fee: 25 }]);
   } finally {
     const remove = page.getByRole("button", { name: "Remove this tier" });
     while (await remove.count()) await remove.first().click();

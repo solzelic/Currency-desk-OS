@@ -38,7 +38,7 @@ export const NON_OWNER_MAY_CHANGE = [
    (the default and each currency's own), pinned rates, the fee, rounding,
    how long a quote holds, and the feed's name. Not the guardrails. */
 export const PRICING_KEYS = [
-  "defaultSpread", "spreads", "spotOverride", "defaultFee", "rateRounding", "rateLockMins",
+  "defaultSpread", "spreads", "spotOverride", "defaultFee", "feeTiers", "rateRounding", "rateLockMins",
   "payoutRoundTo", "payoutRoundMode", "rateProvider",
 ] as const;
 

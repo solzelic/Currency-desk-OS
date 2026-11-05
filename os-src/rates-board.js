@@ -162,5 +162,29 @@
     });
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+  /* Commission tiers (Rates v2.5, Pricing & rates): the flat fee on every
+     deal (defaultFee), and a deal over a tier's amount pays that tier's
+     fee instead; the highest tier it is over wins. The amount is the deal's
+     size in the shop's own currency. Typed values may carry commas; a tier
+     that is not two numbers, or a negative fee, is ignored. Null when the
+     shop charges no fee at that size. */
+  function feeFor(settings, homeAmount) {
+    function num(v) {
+      if (v === null || v === undefined || v === "") return null;
+      var n = Number(String(v).replace(/,/g, ""));
+      return isFinite(n) ? n : null;
+    }
+    var s = settings || {};
+    var fee = num(s.defaultFee);
+    if (fee !== null && fee < 0) fee = null;
+    var amount = Number(homeAmount) || 0;
+    var tiers = (Array.isArray(s.feeTiers) ? s.feeTiers : [])
+      .map(function (t) { return t ? { over: num(t.over), fee: num(t.fee) } : null; })
+      .filter(function (t) { return t && t.over !== null && t.fee !== null && t.over >= 0 && t.fee >= 0; })
+      .sort(function (a, b) { return a.over - b.over; });
+    tiers.forEach(function (t) { if (amount > t.over) fee = t.fee; });
+    return fee;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor };
 });

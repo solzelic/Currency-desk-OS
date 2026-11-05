@@ -117,6 +117,40 @@
     return <button type="button" onClick={() => onToggle(open ? null : tipKey)} title="What is this?" aria-label={`What is ${TIPS[tipKey][0].toLowerCase()}?`} style={btn}>i</button>;
   }
 
+  /* Publish a board (POST /api/rates/publish): the Board's Publish and
+     Pricing & rates' Publish to Rate Board. Answers { ok } or { ok: false,
+     status, message } in words for the screen. */
+  async function publishRows(rows, defPct, { me, log } = {}) {
+    const out = B.publishBody(rows, defPct);
+    if (!out.ok) {
+      return { ok: false, status: 0, message: out.missing.length
+        ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.`
+        : 'A spread is over 20%. Lower it in Pricing & rates.' };
+    }
+    let res;
+    try {
+      res = await fetch('/api/rates/publish', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(out.body) });
+    } catch (e) {
+      return { ok: false, status: 0, message: 'No connection. Nothing was published.' };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: res.status === 409 ? 'Rates are locked. Unlock them to publish. Customers still see your last publish.'
+        : res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.` };
+    }
+    const saved = (await res.json()).board;
+    /* The desk's rate engine reads this browser cache (cdos-os.jsx,
+       publishedBook). The server board is the record; this only spares
+       the desk a reload before its next deal prices off the new board. */
+    try {
+      const cache = JSON.stringify({ buyMargin: saved.buyMargin, sellMargin: saved.sellMargin, rows: saved.rows, publishedAt: saved.publishedAt, publishedBy: saved.publishedBy });
+      localStorage.setItem('yorkfx_rates_v1', cache);
+      localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: cache }));
+    } catch (e) { console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e); }
+    if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
+    return { ok: true, board: saved };
+  }
+
   /* The design's tone for a margin: red under the floor (or a loss),
      amber under the target, green on target. */
   const toneOf = (pct, floor, target) => (pct < 0 || pct < floor ? 'red' : pct < target ? 'amber' : 'green');
@@ -348,37 +382,17 @@
     const publish = async () => {
       if (pubOff) return;
       setNotice(null);
-      const out = B.publishBody(rows, defPct);
-      if (!out.ok) {
-        setNotice(out.missing.length
-          ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.`
-          : 'A spread is over 20%. Lower it in Pricing & rates.');
-        return;
-      }
       setBusy(true);
       try {
-        const res = await fetch('/api/rates/publish', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(out.body) });
-        if (!res.ok) {
-          if (res.status === 409) { await load(); setNotice('Rates are locked. Unlock them to publish. Customers still see your last publish.'); return; }
-          setNotice(res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`);
+        const done = await publishRows(rows, defPct, { me, log });
+        if (!done.ok) {
+          if (done.status === 409) await load();
+          setNotice(done.message);
           return;
         }
-        const saved = (await res.json()).board;
-        /* The desk's rate engine reads this browser cache (cdos-os.jsx,
-           publishedBook). The server board is the record; this only spares
-           the desk a reload before its next deal prices off the new board. */
-        try {
-          const cache = JSON.stringify({ buyMargin: saved.buyMargin, sellMargin: saved.sellMargin, rows: saved.rows, publishedAt: saved.publishedAt, publishedBy: saved.publishedBy });
-          localStorage.setItem('yorkfx_rates_v1', cache);
-          localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
-          window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_v1', newValue: cache }));
-        } catch (e) { console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e); }
-        if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
         setEdits({ order: null, show: {}, added: [] });
         onToast('Published · your site and window updated');
         await load();
-      } catch (e) {
-        setNotice('No connection. Nothing was published.');
       } finally { setBusy(false); }
     };
 
@@ -565,7 +579,6 @@
     const w = useWidth(rootRef);
     const cards = w < 880;
     const readOnly = !PUBLISHERS.includes(serverRole);
-    const Pricing = window.CDOS.Pricing;
     const flash = useCallback((t) => { setToast(t); clearTimeout(flash.t); flash.t = setTimeout(() => setToast(null), 2400); }, []);
     useEffect(() => {
       getJson('/api/rates/market').then(m => setFeed(m), e => console.warn('[rates] the market feed could not be read', e));
@@ -646,7 +659,7 @@
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
           {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
-          {tab === 'rules' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} />}
+          {tab === 'rules' && <window.CDOS.RatesPricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} onToast={flash} locked={isLocked} w={w} />}
         </div>
       </div>
       {tip && TIPS[tip] && <div role="dialog" aria-label={TIPS[tip][0]} style={css('position:absolute;right:' + (cards ? '12px' : '22px') + ';bottom:' + (cards ? '12px' : '22px') + ';z-index:55;width:min(360px, calc(100% - 24px));padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 26px 60px -24px rgba(23,20,15,0.5);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')}>
@@ -674,5 +687,5 @@
       style: css('appearance:none;border:0;cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off && cur !== o ? '0.6' : '1') + ';font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;transition:background .2s ease,color .2s ease,box-shadow .2s ease;background:' + (cur === o ? '#fff' : 'transparent') + ';color:' + (cur === o ? 'var(--ink)' : 'var(--mute)') + ';box-shadow:' + (cur === o ? '0 1px 3px rgba(23,20,15,0.14)' : 'none') + ';') }));
   }
   const pill = (copied) => css('appearance:none;display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;transition:all .2s ease;border:1px solid ' + (copied ? 'var(--primary)' : 'var(--line)') + ';background:' + (copied ? 'var(--primary)' : '#fff') + ';color:' + (copied ? '#fff' : 'var(--ink)') + ';');
-  window.CDOS = Object.assign(window.CDOS || {}, { Rates, ratesUi: { css, Flag, track, Switch, useWidth, seg, pill } });
+  window.CDOS = Object.assign(window.CDOS || {}, { Rates, ratesUi: { css, Flag, track, Switch, useWidth, seg, pill, fx, ago, getJson, chip, toneOf, publishRows, PUBLISHERS } });
 })();
