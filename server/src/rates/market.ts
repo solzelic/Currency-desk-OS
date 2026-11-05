@@ -9,10 +9,12 @@
    is derived from the newest staff publication (their margins, spread
    overrides, show flags and ordering are preserved — only mids move).
    ============================================================ */
-import { and, desc, eq } from "drizzle-orm";
+import Decimal from "decimal.js";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
+import type { RateBoardRow } from "../db/schema.js";
 import { forgetPublicAnswers } from "./public-board.js";
 
 // non-fiat provider symbols we never offer (metals, IMF SDR, crypto)
@@ -77,8 +79,29 @@ export async function fetchMarketRates(): Promise<MarketPull> {
   return pullOpenErApi();
 }
 
+/** The feed's mids (CAD per 1 unit) in another home currency: each
+    divided by the home currency's own CAD mid, as the desk's Board does
+    (os-src/rates-board.js homeMarket). CAD itself is added for a shop
+    whose home is not CAD. Null when the feed has no mid for the home. */
+export function midsInHome(mids: Record<string, number>, home: string): Record<string, number> | null {
+  const code = home.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+  const per = code === "CAD" ? (mids.CAD && mids.CAD > 0 ? mids.CAD : 1) : mids[code];
+  if (!per || !(per > 0)) return null;
+  if (per === 1 && code === "CAD") return { ...mids };
+  const out: Record<string, number> = {};
+  for (const [c, cad] of Object.entries(mids)) {
+    if (c === code || !(cad > 0)) continue;
+    out[c] = Number(new Decimal(cad).div(per).toSignificantDigits(12).toString());
+  }
+  if (code !== "CAD" && !out.CAD) out.CAD = Number(new Decimal(1).div(per).toSignificantDigits(12).toString());
+  return out;
+}
+
 /** Derive + publish a fresh board from market mids, preserving the newest
-    staff-set margins, per-currency spreads, show flags and board order. */
+    staff-set margins, per-currency spreads, show flags and board order.
+    The mids are put into the board's own home currency first, and a rate
+    the shop pinned is never moved. */
 export async function publishFromMarket(db: Db, pull: MarketPull, branchId: string, marketSnapshotId?: string): Promise<string | null> {
   if (Object.keys(pull.mids).length === 0) return null;
   const last = await db
@@ -90,12 +113,21 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
   const prev = last[0];
   if (!prev) return null; // no seed yet — nothing to inherit scope/margins from
 
+  /* The board is priced in its legal entity's home currency, not CAD. A
+     home the feed does not price is left as it is rather than filled with
+     Canadian dollars. */
+  const entity = (await db.select({ home: schema.legalEntities.homeCurrency }).from(schema.legalEntities)
+    .where(eq(schema.legalEntities.id, prev.legalEntityId)).limit(1))[0];
+  const mids = midsInHome(pull.mids, entity?.home ?? "CAD");
+  if (!mids) return null;
+
   // the board's contents are a STAFF decision — market sync only refreshes
   // mids for currencies already on the board, never adds or removes any
-  const rows: Record<string, { mid: number; spread?: number; show?: boolean }> = {};
+  const rows: Record<string, RateBoardRow> = {};
   for (const [code, prevRow] of Object.entries(prev.boardRows)) {
-    const mid = pull.mids[code];
-    rows[code] = mid && mid > 0 ? { ...prevRow, mid } : prevRow;
+    const mid = mids[code];
+    /* A pinned rate is the shop's own number: the market does not move it. */
+    rows[code] = mid && mid > 0 && !prevRow.pinned ? { ...prevRow, mid } : prevRow;
   }
 
   const id = randomUUID();
@@ -158,7 +190,26 @@ export async function syncMarketRates(db: Db, branchId: string, fetcher: () => P
       providerTimestamp: pull.providerTimestamp,
     });
     const publicationId = await publishFromMarket(db, pull, branchId, snapshotId);
-    return { ok: true, detail: `${Object.keys(pull.mids).length} mids from ${pull.provider}${publicationId ? ", board published" : ""}` };
+    /* Every other branch with Auto-publish on follows the same pull, each
+       in its own home currency. One board that fails does not stop the
+       rest; it is named in the detail. */
+    const following = await db.select({ id: schema.branches.id }).from(schema.branches)
+      .where(and(eq(schema.branches.autoPublishRates, true), ne(schema.branches.id, branchId)));
+    let published = 0;
+    const failed: string[] = [];
+    for (const branch of following) {
+      try {
+        if (await publishFromMarket(db, pull, branch.id, snapshotId)) published += 1;
+      } catch {
+        failed.push(branch.id);
+      }
+    }
+    return {
+      ok: true,
+      detail: `${Object.keys(pull.mids).length} mids from ${pull.provider}${publicationId ? ", board published" : ""}`
+        + (following.length ? `, ${published} of ${following.length} auto-publish boards published` : "")
+        + (failed.length ? `, failed: ${failed.join(", ")}` : ""),
+    };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }

@@ -299,6 +299,10 @@ export const branches = pgTable(
        it. Migration 033 adds the column on Postgres; the default keeps
        every existing branch off. */
     airsideOrCasino: boolean("airside_or_casino").notNull().default(false),
+    /* Rates v2.5 Auto-publish: every market pull publishes this branch's
+       board again, in the shop's home currency. Migration 065; off until
+       staff who may change rates turn it on. */
+    autoPublishRates: boolean("auto_publish_rates").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("branches_entity_idx").on(t.legalEntityId)],
@@ -442,6 +446,8 @@ export interface RateBoardRow {
   mid: number;
   spread?: number;
   show?: boolean;
+  /* The shop pinned this rate (Pricing): the market sync never moves it. */
+  pinned?: boolean;
 }
 
 export const rateBoards = pgTable(

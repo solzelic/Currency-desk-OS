@@ -127,6 +127,8 @@
       if (r.spreadPct > MAX_SPREAD_PCT) tooWide.push(r.code);
       var row = { mid: r.mid, show: r.show };
       if (r.custom) row.spread = fraction(r.spreadPct);
+      /* A pinned rate is marked, so the market sync leaves it alone. */
+      if (r.pinned) row.pinned = true;
       out[r.code] = row;
       order.push(r.code);
     });

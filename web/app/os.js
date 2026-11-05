@@ -496,6 +496,8 @@
       if (r.spreadPct > MAX_SPREAD_PCT) tooWide.push(r.code);
       var row = { mid: r.mid, show: r.show };
       if (r.custom) row.spread = fraction(r.spreadPct);
+      /* A pinned rate is marked, so the market sync leaves it alone. */
+      if (r.pinned) row.pinned = true;
       out[r.code] = row;
       order.push(r.code);
     });
@@ -59256,6 +59258,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           loading: false,
           error: null,
           board: rates.board,
+          autoPublish: rates.autoPublish === true,
           history: history.publications || [],
           market: B.homeMarket(feed.mids, home),
           screens: screens.screens || []
@@ -59323,6 +59326,38 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         [r.code]: !r.show
       }
     }));
+
+    /* Auto-publish (PUT /api/rates/auto-publish): every market refresh
+       publishes this branch's board again, in the shop's own currency,
+       keeping spreads, order and pinned rates. The server decides who may. */
+    const setAuto = async () => {
+      if (readOnly) return;
+      const on = !data.autoPublish;
+      setData(d => ({
+        ...d,
+        autoPublish: on
+      }));
+      const res = await fetch('/api/rates/auto-publish', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          on
+        })
+      });
+      if (!res.ok) {
+        setData(d => ({
+          ...d,
+          autoPublish: !on
+        }));
+        setNotice(res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`);
+        return;
+      }
+      log('Rates', `Auto-publish ${on ? 'on' : 'off'}`);
+      if (onToast) onToast(on ? 'Auto-publish on · the board follows the market' : 'Auto-publish off');
+    };
     const publish = async () => {
       if (pubOff) return;
       setNotice(null);
@@ -59648,8 +59683,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       role: "alert",
       style: css('font-size:12.5px;line-height:1.45;color:var(--clay);margin-top:10px;')
     }, notice), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 11px 13px; border-radius: 13px; border: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex: 1; min-width: 0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display: block; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;')
+    }, "Auto-publish"), /*#__PURE__*/React.createElement("span", {
+      style: css('display: block; font-size: 12px; line-height: 1.4; color: var(--mute); margin-top: 2px;')
+    }, "Every market refresh goes straight out.")), /*#__PURE__*/React.createElement(Switch, {
+      on: !!data.autoPublish,
+      off: readOnly,
+      name: "Auto-publish",
+      onClick: setAuto
+    })), /*#__PURE__*/React.createElement("div", {
       style: css('font-family:var(--m);font-size:11px;line-height:1.6;color:var(--mute);margin-top:11px;')
-    }, pub ? 'Updated ' + ago(pub.publishedAt) + ' by ' + (pub.publishedBy || 'the market feed') : 'Nothing published yet'), /*#__PURE__*/React.createElement("div", {
+    }, !pub ? 'Nothing published yet' : data.autoPublish ? 'Auto · updates with the market · last ' + ago(pub.publishedAt) : 'Updated ' + ago(pub.publishedAt) + ' by ' + (pub.publishedBy || 'the market feed')), /*#__PURE__*/React.createElement("div", {
       style: css('margin-top:12px;padding-top:11px;border-top:1px solid var(--hair);')
     }, /*#__PURE__*/React.createElement("div", {
       style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:6px;')
