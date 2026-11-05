@@ -1091,7 +1091,10 @@
     const [siteBusy, setSiteBusy] = useState(false);
     const [pubMsg, setPubMsg] = useState('');
     const [pubBusy, setPubBusy] = useState(false);
+    /* Read again each time Business profile is opened, so a change made
+       on the rate page while this desk was open shows here. */
     useEffect(() => {
+      if (tab !== 'business') return;
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', { credentials: 'same-origin' })
         .then(r => r.ok ? r.json() : null)
@@ -1112,28 +1115,72 @@
               if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
             });
             if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+            /* Rates v2.5: the week (hours by day), into a blank like the
+               rest, and when this desk first saw the published profile
+               (siteConfigAt). After that, siteConfigAt moves only when this
+               desk publishes or takes the profile, so a later change from
+               the rate page editor shows as newer. */
+            if (Array.isArray(cfg.week) && !Array.isArray(s.hoursWeek)) patch.hoursWeek = cfg.week;
+            if (cfg.updatedAt && !s.siteConfigAt) patch.siteConfigAt = cfg.updatedAt;
             return Object.keys(patch).length ? { ...s, ...patch } : s;
           });
         });
-    }, []);
+    }, [tab]);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
-    const HOURS_SEED = [{ days: 'Mon–Fri', hours: '9:30am–6:00pm' }, { days: 'Sat–Sun & holidays', hours: '10:00am–5:00pm' }];
-    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
-    const setHours = (next) => setSettings(s => ({ ...s, hours: next }));
+    /* Rates v2.5: hours by day are the source (the rate page's week:
+       seven days, Sunday first, [opens, closes] in hours or null). The
+       server makes the storefront's lines from them when they are
+       published (server/src/rates/rate-page.ts hoursFromWeek), the same
+       lines shown below. The template week is the old two template rows:
+       Monday to Friday 9:30 am to 6 pm, Saturday and Sunday 10 am to 5 pm. */
+    const WEEK_SEED = [[10, 17], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [10, 17]];
+    const week = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 ? settings.hoursWeek
+      : (siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week) ? siteInfo.siteConfig.week : WEEK_SEED);
+    const setWeek = (next) => setSettings(s => ({ ...s, hoursWeek: next }));
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const clockOf = (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 || h === 24 ? ' am' : ' pm'); };
+    const weekLines = (w) => { const order = [1, 2, 3, 4, 5, 6, 0], key = (d) => (d ? d[0] + '-' + d[1] : 'closed'), out = []; let i = 0;
+      while (i < 7) { let j = i; while (j + 1 < 7 && key(w[order[j + 1]]) === key(w[order[i]])) j++; const d = w[order[i]];
+        out.push({ days: i === j ? DAY_NAMES[order[i]] : DAY_SHORT[order[i]] + ' to ' + DAY_SHORT[order[j]], hours: d ? clockOf(d[0]) + ' to ' + clockOf(d[1]) : 'Closed' }); i = j + 1; }
+      return out; };
+    const TIME_OPTS = []; for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push(t);
+    /* The rate page editor published newer contact details or hours than
+       this desk last took or published (a manager's change, or another
+       desk's): say so, and ask before publishing over them. */
+    const published = siteInfo && siteInfo.siteConfig;
+    const serverNewer = !!(published && published.updatedAt && settings.siteConfigAt && published.updatedAt > settings.siteConfigAt);
+    const usePublished = () => {
+      if (!published) return;
+      setSettings(s => ({ ...s,
+        bizPhone: published.phone || '', bizEmail: published.email || '', bizAddress: published.address || '', bizCity: published.city || '',
+        bizRegion: published.region || '', bizPostal: published.postal || '',
+        ...(Array.isArray(published.hours) ? { hours: published.hours } : {}),
+        ...(Array.isArray(published.week) ? { hoursWeek: published.week } : {}),
+        siteConfigAt: published.updatedAt }));
+      log('Public site', 'took the published contact & hours');
+    };
     // one source of truth: the same phone/email/address/hours the desk shows
     // are what the public site publishes
     const publishSiteConfig = () => {
+      if (serverNewer && !window.confirm('Your rate page has newer contact details or hours than these. Publish these over them?')) return;
       setPubBusy(true); setPubMsg('');
+      /* The week goes; the server makes the hours lines from it. */
       const body = { siteConfig: {
         phone: settings.bizPhone || '', email: settings.bizEmail || '',
         address: settings.bizAddress || '', city: settings.bizCity || '', region: settings.bizRegion || '', postal: settings.bizPostal || '',
-        hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim()),
+        week,
       } };
       fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
         .then(async r => {
           const d = await r.json().catch(() => null);
-          if (r.ok) { setSiteInfo(d.tenant ? { ...siteInfo, ...d.tenant } : siteInfo); setPubMsg('Published \u2014 the site shows this now.'); log('Public site', 'contact & hours published'); }
+          if (r.ok) {
+            setSiteInfo(d.tenant ? { ...siteInfo, ...d.tenant } : siteInfo);
+            const cfg = d.tenant && d.tenant.siteConfig;
+            if (cfg) setSettings(s => ({ ...s, hours: cfg.hours || s.hours, hoursWeek: week, siteConfigAt: cfg.updatedAt }));
+            setPubMsg('Published \u2014 the site shows this now.'); log('Public site', 'contact & hours published');
+          }
           else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');
           else setPubMsg((d && d.detail) || 'Couldn\u2019t publish (' + r.status + ').');
         })
@@ -2004,16 +2051,23 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           <div className="mt-5 pt-4" style={{ borderTop: `1px solid ${CD.line}` }}>
             <div className="text-[11px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Business hours</div>
-            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>When you're open. Shown on your public site's Visit page — each row is a set of days and the hours for it.</div>
-            {hoursList.map((h, i) => (
-              <div key={i} className="flex items-center gap-2 mb-1.5">
-                <input value={h.days || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, days: ev.target.value } : x))} placeholder="Mon–Fri" className="text-[13px] px-2.5 py-2 outline-none" style={{ ...inSty, width: 190 }} />
-                <span className="text-[12px] flex-none" style={{ color: CD.faint }}>→</span>
-                <input value={h.hours || ''} onChange={ev => setHours(hoursList.map((x, j) => j === i ? { ...x, hours: ev.target.value } : x))} placeholder="9:30am–6:00pm" className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={inSty} />
-                <button onClick={() => setHours(hoursList.filter((_, j) => j !== i))} title="Remove row" className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 7, color: CD.faint }}><Ic n="trash" s={14} /></button>
-              </div>
-            ))}
-            <button onClick={() => setHours([...hoursList, { days: '', hours: '' }])} className="text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1" style={{ border: `1px dashed ${CD.line}`, borderRadius: 8, color: CD.mute }}><Ic n="plus" s={13} /> Add hours row</button>
+            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 560 }}>When you're open, day by day. Shown on your public site's Visit page and your rate page, which says open or closed from it. The same hours as Rates → Website &amp; window.</div>
+            {serverNewer && <div role="status" className="flex items-center gap-2 flex-wrap p-2.5 mb-3 text-[11.5px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.ink }}>
+              <span className="flex-1" style={{ minWidth: 220 }}>Your rate page has newer contact details or hours than these (changed in Rates → Website &amp; window).</span>
+              <button onClick={usePublished} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Use the published details</button>
+            </div>}
+            <div role="group" aria-label="Opening hours by day">
+              {[1, 2, 3, 4, 5, 6, 0].map(di => { const d = week[di]; return (
+                <div key={di} className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                  <span className="text-[13px] font-semibold" style={{ width: 96, color: CD.ink }}>{DAY_NAMES[di]}</span>
+                  <IdSwitch on={!!d} label={'Open on ' + DAY_NAMES[di]} onFlip={() => setWeek(week.map((x, j) => (j === di ? (x ? null : [9.5, 18]) : x)))} />
+                  {d ? (<span className="flex items-center gap-1.5">
+                    <select aria-label={DAY_NAMES[di] + ' opens'} value={String(d[0])} onChange={ev => { const v = +ev.target.value; setWeek(week.map((x, j) => (j === di ? [v, Math.max(v + 0.5, d[1])] : x))); }} className="text-[12.5px] px-2 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }}>{TIME_OPTS.map(t => <option key={t} value={String(t)}>{clockOf(t)}</option>)}</select>
+                    <span className="text-[12px]" style={{ color: CD.faint }}>to</span>
+                    <select aria-label={DAY_NAMES[di] + ' closes'} value={String(d[1])} onChange={ev => { const v = +ev.target.value; setWeek(week.map((x, j) => (j === di ? [Math.min(d[0], v - 0.5), v] : x))); }} className="text-[12.5px] px-2 py-1.5 outline-none" style={{ ...inSty, fontFamily: 'Space Mono, monospace' }}>{TIME_OPTS.map(t => <option key={t} value={String(t)}>{clockOf(t)}</option>)}</select>
+                  </span>) : <span className="text-[12.5px]" style={{ color: CD.faint }}>Closed</span>}
+                </div>); })}
+            </div>
           </div>
 
           {siteInfo && siteInfo.siteSlug && (() => {
@@ -2040,7 +2094,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <div className="p-2.5 mb-2.5 text-[11px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.mute, lineHeight: 1.7 }}>
                     <div><b style={{ color: CD.ink }}>{settings.bizPhone || '—'}</b>{settings.bizEmail ? ' · ' + settings.bizEmail : ''}</div>
                     {settings.bizAddress && <div>{settings.bizAddress}{settings.bizCity ? ', ' + settings.bizCity : ''}</div>}
-                    {hoursList.filter(h => h.days && h.hours).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
+                    {weekLines(week).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
                   </div>
                   <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact &amp; hours →</button>
                   {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <span className="text-[10.5px] ml-2.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</span>}

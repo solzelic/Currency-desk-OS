@@ -15,7 +15,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
-import { TENANT_PLANS, type TenantPlan } from "../db/schema.js";
+import { TENANT_PLANS, type OpeningDay, type TenantPlan } from "../db/schema.js";
+import { hoursFromWeek, weekShape } from "../rates/rate-page.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { refreshSiteDomains, SITES, warnSiteDomainRefreshFailure } from "../sites.js";
@@ -35,6 +36,9 @@ const siteConfigShape = z.object({
   region: z.string().trim().max(40).optional(),
   postal: z.string().trim().max(16).optional(),
   hours: z.array(hoursRow).max(10).optional(),
+  /* Hours by day (the rate page's week). When it is sent, the lines in
+     hours are made from it, so the two never disagree. */
+  week: weekShape.optional(),
 });
 
 const patchBody = z
@@ -72,6 +76,10 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
            saw was a branch named after the demo tenant. Their own data,
            asked for by a signed-in member of their own desk. */
         setup: t.setup ?? null,
+        /* The contact details and hours the shop publishes (also public on
+           its storefront and rate page). Settings reads them to take what
+           was published and to see a change made on the rate page. */
+        siteConfig: t.siteConfig ?? null,
       },
     };
   });
@@ -112,7 +120,13 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
       /* Settings sends its own fields. The hours by day come from the rate
          page editor, which Settings does not show, so they are kept. */
       const before = (await db.select({ config: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]?.config;
-      const config = { ...(before?.week ? { week: before.week } : {}), ...parsed.data.siteConfig, updatedAt: new Date().toISOString() };
+      const sent = parsed.data.siteConfig;
+      const config = {
+        ...(before?.week ? { week: before.week } : {}),
+        ...sent,
+        ...(sent.week ? { hours: hoursFromWeek(sent.week as OpeningDay[]) } : {}),
+        updatedAt: new Date().toISOString(),
+      };
       await db.update(schema.tenants).set({ siteConfig: config }).where(eq(schema.tenants.id, who.tenantId));
       await audit(db, { ...scope, action: "tenant.site_config_changed", detail: { fields: Object.keys(parsed.data.siteConfig) } });
     }

@@ -37,24 +37,28 @@
   const SHOWS = [['flags', 'Flags'], ['names', 'Currency names'], ['clock', 'Clock'], ['hours', 'Opening hours'], ['logo', 'Your logo']];
 
   /* Whatever the owner picks is drawn onto a 240px square and sent as a
-     PNG: the server takes nothing else. */
-  function logoPng(file) {
+     PNG: the server takes nothing else. Drawing it also turns any picture,
+     an SVG logo included, into plain pixels. */
+  function pngFrom(src, done) {
     return new Promise((resolve, reject) => {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { reject(new Error('Use a PNG, JPG or WebP picture.')); return; }
-      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         const size = 240, c = document.createElement('canvas');
         c.width = size; c.height = size;
-        const scale = Math.min(size / img.width, size / img.height);
-        const w = img.width * scale, h = img.height * scale;
+        const scale = Math.min(size / (img.width || size), size / (img.height || size));
+        const w = (img.width || size) * scale, h = (img.height || size) * scale;
         c.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        URL.revokeObjectURL(url);
+        if (done) done();
         resolve(c.toDataURL('image/png'));
       };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That picture could not be read.')); };
-      img.src = url;
+      img.onerror = () => { if (done) done(); reject(new Error('That picture could not be read.')); };
+      img.src = src;
     });
+  }
+  function logoPng(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return Promise.reject(new Error('Use a PNG, JPG or WebP picture.'));
+    const url = URL.createObjectURL(file);
+    return pngFrom(url, () => URL.revokeObjectURL(url));
   }
 
   async function call(method, url, body) {
@@ -109,7 +113,17 @@
     </button>);
   }
 
-  function RatesSite({ serverRole, onToast }) {
+  /* The business profile as the desk's Settings keeps it (cdos-settings.jsx,
+     Business profile). Those fields are the owner's (server/src/state/
+     owner-settings.ts), so only the owner's desk copies a saved profile
+     into Settings; a manager's change is offered to the owner there. */
+  const settingsFromProfile = (p) => ({
+    bizPhone: p.phone || '', bizEmail: p.email || '', bizAddress: p.address || '', bizCity: p.city || '',
+    bizRegion: p.region || '', bizPostal: p.postal || '',
+    hours: p.hours || [], hoursWeek: p.week || null, siteConfigAt: p.updatedAt || null,
+  });
+
+  function RatesSite({ serverRole, onToast, settings, setSettings }) {
     const ui = window.CDOS.ratesUi;
     const { css, Switch, useWidth, seg, pill } = ui;
     const owner = serverRole === 'administrator';
@@ -154,28 +168,43 @@
     const saveContent = useCallback(async (patch) => {
       if (!Object.keys(patch).length) return;
       const r = await call('PATCH', '/api/rate-page/content', patch);
-      if (r.ok) { setPage(r.data); setFrame(f => f + 1); return; }
+      if (r.ok) {
+        setPage(r.data); setFrame(f => f + 1);
+        if (patch.profile && owner && setSettings) setSettings(s => ({ ...s, ...settingsFromProfile(r.data.profile) }));
+        return;
+      }
       say(r.status === 403 ? 'Only the owner can change that.' : `Not saved: ${(r.data && r.data.detail) || 'the server answered ' + r.status}.`);
       load();
-    }, [say, load]);
+    }, [say, load, owner, setSettings]);
     const queue = useDebouncedSave(saveContent);
     const edit = (key, value, now) => { setDraft(d => ({ ...d, [key]: value })); queue({ [key]: value }, now); };
     const editProfile = (key, value, now) => {
       setDraft(d => ({ ...d, profile: { ...d.profile, [key]: value } }));
-      /* The whole profile goes each time; an unset week (null) is left out. */
-      const { week, ...rest } = draft.profile || {};
-      queue({ profile: { ...rest, ...(Array.isArray(week) ? { week } : {}), [key]: value } }, now);
+      /* The whole editable profile goes each time; an unset week (null) is
+         left out, and so are the lines and time the server sends back. */
+      const p = draft.profile || {};
+      const fields = {};
+      ['phone', 'email', 'address', 'city', 'region', 'postal'].forEach(f => { fields[f] = p[f] || ''; });
+      if (Array.isArray(p.week)) fields.week = p.week;
+      queue({ profile: { ...fields, [key]: value } }, now);
     };
-    const uploadLogo = async (e) => {
-      const file = e.target.files && e.target.files[0];
-      e.target.value = '';
-      if (!file || readOnly) return;
+    const sendLogo = async (pngPromise) => {
       try {
-        const r = await call('PUT', '/api/rate-page/logo', { dataUrl: await logoPng(file) });
+        const r = await call('PUT', '/api/rate-page/logo', { dataUrl: await pngPromise });
         if (!r.ok) throw new Error(r.status === 403 ? 'Only the owner and managers can change the logo.' : 'The logo was not saved. Try a smaller picture.');
         setPage(r.data); setFrame(f => f + 1); say('Logo saved');
       } catch (err) { say(err.message); }
     };
+    const uploadLogo = (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file || readOnly) return;
+      sendLogo(logoPng(file));
+    };
+    /* The logo the desk already has (Settings → Business profile, a data
+       URL the owner set), so the shop does not upload it twice. */
+    const deskLogo = settings && typeof settings.logo === 'string' && settings.logo.startsWith('data:image/') ? settings.logo : null;
+    const useDeskLogo = () => { if (deskLogo && !readOnly) sendLogo(pngFrom(deskLogo)); };
     const removeLogo = async () => {
       const r = await call('DELETE', '/api/rate-page/logo');
       if (r.ok) { setPage(r.data); setFrame(f => f + 1); say('Logo removed'); } else say(`The logo was not removed (the server answered ${r.status}).`);
@@ -308,6 +337,7 @@
                 <span aria-hidden="true" style={css('flex:none;width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;overflow:hidden;' + (page.logo ? 'background:#fff;border:1px solid var(--line);' : 'background:var(--ink);'))}>{page.logo ? <img src={page.logo} alt="" style={css('width:100%;height:100%;object-fit:contain;')} /> : initials(draft.name)}</span>
                 <span style={css('flex: 1 1 180px; min-width: 0;')}><b style={css('display: block; font-size: 14px;')}>Logo</b><span style={css('display: block; font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 2px;')}>Square works best. PNG or JPG. We show your initials until you add one.</span></span>
                 <label style={css('flex:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);transition:border-color .2s ease,color .2s ease;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';')}>{page.logo ? 'Replace logo' : 'Upload logo'}<input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Logo" onChange={uploadLogo} disabled={readOnly} style={{ display: 'none' }} /></label>
+                {deskLogo && !readOnly && <button type="button" onClick={useDeskLogo} style={css('flex:none;appearance:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;')}>Use your desk logo</button>}
                 {page.logo && !readOnly && <button type="button" onClick={removeLogo} style={css('appearance: none; border: 0; background: none; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--mute); padding: 6px 2px;')}>Remove</button>}
               </div>
               <div style={css('display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px;')}>

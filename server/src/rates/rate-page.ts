@@ -103,6 +103,33 @@ export async function resolvedContent(db: Db, tenantId: string, shopName: string
   };
 }
 
+/* The week as lines of text, for the storefront's Visit page, which shows
+   rows of days and hours: Monday first, equal days joined ("Mon to Fri"),
+   a single day by its name, a closed day as "Closed". The same lines the
+   rate page draws, so both public sites say the same. */
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function clock(hours: number): string {
+  const h = Math.floor(hours), m = Math.round((hours - h) * 60), h12 = h % 12 || 12;
+  return `${h12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 || h === 24 ? "am" : "pm"}`;
+}
+export function hoursFromWeek(week: OpeningDay[]): { days: string; hours: string }[] {
+  const order = [1, 2, 3, 4, 5, 6, 0];
+  const key = (day: OpeningDay) => (day ? `${day[0]}-${day[1]}` : "closed");
+  const lines: { days: string; hours: string }[] = [];
+  for (let i = 0; i < 7;) {
+    let j = i;
+    while (j + 1 < 7 && key(week[order[j + 1]!]!) === key(week[order[i]!]!)) j++;
+    const day = week[order[i]!]!;
+    lines.push({
+      days: i === j ? DAY_NAMES[order[i]!]! : `${DAY_SHORT[order[i]!]} to ${DAY_SHORT[order[j]!]}`,
+      hours: day ? `${clock(day[0])} to ${clock(day[1])}` : "Closed",
+    });
+    i = j + 1;
+  }
+  return lines;
+}
+
 /* A week read back from storage is used only if it is still the right
    shape: seven days of half hours, each closing after it opens. */
 export function validWeek(week: unknown): OpeningDay[] | null {

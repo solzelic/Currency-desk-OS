@@ -91,7 +91,9 @@ describe("the editor", () => {
     await handle.db.update(schema.tenants).set({ siteConfig: { email: "desk@example.test", hours: [{ days: "Mon to Fri", hours: "9 to 6" }] } }).where(eq(schema.tenants.id, DEMO.tenantId));
     await as("r.haddad", "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0148", week: WEEK } });
     const config = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0]!.siteConfig;
-    expect(config).toMatchObject({ email: "desk@example.test", phone: "+1 416 555 0148", week: WEEK, hours: [{ days: "Mon to Fri", hours: "9 to 6" }] });
+    /* The week replaces the old free-text lines: the storefront now shows
+       the lines made from it. */
+    expect(config).toMatchObject({ email: "desk@example.test", phone: "+1 416 555 0148", week: WEEK, hours: [{ days: "Mon to Fri", hours: "9:30 am to 6 pm" }, { days: "Saturday", hours: "10 am to 4 pm" }, { days: "Sunday", hours: "Closed" }] });
     /* Settings saving its own fields does not wipe the week. */
     const settings = await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { phone: "+1 416 555 0199" } });
     expect(settings.statusCode, settings.body).toBe(200);
@@ -119,6 +121,40 @@ describe("the editor", () => {
       {},
     ];
     for (const body of bad) expect((await as("r.haddad", "PATCH", "/api/rate-page/content", body)).statusCode, JSON.stringify(body)).toBe(400);
+  });
+});
+
+describe("one set of opening hours", () => {
+  /* The week is the source. The storefront's Visit page shows lines of
+     text, so whoever saves the week (the rate page editor or Settings)
+     also saves the lines it makes, and both public sites agree. */
+  const LINES = [
+    { days: "Mon to Fri", hours: "9:30 am to 6 pm" },
+    { days: "Saturday", hours: "10 am to 4 pm" },
+    { days: "Sunday", hours: "Closed" },
+  ];
+  const config = async () => (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, DEMO.tenantId)))[0]!.siteConfig;
+
+  it("the editor's week writes the storefront's lines too, and the desk is told them", async () => {
+    const res = await as("r.haddad", "PATCH", "/api/rate-page/content", { profile: { week: WEEK } });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await config()).toMatchObject({ week: WEEK, hours: LINES });
+    expect(res.json().profile).toMatchObject({ week: WEEK, hours: LINES });
+  });
+
+  it("Settings reads back what was published, so a desk can see a change made on the rate page", async () => {
+    await as("r.haddad", "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0199", week: WEEK } });
+    const tenant = (await as("j.masri", "GET", "/api/tenant")).json().tenant;
+    expect(tenant.siteConfig).toMatchObject({ phone: "+1 416 555 0199", week: WEEK, hours: LINES, updatedAt: expect.any(String) });
+  });
+
+  it("Settings can save the week as well, with the same lines; a bad week is refused", async () => {
+    const settings = await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { phone: "+1 416 555 0148", week: WEEK } });
+    expect(settings.statusCode, settings.body).toBe(200);
+    expect(await config()).toMatchObject({ phone: "+1 416 555 0148", week: WEEK, hours: LINES });
+    expect((await as("j.masri", "GET", "/api/rate-page")).json().profile.week).toEqual(WEEK);
+    const bad = await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { week: [null, [18, 9], null, null, null, null, null] } });
+    expect(bad.statusCode).toBe(400);
   });
 });
 

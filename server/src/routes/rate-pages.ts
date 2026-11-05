@@ -31,8 +31,9 @@ import { z } from "zod";
 import { hasBackendPermission, type BackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessions.js";
 import { schema, type Db } from "../db/index.js";
+import type { OpeningDay } from "../db/schema.js";
 import { forgetPublicAnswers, publishedRates, remembered } from "../rates/public-board.js";
-import { contentPatch, ensureRatePage, resolvedContent, validWeek } from "../rates/rate-page.js";
+import { contentPatch, ensureRatePage, hoursFromWeek, resolvedContent, validWeek } from "../rates/rate-page.js";
 import { checkLogo, LOGO_HEADERS, logoBytes } from "../rates/logo.js";
 
 /* Lowercase letters, digits and inner hyphens, 3 to 40 long. The database
@@ -226,12 +227,15 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     const shop = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0]!;
     const config = shop.siteConfig ?? {};
     const profile = Object.fromEntries((["phone", "email", "address", "city", "region", "postal"] as const).map((f) => [f, config[f] ?? ""]));
+    /* hours: the lines the storefront shows, and updatedAt: when the
+       profile last changed, so the desk can keep Settings in step with what
+       was just saved. */
     return {
       slug: page.slug,
       live: page.live,
       logo: page.logo && page.logoAt ? `/api/rate-page/logo?v=${page.logoAt.getTime()}` : null,
       content: await resolvedContent(db, tenantId, shop.name, page.content ?? {}),
-      profile: { ...profile, week: validWeek(config.week) },
+      profile: { ...profile, week: validWeek(config.week), hours: Array.isArray(config.hours) ? config.hours : [], updatedAt: config.updatedAt ?? null },
     };
   };
 
@@ -262,8 +266,10 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
        page always say the same. Fields not sent are kept. */
     if (profile) {
       const shop = (await db.select({ config: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0];
+      /* A week brings its lines for the storefront with it. */
+      const lines = profile.week ? { hours: hoursFromWeek(profile.week as OpeningDay[]) } : {};
       await db.update(schema.tenants)
-        .set({ siteConfig: { ...(shop?.config ?? {}), ...profile, updatedAt: new Date().toISOString() } })
+        .set({ siteConfig: { ...(shop?.config ?? {}), ...profile, ...lines, updatedAt: new Date().toISOString() } })
         .where(eq(schema.tenants.id, who.tenantId));
     }
     await audit(db, who, "rate_page.content", {
