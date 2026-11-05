@@ -181,12 +181,13 @@ postgres("guardrails when a deal posts", () => {
 
   it("counts a manager's rate override and its reason", async () => {
     await settings({ marginFloorPct: 5 });
-    const c = await cookie("r.haddad");
-    const made = await app.inject({ method: "POST", url: "/api/quotes", cookies: c, payload: body });
+    /* The teller quotes and posts on their till; a manager overrides the rate. */
+    const teller = await cookie("m.costa"), manager = await cookie("r.haddad");
+    const made = await app.inject({ method: "POST", url: "/api/quotes", cookies: teller, payload: body });
     const quoted = made.json();
-    const over = await app.inject({ method: "POST", url: `/api/quotes/${quoted.quoteId}/override`, cookies: c, payload: { customerRate: (Number(quoted.customerRate) * 1.001).toFixed(8), reason: "Corporate rate agreed by the owner" } });
+    const over = await app.inject({ method: "POST", url: `/api/quotes/${quoted.quoteId}/override`, cookies: manager, payload: { customerRate: (Number(quoted.customerRate) * 1.001).toFixed(8), reason: "Corporate rate agreed by the owner" } });
     expect(over.statusCode, over.body).toBe(200);
-    const res = await app.inject({ method: "POST", url: `/api/quotes/${quoted.quoteId}/post`, cookies: c, payload: postBody("g-override") });
+    const res = await app.inject({ method: "POST", url: `/api/quotes/${quoted.quoteId}/post`, cookies: teller, payload: postBody("g-override") });
     expect(res.statusCode, res.body).toBe(201);
     expect((await belowFloorAudits())[0]).toMatchObject({ reason: "Corporate rate agreed by the owner", given: "rate_override" });
   });
