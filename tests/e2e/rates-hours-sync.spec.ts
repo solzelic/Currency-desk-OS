@@ -98,3 +98,35 @@ test("the rate page takes the logo the desk already has", async ({ page }) => {
   expect((await sent).status()).toBe(200);
   expect((await api(page, "GET", "/api/rate-page")).body.logo).toMatch(/^\/api\/rate-page\/logo\?v=\d+$/);
 });
+
+test("the page shows the shop's service fee from Pricing, and Texts can add the page's link", async ({ page }) => {
+  await openDesk(page, "j.masri");
+  await api(page, "GET", "/api/rate-page");
+  expect((await api(page, "PUT", "/api/rate-page", { live: true })).status).toBe(200);
+  await openApp(page, "rates");
+  const fee = page.getByText("Default commission", { exact: true }).locator('xpath=ancestor::div[.//input[@type="number"]][1]').locator('input[type="number"]');
+  const setFee = async (value: string) => {
+    await page.getByRole("tab", { name: "Pricing & rates" }).click();
+    await fee.fill(value);
+  };
+  await setFee("5");
+  try {
+    /* Opening the editor brings the page's fee note in step with Pricing. */
+    await page.getByRole("tab", { name: "Website & window" }).click();
+    const synced = page.waitForResponse((r) => r.url().endsWith("/api/rate-page/content") && r.request().method() === "PATCH" && (r.request().postData() ?? "").includes("feeNote"));
+    await page.getByRole("region", { name: "Rate page" }).getByRole("button", { name: "Edit" }).click();
+    expect((await synced).status()).toBe(200);
+    const slug = (await api(page, "GET", "/api/rate-page")).body.slug as string;
+    const shop = (await (await page.request.get(`/api/public/rate-pages/${slug}`)).json()).shop;
+    expect(shop.feeNote).toMatch(/^A service fee of 5\.00 [A-Z]{3} may apply to each exchange\.$/);
+
+    /* Texts: a broadcast can carry the live page's link. */
+    await openApp(page, "telegraph");
+    await page.getByRole("button", { name: "Broadcasts" }).click();
+    await page.getByRole("button", { name: "Add your rate page link" }).click();
+    await expect(page.getByPlaceholder(/^e\.g\. /)).toHaveValue(new RegExp(`/r/${slug}$`));
+  } finally {
+    await openApp(page, "rates");
+    await setFee("0");
+  }
+});

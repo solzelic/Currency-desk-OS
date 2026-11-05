@@ -74,10 +74,18 @@ describe("who is shown which path", () => {
   const owner = tour.stepsFor({ role: "Owner", apps: DOCK, hasClient: true });
   const employee = tour.stepsFor({ role: "Cashier", apps: DOCK, hasClient: true });
 
-  it("walks an owner through the shop, the clients, and the file folder", () => {
-    expect(ids(owner)).toEqual(["shop", "clients", "standing", "folder", "search"]);
+  it("walks an owner through the shop, the rate page, the clients, and the file folder", () => {
+    expect(ids(owner)).toEqual(["shop", "site", "clients", "standing", "folder", "search"]);
     expect(owner.every((s) => s.tour === "owner")).toBe(true);
-    expect(anchors(owner)).toEqual(["shop", "clients", "identification", "file-folder", "file-search"]);
+    expect(anchors(owner)).toEqual(["shop", "rate-page", "clients", "identification", "file-folder", "file-search"]);
+  });
+
+  it("shows a new owner where their rate page is (Rates v2.5: every shop has one, private until they turn it on)", () => {
+    const site = owner.find((s) => s.id === "site")!;
+    expect(site.app).toBe("rates");
+    expect(site.title).toBe("Your rate page");
+    expect(site.body).toMatch(/private until you turn it on/);
+    expect(tour.stepsFor({ role: "Owner", apps: ["dashboard", "clients"], hasClient: true }).map((s) => s.id)).not.toContain("site");
   });
 
   it("walks an employee through the till, not the owner's shop", () => {
