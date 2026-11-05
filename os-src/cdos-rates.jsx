@@ -216,12 +216,14 @@
     const Pricing = window.CDOS.Pricing;
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper, overflow: 'hidden' }}>
       <div className="fld-bar fld-pinned">
-        {[['board', 'Board', 'rateboard'], ['pricing', 'Pricing & rates', 'percent']].map(([id, name, icon]) => (
+        {[['board', 'Board', 'rateboard'], ['site', 'Website & window', 'globe'], ['pricing', 'Pricing & rates', 'percent']].map(([id, name, icon]) => (
           <button key={id} type="button" onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}><Ic n={icon} s={13} c={tab === id ? '#fff' : CD.mute} /> {name}</button>))}
       </div>
       {!canPublish && <div className="flex items-center gap-2 text-[12.5px] px-5 py-2.5" style={{ background: 'var(--cd-chip)', color: CD.mute }}><Ic n="info" s={14} c={CD.mute} /> You can see today's rates. Changing them is for the owner and managers.</div>}
       <div className="flex-1 overflow-auto rates-scroll">
-        {tab === 'board' ? <Board settings={settings} serverRole={serverRole} me={me} log={log} /> : <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />}
+        {tab === 'board' && <Board settings={settings} serverRole={serverRole} me={me} log={log} />}
+        {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} />}
+        {tab === 'pricing' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />}
       </div>
     </div>);
   }

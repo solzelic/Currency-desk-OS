@@ -22,7 +22,7 @@ const toggle = (page: Page, code: string) => page.getByRole("switch", { name: `$
 test("a manager takes a currency off the board and publishes it, and customers see the publish, not the draft", async ({ page }) => {
   await openRates(page, "r.haddad");
   const tabs = page.locator(".fld-bar", { has: page.getByRole("button", { name: "Pricing & rates" }) }).locator(".fld-tab");
-  await expect(tabs).toHaveText(["Board", "Pricing & rates"]);
+  await expect(tabs).toHaveText(["Board", "Website & window", "Pricing & rates"]);
   /* The board this test found, put back exactly at the end even if the
      test fails: later files price their tills off this seed board, and a
      publish from here carries today's market rates. */
