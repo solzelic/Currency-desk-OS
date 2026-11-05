@@ -1138,6 +1138,15 @@
     const week = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 ? settings.hoursWeek
       : (siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week) ? siteInfo.siteConfig.week : WEEK_SEED);
     const setWeek = (next) => setSettings(s => ({ ...s, hoursWeek: next }));
+    /* A shop from before hours by day has its hours as text lines only.
+       Until someone sets a day here, publishing keeps those lines rather
+       than replacing them with the template week. */
+    const weekKnown = (Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7)
+      || !!(siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week));
+    const textLines = (Array.isArray(settings.hours) && settings.hours.length ? settings.hours
+      : (siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.hours) ? siteInfo.siteConfig.hours : []))
+      .filter(h => h && String(h.days || '').trim() && String(h.hours || '').trim());
+    const keepText = !weekKnown && textLines.length > 0;
     const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const clockOf = (v) => { const h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 || h === 24 ? ' am' : ' pm'); };
@@ -1166,11 +1175,12 @@
     const publishSiteConfig = () => {
       if (serverNewer && !window.confirm('Your rate page has newer contact details or hours than these. Publish these over them?')) return;
       setPubBusy(true); setPubMsg('');
-      /* The week goes; the server makes the hours lines from it. */
+      /* The week goes, and the server makes the hours lines from it; a
+         shop that has only text lines keeps them until a day is set. */
       const body = { siteConfig: {
         phone: settings.bizPhone || '', email: settings.bizEmail || '',
         address: settings.bizAddress || '', city: settings.bizCity || '', region: settings.bizRegion || '', postal: settings.bizPostal || '',
-        week,
+        ...(keepText ? { hours: textLines } : { week }),
       } };
       fetch('/api/tenant', { method: 'PATCH', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body) })
         .then(async r => {
@@ -1178,7 +1188,7 @@
           if (r.ok) {
             setSiteInfo(d.tenant ? { ...siteInfo, ...d.tenant } : siteInfo);
             const cfg = d.tenant && d.tenant.siteConfig;
-            if (cfg) setSettings(s => ({ ...s, hours: cfg.hours || s.hours, hoursWeek: week, siteConfigAt: cfg.updatedAt }));
+            if (cfg) setSettings(s => ({ ...s, hours: cfg.hours || s.hours, ...(keepText ? {} : { hoursWeek: week }), siteConfigAt: cfg.updatedAt }));
             setPubMsg('Published \u2014 the site shows this now.'); log('Public site', 'contact & hours published');
           }
           else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');
@@ -2056,6 +2066,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <span className="flex-1" style={{ minWidth: 220 }}>Your rate page has newer contact details or hours than these (changed in Rates → Website &amp; window).</span>
               <button onClick={usePublished} className="text-[12px] px-2.5 py-1.5 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Use the published details</button>
             </div>}
+            {keepText && <div className="p-2.5 mb-3 text-[11.5px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.mute, lineHeight: 1.6 }}>
+              <div style={{ color: CD.ink }}>Your hours are published as text:</div>
+              {textLines.map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
+              <div className="mt-1">Set them day by day below so your rate page can say open or closed. Until you change a day, publishing keeps these lines.</div>
+            </div>}
             <div role="group" aria-label="Opening hours by day">
               {[1, 2, 3, 4, 5, 6, 0].map(di => { const d = week[di]; return (
                 <div key={di} className="flex items-center gap-2.5 mb-1.5 flex-wrap">
@@ -2094,7 +2109,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
                   <div className="p-2.5 mb-2.5 text-[11px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: 'var(--cd-paper-soft)', color: CD.mute, lineHeight: 1.7 }}>
                     <div><b style={{ color: CD.ink }}>{settings.bizPhone || '—'}</b>{settings.bizEmail ? ' · ' + settings.bizEmail : ''}</div>
                     {settings.bizAddress && <div>{settings.bizAddress}{settings.bizCity ? ', ' + settings.bizCity : ''}</div>}
-                    {weekLines(week).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
+                    {(keepText ? textLines : weekLines(week)).map((h, i) => <div key={i}>{h.days} {h.hours}</div>)}
                   </div>
                   <button onClick={publishSiteConfig} disabled={pubBusy} className="text-[12px] px-3 py-2 font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8, opacity: pubBusy ? 0.5 : 1 }}>Publish contact &amp; hours →</button>
                   {siteInfo.siteConfig && siteInfo.siteConfig.updatedAt && <span className="text-[10.5px] ml-2.5" style={{ color: CD.faint }}>Last published {new Date(siteInfo.siteConfig.updatedAt).toLocaleString()}</span>}

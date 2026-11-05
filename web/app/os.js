@@ -525,7 +525,9 @@
     return next.body.order.every(function (code) {
       var a = next.body.rows[code], b = published.rows[code];
       return !!b && Number(b.mid) === a.mid && (b.show !== false) === a.show
-        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread);
+        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread)
+        /* A pin is part of what is published: the market sync reads it. */
+        && (b.pinned === true) === (a.pinned === true);
     });
   }
 
@@ -8637,6 +8639,12 @@ if (typeof module !== "undefined" && module.exports) {
       ...s,
       hoursWeek: next
     }));
+    /* A shop from before hours by day has its hours as text lines only.
+       Until someone sets a day here, publishing keeps those lines rather
+       than replacing them with the template week. */
+    const weekKnown = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 || !!(siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week));
+    const textLines = (Array.isArray(settings.hours) && settings.hours.length ? settings.hours : siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.hours) ? siteInfo.siteConfig.hours : []).filter(h => h && String(h.days || '').trim() && String(h.hours || '').trim());
+    const keepText = !weekKnown && textLines.length > 0;
     const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const clockOf = v => {
@@ -8695,7 +8703,8 @@ if (typeof module !== "undefined" && module.exports) {
       if (serverNewer && !window.confirm('Your rate page has newer contact details or hours than these. Publish these over them?')) return;
       setPubBusy(true);
       setPubMsg('');
-      /* The week goes; the server makes the hours lines from it. */
+      /* The week goes, and the server makes the hours lines from it; a
+         shop that has only text lines keeps them until a day is set. */
       const body = {
         siteConfig: {
           phone: settings.bizPhone || '',
@@ -8704,7 +8713,11 @@ if (typeof module !== "undefined" && module.exports) {
           city: settings.bizCity || '',
           region: settings.bizRegion || '',
           postal: settings.bizPostal || '',
-          week
+          ...(keepText ? {
+            hours: textLines
+          } : {
+            week
+          })
         }
       };
       fetch('/api/tenant', {
@@ -8725,7 +8738,9 @@ if (typeof module !== "undefined" && module.exports) {
           if (cfg) setSettings(s => ({
             ...s,
             hours: cfg.hours || s.hours,
-            hoursWeek: week,
+            ...(keepText ? {} : {
+              hoursWeek: week
+            }),
             siteConfigAt: cfg.updatedAt
           }));
           setPubMsg('Published \u2014 the site shows this now.');
@@ -12004,7 +12019,24 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: 'var(--cd-on-ink)',
         borderRadius: 8
       }
-    }, "Use the published details")), /*#__PURE__*/React.createElement("div", {
+    }, "Use the published details")), keepText && /*#__PURE__*/React.createElement("div", {
+      className: "p-2.5 mb-3 text-[11.5px]",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10,
+        background: 'var(--cd-paper-soft)',
+        color: CD.mute,
+        lineHeight: 1.6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: CD.ink
+      }
+    }, "Your hours are published as text:"), textLines.map((h, i) => /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, h.days, " ", h.hours)), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1"
+    }, "Set them day by day below so your rate page can say open or closed. Until you change a day, publishing keeps these lines.")), /*#__PURE__*/React.createElement("div", {
       role: "group",
       "aria-label": "Opening hours by day"
     }, [1, 2, 3, 4, 5, 6, 0].map(di => {
@@ -12174,7 +12206,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.ink
         }
-      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), weekLines(week).map((h, i) => /*#__PURE__*/React.createElement("div", {
+      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), (keepText ? textLines : weekLines(week)).map((h, i) => /*#__PURE__*/React.createElement("div", {
         key: i
       }, h.days, " ", h.hours))), /*#__PURE__*/React.createElement("button", {
         onClick: publishSiteConfig,
@@ -57911,11 +57943,13 @@ ${snap}`;
     };
   }
   const sightDot = s => 'flex:none;width:7px;height:7px;border-radius:50%;background:' + (s.on ? '#2EA36B' : s.seen ? '#D9A441' : 'rgba(23,20,15,0.25)') + ';' + (s.on ? 'animation:rtLive 2s infinite;' : '');
+
+  /* 24 is midnight at the end of the day: 12 am. */
   function fmtT(v) {
     const h = Math.floor(v),
       m = Math.round((v - h) * 60),
       h12 = h % 12 || 12;
-    return h12 + ':' + String(m).padStart(2, '0') + (h < 12 ? ' am' : ' pm');
+    return h12 + ':' + String(m).padStart(2, '0') + (h < 12 || h === 24 ? ' am' : ' pm');
   }
   const TIME_OPTS = [];
   for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push({
@@ -57930,7 +57964,16 @@ ${snap}`;
   function useDebouncedSave(save) {
     const pending = useRef({});
     const timer = useRef(null);
-    useEffect(() => () => clearTimeout(timer.current), []);
+    const latest = useRef(save);
+    latest.current = save;
+    /* Leaving the tab or closing Rates sends what was typed in the last
+       moment rather than dropping it. */
+    useEffect(() => () => {
+      clearTimeout(timer.current);
+      const p = pending.current;
+      pending.current = {};
+      if (Object.keys(p).length) latest.current(p);
+    }, []);
     return useCallback((patch, now) => {
       pending.current = {
         ...pending.current,
@@ -58304,8 +58347,16 @@ ${snap}`;
     const fee = settings && settings.defaultFee != null && settings.defaultFee !== '' ? Number(settings.defaultFee) : 0;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
     const wantFeeNote = fee > 0 && home ? 'A service fee of ' + fee.toFixed(2) + ' ' + home + ' may apply to each exchange.' : '';
+    /* Once per opening of the editor: a refused save reloads the page,
+       and trying again on every reload would never stop. */
+    const feeSynced = useRef(false);
     useEffect(() => {
-      if (view !== 'web' || readOnly || !page || !page.content) return;
+      if (view !== 'web') {
+        feeSynced.current = false;
+        return;
+      }
+      if (feeSynced.current || readOnly || !page || !page.content) return;
+      feeSynced.current = true;
       if ((page.content.feeNote || '') !== wantFeeNote) saveContent({
         feeNote: wantFeeNote
       });
@@ -59318,7 +59369,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           error: 'The board could not be loaded (' + e.message + '). Nothing has changed for customers.'
         }));
       }
-    }, []);
+      /* Again when the shop's home currency is known: the market is
+         divided into it, and a board read before the desk's pack arrived
+         would be priced in the wrong currency. */
+    }, [home]);
     useEffect(() => {
       load();
     }, [load]);
@@ -59385,22 +59439,28 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         ...d,
         autoPublish: on
       }));
-      const res = await fetch('/api/rates/auto-publish', {
-        method: 'PUT',
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          on
-        })
-      });
-      if (!res.ok) {
+      let res = null;
+      try {
+        res = await fetch('/api/rates/auto-publish', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            on
+          })
+        });
+      } catch (e) {
+        console.warn('[rates] Auto-publish could not be saved', e);
+      }
+      /* Not saved: the switch goes back to what the server holds. */
+      if (!res || !res.ok) {
         setData(d => ({
           ...d,
           autoPublish: !on
         }));
-        setNotice(res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`);
+        setNotice(!res ? 'Auto-publish was not changed: the server could not be reached.' : res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`);
         return;
       }
       log('Rates', `Auto-publish ${on ? 'on' : 'off'}`);

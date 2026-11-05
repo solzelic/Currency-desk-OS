@@ -26,6 +26,29 @@ async function openDesk(page: Page, staffId: string): Promise<void> {
 const openApp = (page: Page, id: string) =>
   page.evaluate((app) => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp(app), id);
 
+test("a shop with only text hours keeps them when it publishes from Settings, until a day is set", async ({ page }) => {
+  await openDesk(page, "j.masri");
+  const TEXT = [{ days: "Mon to Sat", hours: "8 am to 8 pm" }];
+  expect((await api(page, "PATCH", "/api/tenant", { siteConfig: { hours: TEXT } })).status).toBe(200);
+  await openApp(page, "settings");
+  await expect(page.getByText("Your hours are published as text:")).toBeVisible();
+
+  const kept = page.waitForResponse((r) => r.url().endsWith("/api/tenant") && r.request().method() === "PATCH");
+  await page.getByRole("button", { name: /Publish contact & hours/ }).click();
+  expect((await kept).status()).toBe(200);
+  let cfg = (await api(page, "GET", "/api/tenant")).body.tenant.siteConfig;
+  expect(cfg.hours).toEqual(TEXT);
+  expect(cfg).not.toHaveProperty("week");
+
+  /* Setting a day moves the shop to hours by day. */
+  await page.getByRole("group", { name: "Opening hours by day" }).getByRole("switch", { name: "Open on Sunday" }).click();
+  const moved = page.waitForResponse((r) => r.url().endsWith("/api/tenant") && r.request().method() === "PATCH");
+  await page.getByRole("button", { name: /Publish contact & hours/ }).click();
+  expect((await moved).status()).toBe(200);
+  cfg = (await api(page, "GET", "/api/tenant")).body.tenant.siteConfig;
+  expect(Array.isArray(cfg.week)).toBe(true);
+});
+
 test("a week set on the rate page shows in Settings, and Settings publishes it back to the page and the storefront", async ({ page }) => {
   await openDesk(page, "j.masri");
   await api(page, "GET", "/api/rate-page");

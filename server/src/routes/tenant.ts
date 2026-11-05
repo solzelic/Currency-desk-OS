@@ -17,6 +17,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { TENANT_PLANS, type OpeningDay, type TenantPlan } from "../db/schema.js";
 import { hoursFromWeek, weekShape } from "../rates/rate-page.js";
+import { forgetPublicAnswers } from "../rates/public-board.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { refreshSiteDomains, SITES, warnSiteDomainRefreshFailure } from "../sites.js";
@@ -121,14 +122,19 @@ export function registerTenantRoutes(app: FastifyInstance, db: Db) {
          page editor, which Settings does not show, so they are kept. */
       const before = (await db.select({ config: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]?.config;
       const sent = parsed.data.siteConfig;
+      /* The week is kept when Settings sends neither a week nor lines.
+         Lines sent without a week replace it, so the two never disagree. */
       const config = {
-        ...(before?.week ? { week: before.week } : {}),
+        ...(before?.week && !sent.hours ? { week: before.week } : {}),
         ...sent,
         ...(sent.week ? { hours: hoursFromWeek(sent.week as OpeningDay[]) } : {}),
         updatedAt: new Date().toISOString(),
       };
       await db.update(schema.tenants).set({ siteConfig: config }).where(eq(schema.tenants.id, who.tenantId));
       await audit(db, { ...scope, action: "tenant.site_config_changed", detail: { fields: Object.keys(parsed.data.siteConfig) } });
+      /* The rate page and screens show these details; they show the new
+         ones now, not after the 5 minute memory. */
+      forgetPublicAnswers();
     }
 
     const rows = await db.select().from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1);

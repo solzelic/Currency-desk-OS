@@ -79,7 +79,8 @@
   }
   const sightDot = (s) => 'flex:none;width:7px;height:7px;border-radius:50%;background:' + (s.on ? '#2EA36B' : (s.seen ? '#D9A441' : 'rgba(23,20,15,0.25)')) + ';' + (s.on ? 'animation:rtLive 2s infinite;' : '');
 
-  function fmtT(v) { const h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + ':' + String(m).padStart(2, '0') + (h < 12 ? ' am' : ' pm'); }
+  /* 24 is midnight at the end of the day: 12 am. */
+  function fmtT(v) { const h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + ':' + String(m).padStart(2, '0') + (h < 12 || h === 24 ? ' am' : ' pm'); }
   const TIME_OPTS = []; for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push({ v: String(t), l: fmtT(t) });
   function initials(name) { return String(name || 'Shop').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase(); }
 
@@ -87,7 +88,15 @@
   function useDebouncedSave(save) {
     const pending = useRef({});
     const timer = useRef(null);
-    useEffect(() => () => clearTimeout(timer.current), []);
+    const latest = useRef(save);
+    latest.current = save;
+    /* Leaving the tab or closing Rates sends what was typed in the last
+       moment rather than dropping it. */
+    useEffect(() => () => {
+      clearTimeout(timer.current);
+      const p = pending.current; pending.current = {};
+      if (Object.keys(p).length) latest.current(p);
+    }, []);
     return useCallback((patch, now) => {
       pending.current = { ...pending.current, ...patch };
       clearTimeout(timer.current);
@@ -292,8 +301,13 @@
     const fee = settings && settings.defaultFee != null && settings.defaultFee !== '' ? Number(settings.defaultFee) : 0;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
     const wantFeeNote = fee > 0 && home ? 'A service fee of ' + fee.toFixed(2) + ' ' + home + ' may apply to each exchange.' : '';
+    /* Once per opening of the editor: a refused save reloads the page,
+       and trying again on every reload would never stop. */
+    const feeSynced = useRef(false);
     useEffect(() => {
-      if (view !== 'web' || readOnly || !page || !page.content) return;
+      if (view !== 'web') { feeSynced.current = false; return; }
+      if (feeSynced.current || readOnly || !page || !page.content) return;
+      feeSynced.current = true;
       if ((page.content.feeNote || '') !== wantFeeNote) saveContent({ feeNote: wantFeeNote });
     }, [view, readOnly, page, wantFeeNote, saveContent]);
 
