@@ -218,21 +218,52 @@ test("the desk's top-bar lock and the Rates lock are the same lock", async ({ pa
   }
 });
 
-/* Pricing & rates offers what the server allows: a teller only sees it,
-   a manager prices but the guardrails are the owner's. */
-test("Pricing & rates: a teller sees it and cannot change it; a manager cannot change the guardrails", async ({ page, browser }) => {
+/* Pricing & rates in the design's look offers what the server allows: a
+   teller only sees it, a manager prices. */
+test("Pricing & rates: a teller sees it and cannot change it; a manager can", async ({ page, browser }) => {
   await openRates(page, "m.costa");
   await page.getByRole("tab", { name: "Pricing & rates" }).click();
-  await expect(page.getByText("You can see the shop's pricing. Changing it is for the owner and managers.")).toBeVisible();
-  await expect(page.getByRole("group", { name: "Pricing" }).locator("input").first()).toBeDisabled();
+  await expect(page.getByText(/^What the desk pays and charges\./)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Raise the default spread" })).toBeDisabled();
+  await expect(page.getByLabel("Fee on every deal")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Publish to Rate Board" })).toBeDisabled();
 
   const manager = await (await browser.newContext()).newPage();
   await openRates(manager, "r.haddad");
   await manager.getByRole("tab", { name: "Pricing & rates" }).click();
-  await expect(manager.getByText("The guardrails are the owner's. You can change the rest.")).toBeVisible();
-  await expect(manager.getByRole("group", { name: "Margin guardrails" }).locator("input").first()).toBeDisabled();
-  await expect(manager.getByRole("group", { name: "Pricing" }).locator('input[type="number"]').first()).toBeEnabled();
+  await expect(manager.getByRole("button", { name: "Raise the default spread" })).toBeEnabled();
+  await expect(manager.getByLabel("Fee on every deal")).toBeEnabled();
+  await expect(manager.getByRole("region", { name: "Spread by currency" })).toContainText("USD");
   await manager.close();
+});
+
+/* The design's commission tiers: a flat fee on every deal, and bigger
+   deals can pay a different one. The example says what a small and a big
+   deal pay. Put back at the end: the setting is the shop's. */
+test("a manager adds a commission tier, and the example says what a big deal pays", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await page.getByRole("tab", { name: "Pricing & rates" }).click();
+  const fee = page.getByLabel("Fee on every deal");
+  const was = await fee.inputValue();
+  try {
+    await fee.fill("2");
+    await page.getByRole("button", { name: "+ Add a tier" }).click();
+    await expect(page.getByLabel("Tier 1 starts over")).toHaveValue("5,000");
+    await expect(page.getByLabel("Tier 1 fee")).toHaveValue("4");
+    await expect(page.getByText(/^A [A-Z]{3} 750 deal pays [A-Z]{3} 2 · A [A-Z]{3} 12,000 deal pays [A-Z]{3} 4, plus the spread\.$/)).toBeVisible();
+    await page.getByLabel("Tier 1 fee").fill("25");
+    await expect(page.getByText(/12,000 deal pays [A-Z]{3} 25, plus the spread\.$/)).toBeVisible();
+    /* What the server saved for the shop. */
+    await expect.poll(async () => page.evaluate(async () => {
+      const st = (await (await fetch("/api/tenant/state")).json()).state;
+      const s = typeof st.cdos_settings === "string" ? JSON.parse(st.cdos_settings) : st.cdos_settings;
+      return s && s.feeTiers;
+    }), { timeout: 20_000 }).toEqual([{ over: 5000, fee: 25 }]);
+  } finally {
+    const remove = page.getByRole("button", { name: "Remove this tier" });
+    while (await remove.count()) await remove.first().click();
+    await fee.fill(was);
+  }
 });
 
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {

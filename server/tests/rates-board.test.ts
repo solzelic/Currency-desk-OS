@@ -18,6 +18,7 @@ const board = () => require("../../os-src/rates-board.js") as {
   }) => Row[];
   publishBody: (rows: Row[], defaultSpreadPct: number) => { ok: true; body: { buyMargin: number; sellMargin: number; rows: Record<string, unknown>; order: string[] } } | { ok: false; missing: string[] };
   homeMarket: (mids: Record<string, unknown> | null | undefined, home: string) => Record<string, number>;
+  feeFor: (settings: { defaultFee?: unknown; feeTiers?: unknown } | null | undefined, homeAmount: number) => number | null;
   sameAsPublished: (rows: Row[], published: { rows: Record<string, { mid: number; spread?: number; show?: boolean }>; order?: string[] } | null, defaultSpreadPct: number) => boolean;
 };
 
@@ -115,6 +116,31 @@ describe("what Publish sends", () => {
     const published = { rows: { USD: { mid: 1.36 } }, order: ["CAD", "USD"], buyMargin: 0.015, sellMargin: 0.015 };
     const rows = board().draftRows({ codes: ["CAD", "USD"], home: "CAD", board: published, market: {}, settings: { defaultSpread: 1.5 } });
     expect(board().sameAsPublished(rows, published, 1.5)).toBe(true);
+  });
+});
+
+/* Rates v2.5 commission tiers (Pricing & rates): a flat fee on every
+   deal, and bigger deals can pay a different one. The new-deal screen
+   fills the fee in from the deal's size in the shop's own currency. */
+describe("the fee a deal pays", () => {
+  const settings = { defaultFee: 2, feeTiers: [{ over: 10000, fee: 25 }, { over: 50000, fee: 60 }] };
+  it("is the flat fee up to the first tier, then the highest tier the deal is over", () => {
+    expect(board().feeFor(settings, 750)).toBe(2);
+    expect(board().feeFor(settings, 10000)).toBe(2);
+    expect(board().feeFor(settings, 12000)).toBe(25);
+    expect(board().feeFor(settings, 50001)).toBe(60);
+  });
+  it("takes tiers in any order, typed with commas, and ignores broken ones", () => {
+    const typed = { defaultFee: "2", feeTiers: [{ over: "50,000", fee: "60" }, { over: "10,000", fee: "25" }, { over: "x", fee: 9 }, { over: 20000, fee: -1 }, null] };
+    expect(board().feeFor(typed, 12000)).toBe(25);
+    expect(board().feeFor(typed, 60000)).toBe(60);
+  });
+  it("is the flat fee with no tiers, and nothing when the shop has no fee", () => {
+    expect(board().feeFor({ defaultFee: 5 }, 99999)).toBe(5);
+    expect(board().feeFor({}, 500)).toBeNull();
+    expect(board().feeFor(null, 500)).toBeNull();
+    expect(board().feeFor({ defaultFee: "", feeTiers: [{ over: 1000, fee: 10 }] }, 500)).toBeNull();
+    expect(board().feeFor({ defaultFee: "", feeTiers: [{ over: 1000, fee: 10 }] }, 5000)).toBe(10);
   });
 });
 

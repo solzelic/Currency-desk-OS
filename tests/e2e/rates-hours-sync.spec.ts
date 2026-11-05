@@ -127,7 +127,7 @@ test("the page shows the shop's service fee from Pricing, and Texts can add the 
   await api(page, "GET", "/api/rate-page");
   expect((await api(page, "PUT", "/api/rate-page", { live: true })).status).toBe(200);
   await openApp(page, "rates");
-  const fee = page.getByText("Default commission", { exact: true }).locator('xpath=ancestor::div[.//input[@type="number"]][1]').locator('input[type="number"]');
+  const fee = page.getByLabel("Fee on every deal");
   const setFee = async (value: string) => {
     await page.getByRole("tab", { name: "Pricing & rates" }).click();
     await fee.fill(value);
