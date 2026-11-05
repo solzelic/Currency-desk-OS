@@ -459,6 +459,9 @@
     const [lock, setLock] = useState(null);
     const [nowMs, setNowMs] = useState(Date.now());
     const [fee, setFee] = useState(settings && settings.defaultFee != null ? String(settings.defaultFee) : '');
+    /* Commission tiers (Rates v2.5, Pricing & rates): the fee follows the
+       deal's size in the shop's own currency until the teller types one. */
+    const [feeTyped, setFeeTyped] = useState(false);
 
     // remittance
     const [dest, setDest] = useState(DEST[0]);
@@ -512,7 +515,7 @@
       || String(benName || '').trim() || String(recvRef || '').trim()
       || String(chequeNumber || '').trim() || String(maker || '').trim() || String(draweeBank || '').trim()
       || chequeImage || endorsed || String(payee || '').trim() || String(biller || '').trim()
-      || String(account || '').trim() || String(fee || '') !== feeDefault
+      || String(account || '').trim() || (feeTyped && String(fee || '') !== feeDefault)
       || marginAck || String(marginReason || '').trim()
       || String(identityNumber || '').trim() || reportSuspicion || usdLargeNotes != null || String(usdSerials || '').trim()
     );
@@ -649,6 +652,8 @@
       : isCheque ? amtN
       : amtN; // send/receive amounts are already in the desk's currency
     const inCadEquiv = isExchange ? toHome(amtN, inCcy) : amtN;
+    const tierFee = window.CDOS.ratesBoard && window.CDOS.ratesBoard.feeFor ? window.CDOS.ratesBoard.feeFor(settings, inCadEquiv) : null;
+    useEffect(() => { if (!feeTyped) setFee(tierFee == null ? '' : String(tierFee)); }, [tierFee, feeTyped]);
 
     // margin (exchange + send carry FX spread; others are fee-only)
     const spreadCadLive = isExchange
@@ -657,7 +662,10 @@
     const profitCad = +(spreadCadLive + (isCheque ? chequeFee : feeN)).toFixed(2);
     const marginBasis = isExchange ? (liveQuote ? (liveQuote.from === home ? +liveQuote.inputAmount : liveQuote.to === home ? +liveQuote.outputAmount : +liveQuote.inputAmount * +liveQuote.marketMid) : 0) : (isSend ? (pricing.midCadIn || 0) : inCadEquiv);
     const marginPct = marginBasis > 0 ? (profitCad / marginBasis) * 100 : 0;
-    const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    /* The deal currency's own floor when the owner set one (Guardrails,
+       floor by currency), else the shop's. */
+    const dealCcy = inCcy !== home ? inCcy : outCcy;
+    const mFloor = window.CDOS.ratesBoard && window.CDOS.ratesBoard.floorFor ? window.CDOS.ratesBoard.floorFor(settings, dealCcy) : (settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5);
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mEnforce = (settings && settings.marginEnforce) || 'block';
     const belowFloor = amtN > 0 && (isSend || (isExchange && liveQuote)) && marginPct < mFloor;
@@ -1207,7 +1215,7 @@
                   <Money value={shownOut ? unitText(shownOut, outCcy) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
-                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                     {tq
@@ -1265,7 +1273,7 @@
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
                     <Money value={out.amt ? unitText(out.amt, payoutCcy) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
-                      <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                      <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                       <div><Lbl>Purpose</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Family support, etc." className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                     </div>
                   </div>
@@ -1279,7 +1287,7 @@
                 <div className="p-3.5 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div><Lbl>Transfer / tracking reference</Lbl><input value={recvRef} onChange={e => setRecvRef(e.target.value)} placeholder="MTCN or partner reference" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   <div><Lbl>Pay recipient</Lbl><Money value={inAmt} onChange={setInAmt} ccy={outCcy} onCcy={setOutCcy} big autoFocus /></div>
-                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                 </div>
               )}
 
@@ -1316,7 +1324,7 @@
                 <div className="p-3.5 space-y-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div><Lbl>Payee</Lbl><input value={payee} onChange={e => setPayee(e.target.value)} placeholder="Who the money order is for" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   <div><Lbl>Face amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus /></div>
-                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, home)}</b> for a <b style={{ color: CD.ink }}>{fmt(amtN, home)}</b> money order.</div>}
                 </div>
               )}
@@ -1329,7 +1337,7 @@
                     <div><Lbl>Account number</Lbl><input value={account} onChange={e => setAccount(e.target.value)} placeholder="Biller account #" className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
                   </div>
                   <div><Lbl>Amount</Lbl><Money value={inAmt} onChange={setInAmt} ccy={home} big autoFocus /></div>
-                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => setFee(e.target.value)} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                  <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   {amtN > 0 && <div className="text-[11px] px-3 py-2" style={{ background: CD.lineSoft, borderRadius: 9, color: CD.mute }}>Customer pays <b style={{ color: CD.ink }}>{fmt(amtN + feeN, home)}</b> — {fmt(amtN, home)} to biller, {fmt(feeN, home)} fee.</div>}
                 </div>
               )}

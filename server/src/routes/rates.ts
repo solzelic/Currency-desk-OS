@@ -4,7 +4,10 @@
                                   the board in the shop window)
      GET  /api/rates/history    → recent publications (staff only)
      POST /api/rates/publish    → append a new publication (staff with
-                                  the rates:change permission)
+                                  the rates:change permission); refused
+                                  while the branch's rates are locked
+     PUT  /api/rates/lock       → lock or unlock this branch's rates
+                                  (rates:change, audited)
    Publications are append-only: the "current board" is the newest row
    for the branch, and history answers "what was on the board at time T".
    The permission table is the server's own (auth/permissions.ts).
@@ -54,6 +57,11 @@ function toBoardJson(row: typeof schema.rateBoards.$inferSelect) {
     branchId: row.branchId,
     publicationId: row.id,
   };
+}
+
+/* A branch's lock as the desk sees it: who locked it and when, or null. */
+function lockOf(row: { lockedAt: Date | null; lockedBy: string | null }) {
+  return row.lockedAt ? { at: row.lockedAt.getTime(), by: row.lockedBy ?? null } : null;
 }
 
 export function registerRatesRoutes(app: FastifyInstance, db: Db) {
@@ -142,11 +150,17 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       .where(eq(schema.rateBoards.branchId, branchId))
       .orderBy(desc(schema.rateBoards.publishedAt))
       .limit(1);
-    /* Signed-in staff also see whether the board follows the market. */
+    /* Signed-in staff also see whether the board follows the market, and
+       whether its rates are locked (who locked them, and when). */
     const branch = who
-      ? (await db.select({ on: schema.branches.autoPublishRates }).from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1))[0]
+      ? (await db.select({ on: schema.branches.autoPublishRates, lockedAt: schema.branches.ratesLockedAt, lockedBy: schema.branches.ratesLockedBy })
+        .from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1))[0]
       : undefined;
-    return { board: rows[0] ? toBoardJson(rows[0]) : null, serverTime: Date.now(), ...(branch ? { autoPublish: branch.on } : {}) };
+    return {
+      board: rows[0] ? toBoardJson(rows[0]) : null,
+      serverTime: Date.now(),
+      ...(branch ? { autoPublish: branch.on, locked: lockOf(branch) } : {}),
+    };
   });
 
   /* Auto-publish: every market pull publishes this branch's board again,
@@ -176,6 +190,37 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
       });
     }
     return { autoPublish: parsed.data.on };
+  });
+
+  /* Lock rates (the design's header button). While locked nobody
+     publishes this branch's board and the market sync leaves it alone
+     (rates/market.ts). Staff who may change rates lock and unlock their
+     own branch; each change is in the audit log. */
+  app.put("/api/rates/lock", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (!hasBackendPermission(who.role, "rates:change")) {
+      return reply.code(403).send({ error: "permission_denied", detail: "rates:change required" });
+    }
+    const parsed = z.object({ locked: z.boolean() }).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const before = (await db.select({ lockedAt: schema.branches.ratesLockedAt, lockedBy: schema.branches.ratesLockedBy })
+      .from(schema.branches).where(eq(schema.branches.id, who.branchId)).limit(1))[0];
+    if (!before) return reply.code(404).send({ error: "not_found" });
+    const was = before.lockedAt !== null;
+    if (was === parsed.data.locked) return { locked: lockOf(before) };
+    const after = parsed.data.locked ? { lockedAt: new Date(), lockedBy: who.staffId } : { lockedAt: null, lockedBy: null };
+    await db.update(schema.branches).set({ ratesLockedAt: after.lockedAt, ratesLockedBy: after.lockedBy }).where(eq(schema.branches.id, who.branchId));
+    await db.insert(schema.auditEvents).values({
+      id: randomUUID(),
+      tenantId: who.tenantId,
+      legalEntityId: who.legalEntityId,
+      branchId: who.branchId,
+      actorId: who.id,
+      action: "rates.lock",
+      detail: { old: was, new: parsed.data.locked },
+    });
+    return { locked: lockOf(after) };
   });
 
   app.get("/api/rates/history", async (req, reply) => {
@@ -209,6 +254,11 @@ export function registerRatesRoutes(app: FastifyInstance, db: Db) {
     const branchId = body.branchId ?? who.branchId;
     if (!who.authorizedBranchIds.includes(branchId)) {
       return reply.code(403).send({ error: "branch_denied" });
+    }
+    /* Locked rates do not change, from this screen or any other. */
+    const lock = (await db.select({ lockedAt: schema.branches.ratesLockedAt }).from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1))[0];
+    if (lock?.lockedAt) {
+      return reply.code(409).send({ error: "rates_locked", detail: "Rates are locked. Unlock them to make changes." });
     }
 
     const id = randomUUID();

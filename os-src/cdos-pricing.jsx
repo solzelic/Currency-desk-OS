@@ -28,8 +28,16 @@
     </div>);
   }
 
-  function Pricing({ settings, setSettings, me, log }) {
+  function Pricing({ settings, setSettings, me, log, serverRole }) {
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+    /* Who may change what, as the server decides it (state/owner-settings.ts,
+       Rates v2.5): a teller sees the shop's pricing, a manager prices, and
+       the guardrails are the owner's. Without a server role (the offline
+       prototype) the desk's own role stands in. */
+    const role = serverRole || (me && me.role === 'Owner' ? 'administrator' : me && me.role === 'Manager' ? 'branch_manager' : 'teller');
+    const canPrice = role === 'administrator' || role === 'branch_manager';
+    const owns = role === 'administrator';
+    const FS = { border: 0, margin: 0, padding: 0, minWidth: 0 };
     const FOREIGN = (CCY || []).filter(c => c !== home);
     const set = (k, v, note) => { setSettings(s => ({ ...s, [k]: v })); if (note && log) log('Pricing updated', note); };
     const setSpread = (code, v) => setSettings(s => ({ ...s, spreads: { ...(s.spreads || {}), [code]: v } }));
@@ -124,12 +132,15 @@
               <div className="text-[12px]" style={{ color: CD.mute }}>What the desk pays and charges. Every change here prices the next deal in the Ledger.</div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={pushRates} disabled={justPushed} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 text-white" style={{ background: justPushed ? CD.green : CD.ink, borderRadius: 8, transition: 'background .2s' }}><Ic n={justPushed ? 'check' : 'upload'} s={13} c="var(--cd-on-ink)" /> {justPushed ? 'Pushed to board' : 'Publish to Rate Board'}</button>
+              <button onClick={pushRates} disabled={justPushed || !canPrice} className="flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 text-white" style={{ background: justPushed ? CD.green : CD.ink, borderRadius: 8, transition: 'background .2s' }}><Ic n={justPushed ? 'check' : 'upload'} s={13} c="var(--cd-on-ink)" /> {justPushed ? 'Pushed to board' : 'Publish to Rate Board'}</button>
               <span className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5" style={{ background: CD.greenSoft, color: CD.green, borderRadius: 999 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: CD.green }}></span> Saves automatically</span>
             </div>
           </div>
 
+          {!owns && <div className="text-[12.5px] mb-3" style={{ color: CD.ink }}>{canPrice ? "The guardrails are the owner's. You can change the rest." : "You can see the shop's pricing. Changing it is for the owner and managers."}</div>}
+
           {/* hero band */}
+          <fieldset aria-label="Pricing" disabled={!canPrice} style={FS}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div style={{ ...card, padding: 16 }}>
               <Eyebrow icon="globe">Rate source</Eyebrow>
@@ -164,7 +175,10 @@
             </div>
           </div>
 
+          </fieldset>
+
           {/* margin guardrails */}
+          <fieldset aria-label="Margin guardrails" disabled={!owns} style={FS}>
           <div style={{ ...card, padding: 16, marginBottom: 12 }}>
             <Eyebrow icon="activity" right={<Seg value={settings.marginEnforce || 'block'} onPick={v => set('marginEnforce', v, `margin enforce ${v}`)} opts={[['warn', 'Warn only'], ['block', 'Require override']]} />}>Margin guardrails</Eyebrow>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 16, alignItems: 'center' }}>
@@ -193,7 +207,10 @@
             <div className="text-[10.5px] mt-2.5" style={{ color: CD.faint }}>The New-Transaction screen meters every deal's margin (spread + fee ÷ pay-in). {settings.marginEnforce === 'warn' ? 'Below the floor it warns but lets the teller post (logged).' : 'Below the floor the teller must override with a reason before posting.'}</div>
           </div>
 
+          </fieldset>
+
           {/* per-currency matrix */}
+          <fieldset aria-label="Spread by currency" disabled={!canPrice} style={FS}>
           <div style={{ ...card, padding: 0, marginBottom: 12, overflow: 'hidden' }}>
             <div className="flex items-center justify-between" style={{ padding: '14px 16px 10px' }}>
               <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}><Ic n="bars" s={13} c={CD.mute} /> Spread by currency</span>
@@ -256,10 +273,13 @@
             </div>
           </div>
 
+          </fieldset>
+
           {/* rounding + simulator */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {/* rounding */}
-            <div style={{ ...card, padding: 16 }}>
+            <fieldset aria-label="Pay-out rounding" disabled={!canPrice} style={FS}>
+            <div style={{ ...card, padding: 16, height: '100%', boxSizing: 'border-box' }}>
               <Eyebrow icon="coins">Pay-out rounding</Eyebrow>
               <div className="flex items-center gap-2 mb-3">
                 <Seg value={roundMode} onPick={v => set('payoutRoundMode', v, `rounding ${v}`)} opts={[['down', 'Down'], ['nearest', 'Nearest'], ['up', 'Up']]} />
@@ -276,6 +296,7 @@
               </div>
               <div className="text-[10.5px] mt-2" style={{ color: CD.faint }}>{roundMode === 'down' ? 'Down favours the desk.' : roundMode === 'up' ? 'Up favours the customer.' : 'Nearest is neutral.'} Applied to the amount the customer receives.</div>
             </div>
+            </fieldset>
 
             {/* live simulator */}
             <div style={{ ...card, padding: 16 }}>

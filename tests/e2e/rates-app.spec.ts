@@ -3,7 +3,7 @@
    to /api/rates/publish; "What customers see now" is the last publish,
    never the draft. A teller sees the rates and cannot change them. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
 
@@ -21,7 +21,7 @@ const toggle = (page: Page, code: string) => page.getByRole("switch", { name: `$
 
 test("a manager takes a currency off the board and publishes it, and customers see the publish, not the draft", async ({ page }) => {
   await openRates(page, "r.haddad");
-  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Website & window", "Pricing & rates"]);
+  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Cost & stock", "Website & window", "Pricing & rates", "Guardrails"]);
   await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
   /* Each row shows the currency's flag and name, as the design does. */
   const usd = page.getByLabel("USD US Dollar");
@@ -75,6 +75,286 @@ test("a manager switches Auto-publish on and off, and the rail says the board fo
   await auto.click();
   expect((await off).status()).toBe(200);
   await expect(auto).toHaveAttribute("aria-checked", "false");
+});
+
+/* The design orders the board by dragging a row's dotted handle. A mouse
+   uses the browser's drag and drop; a finger or a pen does not have one,
+   so the handle follows the pointer itself. Dropping a row on the one
+   below it moves it one place down. Nothing is published here. */
+const HANDLE = "Drag to reorder (or Alt and the arrow keys)";
+const order = (page: Page) => page.getByTitle(HANDLE).evaluateAll((els) => els.map((el) => (el.closest("[aria-label]")?.getAttribute("aria-label") ?? "").split(" ")[0]));
+async function fingerDrag(page: Page, from: number, to: number): Promise<void> {
+  const handle = page.getByTitle(HANDLE).nth(from);
+  const target = page.getByTitle(HANDLE).nth(to);
+  /* A finger lands on what is on screen: both rows in view first, and
+     clear of a phone's bottom bar. */
+  await target.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await handle.evaluate((el) => el.scrollIntoView({ block: "nearest" }));
+  const a = (await handle.boundingBox())!, b = (await target.boundingBox())!;
+  const at = (box: { x: number; y: number; width: number; height: number }) => ({ clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 });
+  await handle.dispatchEvent("pointerdown", { pointerType: "touch", pointerId: 11, isPrimary: true, button: 0, ...at(a) });
+  await target.dispatchEvent("pointermove", { pointerType: "touch", pointerId: 11, isPrimary: true, ...at(b) });
+  await target.dispatchEvent("pointerup", { pointerType: "touch", pointerId: 11, isPrimary: true, button: 0, ...at(b) });
+}
+
+test("a manager drags a currency with a finger by its handle, on the table and on a phone", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const before = await order(page);
+  expect(before.length).toBeGreaterThan(2);
+  await fingerDrag(page, 0, 1);
+  await expect.poll(() => order(page)).toEqual([before[1], before[0], ...before.slice(2)]);
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+
+  /* A phone shows cards; each card has the handle too. The table's
+     column heads are gone once the cards are drawn. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("On board", { exact: true })).toBeHidden();
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const phone = await order(page);
+  await fingerDrag(page, 1, 2);
+  await expect.poll(() => order(page)).toEqual([phone[0], phone[2], phone[1], ...phone.slice(3)]);
+});
+
+/* The design's currency panel: a row's › opens it. Market, what the desk
+   sells at, the margin against the floor and target, the currency's own
+   spread (or the default), and on or off the board. Every change is a
+   draft until Publish, and the test puts the spread back. */
+test("a manager opens a currency's panel, gives it its own spread, and takes it off the board", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const code = (await order(page))[0];
+  await page.getByRole("button", { name: `Open ${code}`, exact: true }).click();
+  const panel = page.getByRole("dialog", { name: new RegExp(`^${code} `) });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("Market", { exact: true })).toBeVisible();
+  await expect(panel.getByText("You sell at", { exact: true })).toBeVisible();
+  await expect(panel).toContainText(/Floor \d+\.\d%, target \d+\.\d%\./);
+
+  const own = panel.getByRole("switch", { name: "Use the default spread" });
+  await expect(own).toHaveAttribute("aria-checked", "true");
+  await own.click();
+  try {
+    await expect(own).toHaveAttribute("aria-checked", "false");
+    const value = panel.getByLabel("Spread", { exact: true });
+    const before = parseFloat((await value.textContent()) ?? "");
+    await panel.getByRole("button", { name: "Raise the spread" }).click();
+    await expect(value).toHaveText(`${(before + 0.1).toFixed(1)}%`);
+    await expect(page.getByText("Unpublished changes")).toBeVisible();
+  } finally {
+    /* Back to the default spread: the setting is the shop's, saved. */
+    if ((await own.getAttribute("aria-checked")) === "false") await own.click();
+    await expect(own).toHaveAttribute("aria-checked", "true");
+  }
+
+  await panel.getByRole("button", { name: "Take off the board" }).click();
+  await expect(page.getByRole("switch", { name: `${code} on the board` })).toHaveAttribute("aria-checked", "false");
+  await panel.getByRole("button", { name: "Put on the board" }).click();
+  await expect(page.getByRole("switch", { name: `${code} on the board` })).toHaveAttribute("aria-checked", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+});
+
+test("a teller opens a currency's panel and cannot change it", async ({ page }) => {
+  await openRates(page, "m.costa");
+  await page.getByRole("button", { name: "Open USD", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: /^USD / });
+  await expect(panel.getByRole("switch", { name: "Use the default spread" })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "Take off the board" })).toBeDisabled();
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toBeHidden();
+});
+
+/* The design's Lock rates: the button turns amber and says Locked, a bar
+   says the rates are locked with Unlock beside it, and the board cannot
+   be changed or published until a manager unlocks it. The server refuses
+   a publish while locked whatever the screen does. */
+test("a manager locks the rates, the board stops taking changes, and Unlock opens it again", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const lock = page.getByRole("button", { name: "Lock rates", exact: true });
+  const banner = page.getByText("Rates are locked. Unlock them to make changes.");
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await lock.click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
+    await expect(banner).toBeVisible();
+    await expect(page.getByRole("switch", { name: "USD on the board" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    await expect(page.getByRole("switch", { name: "Auto-publish" })).toBeDisabled();
+    expect((await page.evaluate(async () => (await fetch("/api/rates")).json())).locked).toMatchObject({ by: "r.haddad" });
+
+    await page.getByRole("button", { name: "Unlock", exact: true }).click();
+    await expect(banner).toBeHidden();
+    await expect(lock).toBeVisible();
+    await expect(page.getByRole("switch", { name: "USD on the board" })).toBeEnabled();
+  } finally {
+    /* Never leave the shared desk locked. */
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
+});
+
+/* One lock. The desk's top bar had its own lock, kept in this browser
+   only: it held this desk's prices and nobody else knew. Both buttons
+   now lock the branch on the server, and each shows what the other did. */
+test("the desk's top-bar lock and the Rates lock are the same lock", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const top = page.getByTitle("Lock rates for this branch", { exact: true });
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await top.click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
+    await expect(page.getByText("Rates are locked. Unlock them to make changes.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Unlock", exact: true }).click();
+    await expect(page.getByTitle("Lock rates for this branch", { exact: true })).toBeVisible();
+    expect((await page.evaluate(async () => (await fetch("/api/rates")).json())).locked).toBeNull();
+  } finally {
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
+});
+
+/* Pricing & rates in the design's look offers what the server allows: a
+   teller only sees it, a manager prices. */
+test("Pricing & rates: a teller sees it and cannot change it; a manager can", async ({ page, browser }) => {
+  await openRates(page, "m.costa");
+  await page.getByRole("tab", { name: "Pricing & rates" }).click();
+  await expect(page.getByText(/^What the desk pays and charges\./)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Raise the default spread" })).toBeDisabled();
+  await expect(page.getByLabel("Fee on every deal")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Publish to Rate Board" })).toBeDisabled();
+
+  const manager = await (await browser.newContext()).newPage();
+  await openRates(manager, "r.haddad");
+  await manager.getByRole("tab", { name: "Pricing & rates" }).click();
+  await expect(manager.getByRole("button", { name: "Raise the default spread" })).toBeEnabled();
+  await expect(manager.getByLabel("Fee on every deal")).toBeEnabled();
+  await expect(manager.getByRole("region", { name: "Spread by currency" })).toContainText("USD");
+  await manager.close();
+});
+
+/* The design's commission tiers: a flat fee on every deal, and bigger
+   deals can pay a different one. The example says what a small and a big
+   deal pay. Put back at the end: the setting is the shop's. */
+test("a manager adds a commission tier, and the example says what a big deal pays", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await page.getByRole("tab", { name: "Pricing & rates" }).click();
+  const fee = page.getByLabel("Fee on every deal");
+  const was = await fee.inputValue();
+  try {
+    await fee.fill("2");
+    await page.getByRole("button", { name: "+ Add a tier" }).click();
+    await expect(page.getByLabel("Tier 1 starts over")).toHaveValue("5,000");
+    await expect(page.getByLabel("Tier 1 fee")).toHaveValue("4");
+    await expect(page.getByText(/^A [A-Z]{3} 750 deal pays [A-Z]{3} 2 · A [A-Z]{3} 12,000 deal pays [A-Z]{3} 4, plus the spread\.$/)).toBeVisible();
+    await page.getByLabel("Tier 1 fee").fill("25");
+    await expect(page.getByText(/12,000 deal pays [A-Z]{3} 25, plus the spread\.$/)).toBeVisible();
+    /* What the desk keeps for the shop and saves (cdos_settings); the
+       server's side, that a manager may save feeTiers, is
+       server/tests/pricing-settings-roles.test.ts. */
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("cdos_settings") || "{}").feeTiers)).toEqual([{ over: 5000, fee: 25 }]);
+  } finally {
+    const remove = page.getByRole("button", { name: "Remove this tier" });
+    while (await remove.count()) await remove.first().click();
+    await fee.fill(was);
+  }
+});
+
+/* The design's Guardrails tab: one floor, checked on the board, on every
+   deal, and afterwards. The levels and each currency's own floor are the
+   owner's; others see them. Put back at the end: the settings are the
+   shop's. */
+test("the owner sets the guardrails and a currency's own floor; a manager sees them and cannot change them", async ({ page, browser }) => {
+  await openRates(page, "j.masri");
+  await page.getByRole("tab", { name: "Guardrails" }).click();
+  await expect(page.getByRole("heading", { name: "One floor, checked in three places" })).toBeVisible();
+  const floor = page.getByLabel("Minimum floor", { exact: true });
+  const was = await floor.inputValue();
+  const usd = page.getByLabel("USD floor", { exact: true });
+  try {
+    await page.getByRole("button", { name: "Raise the minimum floor" }).click();
+    await expect(floor).toHaveValue((parseFloat(was) + 0.1).toFixed(1));
+    /* USD's own floor above what it sells at turns it red, here and on the Board. */
+    await usd.fill("9");
+    await expect(page.locator('[data-floor-row="USD"] [data-tone]')).toHaveAttribute("data-tone", "red");
+    await page.getByRole("tab", { name: "Board" }).click();
+    await expect(page.locator('[data-rate-row="USD"] [data-tone]')).toHaveAttribute("data-tone", "red");
+    await page.getByRole("tab", { name: "Guardrails" }).click();
+
+    const manager = await (await browser.newContext()).newPage();
+    await openRates(manager, "r.haddad");
+    await manager.getByRole("tab", { name: "Guardrails" }).click();
+    await expect(manager.getByText("Only the owner can change the guardrails.")).toBeVisible();
+    await expect(manager.getByRole("button", { name: "Raise the minimum floor" })).toBeDisabled();
+    await expect(manager.getByLabel("USD floor", { exact: true })).toBeDisabled();
+    await manager.close();
+  } finally {
+    await page.getByRole("tab", { name: "Guardrails" }).click();
+    await usd.fill("");
+    await floor.fill(was);
+    await floor.blur();
+  }
+});
+
+/* The design's Cost & stock tab: what the cash cost, what it is worth,
+   what would be made selling it now, what is running low; and Record cash
+   bought, which sends what was paid with the delivery so the desk's cost
+   is real (POST /api/ledger/vault/receipts, costHome). */
+test("a manager records cash bought with what it cost, and Cost & stock lists it", async ({ page }) => {
+  test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
+  await openRates(page, "r.haddad");
+  /* A vault the ledger knows about: state it once if this desk never has. */
+  await page.evaluate(async () => {
+    await fetch("/api/ledger/vault/opening-position", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ balances: { USD: "0.00" } }) });
+  });
+  await page.getByRole("tab", { name: "Cost & stock" }).click();
+  await expect(page.getByText("Cash at cost", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "By currency" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Record cash bought" }).first().click();
+  const sheet = page.getByRole("dialog", { name: "Record cash bought" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: /^USD/ }).click();
+  await sheet.getByLabel(/^Amount you got/).fill("1000");
+  await sheet.getByLabel(/^Total you paid/).fill("1350");
+  await sheet.getByLabel("Bought from").fill("E2E Wholesaler");
+  await expect(sheet.getByText(/^You paid 1\.3500 [A-Z]{3} per USD$/)).toBeVisible();
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/ledger/vault/receipts") && r.method() === "POST");
+  await sheet.getByRole("button", { name: "Record", exact: true }).click();
+  const body = JSON.parse((await sent).postData() ?? "{}");
+  expect(body).toMatchObject({ direction: "in", currency: "USD", amount: "1000.00", costHome: "1350.00", counterpartyRef: "E2E Wholesaler" });
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("region", { name: "Recent cash bought" })).toContainText("E2E Wholesaler");
+});
+
+/* The design's feed sheet: where the market column comes from, and the
+   three ways it can behave. On this desk the feed is the platform's own,
+   hourly; holding the rates is Lock rates, and typing them is pinning a
+   currency in Pricing & rates. */
+test("the feed button says where the market rates come from, and leads to Lock rates and pinned rates", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  const open = () => page.getByRole("button", { name: /^(Live feed|No market feed)/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Where your market rates come from" });
+  await open();
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText("How the market column behaves")).toBeVisible();
+  await sheet.getByRole("button", { name: /^Type them myself/ }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Pricing & rates" })).toHaveAttribute("aria-selected", "true");
+
+  await open();
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await sheet.getByRole("button", { name: /^Hold today.s rates/ }).click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
+  } finally {
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
 });
 
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {

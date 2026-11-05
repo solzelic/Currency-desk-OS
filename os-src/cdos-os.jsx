@@ -1227,7 +1227,10 @@
        balances against it. It is recorded server-first like every other
        movement, so a delivery that the ledger refused never shows up as
        stock the desk does not have. */
-    const creditVault = async (ccy2, units, supplier, idempotencyKey) => {
+    /* costHome: what the delivery cost in the shop's own currency, from the
+       Vault's receive form. Without it the delivery took the vault's old
+       average, or no cost at all, and the desk's cost was not what was paid. */
+    const creditVault = async (ccy2, units, supplier, idempotencyKey, costHome) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return { ok: false, message: 'Nothing to receive.' };
       if (srvUser && window.CDOS.Backend && vaultTracked) {
@@ -1246,6 +1249,7 @@
             counterpartyType: 'supplier',
             counterpartyRef: supplier || 'Wholesale order',
             reason: `Wholesale delivery into ${b.code} vault`,
+            ...(Number(costHome) > 0 ? { costHome: Number(costHome).toFixed(2) } : {}),
           });
         } catch (error) {
           log('Order receipt failed', error.message || 'The ledger refused the delivery');
@@ -1944,6 +1948,8 @@
     const openClientProfile = (name, txRef) => { setClientToOpen({ name, txRef: txRef || null, n: Date.now() }); openApp('clients'); };
     const openTransaction = (id) => { setTxToOpen({ id, n: Date.now() }); openApp('ledger'); };
     const openSettingsTab = (t) => { setSettingsJump({ t, n: Date.now() }); openApp('settings'); };
+    /* Rates' "See Full System" opens Settings on Billing. */
+    window.CDOS.openSettingsTab = openSettingsTab;
     const openLedgerRefs = (refs, label) => { setLedgerFocus({ refs, label, n: Date.now() }); openApp('ledger'); };
     // open the Compliance app straight into the LCTR/EFTR filing worksheet for one report
     const openComplianceFiling = (report) => { setComplianceFiling({ report, n: Date.now() }); openApp('compliance'); };
@@ -2078,9 +2084,27 @@
       // timestamped intent so a freshly-mounted Ledger also opens the modal
       setNewDealSignal({ n: Date.now() });
     };
-    const toggleLock = () => {
+    /* Lock rates is the branch's, kept by the server (PUT /api/rates/lock,
+       Rates v2.5): while it is on nobody publishes the board and the
+       market leaves it alone. This button and the Rates app's button are
+       the same lock. The desk still holds its prices at the last publish
+       while it is on, and tells the Rates app (a storage event) when it
+       changes here. */
+    const canLock = !!srvUser && ['branch_manager', 'administrator'].includes(srvUser.role);
+    const toggleLock = async () => {
       const next = !locked;
+      if (!canLock) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'Only the owner and managers can lock rates'); return; }
+      let res = null;
+      try {
+        res = await fetch('/api/rates/lock', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locked: next }) });
+      } catch (e) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server could not be reached'); return; }
+      if (!res.ok) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server answered ' + res.status); return; }
+      holdRates(next);
+    };
+    const holdRates = (next, quiet) => {
+      const was = (() => { try { return localStorage.getItem('yorkfx_rates_locked') === '1'; } catch (e) { return locked; } })();
       try { localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0'); } catch (e) {}
+      if (was !== next) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: next ? '1' : '0' })); } catch (e) {} }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);
@@ -2090,8 +2114,15 @@
         try { localStorage.removeItem('cdos_locked_book'); } catch (e) {}
       }
       setLocked(next);
-      log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
+      if (!quiet) log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
     };
+    /* The lock as the server has it, once the desk knows who is signed in. */
+    useEffect(() => {
+      if (!srvUser) return;
+      fetch('/api/rates', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(b => {
+        if (b && b.locked !== undefined) holdRates(!!b.locked, true);
+      }).catch(e => console.warn('[desk] the rates lock could not be read', e));
+    }, [srvUser && srvUser.staffId]);
     // alerts → open the Ledger pre-filtered to the most urgent flag bucket
     const openLedgerFiltered = (view) => { setLedgerView({ view, n: Date.now() }); openApp('ledger'); };
     const jumpAlerts = () => {
@@ -2417,7 +2448,7 @@
         /* Rates v2.5: the desk's own Rates app replaces the York FX Rate
            Board page that was framed here. The page itself stays until the
            old apps are retired. */
-        case 'rates': return <Rates settings={settings} setSettings={setSettings} me={me} log={log} serverRole={srvUser ? srvUser.role : null} />;
+        case 'rates': return <Rates settings={settings} setSettings={setSettings} me={me} log={log} serverRole={srvUser ? srvUser.role : null} deals={rows} />;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />
@@ -2436,7 +2467,7 @@
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
         case 'reports': return <Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} openSignal={reportOpen} />;
-        case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />;
+        case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={srvUser ? srvUser.role : null} />;
         case 'store': return <AppStore installed={storeInstalled} available={storeAvailable} locked={storeLocked} plan={activePlan} coming={COMING || []} onAdd={restoreApp} onRemove={removeApp} onOpen={openApp} onUpgrade={() => openSettingsTab('billing')} />;
         case 'tagged': return <Tagged {...{ rows, clients, settings, onOpen: openTransaction }} />;
         default: return null;
@@ -2602,7 +2633,7 @@
             </div>
             <button className={'mb-op' + (day.closed ? ' mb-op-off' : '')} title={day.closed ? 'Day is closed — reopen to post' : 'New transaction'} onClick={quickNewDeal}><Ic n="plus" s={17} /></button>
             <button className="mb-op" title="Calculator" onClick={() => openApp('calc')}><Ic n="calcmono" s={17} /></button>
-            <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates — follow the live board' : 'Lock rates — hold at last pull'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
+            <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates for this branch' : 'Lock rates for this branch'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
             <button className="mb-op" title="Settings" onClick={() => openApp('settings')}><Ic n="gear" s={17} /></button>
             <span className="mb-op-div"></span>
             {/* Same clock as the Audit Trail, in the desk's timezone.

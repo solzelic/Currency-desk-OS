@@ -693,7 +693,7 @@
           <input type="number" autoFocus={!receiveOnly} value={units} onChange={e => setUnits(e.target.value)} placeholder="0" className="w-full px-3 py-2 text-right outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
         </div>
         {receiving && <div>
-          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>CAD paid</div>
+          <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono' }}>{(homeCcy() || 'Home') + ' paid'}</div>
           <input type="number" autoFocus={receiveOnly} value={costCad} onChange={e => setCostCad(e.target.value)} placeholder={suggestCost ? String(suggestCost) : '0'} className="w-full px-3 py-2 text-right outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }} />
         </div>}
       </div>
@@ -890,7 +890,7 @@
          Marking it received in the list before that answer arrives is how
          a second tap became a second credit. */
       if (onOrderReceived) {
-        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey);
+        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey, costCad);
         if (posted && posted.ok === false) return posted;
       }
       const unitCost = +(costCad / units).toFixed(6);

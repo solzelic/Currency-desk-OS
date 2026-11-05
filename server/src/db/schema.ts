@@ -303,6 +303,11 @@ export const branches = pgTable(
        board again, in the shop's home currency. Migration 065; off until
        staff who may change rates turn it on. */
     autoPublishRates: boolean("auto_publish_rates").notNull().default(false),
+    /* Rates v2.5 Lock rates: while set, nobody publishes this branch's
+       board and the market sync leaves it alone. Migration 067; null is
+       unlocked. Who locked it is a staff id, for the screen and the log. */
+    ratesLockedAt: timestamp("rates_locked_at", { withTimezone: true }),
+    ratesLockedBy: text("rates_locked_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("branches_entity_idx").on(t.legalEntityId)],
