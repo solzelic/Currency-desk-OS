@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Rates</title>
+<!-- Rates v2.5: one window screen, served at /s/<token>. Open it on the TV
+     or tablet and leave it: no sign-in, it refreshes every minute. The
+     token is the screen's only credential, so the page is not indexed. It
+     reads /api/public/screens/<token>, the shop's latest PUBLISHED board.
+     Shop text is written with textContent, never as HTML. -->
+<style>
+  :root { --bg: #F7F4ED; --fg: #17140F; --mute: #6E675E; --line: rgba(23,20,15,0.14); --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  body.dark { --bg: #0F0D0A; --fg: #F4F0E6; --mute: #B8B0A3; --line: rgba(244,240,230,0.16); }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; padding: 3vh 4vw; cursor: none; }
+  header { display: flex; align-items: baseline; gap: 2vw; }
+  header b { flex: 1; font-size: clamp(20px, 3.4vw, 48px); letter-spacing: -0.01em; }
+  header span { font-family: var(--mono); font-size: clamp(14px, 1.8vw, 26px); color: var(--mute); }
+  .grid { flex: 1; display: grid; gap: 0 5vw; margin-top: 3vh; align-content: start; }
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .head, .rate { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr); column-gap: 2vw; align-items: baseline; padding: 1.4vh 0; border-bottom: 1px solid var(--line); }
+  .head { font-family: var(--mono); font-size: clamp(11px, 1.2vw, 18px); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); }
+  .rate b { font-size: clamp(22px, 3.6vw, 64px); }
+  .rate span { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: clamp(16px, 2.4vw, 46px); text-align: right; white-space: nowrap; }
+  .head span { text-align: right; }
+  .head span:first-child { text-align: left; }
+  .rate .sell { font-weight: 700; }
+  footer { display: flex; justify-content: space-between; gap: 2vw; flex-wrap: wrap; font-size: clamp(12px, 1.4vw, 20px); color: var(--mute); margin-top: 2vh; }
+  #missing { margin: auto; text-align: center; max-width: 34em; }
+  #missing b { display: block; font-size: clamp(22px, 3vw, 40px); margin-bottom: 1vh; }
+  #missing span { font-size: clamp(14px, 1.8vw, 24px); color: var(--mute); }
+  #start { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 1.5vh; background: var(--bg); cursor: pointer; padding: 6vw; }
+  #start b { font-size: clamp(22px, 3.2vw, 44px); }
+  #start span { color: var(--mute); max-width: 34em; }
+  #offline { position: fixed; left: 50%; bottom: 3vh; transform: translateX(-50%); padding: 1vh 2vw; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: clamp(12px, 1.4vw, 20px); white-space: nowrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body data-window-screen>
+<div id="missing" hidden><b>This screen link was replaced</b><span>The shop reset it. Open the new link from Rates → Website &amp; window → Window screens.</span></div>
+<div id="start" role="button" tabindex="0"><b id="start-name">Tap anywhere to start</b><span>Goes full screen and keeps the screen awake. No login. It updates by itself whenever the shop publishes new rates.</span></div>
+<div id="offline" role="status" hidden></div>
+<header id="top" hidden><b id="shop"></b><span id="updated"></span><span id="clock"></span></header>
+<div class="grid" id="grid"></div>
+<footer id="foot" hidden><span id="note"></span><span id="hours"></span></footer>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  /* The server refuses a malformed escape (400) before this page loads,
+     so the path here always decodes. */
+  var token = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+  var shown = false;
+  var shownAt = null;
+
+  /* One tap: full screen, and a wake lock so the TV does not sleep. Both
+     are best effort; a browser that refuses either still shows the rates. */
+  var wake = null;
+  function keepAwake() {
+    if (!navigator.wakeLock || document.visibilityState !== "visible") return;
+    navigator.wakeLock.request("screen").then(function (lock) { wake = lock; }, function (e) { console.warn("[window screen] wake lock refused", e); });
+  }
+  function start() {
+    $("start").hidden = true;
+    var el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(function (e) { console.warn("[window screen] full screen refused", e); });
+    keepAwake();
+  }
+  $("start").addEventListener("click", start);
+  $("start").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") start(); });
+  /* A wake lock is released when the tab is hidden; take it again on return. */
+  document.addEventListener("visibilitychange", function () { if (!$("start").hidden || wake === null) return; keepAwake(); });
+
+  function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function time(ms) { return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+  function tick() { $("clock").textContent = time(Date.now()); }
+
+  function column(rates) {
+    var col = el("div");
+    var head = el("div", "head"); head.appendChild(el("span", null, "Currency")); head.appendChild(el("span", null, "We buy")); head.appendChild(el("span", null, "We sell"));
+    col.appendChild(head);
+    rates.forEach(function (r) { var row = el("div", "rate"); row.appendChild(el("b", null, r.code)); row.appendChild(el("span", null, rate(r.buy))); row.appendChild(el("span", "sell", rate(r.sell))); col.appendChild(row); });
+    return col;
+  }
+
+  function render(d) {
+    shown = true;
+    shownAt = d.publishedAt || Date.now();
+    $("offline").hidden = true;
+    document.body.className = d.screen.theme === "dark" ? "dark" : "";
+    document.title = d.shop.name + " · Rates";
+    $("shop").textContent = d.shop.name;
+    $("updated").textContent = d.publishedAt ? "Updated " + time(d.publishedAt) : "";
+    var grid = $("grid"); grid.textContent = "";
+    grid.className = "grid" + (d.screen.layout === "two" ? " two" : "");
+    if (d.screen.layout === "two") {
+      var half = Math.ceil(d.rates.length / 2);
+      grid.appendChild(column(d.rates.slice(0, half))); grid.appendChild(column(d.rates.slice(half)));
+    } else grid.appendChild(column(d.rates));
+    $("note").textContent = d.shop.home ? "Per 1 unit in " + d.shop.home + ". The rate on your receipt is the one that counts." : "";
+    $("hours").textContent = (d.shop.hours || []).map(function (h) { return h.days + " " + h.hours; }).join(" · ");
+    $("top").hidden = false; $("foot").hidden = false; $("missing").hidden = true;
+  }
+
+  function load() {
+    fetch("/api/public/screens/" + encodeURIComponent(token))
+      .then(function (res) { if (res.status === 404) return null; if (!res.ok) throw new Error("screen answered " + res.status); return res.json(); })
+      .then(function (d) {
+        if (d) return render(d);
+        /* Retired or never real: clear the board rather than leave old prices up. */
+        shown = false; $("grid").textContent = ""; $("top").hidden = true; $("foot").hidden = true; $("offline").hidden = true;
+        $("start").hidden = true; $("missing").hidden = false;
+      })
+      /* A failed refresh keeps the last rates up and says how old they are;
+         the next poll tries again. A screen that never loaded says so. */
+      .catch(function (e) {
+        console.warn("[window screen]", e);
+        if (!shown) { $("start").hidden = true; $("missing").hidden = false; return; }
+        $("offline").textContent = "Offline · showing rates from " + time(shownAt) + " · reconnecting";
+        $("offline").hidden = false;
+      });
+  }
+  tick(); setInterval(tick, 15 * 1000);
+  load(); setInterval(load, 60 * 1000);
+})();
+</script>
+</body>
+</html>

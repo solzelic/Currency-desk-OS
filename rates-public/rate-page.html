@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>Today's rates</title>
+<!-- Rates v2.5: a shop's public rate page, served at /r/<address>.
+     One file for every shop. It reads /api/public/rate-pages/<address>,
+     which answers only once the owner has turned the page on, and only
+     with the shop's latest PUBLISHED board. Shop text is written with
+     textContent, never as HTML. -->
+<style>
+  :root { --paper: #F7F4ED; --panel: #FFFFFF; --ink: #17140F; --mute: #6E675E; --line: rgba(23,20,15,0.12); --green: #1D6B45; --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--paper); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: center; gap: 10px; }
+  header b { flex: 1; font-size: 15px; }
+  a.call { color: var(--green); font-weight: 700; text-decoration: none; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-top: 28px; }
+  h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; margin-top: 6px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-top: 18px; }
+  .card h2 { font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; }
+  .card h2 small { font-family: var(--mono); font-size: 11px; color: var(--mute); font-weight: 400; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); text-align: right; padding: 6px 0; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 10px 0; border-top: 1px solid var(--line); text-align: right; font-family: var(--mono); }
+  td:first-child { font-family: inherit; font-weight: 700; }
+  td.sell { font-weight: 700; }
+  .note { font-size: 12.5px; color: var(--mute); margin-top: 10px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  select, input, button { font: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); color: var(--ink); }
+  input { flex: 1; min-width: 120px; font-family: var(--mono); }
+  button { cursor: pointer; font-weight: 600; }
+  .result { font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 12px; }
+  .hours div { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding: 6px 0; font-size: 14px; }
+  footer { font-size: 12px; color: var(--mute); margin-top: 28px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body data-rate-page>
+<main>
+  <header><b id="shop-name"></b><a class="call" id="call" hidden>Call</a></header>
+  <div id="missing" hidden><h1>This rate page is not available.</h1><p class="note">It may not be open yet. Ask the shop for its address.</p></div>
+  <div id="page" hidden>
+    <div class="eyebrow" id="eyebrow">Foreign exchange</div>
+    <h1 id="hero"></h1>
+    <p class="note" id="address"></p>
+    <section class="card" aria-labelledby="rates-title">
+      <h2><span id="rates-title">Today's rates</span><small id="updated"></small></h2>
+      <table><thead><tr><th>Currency</th><th>We buy</th><th>We sell</th></tr></thead><tbody id="rates"></tbody></table>
+      <p class="note" id="rates-note"></p>
+    </section>
+    <section class="card" aria-labelledby="calc-title" id="calc">
+      <h2 id="calc-title">Work out your amount</h2>
+      <div class="row">
+        <select id="calc-code" aria-label="Currency"></select>
+        <input id="calc-amount" inputmode="decimal" value="500" aria-label="Amount">
+        <button type="button" id="calc-swap"></button>
+      </div>
+      <div class="note" id="calc-label"></div>
+      <div class="result" id="calc-result"></div>
+    </section>
+    <section class="card hours" aria-labelledby="find-title" id="find">
+      <h2 id="find-title">Find us</h2>
+      <p class="note" id="find-address"></p>
+      <p class="note"><a id="directions" target="_blank" rel="noopener">Directions</a></p>
+      <div id="hours"></div>
+    </section>
+    <footer><span id="copyright"></span><span>Website by CurrencyDesk</span></footer>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  /* The server refuses a malformed escape (400) before this page loads,
+     so the path here always decodes. */
+  var slug = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+  var state = { data: null, selling: true };
+
+  /* Six places at most, fewer for a large rate: what the desk shows. */
+  function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
+  function money(n, code) { return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + code; }
+  function cell(row, text, cls) { var td = document.createElement("td"); td.textContent = text; if (cls) td.className = cls; row.appendChild(td); }
+
+  function calc() {
+    var d = state.data; if (!d) return;
+    var code = $("calc-code").value;
+    var r = d.rates.filter(function (x) { return x.code === code; })[0];
+    var amount = Number(String($("calc-amount").value).replace(/,/g, ""));
+    $("calc-swap").textContent = state.selling ? "I want to buy" : "I have foreign cash";
+    if (!r || !(amount > 0)) { $("calc-result").textContent = ""; $("calc-label").textContent = ""; return; }
+    /* Selling foreign cash: we buy it. Buying foreign cash: we sell it. */
+    if (state.selling) {
+      $("calc-label").textContent = "You give " + money(amount, code) + ". You get about";
+      $("calc-result").textContent = money(amount * r.buy, d.shop.home);
+    } else {
+      $("calc-label").textContent = "You give " + money(amount, d.shop.home) + ". You get about";
+      $("calc-result").textContent = money(amount / r.sell, code);
+    }
+  }
+
+  function render(d) {
+    state.data = d;
+    var shop = d.shop, contact = shop.contact || {};
+    document.title = shop.name + " · Today's rates";
+    $("shop-name").textContent = shop.name;
+    $("hero").textContent = shop.name;
+    if (contact.city) $("eyebrow").textContent = "Foreign exchange · " + contact.city;
+    var where = [contact.address, contact.city, contact.region, contact.postal].filter(Boolean).join(", ");
+    $("address").textContent = where; $("find-address").textContent = where;
+    $("directions").hidden = !where;
+    if (where) $("directions").href = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(where);
+    if (contact.phone) { $("call").hidden = false; $("call").href = "tel:" + contact.phone.replace(/[^+\d]/g, ""); }
+    $("updated").textContent = d.publishedAt ? "Published " + new Date(d.publishedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+    var body = $("rates"); body.textContent = "";
+    d.rates.forEach(function (r) { var tr = document.createElement("tr"); cell(tr, r.code); cell(tr, rate(r.buy)); cell(tr, rate(r.sell), "sell"); body.appendChild(tr); });
+    $("rates-note").textContent = d.rates.length
+      ? "Rates per 1 unit in " + shop.home + ". Indicative: the rate on your receipt is the one that counts. For large amounts, ask us for a better price."
+      : "No rates are published yet.";
+    var pick = $("calc-code"), kept = pick.value; pick.textContent = "";
+    d.rates.forEach(function (r) { var o = document.createElement("option"); o.value = r.code; o.textContent = r.code; pick.appendChild(o); });
+    if (kept) pick.value = kept;
+    $("calc").hidden = !d.rates.length;
+    var hours = $("hours"); hours.textContent = "";
+    (shop.hours || []).forEach(function (h) { var line = document.createElement("div"), a = document.createElement("span"), b = document.createElement("span"); a.textContent = h.days; b.textContent = h.hours; line.appendChild(a); line.appendChild(b); hours.appendChild(line); });
+    $("find").hidden = !where && !(shop.hours || []).length;
+    $("copyright").textContent = "© " + new Date().getFullYear() + " " + shop.name;
+    $("page").hidden = false; $("missing").hidden = true;
+    calc();
+  }
+
+  function load() {
+    fetch("/api/public/rate-pages/" + encodeURIComponent(slug))
+      .then(function (res) { if (res.status === 404) return null; if (!res.ok) throw new Error("rates answered " + res.status); return res.json(); })
+      .then(function (d) { if (d) render(d); else if (!state.data) { $("missing").hidden = false; $("page").hidden = true; } })
+      /* A failed refresh keeps the rates already on screen; the first
+         load failing says so instead of showing an empty page. */
+      .catch(function (e) { console.warn("[rate page]", e); if (!state.data) $("missing").hidden = false; });
+  }
+  $("calc-amount").addEventListener("input", calc);
+  $("calc-code").addEventListener("change", calc);
+  $("calc-swap").addEventListener("click", function () { state.selling = !state.selling; calc(); });
+  load();
+  setInterval(load, 5 * 60 * 1000);
+})();
+</script>
+</body>
+</html>

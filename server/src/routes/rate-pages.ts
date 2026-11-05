@@ -72,6 +72,19 @@ async function audit(db: Db, who: SessionUser, action: string, detail: Record<st
   });
 }
 
+/* What the shop already publishes on its storefront (tenants.site_config):
+   how to reach it and when it is open. Only the fields that are set. */
+const CONTACT_FIELDS = ["phone", "email", "address", "city", "region", "postal"] as const;
+function publicContact(shop: typeof schema.tenants.$inferSelect) {
+  const config = shop.siteConfig ?? {};
+  const contact: Partial<Record<(typeof CONTACT_FIELDS)[number], string>> = {};
+  for (const field of CONTACT_FIELDS) {
+    const value = config[field];
+    if (typeof value === "string" && value.trim()) contact[field] = value.trim();
+  }
+  return { contact, hours: Array.isArray(config.hours) ? config.hours : [] };
+}
+
 /* A unique constraint refused the write: Postgres code 23505, which the
    drivers report on the error or on its cause. */
 function uniqueViolation(error: unknown): boolean {
@@ -103,7 +116,8 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     const shop = page ? await liveShop(db, page.tenantId) : null;
     if (!page || !shop) return null;
     const board = await publishedRates(db, shop.id);
-    return { shop: { name: shop.name, slug: page.slug, home: board.home }, publishedAt: board.publishedAt, rates: board.rates };
+    const { contact, hours } = publicContact(shop);
+    return { shop: { name: shop.name, slug: page.slug, home: board.home, contact, hours }, publishedAt: board.publishedAt, rates: board.rates };
   };
 
   const screenAnswer = async (token: string) => {
@@ -116,7 +130,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       ? screen.currencies.flatMap((code) => board.rates.filter((rate) => rate.code === code))
       : board.rates.slice(0, DEFAULT_SCREEN_COUNT);
     return {
-      shop: { name: shop.name, home: board.home },
+      shop: { name: shop.name, home: board.home, ...(screen.showHours ? { hours: publicContact(shop).hours } : {}) },
       screen: { name: screen.name, kind: screen.kind, layout: screen.layout, theme: screen.theme, showHours: screen.showHours },
       publishedAt: board.publishedAt,
       rates: picked,

@@ -136,7 +136,11 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
        marketing site: the OS showed "More trades. Less paperwork." where the
        rate board should be. */
     file.startsWith("/YorkFX/") ||
-    file.startsWith("/web/")
+    file.startsWith("/web/") ||
+    /* Rates v2.5 public pages (/r/<address>, /s/<token>). They hold no shop
+       data: each reads the shop's published board from /api/public/. */
+    file === "/rates-public/rate-page.html" ||
+    file === "/rates-public/window-screen.html"
   );
 };
 
@@ -363,6 +367,12 @@ export async function buildApp(
       // override a wrong guess about the visitor's device
       if (hasMobile) app.get("/m", (_req, reply) => reply.sendFile(mobileFile));
       app.get("/d", (_req, reply) => reply.sendFile(rootFile));
+      /* Rates v2.5 public pages. The file is the same for every shop; the
+         page reads its own address or token and asks /api/public/ for the
+         shop's published board. A page that is not live answers there. */
+      for (const [route, file] of [["/r/:slug", "rates-public/rate-page.html"], ["/s/:token", "rates-public/window-screen.html"]] as const) {
+        if (existsSync(path.join(staticDir, file))) app.get(route, (_req, reply) => reply.sendFile(file));
+      }
       for (const [route, file] of Object.entries(SITE_PAGES)) {
         if (existsSync(path.join(staticDir, file))) {
           app.get(route, (_req, reply) => reply.sendFile(file));
