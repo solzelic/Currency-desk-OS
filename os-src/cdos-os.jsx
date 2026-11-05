@@ -2461,7 +2461,7 @@
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;
         case 'reports': return <Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} openSignal={reportOpen} />;
-        case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />;
+        case 'pricing': return <Pricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={srvUser ? srvUser.role : null} />;
         case 'store': return <AppStore installed={storeInstalled} available={storeAvailable} locked={storeLocked} plan={activePlan} coming={COMING || []} onAdd={restoreApp} onRemove={removeApp} onOpen={openApp} onUpgrade={() => openSettingsTab('billing')} />;
         case 'tagged': return <Tagged {...{ rows, clients, settings, onOpen: openTransaction }} />;
         default: return null;

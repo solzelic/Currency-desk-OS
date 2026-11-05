@@ -646,7 +646,7 @@
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
           {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
-          {tab === 'rules' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />}
+          {tab === 'rules' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} />}
         </div>
       </div>
       {tip && TIPS[tip] && <div role="dialog" aria-label={TIPS[tip][0]} style={css('position:absolute;right:' + (cards ? '12px' : '22px') + ';bottom:' + (cards ? '12px' : '22px') + ';z-index:55;width:min(360px, calc(100% - 24px));padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 26px 60px -24px rgba(23,20,15,0.5);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')}>

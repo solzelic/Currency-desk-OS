@@ -19,8 +19,9 @@ export const OWNER_ONLY_REFUSAL =
 
 /* What a teller screen writes into cdos_settings. My account, the
    people a sign-in adopts, and the app-settings tabs. Shop, compliance,
-   billing, hours, and the handoff count are not on this list. The
-   default spread is not on it either; a manager may change that. */
+   billing, hours, and the handoff count are not on this list. Pricing is
+   not on it either (Rates v2.5: tellers view rates only): a manager
+   prices, and the guardrails are the owner's. */
 export const NON_OWNER_MAY_CHANGE = [
   "staff", "employees",
   "defaultClientRisk", "idExpiryWarnDays", "riskTierNotes", "escalateMediumRisk",
@@ -30,14 +31,19 @@ export const NON_OWNER_MAY_CHANGE = [
   "pinOnSwitch", "pinOnTill", "pinOnVoid",
   "transferRequirePurpose", "chequeMinHoldDays",
   "autoTagRisk", "autoTagNew",
-  "spreads", "marginTargetPct", "marginFloorPct", "marginEnforce",
-  "rateProvider", "defaultFee", "rateRounding", "rateLockMins",
-  "payoutRoundTo", "payoutRoundMode", "spotOverride",
   "receiptHeader", "receiptFooter", "receiptDisclaimer", "showLogoOnReceipt", "showMsbOnReceipt",
 ] as const;
 
-/** The teller list, plus the default spread. Owners may change anything. */
-export const MANAGER_MAY_CHANGE = [...NON_OWNER_MAY_CHANGE, "defaultSpread"] as const;
+/* What a manager prices with, on Rates and in Pricing & rates: spreads
+   (the default and each currency's own), pinned rates, the fee, rounding,
+   how long a quote holds, and the feed's name. Not the guardrails. */
+export const PRICING_KEYS = [
+  "defaultSpread", "spreads", "spotOverride", "defaultFee", "rateRounding", "rateLockMins",
+  "payoutRoundTo", "payoutRoundMode", "rateProvider",
+] as const;
+
+/** The teller list, plus pricing. Owners may change anything. */
+export const MANAGER_MAY_CHANGE = [...NON_OWNER_MAY_CHANGE, ...PRICING_KEYS] as const;
 
 const TELLER_ALLOWED = new Set<string>(NON_OWNER_MAY_CHANGE);
 const MANAGER_ALLOWED = new Set<string>(MANAGER_MAY_CHANGE);
@@ -60,7 +66,10 @@ export const OWNER_ONLY_GROUPS = {
   localization: ["baseCurrency", "dateFormat", "timeFormat", "bizCountry"],
   billing: ["billingPlan", "billingCycle", "billingEmail"],
   hours: ["hours", "timezone"],
-  rates: ["defaultSpread"],
+  /* Pricing: a manager may change these, a teller may not. */
+  rates: [...PRICING_KEYS],
+  /* The owner's alone (Rates v2.5: guardrails are owner-only). */
+  guardrails: ["marginTargetPct", "marginFloorPct", "marginEnforce"],
   till: ["requireCountOnHandoff"],
 } as const;
 

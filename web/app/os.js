@@ -56835,9 +56835,23 @@ ${snap}`;
     settings,
     setSettings,
     me,
-    log
+    log,
+    serverRole
   }) {
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : 'CAD';
+    /* Who may change what, as the server decides it (state/owner-settings.ts,
+       Rates v2.5): a teller sees the shop's pricing, a manager prices, and
+       the guardrails are the owner's. Without a server role (the offline
+       prototype) the desk's own role stands in. */
+    const role = serverRole || (me && me.role === 'Owner' ? 'administrator' : me && me.role === 'Manager' ? 'branch_manager' : 'teller');
+    const canPrice = role === 'administrator' || role === 'branch_manager';
+    const owns = role === 'administrator';
+    const FS = {
+      border: 0,
+      margin: 0,
+      padding: 0,
+      minWidth: 0
+    };
     const FOREIGN = (CCY || []).filter(c => c !== home);
     const set = (k, v, note) => {
       setSettings(s => ({
@@ -57060,7 +57074,7 @@ ${snap}`;
       className: "flex items-center gap-2"
     }, /*#__PURE__*/React.createElement("button", {
       onClick: pushRates,
-      disabled: justPushed,
+      disabled: justPushed || !canPrice,
       className: "flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 text-white",
       style: {
         background: justPushed ? CD.green : CD.ink,
@@ -57085,7 +57099,16 @@ ${snap}`;
         borderRadius: '50%',
         background: CD.green
       }
-    }), " Saves automatically"))), /*#__PURE__*/React.createElement("div", {
+    }), " Saves automatically"))), !owns && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mb-3",
+      style: {
+        color: CD.ink
+      }
+    }, canPrice ? "The guardrails are the owner's. You can change the rest." : "You can see the shop's pricing. Changing it is for the owner and managers."), /*#__PURE__*/React.createElement("fieldset", {
+      "aria-label": "Pricing",
+      disabled: !canPrice,
+      style: FS
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
         gridTemplateColumns: '1.5fr 1fr 1fr',
@@ -57226,7 +57249,11 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "Flat fee pre-filled on a new deal, on top of the spread."))), /*#__PURE__*/React.createElement("div", {
+    }, "Flat fee pre-filled on a new deal, on top of the spread.")))), /*#__PURE__*/React.createElement("fieldset", {
+      "aria-label": "Margin guardrails",
+      disabled: !owns,
+      style: FS
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         ...card,
         padding: 16,
@@ -57319,7 +57346,11 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, "The New-Transaction screen meters every deal's margin (spread + fee \xF7 pay-in). ", settings.marginEnforce === 'warn' ? 'Below the floor it warns but lets the teller post (logged).' : 'Below the floor the teller must override with a reason before posting.')), /*#__PURE__*/React.createElement("div", {
+    }, "The New-Transaction screen meters every deal's margin (spread + fee \xF7 pay-in). ", settings.marginEnforce === 'warn' ? 'Below the floor it warns but lets the teller post (logged).' : 'Below the floor the teller must override with a reason before posting.'))), /*#__PURE__*/React.createElement("fieldset", {
+      "aria-label": "Spread by currency",
+      disabled: !canPrice,
+      style: FS
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         ...card,
         padding: 0,
@@ -57579,16 +57610,22 @@ ${snap}`;
       style: {
         marginLeft: 'auto'
       }
-    }, "Margin / unit = captured each side vs. spot"))), /*#__PURE__*/React.createElement("div", {
+    }, "Margin / unit = captured each side vs. spot")))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gap: 12
       }
+    }, /*#__PURE__*/React.createElement("fieldset", {
+      "aria-label": "Pay-out rounding",
+      disabled: !canPrice,
+      style: FS
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         ...card,
-        padding: 16
+        padding: 16,
+        height: '100%',
+        boxSizing: 'border-box'
       }
     }, /*#__PURE__*/React.createElement(Eyebrow, {
       icon: "coins"
@@ -57655,7 +57692,7 @@ ${snap}`;
       style: {
         color: CD.faint
       }
-    }, roundMode === 'down' ? 'Down favours the desk.' : roundMode === 'up' ? 'Up favours the customer.' : 'Nearest is neutral.', " Applied to the amount the customer receives.")), /*#__PURE__*/React.createElement("div", {
+    }, roundMode === 'down' ? 'Down favours the desk.' : roundMode === 'up' ? 'Up favours the customer.' : 'Nearest is neutral.', " Applied to the amount the customer receives."))), /*#__PURE__*/React.createElement("div", {
       style: {
         ...card,
         padding: 16
@@ -60498,7 +60535,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       settings: settings,
       setSettings: setSettings,
       me: me,
-      log: log
+      log: log,
+      serverRole: serverRole
     }))), tip && TIPS[tip] && /*#__PURE__*/React.createElement("div", {
       role: "dialog",
       "aria-label": TIPS[tip][0],
@@ -74438,7 +74476,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             settings: settings,
             setSettings: setSettings,
             me: me,
-            log: log
+            log: log,
+            serverRole: srvUser ? srvUser.role : null
           });
         case 'store':
           return /*#__PURE__*/React.createElement(AppStore, {
