@@ -18,6 +18,7 @@ import {
 import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
 import { RATES_SYNC_HEADROOM_SECONDS, ratesSyncIntervalMs } from "../rates/sync-interval.js";
+import { dealMarginPct, enforceOf, floorFor, readDeskSettings } from "../rates/guardrails.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -670,6 +671,39 @@ export class QuoteService {
       client.release();
     }
   }
+  /* The margin floor check (Rates v2.5 guardrails, rates/guardrails.ts):
+     the deal's margin as the new-deal screen meters it, against the floor
+     for its foreign currency, from the shop's settings. Null when the deal
+     is at or over its floor; refused (MARGIN_BELOW_FLOOR) when under it,
+     "block" is set, and no reason came with it; otherwise what to log. */
+  private async belowFloor(
+    client: pg.PoolClient,
+    actor: LedgerActor,
+    value: { q: Record<string, any>; o?: Record<string, any>; outputAmount: string; spreadCad: string },
+    reasonAtPost?: string,
+  ) {
+    const q = value.q;
+    const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency;
+    const stored = await client.query("SELECT state->'cdos_settings' AS settings FROM tenant_state WHERE tenant_id=$1", [actor.tenantId]);
+    const settings = readDeskSettings(stored.rows[0]?.settings ?? null);
+    const marginPct = dealMarginPct({
+      home, from: q.from_currency, to: q.to_currency,
+      inputAmount: q.input_amount, outputAmount: value.outputAmount, marketMid: q.market_mid,
+      spread: value.spreadCad, fee: q.fee_cad,
+    });
+    const currency = q.from_currency !== home ? q.from_currency : q.to_currency;
+    const floor = floorFor(settings, currency);
+    if (marginPct === null || marginPct >= floor) return null;
+    const enforce = enforceOf(settings);
+    const atPost = reasonAtPost?.trim() || null;
+    const overrideReason = value.o?.reason ? String(value.o.reason) : null;
+    const reason = atPost ?? overrideReason;
+    if (enforce === "block" && !reason) {
+      throw new LedgerError("MARGIN_BELOW_FLOOR", `This deal keeps ${marginPct.toFixed(2)}%, under the ${floor.toFixed(1)}% floor for ${currency}. Give a reason to post it.`);
+    }
+    return { currency, marginPct: Number(marginPct.toFixed(4)), floor, enforce, reason, given: atPost ? "at_post" : overrideReason ? "rate_override" : null };
+  }
+
   async post(
     actor: LedgerActor,
     quoteId: string,
@@ -683,6 +717,7 @@ export class QuoteService {
       usdLargeNotes?: boolean;
       usdNoteSerials?: string[];
       reportSuspicion?: boolean;
+      marginOverrideReason?: string;
     },
   ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
@@ -722,6 +757,10 @@ export class QuoteService {
         throw new LedgerError("QUOTE_NOT_ACTIVE", "Quote cannot be posted.");
       if (new Date(q.expires_at).getTime() <= Date.now())
         throw new LedgerError("QUOTE_EXPIRED", "Quote has expired.");
+      /* Guardrails (Rates v2.5): a deal under its margin floor does not
+         post without a reason, or a manager's rate override and its reason.
+         "warn" posts. Either way it is logged once the deal has posted. */
+      const belowFloor = await this.belowFloor(client, actor, value, capture?.marginOverrideReason);
       await client.query("COMMIT");
       /* The quote check is its own transaction, and it has committed.
          The deal is the next transaction, on its own connection, inside
@@ -732,9 +771,7 @@ export class QuoteService {
          wait. The pool has no acquire timeout. */
       client.release();
       released = true;
-      return this.forReader(
-        role,
-        await this.ledger.postFrozenQuote(
+      const posted = await this.ledger.postFrozenQuote(
         actor,
         {
           quoteId,
@@ -763,9 +800,17 @@ export class QuoteService {
           reportSuspicion: capture?.reportSuspicion,
         } as FrozenQuote,
         idempotencyKey,
-      ),
-        false,
       );
+      /* Who posted under the floor, why, and how far under: the owner sees
+         it on the Guardrails tab and in the audit trail. */
+      if (belowFloor) {
+        await this.pool.query(
+          "INSERT INTO audit_events (id,tenant_id,legal_entity_id,branch_id,actor_id,action,detail) VALUES ($1,$2,$3,$4,$5,'deal.margin_below_floor',$6)",
+          [randomUUID(), actor.tenantId, actor.legalEntityId, actor.branchId, actor.userId,
+            JSON.stringify({ quoteId, transactionRef: (posted as { transactionRef?: string }).transactionRef ?? null, ...belowFloor })],
+        );
+      }
+      return this.forReader(role, posted, false);
     } catch (e) {
       if (!released) await client.query("ROLLBACK");
       throw e;

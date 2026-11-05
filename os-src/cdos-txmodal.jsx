@@ -888,6 +888,9 @@
           thirdParty: !!cap.thirdParty,
           thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : undefined,
           identityNumber: identityNumber.trim() || undefined,
+          /* Guardrails (Rates v2.5): the server refuses a deal under its
+             margin floor without the reason this screen asks for. */
+          ...(belowFloor && marginReason.trim() ? { marginOverrideReason: marginReason.trim() } : {}),
           ...(serbia && reportSuspicion ? { reportSuspicion: true } : {}),
           ...(serbia && outCcy === 'USD' && (usdLargeNotes === true || usdLargeNotes === false)
             ? {
