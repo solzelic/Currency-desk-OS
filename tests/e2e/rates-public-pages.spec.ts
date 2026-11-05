@@ -116,6 +116,19 @@ test("with the shop's week and regulator, the page says open or closed in the sh
   await stranger.close();
 });
 
+test("a shop that closes at midnight says 12 am, not 12 pm", async ({ browser }) => {
+  const stranger = await (await browser.newContext()).newPage();
+  const real = await (await stranger.request.get(`/api/public/rate-pages/${SLUG}`)).json();
+  const late = [null, [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [18, 24]];
+  await stranger.route(`**/api/public/rate-pages/${SLUG}`, (route) => route.fulfill({ json: { ...real, shop: { ...real.shop, timeZone: "America/Toronto", week: late } } }));
+  /* Saturday 20:00 in Toronto. */
+  await stranger.clock.install({ time: new Date("2026-11-08T01:00:00Z") });
+  await stranger.goto(`/r/${SLUG}`);
+  await expect(stranger.getByText("Open now · closes 12 am", { exact: true })).toBeVisible();
+  await expect(stranger.getByRole("region", { name: "Find us" }).getByText("6 pm to 12 am", { exact: true })).toBeVisible();
+  await stranger.close();
+});
+
 test("an address that is not live, or is not an address at all, says so", async ({ page }) => {
   await page.goto("/r/no-such-shop-here");
   await expect(page.getByText("This rate page is not available.")).toBeVisible();

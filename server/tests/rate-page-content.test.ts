@@ -14,7 +14,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { forgetPublicAnswers } from "../src/rates/public-board.js";
-import { ensureRatePage } from "../src/rates/rate-page.js";
+import { ensureRatePage, slugFrom } from "../src/rates/rate-page.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -70,6 +70,13 @@ describe("every shop has a rate page", () => {
   it("starts with the regulator and registration number the shop opened with", async () => {
     const page = (await as("j.masri", "GET", "/api/rate-page")).json();
     expect(page.content.regulator).toEqual({ name: "FINTRAC", number: "M12345678", officer: "" });
+  });
+});
+
+describe("an address made from a name", () => {
+  it("keeps accented letters whole", () => {
+    expect(slugFrom("Zürich Exchange")).toBe("zurich-exchange");
+    expect(slugFrom("Café São Paulo")).toBe("cafe-sao-paulo");
   });
 });
 
@@ -146,6 +153,22 @@ describe("one set of opening hours", () => {
     await as("r.haddad", "PATCH", "/api/rate-page/content", { profile: { phone: "+1 416 555 0199", week: WEEK } });
     const tenant = (await as("j.masri", "GET", "/api/tenant")).json().tenant;
     expect(tenant.siteConfig).toMatchObject({ phone: "+1 416 555 0199", week: WEEK, hours: LINES, updatedAt: expect.any(String) });
+  });
+
+  it("a Settings publish shows on the public page at once, not after the 5 minute memory", async () => {
+    await as("j.masri", "PUT", "/api/rate-page", { slug: "yorkfx", live: true });
+    await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { phone: "+1 416 555 0100" } });
+    expect((await pub("/api/public/rate-pages/yorkfx")).json().shop.contact.phone).toBe("+1 416 555 0100");
+    await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { phone: "+1 416 555 0111" } });
+    expect((await pub("/api/public/rate-pages/yorkfx")).json().shop.contact.phone).toBe("+1 416 555 0111");
+  });
+
+  it("lines sent without a week replace the week, so the two never disagree", async () => {
+    await as("r.haddad", "PATCH", "/api/rate-page/content", { profile: { week: WEEK } });
+    await as("j.masri", "PATCH", "/api/tenant", { siteConfig: { hours: [{ days: "Mon to Sun", hours: "8 am to 10 pm" }] } });
+    const stored = await config();
+    expect(stored).toMatchObject({ hours: [{ days: "Mon to Sun", hours: "8 am to 10 pm" }] });
+    expect(stored).not.toHaveProperty("week");
   });
 
   it("Settings can save the week as well, with the same lines; a bad week is refused", async () => {

@@ -93,6 +93,16 @@ describe("what Publish sends", () => {
     expect(board().publishBody(rows, 1.5).ok).toBe(true);
   });
 
+  it("counts pinning or unpinning a rate as a change, even at the same mid", () => {
+    const rows = board().draftRows({ codes: ["USD"], home: "CAD", board: null, market: { USD: "1.36" }, settings: { spotOverride: { USD: 1.36 } } });
+    const unpinned = { buyMargin: 0.015, sellMargin: 0.015, rows: { USD: { mid: 1.36, show: true } }, order: ["USD"] };
+    expect(board().sameAsPublished(rows, unpinned, 1.5)).toBe(false);
+    const pinned = { ...unpinned, rows: { USD: { mid: 1.36, show: true, pinned: true } } };
+    expect(board().sameAsPublished(rows, pinned, 1.5)).toBe(true);
+    const free = board().draftRows({ codes: ["USD"], home: "CAD", board: null, market: { USD: "1.36" }, settings: {} });
+    expect(board().sameAsPublished(free, pinned, 1.5)).toBe(false);
+  });
+
   it("knows when the draft already matches the last publish", () => {
     const published = { rows: { USD: { mid: 1.36, spread: 0.008, show: true } }, order: ["USD"] };
     const rows = board().draftRows({ codes: ["USD"], home: "CAD", board: published, market: { USD: "1.36" }, settings: { defaultSpread: 1.5, spreads: { USD: 0.8 } } });
