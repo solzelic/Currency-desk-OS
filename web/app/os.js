@@ -57890,6 +57890,27 @@ ${snap}`;
       data
     };
   }
+  /* A screen's sighting as the design says it: On while it asked in the
+     last ten minutes, then Last seen, or Not opened yet. */
+  function sighting(ms) {
+    if (!ms) return {
+      on: false,
+      seen: false,
+      text: 'Not opened yet'
+    };
+    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    const txt = m < 2 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + 'h ago' : Math.floor(m / 1440) + 'd ago';
+    return m < 10 ? {
+      on: true,
+      seen: true,
+      text: 'On · seen ' + txt
+    } : {
+      on: false,
+      seen: true,
+      text: 'Last seen ' + txt
+    };
+  }
+  const sightDot = s => 'flex:none;width:7px;height:7px;border-radius:50%;background:' + (s.on ? '#2EA36B' : s.seen ? '#D9A441' : 'rgba(23,20,15,0.25)') + ';' + (s.on ? 'animation:rtLive 2s infinite;' : '');
   function fmtT(v) {
     const h = Math.floor(v),
       m = Math.round((v - h) * 60),
@@ -58072,6 +58093,14 @@ ${snap}`;
     useEffect(() => {
       load();
     }, [load]);
+    /* On the screens page, ask again every 30 seconds, so a screen that
+       has just been switched on shows as On. */
+    useEffect(() => {
+      if (view !== 'screen') return undefined;
+      load();
+      const every = setInterval(load, 30 * 1000);
+      return () => clearInterval(every);
+    }, [view, load]);
     const copy = async (key, path) => {
       try {
         await navigator.clipboard.writeText(location.origin + path);
@@ -58293,7 +58322,7 @@ ${snap}`;
         open: 'Open on this screen ↗',
         edit: first ? 'Set up' : 'Add a screen',
         go: first ? () => setView('screen') : addScreen,
-        live: !!first
+        live: screens.some(x => sighting(x.lastSeenAt).on)
       }, {
         k: 'site',
         title: 'Rate page',
@@ -58773,7 +58802,11 @@ ${snap}`;
       })), /*#__PURE__*/React.createElement("b", {
         style: css('flex: 1; min-width: 0; font-size: 14px; color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
       }, x.name)), /*#__PURE__*/React.createElement("span", {
-        style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
+        style: css('display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--mute); text-align: left;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css(sightDot(sighting(x.lastSeenAt)))
+      }), sighting(x.lastSeenAt).text), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 4px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
       }, ({
         tv: 'TV · landscape',
         portrait: 'Screen on its side',
@@ -58800,7 +58833,10 @@ ${snap}`;
       style: css('border-radius: 18px; background: #fff; border: 1px solid var(--line); overflow: hidden;')
     }, /*#__PURE__*/React.createElement("div", {
       style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line);')
-    }, /*#__PURE__*/React.createElement("label", {
+    }, /*#__PURE__*/React.createElement("span", {
+      title: sighting(screen.lastSeenAt).text,
+      style: css(sightDot(sighting(screen.lastSeenAt)).replace('7px;height:7px', '8px;height:8px'))
+    }), /*#__PURE__*/React.createElement("label", {
       style: css('flex: 0 1 240px; min-width: 150px; position: relative; display: block; cursor: text;')
     }, /*#__PURE__*/React.createElement("input", {
       value: screen.name,
@@ -58999,7 +59035,7 @@ ${snap}`;
       style: head
     }, "Once it's running"), /*#__PURE__*/React.createElement("div", {
       style: css('display: flex; flex-direction: column; gap: 9px; margin-top: 12px;')
-    }, ['Updates within a minute of every publish', 'If the wifi drops it keeps showing your last rates, then catches up', 'Turn off the TV’s own sleep timer so it stays on all day'].map(f => /*#__PURE__*/React.createElement("span", {
+    }, ['Updates within a minute of every publish', 'If the wifi drops it keeps showing your last rates, then catches up', 'Shows “On” here while it’s running, so you know it’s working', 'Turn off the TV’s own sleep timer so it stays on all day'].map(f => /*#__PURE__*/React.createElement("span", {
       key: f,
       style: css('display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5;')
     }, /*#__PURE__*/React.createElement("svg", {

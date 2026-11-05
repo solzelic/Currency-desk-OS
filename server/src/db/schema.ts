@@ -516,6 +516,8 @@ export const windowScreens = pgTable("window_screens", {
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   retiredAt: timestamp("retired_at", { withTimezone: true }),
+  /* When the screen last asked for its rates (066), for "On" at the desk. */
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });
 
 export const marketRates = pgTable(

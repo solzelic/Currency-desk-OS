@@ -92,6 +92,8 @@ export const migrations: readonly Migration[] = [
   ["064_rate_page_logo_and_screen_options", "src/db/migrations/064_rate_page_logo_and_screen_options.sql"],
   /* 065 is the Auto-publish switch on a branch (Rates v2.5). */
   ["065_branch_auto_publish_rates", "src/db/migrations/065_branch_auto_publish_rates.sql"],
+  /* 066 is when a window screen was last seen (Rates v2.5). */
+  ["066_window_screen_last_seen", "src/db/migrations/066_window_screen_last_seen.sql"],
 ] as const;
 
 type MigrationReader = {
