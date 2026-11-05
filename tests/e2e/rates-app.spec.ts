@@ -3,7 +3,7 @@
    to /api/rates/publish; "What customers see now" is the last publish,
    never the draft. A teller sees the rates and cannot change them. */
 import type { Page } from "@playwright/test";
-import { test, expect, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
 
@@ -21,7 +21,7 @@ const toggle = (page: Page, code: string) => page.getByRole("switch", { name: `$
 
 test("a manager takes a currency off the board and publishes it, and customers see the publish, not the draft", async ({ page }) => {
   await openRates(page, "r.haddad");
-  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Website & window", "Pricing & rates", "Guardrails"]);
+  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Cost & stock", "Website & window", "Pricing & rates", "Guardrails"]);
   await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
   /* Each row shows the currency's flag and name, as the design does. */
   const usd = page.getByLabel("USD US Dollar");
@@ -298,6 +298,37 @@ test("the owner sets the guardrails and a currency's own floor; a manager sees t
     await floor.fill(was);
     await floor.blur();
   }
+});
+
+/* The design's Cost & stock tab: what the cash cost, what it is worth,
+   what would be made selling it now, what is running low; and Record cash
+   bought, which sends what was paid with the delivery so the desk's cost
+   is real (POST /api/ledger/vault/receipts, costHome). */
+test("a manager records cash bought with what it cost, and Cost & stock lists it", async ({ page }) => {
+  test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
+  await openRates(page, "r.haddad");
+  /* A vault the ledger knows about: state it once if this desk never has. */
+  await page.evaluate(async () => {
+    await fetch("/api/ledger/vault/opening-position", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ balances: { USD: "0.00" } }) });
+  });
+  await page.getByRole("tab", { name: "Cost & stock" }).click();
+  await expect(page.getByText("Cash at cost", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "By currency" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Record cash bought" }).first().click();
+  const sheet = page.getByRole("dialog", { name: "Record cash bought" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: /^USD/ }).click();
+  await sheet.getByLabel(/^Amount you got/).fill("1000");
+  await sheet.getByLabel(/^Total you paid/).fill("1350");
+  await sheet.getByLabel("Bought from").fill("E2E Wholesaler");
+  await expect(sheet.getByText(/^You paid 1\.3500 [A-Z]{3} per USD$/)).toBeVisible();
+  const sent = page.waitForRequest((r) => r.url().endsWith("/api/ledger/vault/receipts") && r.method() === "POST");
+  await sheet.getByRole("button", { name: "Record", exact: true }).click();
+  const body = JSON.parse((await sent).postData() ?? "{}");
+  expect(body).toMatchObject({ direction: "in", currency: "USD", amount: "1000.00", costHome: "1350.00", counterpartyRef: "E2E Wholesaler" });
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("region", { name: "Recent cash bought" })).toContainText("E2E Wholesaler");
 });
 
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
