@@ -59510,10 +59510,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onTip,
     tip,
     onToast,
-    onOpenSite
+    onOpenSite,
+    locked,
+    onLock
   }) {
     const canPublish = PUBLISHERS.includes(serverRole);
-    const readOnly = !canPublish;
+    /* Locked rates take no changes until a manager unlocks them (the
+       server refuses a publish meanwhile). */
+    const readOnly = !canPublish || !!locked;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
     const defPct = settings.defaultSpread != null && settings.defaultSpread !== '' ? +settings.defaultSpread : B.DEFAULT_SPREAD_PCT;
     const floor = settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
@@ -59611,6 +59615,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             screens: []
           };
         })]);
+        if (onLock && rates.locked !== undefined) onLock(rates.locked);
         setData({
           loading: false,
           error: null,
@@ -59770,6 +59775,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           body: JSON.stringify(out.body)
         });
         if (!res.ok) {
+          if (res.status === 409) {
+            await load();
+            setNotice('Rates are locked. Unlock them to publish. Customers still see your last publish.');
+            return;
+          }
           setNotice(res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`);
           return;
         }
@@ -60247,6 +60257,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [tip, setTip] = useState(null);
     const [toast, setToast] = useState(null);
     const [feed, setFeed] = useState(null);
+    /* Lock rates: null, or who locked them and when (GET /api/rates,
+       PUT /api/rates/lock). */
+    const [lock, setLock] = useState(null);
+    const [locking, setLocking] = useState(false);
     const rootRef = useRef(null);
     const w = useWidth(rootRef);
     const cards = w < 880;
@@ -60259,6 +60273,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, []);
     useEffect(() => {
       getJson('/api/rates/market').then(m => setFeed(m), e => console.warn('[rates] the market feed could not be read', e));
+      getJson('/api/rates').then(r => setLock(r.locked || null), e => console.warn('[rates] the lock could not be read', e));
       const esc = e => {
         if (e.key === 'Escape') setTip(null);
       };
@@ -60266,6 +60281,33 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       return () => window.removeEventListener('keydown', esc);
     }, []);
     const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates']];
+    const setLocked = async on => {
+      if (readOnly || locking) return;
+      setLocking(true);
+      try {
+        const res = await fetch('/api/rates/lock', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            locked: on
+          })
+        });
+        if (!res.ok) {
+          flash(res.status === 403 ? 'Only the owner and managers can lock rates.' : 'The lock did not change (the server answered ' + res.status + ').');
+          return;
+        }
+        setLock((await res.json()).locked || null);
+        flash(on ? 'Rates locked. Nothing changes until you unlock them.' : 'Rates unlocked');
+      } catch (e) {
+        flash('The lock did not change. Check the connection and try again.');
+      } finally {
+        setLocking(false);
+      }
+    };
+    const isLocked = !!lock;
     const feedAgo = feed && feed.fetchedAt ? ago(feed.fetchedAt) : null;
     return /*#__PURE__*/React.createElement("div", {
       ref: rootRef,
@@ -60302,7 +60344,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: css('display:block;font-size:12.5px;white-space:nowrap;')
     }, feed && feed.provider ? 'Live feed' : 'No market feed'), /*#__PURE__*/React.createElement("span", {
       style: css('display:block;font-family:var(--m);font-size:9.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
-    }, feed && feed.provider ? feed.provider + ' · hourly' + (feedAgo ? ' · ' + feedAgo : '') : 'Rates hold at the last publish'))))), /*#__PURE__*/React.createElement("div", {
+    }, feed && feed.provider ? feed.provider + ' · hourly' + (feedAgo ? ' · ' + feedAgo : '') : 'Rates hold at the last publish'))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setLocked(!isLocked),
+      disabled: readOnly || locking,
+      title: isLocked && lock.by ? 'Locked by ' + lock.by : undefined,
+      style: css('display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 14px;border-radius:11px;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';font-family:var(--m);font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;transition:background .25s cubic-bezier(.22,1,.36,1),border-color .25s ease,box-shadow .25s ease,color .2s ease;border:1px solid ' + (isLocked ? 'var(--lock)' : 'var(--line)') + ';background:' + (isLocked ? 'var(--lock)' : '#fff') + ';color:' + (isLocked ? '#fff' : 'var(--ink)') + ';box-shadow:' + (isLocked ? '0 1px 0 rgba(255,255,255,0.25) inset, 0 2px 7px rgba(224,161,6,0.45)' : 'none') + ';')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "13",
+      height: "13",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: "5",
+      y: "11",
+      width: "14",
+      height: "10",
+      rx: "2"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: isLocked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.5-2'
+    })), isLocked ? 'Locked' : 'Lock rates'))), /*#__PURE__*/React.createElement("div", {
       role: "tablist",
       "aria-label": "Rates",
       style: css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')
@@ -60352,7 +60417,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       d: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01"
     })), /*#__PURE__*/React.createElement("span", {
       style: css('flex:1;min-width:0;')
-    }, "You can see today's rates. Changing them is for the owner and managers.")), /*#__PURE__*/React.createElement("div", {
+    }, "You can see today's rates. Changing them is for the owner and managers.")), !readOnly && isLocked && /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:12.5px;font-weight:600;animation:rtIn .28s cubic-bezier(.22,1,.36,1) both;border-bottom:1px solid rgba(224,161,6,0.32);background:var(--lock-soft);color:var(--lock-text);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: {
+        flex: 'none'
+      }
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, "Rates are locked. Unlock them to make changes."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setLocked(false),
+      disabled: locking,
+      style: css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:2px 0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--lock-text);')
+    }, "Unlock")), /*#__PURE__*/React.createElement("div", {
       style: css('flex:1;min-height:0;overflow-y:auto;')
     }, /*#__PURE__*/React.createElement("div", {
       key: 't-' + tab,
@@ -60360,6 +60448,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, tab === 'board' && /*#__PURE__*/React.createElement(Board, {
       settings: settings,
       setSettings: setSettings,
+      locked: isLocked,
+      onLock: l => setLock(l || null),
       serverRole: serverRole,
       me: me,
       log: log,

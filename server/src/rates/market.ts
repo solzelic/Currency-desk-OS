@@ -104,6 +104,9 @@ export function midsInHome(mids: Record<string, number>, home: string): Record<s
     the shop pinned is never moved. */
 export async function publishFromMarket(db: Db, pull: MarketPull, branchId: string, marketSnapshotId?: string): Promise<string | null> {
   if (Object.keys(pull.mids).length === 0) return null;
+  /* Locked rates do not move with the market (Lock rates, PUT /api/rates/lock). */
+  const lock = (await db.select({ lockedAt: schema.branches.ratesLockedAt }).from(schema.branches).where(eq(schema.branches.id, branchId)).limit(1))[0];
+  if (lock?.lockedAt) return null;
   const last = await db
     .select()
     .from(schema.rateBoards)
