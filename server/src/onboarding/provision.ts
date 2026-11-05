@@ -411,7 +411,11 @@ export async function provisionDesk(
     jurisdictionPackVersion: pack?.version ?? 1,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
-  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
+  /* Sol, 5 Nov 2026: a new shop's board follows the market from the
+     first hour (Rates v2.5 Auto-publish). While the hourly sync runs a
+     board can be quoted for 70 minutes, so a shop that never switched it
+     on would stop quoting within the hour. The owner can switch it off. */
+  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main", autoPublishRates: true }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
 
   /* A DESK ARRIVES ABLE TO TRADE.
