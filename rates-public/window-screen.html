@@ -21,6 +21,7 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a08; }
   * { box-sizing: border-box; }
   @keyframes wsFade { from { opacity: 0; transform: translateY(0.6vh); } to { opacity: 1; transform: none; } }
+  @keyframes wsTick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
   @keyframes wsLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.55); } 70% { box-shadow: 0 0 0 0.6em rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
   @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; } }
   [hidden] { display: none !important; }
@@ -36,7 +37,16 @@
     </div>
     <div id="closed" hidden><span id="closed-dot"></span><b style="font-weight: 800; letter-spacing: 0.02em;">Closed</b><span id="closed-line" style="opacity: 0.9;"></span><span style="flex: 1;"></span><span id="closed-sub">Rates shown are from our last update. Today’s rate is confirmed at the counter.</span></div>
     <div id="grid"></div>
-    <div id="foot"><span id="hours"></span><span style="flex: 1;"></span><span id="note"></span></div>
+    <div id="foot"><span id="hours" style="flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span><span style="flex: 1;"></span><span id="dots" style="flex: none; display: inline-flex; gap: 0.45em; align-items: center;"></span><span id="note" style="flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span></div>
+  </div>
+
+  <!-- The strip above the counter: a ticker, as the design draws it. -->
+  <div id="strip" hidden style="height: 100%; display: flex; align-items: stretch;">
+    <div id="strip-brand"><span id="strip-logo" aria-hidden="true"></span><span style="min-width: 0; overflow: hidden;"><b id="strip-shop" style="display: block; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></b><span id="strip-status"></span></span></div>
+    <div style="flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);">
+      <div id="strip-track"></div>
+    </div>
+    <div id="strip-clock"></div>
   </div>
 
   <div id="start" role="button" tabindex="0" style="position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(11,10,8,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; color: #F1EEE8; font-family: Archivo, system-ui, sans-serif;">
@@ -148,6 +158,32 @@
     return f;
   }
 
+  /* The shop's hours for the footer: its week, equal days joined, or the
+     storefront's own lines. */
+  function hoursLine(shop) {
+    var week = shop.week;
+    if (!Array.isArray(week) || week.length !== 7) return (shop.hours || []).map(function (h) { return h.days + " " + h.hours; }).join(" · ");
+    var order = [1, 2, 3, 4, 5, 6, 0], key = function (h) { return h ? h[0] + "-" + h[1] : "x"; }, out = [], i = 0;
+    while (i < 7) {
+      var j = i;
+      while (j + 1 < 7 && key(week[order[j + 1]]) === key(week[order[i]])) j++;
+      var h = week[order[i]];
+      out.push((i === j ? SHORT[order[i]] : SHORT[order[i]] + " to " + SHORT[order[j]]) + " " + (h ? fmtT(h[0]) + " to " + fmtT(h[1]) : "closed"));
+      i = j + 1;
+    }
+    return out.join(" · ");
+  }
+  /* The shop's logo when the screen shows it (an address on this site's
+     public answers only), else its initials. */
+  function mark(box, shop, show) {
+    box.textContent = "";
+    if (show.logo && typeof shop.logo === "string" && shop.logo.indexOf("/api/public/screens/") === 0) {
+      var img = el("img", "width:100%;height:100%;object-fit:contain;background:#fff;border-radius:inherit;"); img.alt = ""; img.src = shop.logo; box.appendChild(img);
+    } else box.textContent = initials(shop.name);
+  }
+  /* Rotating pages turn every eight seconds, as the design does. */
+  var page = 0;
+
   /* The design's board, sized from the screen. */
   function paint() {
     if (!data) return;
@@ -156,11 +192,15 @@
     var ink = dark ? "#F1EEE8" : "#17140F", mute = dark ? "rgba(241,238,232,0.55)" : "rgba(23,20,15,0.55)", hair = dark ? "rgba(241,238,232,0.09)" : "rgba(23,20,15,0.08)";
     var sell = dark ? "#5FD69B" : "#1D6B45", bg = dark ? "#0b0a08" : "#F6F3EC";
     var st = openState(shop);
+    var show = scr.show || { flags: true, names: true, clock: true, logo: true };
     document.body.className = dark ? "dark" : "light";
     document.body.style.background = bg;
+    $("root").style.color = ink; $("root").style.background = bg;
+    if (scr.kind === "strip") return paintStrip(shop, rows, st, show, { W: W, H: H, dark: dark, ink: ink, mute: mute, hair: hair, sell: sell, bg: bg });
+    $("strip").hidden = true;
 
     var portrait = H > W * 1.1;
-    var ncol = scr.layout === "one" || portrait || scr.kind === "tablet" ? 1 : 2;
+    var ncol = scr.layout === "one" || portrait || scr.kind === "portrait" || scr.kind === "tablet" ? 1 : 2;
     if (W / H > 2.6 && scr.layout !== "one") ncol = 3;
     var padPx = Math.round(Math.min(W, H) * 0.045);
     var headH = H * (portrait ? 0.1 : 0.14), footH = H * 0.07;
@@ -168,18 +208,21 @@
     var fitRows = Math.max(3, Math.floor(bodyH / Math.max(28, Math.min(H * 0.11, W * 0.06))));
     /* Fill the columns evenly. The design's max(fitRows, ...) put a short
        list all in the first column and left the second empty. */
-    var perCol = Math.max(1, Math.ceil(rows.length / ncol));
+    var rotate = scr.layout === "rotate";
+    var perCol = rotate ? fitRows : Math.max(1, Math.ceil(rows.length / ncol));
+    var pages = rotate ? Math.max(1, Math.ceil(rows.length / (perCol * ncol))) : 1, pg = page % pages;
+    var slice = rotate ? rows.slice(pg * perCol * ncol, (pg + 1) * perCol * ncol) : rows;
     /* A long list shrinks to fit. A short one keeps the design's row
        height (fitRows to a column) and leaves the rest of the column clear. */
     var rowH = (bodyH - Math.min(H * 0.05, 40)) / Math.max(perCol, fitRows);
     var fs = Math.max(11, Math.min(rowH * 0.42, W / ncol * 0.045));
     var flagPx = Math.round(fs * 1.35), numW = fs * 5.4;
 
-    $("root").style.color = ink; $("root").style.background = bg; $("root").style.fontSize = fs + "px";
+    $("root").style.fontSize = fs + "px";
     $("board").style.padding = padPx + "px";
     $("head").setAttribute("style", "flex:none;height:" + headH + "px;display:flex;align-items:center;gap:0.8em;border-bottom:1px solid " + hair + ";");
     $("logo").setAttribute("style", "flex:none;display:grid;place-items:center;width:" + headH * 0.62 + "px;height:" + headH * 0.62 + "px;border-radius:" + headH * 0.14 + "px;background:" + ink + ";color:" + bg + ";font-family:Space Mono,monospace;font-weight:700;font-size:" + headH * 0.24 + "px;");
-    $("logo").textContent = initials(shop.name);
+    mark($("logo"), shop, show);
     $("shop").setAttribute("style", "display:block;font-weight:800;letter-spacing:-0.02em;font-size:" + headH * 0.34 + "px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;");
     $("shop").textContent = shop.name;
     $("status-line").setAttribute("style", "display:flex;align-items:center;gap:0.5em;margin-top:0.25em;font-family:Space Mono,monospace;font-size:" + Math.max(10, headH * 0.15) + "px;letter-spacing:0.08em;text-transform:uppercase;color:" + mute + ";");
@@ -190,6 +233,7 @@
     $("status-text").textContent = st ? (st.open ? "Shop open · closes " + st.closes : "Shop closed")
       : data.publishedAt ? "Updated " + clockOf(data.publishedAt, shop.timeZone) : "No rates published yet";
     $("clock").setAttribute("style", "flex:none;font-family:Space Mono,monospace;font-weight:700;font-size:" + headH * 0.36 + "px;");
+    $("clock").hidden = !show.clock;
     tick();
 
     var unit = Math.max(10, Math.min(W, H * 1.8) * 0.017);
@@ -203,16 +247,16 @@
     grid.setAttribute("style", "flex:1;min-height:0;display:grid;grid-template-columns:repeat(" + ncol + ",minmax(0,1fr));gap:0 " + padPx + "px;padding-top:" + Math.min(H * 0.02, 18) + "px;animation:wsFade .6s ease both;");
     grid.setAttribute("data-columns", String(ncol));
     var numHead = "flex:none;width:" + numW + "px;text-align:right;";
-    var showNames = W > 520;
+    var showNames = show.names && W > 520;
     for (var c = 0; c < ncol; c++) {
       var col = el("div", "min-width: 0; display: flex; flex-direction: column;");
       var head = el("div", "flex:none;display:flex;align-items:center;gap:0.8em;padding:0 0.5em 0.4em;font-family:Space Mono,monospace;font-size:" + Math.max(9, fs * 0.42) + "px;letter-spacing:0.16em;text-transform:uppercase;color:" + mute + ";border-bottom:1px solid " + hair + ";");
       head.appendChild(el("span", "flex: 1;", "Currency")); head.appendChild(el("span", numHead, "We buy")); head.appendChild(el("span", numHead + "color:" + sell + ";", "We sell"));
       col.appendChild(head);
-      rows.slice(c * perCol, (c + 1) * perCol).forEach(function (r) {
+      slice.slice(c * perCol, (c + 1) * perCol).forEach(function (r) {
         var row = el("div", "flex:none;height:" + rowH + "px;display:flex;align-items:center;gap:0.8em;padding:0 0.5em;border-bottom:1px solid " + hair + ";");
         row.setAttribute("data-code", r.code);
-        row.appendChild(flag(r.code, flagPx, dark));
+        if (show.flags) row.appendChild(flag(r.code, flagPx, dark));
         var names = el("span", "flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5em; overflow: hidden;");
         names.appendChild(el("b", "font-family: 'Space Mono', monospace; font-weight: 700;", r.code));
         if (showNames) names.appendChild(el("span", "font-size:0.62em;color:" + mute + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;", FACE.currencyName(r.code)));
@@ -225,17 +269,51 @@
     }
 
     $("foot").setAttribute("style", "flex:none;height:" + footH + "px;display:flex;align-items:center;gap:1.2em;font-family:Space Mono,monospace;font-size:" + Math.max(9, footH * 0.26) + "px;letter-spacing:0.06em;color:" + mute + ";border-top:1px solid " + hair + ";");
-    $("hours").textContent = (shop.hours || []).map(function (h) { return h.days + " " + h.hours; }).join(" · ");
+    $("hours").textContent = scr.showHours ? hoursLine(shop) : "";
+    var dots = $("dots"); dots.textContent = "";
+    if (rotate && pages > 1) for (var d = 0; d < pages; d++) dots.appendChild(el("span", "width:" + (d === pg ? "1.6em" : "0.5em") + ";height:0.5em;border-radius:999px;transition:width .3s ease;background:" + (d === pg ? ink : mute) + ";"));
     var reg = shop.regulator;
     $("note").textContent = (shop.home ? "Per 1 unit in " + shop.home : "") + (reg && reg.name && reg.number ? " · " + reg.name + " " + reg.number : "");
     $("start-initials").textContent = initials(shop.name);
     $("start-name").textContent = scr.name || "Window screen";
     $("board").hidden = false;
   }
+  /* The strip: brand, a scrolling ticker of every currency, the clock. */
+  function paintStrip(shop, rows, st, show, t) {
+    var fs = Math.max(12, t.H * 0.34);
+    $("board").hidden = true; $("strip").hidden = false;
+    $("root").style.fontSize = fs + "px";
+    $("strip-brand").setAttribute("style", "flex:none;display:flex;align-items:center;gap:0.6em;padding:0 1.1em;border-right:1px solid " + t.hair + ";font-size:0.5em;max-width:24%;overflow:hidden;");
+    $("strip-logo").setAttribute("style", "flex:none;display:grid;place-items:center;width:2.1em;height:2.1em;border-radius:0.45em;background:" + (t.dark ? "#F1EEE8" : "#17140F") + ";color:" + t.bg + ";font-family:Space Mono,monospace;font-weight:700;overflow:hidden;");
+    mark($("strip-logo"), shop, show);
+    $("strip-shop").textContent = shop.name;
+    var status = $("strip-status"); status.textContent = "";
+    status.setAttribute("style", "display:flex;align-items:center;gap:0.4em;margin-top:0.2em;font-family:Space Mono,monospace;font-size:0.58em;letter-spacing:0.08em;text-transform:uppercase;color:" + t.mute + ";white-space:nowrap;");
+    status.appendChild(el("span", "width:0.55em;height:0.55em;border-radius:50%;background:" + (!st || st.open ? "#2EA36B" : "#C2452D") + ";"));
+    status.appendChild(document.createTextNode(st ? (st.open ? "Open" : "Closed" + (st.next ? " · opens " + st.next : "")) : "Live"));
+    var track = $("strip-track"); track.textContent = "";
+    track.setAttribute("style", "display:flex;align-items:center;white-space:nowrap;animation:wsTick " + Math.max(20, rows.length * 4) + "s linear infinite;");
+    /* Twice over, so the loop has no seam. */
+    rows.concat(rows).forEach(function (r, i) {
+      var item = el("span", "display:inline-flex;align-items:baseline;gap:0.55em;padding:0 1.5em;border-right:1px solid " + t.hair + ";font-size:0.78em;");
+      if (i < rows.length) item.setAttribute("data-code", r.code);
+      if (show.flags) item.appendChild(flag(r.code, Math.round(fs * 0.95 * 0.78), t.dark));
+      item.appendChild(el("b", "font-family:Space Mono,monospace;font-weight:700;", r.code));
+      item.appendChild(el("span", "font-family:Space Mono,monospace;font-size:0.82em;color:" + t.mute + ";", rate(r.buy)));
+      item.appendChild(el("span", "font-family:Space Mono,monospace;font-weight:700;color:" + t.sell + ";", rate(r.sell)));
+      track.appendChild(item);
+    });
+    $("strip-clock").setAttribute("style", "flex:none;display:flex;align-items:center;padding:0 1.1em;border-left:1px solid " + t.hair + ";font-family:Space Mono,monospace;font-weight:700;font-size:0.8em;");
+    $("strip-clock").hidden = !show.clock;
+    $("start-initials").textContent = initials(shop.name);
+    $("start-name").textContent = data.screen.name || "Window screen";
+    tick();
+  }
   function tick() {
     if (!data) return;
     var now = zoned(data.shop.timeZone);
     $("clock").textContent = pad(now.h) + ":" + pad(now.m);
+    $("strip-clock").textContent = pad(now.h) + ":" + pad(now.m);
   }
 
   function load() {
@@ -266,6 +344,7 @@
   setInterval(tick, 15 * 1000);
   /* Open or closed changes on the hour, not on a publish. */
   setInterval(paint, 60 * 1000);
+  setInterval(function () { if (data && data.screen.layout === "rotate") { page += 1; paint(); } }, 8 * 1000);
   load(); setInterval(load, 60 * 1000);
 })();
 </script>

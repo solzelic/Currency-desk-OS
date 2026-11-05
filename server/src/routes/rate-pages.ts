@@ -4,6 +4,7 @@
    Public, no sign-in, cache-friendly, published data only:
      GET /api/public/rate-pages/:slug   the shop's rate page, once live
      GET /api/public/screens/:token     one window screen, by its token
+     GET /api/public/rate-pages/:slug/logo, /api/public/screens/:token/logo
 
    Desk, signed in, always the caller's own shop:
      GET   /api/rate-page               anyone at the desk (made on first ask)
@@ -11,6 +12,9 @@
      PATCH /api/rate-page/content       rates:change; the regulator block
                                         is the owner's (site:publish)
      GET   /api/rate-page/preview       anyone at the desk, live or not
+     PUT   /api/rate-page/logo          rates:change (a checked PNG)
+     DELETE /api/rate-page/logo         rates:change
+     GET   /api/rate-page/logo          anyone at the desk (the preview's)
      GET   /api/window-screens          anyone at the desk
      POST  /api/window-screens          rates:change
      PATCH /api/window-screens/:id      rates:change
@@ -29,6 +33,7 @@ import { resolveSession, SESSION_COOKIE, type SessionUser } from "../auth/sessio
 import { schema, type Db } from "../db/index.js";
 import { forgetPublicAnswers, publishedRates, remembered } from "../rates/public-board.js";
 import { contentPatch, ensureRatePage, resolvedContent, validWeek } from "../rates/rate-page.js";
+import { checkLogo, LOGO_HEADERS, logoBytes } from "../rates/logo.js";
 
 /* Lowercase letters, digits and inner hyphens, 3 to 40 long. The database
    holds the same rule, so a direct write cannot store a bad address. */
@@ -39,12 +44,17 @@ const currencies = z.array(z.string().regex(/^[A-Z]{3}$/)).max(40)
   .refine((list) => new Set(list).size === list.length, "Each currency once.");
 const screenFields = z.object({
   name: z.string().trim().min(1).max(60),
-  kind: z.enum(["tv", "tablet"]),
-  layout: z.enum(["one", "two"]),
+  kind: z.enum(["tv", "portrait", "tablet", "strip"]),
+  layout: z.enum(["one", "two", "rotate"]),
   theme: z.enum(["light", "dark"]),
   currencies,
   showHours: z.boolean(),
+  /* What shows on the screen; a part left out is shown. */
+  show: z.object({ flags: z.boolean(), names: z.boolean(), clock: z.boolean(), logo: z.boolean() }).partial().strict().optional(),
 }).strict();
+const shownOn = (show: typeof schema.windowScreens.$inferSelect["show"] | null) => ({
+  flags: show?.flags ?? true, names: show?.names ?? true, clock: show?.clock ?? true, logo: show?.logo ?? true,
+});
 
 /* An empty list on a screen means the top six of the board, in board order. */
 const DEFAULT_SCREEN_COUNT = 6;
@@ -110,6 +120,7 @@ const screenJson = (row: typeof schema.windowScreens.$inferSelect) => ({
   theme: row.theme,
   currencies: row.currencies,
   showHours: row.showHours,
+  show: shownOn(row.show),
   token: row.token,
   createdAt: row.createdAt.getTime(),
 });
@@ -121,7 +132,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
   /* What the rate page shows: the shop's published board and what the
      shop wrote for its page. The same answer for the public page and the
      desk's preview, so the preview is the page. */
-  const answerFor = async (page: typeof schema.shopRatePages.$inferSelect, shop: typeof schema.tenants.$inferSelect) => {
+  const answerFor = async (page: typeof schema.shopRatePages.$inferSelect, shop: typeof schema.tenants.$inferSelect, preview = false) => {
     const board = await publishedRates(db, shop.id);
     const content = await resolvedContent(db, shop.id, shop.name, page.content ?? {});
     const { contact, hours } = publicContact(shop);
@@ -137,6 +148,9 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
         home: board.home,
         ...(board.timeZone ? { timeZone: board.timeZone } : {}),
         ...(content.tagline ? { tagline: content.tagline } : {}),
+        /* The logo's own address; ?v changes with each upload so a browser
+           never keeps an old one. */
+        ...(page.logo && page.logoAt ? { logo: `${preview ? "/api/rate-page/logo" : `/api/public/rate-pages/${page.slug}/logo`}?v=${page.logoAt.getTime()}` } : {}),
         contact,
         hours,
         ...(week ? { week } : {}),
@@ -162,6 +176,13 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     const shop = screen ? await liveShop(db, screen.tenantId) : null;
     if (!screen || !shop) return null;
     const board = await publishedRates(db, shop.id);
+    /* The shop's page, if it has one yet, for the logo and regulator; the
+       business profile for the week. */
+    const page = (await db.select().from(schema.shopRatePages).where(eq(schema.shopRatePages.tenantId, shop.id)).limit(1))[0];
+    const content = await resolvedContent(db, shop.id, shop.name, page?.content ?? {});
+    const show = shownOn(screen.show);
+    const week = validWeek(shop.siteConfig?.week);
+    const reg = content.regulator;
     const picked = screen.currencies.length
       ? screen.currencies.flatMap((code) => board.rates.filter((rate) => rate.code === code))
       : board.rates.slice(0, DEFAULT_SCREEN_COUNT);
@@ -171,8 +192,11 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
         home: board.home,
         ...(board.timeZone ? { timeZone: board.timeZone } : {}),
         ...(screen.showHours ? { hours: publicContact(shop).hours } : {}),
+        ...(week ? { week } : {}),
+        ...(reg.name && reg.number ? { regulator: reg } : {}),
+        ...(show.logo && page?.logo && page.logoAt ? { logo: `/api/public/screens/${token}/logo?v=${page.logoAt.getTime()}` } : {}),
       },
-      screen: { name: screen.name, kind: screen.kind, layout: screen.layout, theme: screen.theme, showHours: screen.showHours },
+      screen: { name: screen.name, kind: screen.kind, layout: screen.layout, theme: screen.theme, showHours: screen.showHours, show },
       publishedAt: board.publishedAt,
       rates: picked,
     };
@@ -205,6 +229,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     return {
       slug: page.slug,
       live: page.live,
+      logo: page.logo && page.logoAt ? `/api/rate-page/logo?v=${page.logoAt.getTime()}` : null,
       content: await resolvedContent(db, tenantId, shop.name, page.content ?? {}),
       profile: { ...profile, week: validWeek(config.week) },
     };
@@ -256,7 +281,63 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     if (!who) return;
     const page = await ensureRatePage(db, who.tenantId);
     const shop = (await db.select().from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]!;
-    return answerFor(page, shop);
+    return answerFor(page, shop, true);
+  });
+
+  /* ---- the logo ---- */
+  const sendLogo = (reply: FastifyReply, stored: string | null | undefined, cache: string) => {
+    const bytes = logoBytes(stored);
+    if (!bytes) return reply.code(404).send({ error: "not_found" });
+    reply.headers({ ...LOGO_HEADERS, "cache-control": cache });
+    return reply.send(bytes);
+  };
+
+  app.put("/api/rate-page/logo", async (req, reply) => {
+    const who = await staff(req, reply, db, "rates:change");
+    if (!who) return;
+    const checked = checkLogo((req.body as { dataUrl?: unknown } | null)?.dataUrl);
+    if (!checked) return reply.code(400).send({ error: "invalid_logo", detail: "A PNG of up to 256 KB and 1024 by 1024 pixels." });
+    await ensureRatePage(db, who.tenantId);
+    await db.update(schema.shopRatePages).set({ logo: checked.dataUrl, logoAt: new Date(), updatedBy: who.id, updatedAt: new Date() })
+      .where(eq(schema.shopRatePages.tenantId, who.tenantId));
+    await audit(db, who, "rate_page.logo", { set: true, bytes: checked.bytes.length });
+    forgetPublicAnswers();
+    return deskView(who.tenantId);
+  });
+
+  app.delete("/api/rate-page/logo", async (req, reply) => {
+    const who = await staff(req, reply, db, "rates:change");
+    if (!who) return;
+    await db.update(schema.shopRatePages).set({ logo: null, logoAt: null, updatedBy: who.id, updatedAt: new Date() })
+      .where(eq(schema.shopRatePages.tenantId, who.tenantId));
+    await audit(db, who, "rate_page.logo", { set: false });
+    forgetPublicAnswers();
+    return deskView(who.tenantId);
+  });
+
+  app.get("/api/rate-page/logo", async (req, reply) => {
+    const who = await staff(req, reply, db);
+    if (!who) return;
+    const page = (await db.select({ logo: schema.shopRatePages.logo }).from(schema.shopRatePages).where(eq(schema.shopRatePages.tenantId, who.tenantId)).limit(1))[0];
+    return sendLogo(reply, page?.logo, "private, no-store");
+  });
+
+  /* Public: only a live page's logo, or a screen's that shows it. */
+  app.get("/api/public/rate-pages/:slug/logo", async (req, reply) => {
+    const parsed = slug.safeParse((req.params as { slug: string }).slug);
+    const page = parsed.success ? (await db.select().from(schema.shopRatePages)
+      .where(and(eq(schema.shopRatePages.slug, parsed.data), eq(schema.shopRatePages.live, true))).limit(1))[0] : undefined;
+    const shop = page ? await liveShop(db, page.tenantId) : null;
+    return sendLogo(reply, shop ? page?.logo : null, "public, max-age=300");
+  });
+
+  app.get("/api/public/screens/:token/logo", async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const screen = /^[A-Za-z0-9_-]{32,64}$/.test(token) ? (await db.select().from(schema.windowScreens)
+      .where(and(eq(schema.windowScreens.token, token), isNull(schema.windowScreens.retiredAt))).limit(1))[0] : undefined;
+    const shop = screen && shownOn(screen.show).logo ? await liveShop(db, screen.tenantId) : null;
+    const page = shop ? (await db.select({ logo: schema.shopRatePages.logo }).from(schema.shopRatePages).where(eq(schema.shopRatePages.tenantId, shop.id)).limit(1))[0] : undefined;
+    return sendLogo(reply, page?.logo, "public, max-age=300");
   });
 
   app.put("/api/rate-page", async (req, reply) => {

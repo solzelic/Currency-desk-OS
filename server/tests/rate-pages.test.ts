@@ -161,7 +161,7 @@ describe("window screens", () => {
     const shown = await pub(`/api/public/screens/${token}`);
     expect(shown.statusCode, shown.body).toBe(200);
     expect(shown.json().rates.map((r: { code: string }) => r.code)).toEqual(["USD", "EUR", "GBP", "CHF", "AUD", "JPY"]);
-    expect(shown.json().screen).toEqual({ name: "Front window", kind: "tv", layout: "two", theme: "dark", showHours: true });
+    expect(shown.json().screen).toEqual({ name: "Front window", kind: "tv", layout: "two", theme: "dark", showHours: true, show: { flags: true, names: true, clock: true, logo: true } });
     expect(shown.json().shop).toMatchObject({ name: expect.any(String), home: "CAD" });
     await as("j.masri", "PATCH", `/api/window-screens/${id}`, { currencies: ["INR", "EUR"] });
     expect((await pub(`/api/public/screens/${token}`)).json().rates.map((r: { code: string }) => r.code)).toEqual(["INR", "EUR"]);

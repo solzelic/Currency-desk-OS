@@ -57732,11 +57732,43 @@ ${snap}`;
   const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const DAY_INDEX = [1, 2, 3, 4, 5, 6, 0];
   /* Screen kinds the server knows, with the size each previews at. */
-  const KINDS = [['tv', 'TV in landscape', '16:9 · most shop windows', 1920, 1080], ['tablet', 'Tablet on the counter', '4:3 · facing customers', 1024, 768]];
+  const KINDS = [['tv', 'TV in landscape', '16:9 · most shop windows', 1920, 1080], ['portrait', 'Screen on its side', '9:16 · tall and narrow', 1080, 1920], ['tablet', 'Tablet on the counter', '4:3 · facing customers', 1024, 768], ['strip', 'Strip above the counter', '8:1 · scrolling ticker', 1920, 240]];
   const LAYOUTS = {
     one: 'One column',
-    two: 'Two columns'
+    two: 'Two columns',
+    rotate: 'Rotate pages'
   };
+  const SHOWS = [['flags', 'Flags'], ['names', 'Currency names'], ['clock', 'Clock'], ['hours', 'Opening hours'], ['logo', 'Your logo']];
+
+  /* Whatever the owner picks is drawn onto a 240px square and sent as a
+     PNG: the server takes nothing else. */
+  function logoPng(file) {
+    return new Promise((resolve, reject) => {
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+        reject(new Error('Use a PNG, JPG or WebP picture.'));
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const size = 240,
+          c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale,
+          h = img.height * scale;
+        c.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/png'));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('That picture could not be read.'));
+      };
+      img.src = url;
+    });
+  }
   async function call(method, url, body) {
     const res = await fetch(url, body ? {
       method,
@@ -57975,6 +58007,30 @@ ${snap}`;
           [key]: value
         }
       }, now);
+    };
+    const uploadLogo = async e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file || readOnly) return;
+      try {
+        const r = await call('PUT', '/api/rate-page/logo', {
+          dataUrl: await logoPng(file)
+        });
+        if (!r.ok) throw new Error(r.status === 403 ? 'Only the owner and managers can change the logo.' : 'The logo was not saved. Try a smaller picture.');
+        setPage(r.data);
+        setFrame(f => f + 1);
+        say('Logo saved');
+      } catch (err) {
+        say(err.message);
+      }
+    };
+    const removeLogo = async () => {
+      const r = await call('DELETE', '/api/rate-page/logo');
+      if (r.ok) {
+        setPage(r.data);
+        setFrame(f => f + 1);
+        say('Logo removed');
+      } else say(`The logo was not removed (the server answered ${r.status}).`);
     };
     const savePage = async patch => {
       const r = await call('PUT', '/api/rate-page', patch);
@@ -58257,14 +58313,33 @@ ${snap}`;
         style: css('display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px;')
       }, /*#__PURE__*/React.createElement("span", {
         "aria-hidden": "true",
-        style: css('flex:none;width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;background:var(--ink);')
-      }, initials(draft.name)), /*#__PURE__*/React.createElement("span", {
+        style: css('flex:none;width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;overflow:hidden;' + (page.logo ? 'background:#fff;border:1px solid var(--line);' : 'background:var(--ink);'))
+      }, page.logo ? /*#__PURE__*/React.createElement("img", {
+        src: page.logo,
+        alt: "",
+        style: css('width:100%;height:100%;object-fit:contain;')
+      }) : initials(draft.name)), /*#__PURE__*/React.createElement("span", {
         style: css('flex: 1 1 180px; min-width: 0;')
       }, /*#__PURE__*/React.createElement("b", {
         style: css('display: block; font-size: 14px;')
       }, "Logo"), /*#__PURE__*/React.createElement("span", {
         style: css('display: block; font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 2px;')
-      }, "We show your initials. Logo upload is coming next."))), /*#__PURE__*/React.createElement("div", {
+      }, "Square works best. PNG or JPG. We show your initials until you add one.")), /*#__PURE__*/React.createElement("label", {
+        style: css('flex:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);transition:border-color .2s ease,color .2s ease;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';')
+      }, page.logo ? 'Replace logo' : 'Upload logo', /*#__PURE__*/React.createElement("input", {
+        type: "file",
+        accept: "image/png,image/jpeg,image/webp",
+        "aria-label": "Logo",
+        onChange: uploadLogo,
+        disabled: readOnly,
+        style: {
+          display: 'none'
+        }
+      })), page.logo && !readOnly && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: removeLogo,
+        style: css('appearance: none; border: 0; background: none; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--mute); padding: 6px 2px;')
+      }, "Remove")), /*#__PURE__*/React.createElement("div", {
         style: css('display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px;')
       }, field('Shop name', draft.name, v => edit('name', v), 'Your shop name'), field('Short line under your name', draft.tagline, v => edit('tagline', v), 'e.g. Best rates in town since 2009'))), /*#__PURE__*/React.createElement("section", {
         "aria-label": "Where to find you",
@@ -58515,7 +58590,7 @@ ${snap}`;
     const kd = KINDS.find(k => screen && k[0] === screen.kind) || KINDS[0];
     const side = contentW >= 760;
     const pw = (side ? contentW - 290 : contentW) - 44,
-      maxH = 340;
+      maxH = kd[0] === 'portrait' ? 440 : 340;
     const zs = Math.min(pw / kd[3], maxH / kd[4]);
     const bw = Math.round(kd[3] * zs),
       bh = Math.round(kd[4] * zs);
@@ -58538,7 +58613,12 @@ ${snap}`;
       style: css('display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;')
     }, screens.map(x => {
       const on = x.id === sel;
-      const ki = x.kind === 'tablet' ? [19, 14] : [22, 13];
+      const ki = {
+        tv: [22, 13],
+        portrait: [11, 19],
+        tablet: [19, 14],
+        strip: [24, 6]
+      }[x.kind] || [22, 13];
       return /*#__PURE__*/React.createElement("button", {
         key: x.id,
         role: "listitem",
@@ -58558,7 +58638,12 @@ ${snap}`;
         style: css('flex: 1; min-width: 0; font-size: 14px; color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
       }, x.name)), /*#__PURE__*/React.createElement("span", {
         style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
-      }, (x.kind === 'tablet' ? 'Tablet' : 'TV · landscape') + ' · ' + x.theme));
+      }, ({
+        tv: 'TV · landscape',
+        portrait: 'Screen on its side',
+        tablet: 'Tablet',
+        strip: 'Strip ticker'
+      }[x.kind] || 'Screen') + ' · ' + x.theme));
     }), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: addScreen,
@@ -58630,8 +58715,8 @@ ${snap}`;
     }, KINDS.map(k => {
       const on = screen.kind === k[0],
         r = k[3] / k[4],
-        iw = 30,
-        ih = Math.max(5, Math.round(30 / r));
+        iw = r >= 1 ? 30 : Math.round(30 * r * 1.6),
+        ih = r >= 1 ? Math.max(5, Math.round(30 / r)) : 30;
       return /*#__PURE__*/React.createElement("button", {
         key: k[0],
         type: "button",
@@ -58652,16 +58737,20 @@ ${snap}`;
       }, k[1]), /*#__PURE__*/React.createElement("span", {
         style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--mute); margin-top: 2px;')
       }, k[2])));
-    }))), screen.kind === 'tv' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }))), screen.kind !== 'strip' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: head
     }, "Layout"), /*#__PURE__*/React.createElement(Seg, {
       ui: ui,
-      items: seg(['One column', 'Two columns'], LAYOUTS[screen.layout], v => patchScreen(screen.id, {
-        layout: v === 'One column' ? 'one' : 'two'
+      items: seg(['One column', 'Two columns', 'Rotate pages'], LAYOUTS[screen.layout], v => patchScreen(screen.id, {
+        layout: {
+          'One column': 'one',
+          'Two columns': 'two',
+          'Rotate pages': 'rotate'
+        }[v]
       }), readOnly)
     }), /*#__PURE__*/React.createElement("div", {
       style: css('font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 7px;')
-    }, "Every currency you pick, on one screen.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, screen.layout === 'rotate' ? 'Pages turn every 8 seconds when your currencies don’t fit on one screen.' : screen.kind === 'portrait' || screen.kind === 'tablet' ? 'Tall screens always use one column.' : 'Every currency you pick, on one screen.')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: head
     }, "Look"), /*#__PURE__*/React.createElement(Seg, {
       ui: ui,
@@ -58672,18 +58761,27 @@ ${snap}`;
       style: head
     }, "Show on screen"), /*#__PURE__*/React.createElement("div", {
       style: css('display: flex; flex-wrap: wrap; gap: 6px;')
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      "aria-pressed": screen.showHours,
-      disabled: readOnly,
-      onClick: () => patchScreen(screen.id, {
-        showHours: !screen.showHours
-      }),
-      style: css('appearance:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:600;transition:all .2s ease;border:1px solid ' + (screen.showHours ? 'var(--ink)' : 'var(--line)') + ';background:' + (screen.showHours ? 'var(--ink)' : '#fff') + ';color:' + (screen.showHours ? '#fff' : 'var(--mute)') + ';')
-    }, "Opening hours")))), /*#__PURE__*/React.createElement("div", {
+    }, SHOWS.map(([key, text]) => {
+      const on = key === 'hours' ? screen.showHours : (screen.show || {})[key] !== false;
+      return /*#__PURE__*/React.createElement("button", {
+        key: key,
+        type: "button",
+        "aria-pressed": on,
+        disabled: readOnly,
+        onClick: () => patchScreen(screen.id, key === 'hours' ? {
+          showHours: !on
+        } : {
+          show: {
+            ...(screen.show || {}),
+            [key]: !on
+          }
+        }),
+        style: css('appearance:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:600;transition:all .2s ease;border:1px solid ' + (on ? 'var(--ink)' : 'var(--line)') + ';background:' + (on ? 'var(--ink)' : '#fff') + ';color:' + (on ? '#fff' : 'var(--mute)') + ';')
+      }, text);
+    })))), /*#__PURE__*/React.createElement("div", {
       style: css('min-width: 0; padding: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #ECE9E2; background-image: radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: 18px 18px;')
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: css('padding:' + (kd[0] === 'tablet' ? 12 : 8) + 'px;border-radius:' + (kd[0] === 'tablet' ? 20 : 10) + 'px;background:#1b1916;box-shadow:0 24px 50px -24px rgba(23,20,15,0.6),inset 0 0 0 1px rgba(255,255,255,0.06);')
+      style: css('padding:' + (kd[0] === 'strip' ? 5 : kd[0] === 'tablet' ? 12 : 8) + 'px;border-radius:' + (kd[0] === 'tablet' ? 20 : 10) + 'px;background:#1b1916;box-shadow:0 24px 50px -24px rgba(23,20,15,0.6),inset 0 0 0 1px rgba(255,255,255,0.06);')
     }, /*#__PURE__*/React.createElement("div", {
       style: css('position:relative;width:' + bw + 'px;height:' + bh + 'px;overflow:hidden;border-radius:' + (kd[0] === 'tablet' ? 9 : 3) + 'px;background:#0b0a08;')
     }, /*#__PURE__*/React.createElement("iframe", {
