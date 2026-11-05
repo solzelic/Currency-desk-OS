@@ -172,7 +172,7 @@ postgres("shop sign-in against Postgres", () => {
     await pool.query("DELETE FROM sessions WHERE user_id = $1", [otherUser]);
     await pool.query("DELETE FROM password_resets WHERE user_id = $1", [otherUser]);
     await pool.query("DELETE FROM staff_users WHERE id = $1", [otherUser]);
-    await pool.query("DELETE FROM branches WHERE id = $1", ["br-signin-other"]);
+    await pool.query("DELETE FROM branches WHERE id = ANY($1::text[])", [["br-signin-other", "br-signin-other-later"]]);
     await pool.query("DELETE FROM legal_entities WHERE id = $1", ["le-signin-other"]);
     await pool.query("DELETE FROM tenants WHERE id = $1", [otherTenant]);
   }
@@ -734,6 +734,32 @@ postgres("shop sign-in against Postgres", () => {
     expect(unlocked.statusCode).toBe(404);
     const left = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${otherUser}`]);
     expect(Number(left.rows[0]?.failures)).toBe(5);
+    await wipeOtherDesk();
+  });
+
+  /* An id the desk does not know has no branch of its own, so the lock
+     clock reads the desk's first branch: the oldest, which is the one
+     the Locations screen lists first. The newer Jerusalem branch is
+     stored first here, so a read with no order would pick it. */
+  it("gives an unknown id the time at the desk's first branch", async () => {
+    await wipeOtherDesk();
+    await handle.db.insert(schema.tenants).values({ id: otherTenant, name: "Other Desk" });
+    await handle.db.insert(schema.legalEntities).values({ id: "le-signin-other", tenantId: otherTenant, name: "Other Entity" });
+    await handle.db.insert(schema.branches).values([
+      { id: "br-signin-other-later", tenantId: otherTenant, legalEntityId: "le-signin-other", name: "Opened later", timezone: "Asia/Jerusalem", createdAt: new Date("2026-06-01T12:00:00Z") },
+      { id: "br-signin-other", tenantId: otherTenant, legalEntityId: "le-signin-other", name: "First branch", timezone: "America/Toronto", createdAt: new Date("2026-01-01T12:00:00Z") },
+    ]);
+    let last: Awaited<ReturnType<typeof app.inject>> | undefined;
+    for (let n = 0; n < 5; n++) {
+      last = await app.inject({
+        method: "POST",
+        url: "/api/auth/login/start",
+        remoteAddress: "203.0.113.90",
+        payload: { staffId: "nobody-at-other@example.com", password: "wrong-password", tenantId: otherTenant },
+      });
+    }
+    expect(last?.statusCode).toBe(429);
+    expect(last?.json().timeZone).toBe("America/Toronto");
     await wipeOtherDesk();
   });
 

@@ -490,7 +490,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   one account, or twenty from one address, inside fifteen minutes, and
   the next answer is "Too many tries. Try again in N minutes." The
   count is a Postgres row, so a restart does not clear it. An unknown
-  staff id gets the same sentence. The emailed-code step answers with
+  staff id gets the same sentence, on the clock of the desk's first
+  (oldest) branch. The emailed-code step answers with
   the same words, in the same time, for an unknown id and a wrong code,
   and it will not check a code unless this browser already passed the
   password (a server-side marker). If `RESEND_API_KEY` or `EMAIL_FROM`
@@ -828,6 +829,8 @@ Public `GET /api/health` is process-up only. It returns `{ ok: true, service: "c
    `desk_clients`, not from the browser blob.
 
 ## Last reviewed
+
+**2026-11-05**, test isolation and the sign-in lock clock. The Postgres test files share one database, and some left the demo desk changed: branches on Jerusalem time, extra tills with sessions still pointing at them, the demo branch itself on Jerusalem time, a 1,000 ID line, two PINs, J. Masri as a platform owner, and a second till's balance generation. Each of those files now puts the demo desk back before it ends. `report-filings` and `str-role` state a fileable FINTRAC number instead of relying on whichever file seeded the desk first. `till-close-stale`, `earnings-visibility`, `eu-amlr` and `migrations.postgres` failed alone on a fresh database; each now makes the tables and rows it needs. The Philippines missing-rate case now clears every market snapshot inside its own rolled-back transaction, not just its own, since other files leave fresh ones. A Canada pack case stamped its earlier receipt at `now()`, which could fall a fraction of a millisecond past the window's end, so that receipt is now a minute old. In the product, a lock shown to an unknown staff id now reads the desk's first (oldest) branch's clock. It used to read whichever branch Postgres returned first.
 
 **2026-11-05**, Rates v2.5 fixes from a review of the whole stack: home currency, pins, public cache, hours, midnight, saves, accented addresses.
 

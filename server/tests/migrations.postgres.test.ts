@@ -9,7 +9,12 @@ const first: Migration = ["test_001_first", "tests/fixtures/migrations/001_first
 const second: Migration = ["test_002_second", "tests/fixtures/migrations/002_second.sql"];
 
 postgres("tracked PostgreSQL migrations", () => {
-  beforeAll(() => { pool = new pg.Pool({ connectionString: url }); });
+  beforeAll(async () => {
+    pool = new pg.Pool({ connectionString: url });
+    /* No migrations: this only makes the runner's own table, so the
+       cleanup below works on a database no other file has opened. */
+    await runMigrations(pool, []);
+  });
   afterAll(() => pool.end());
   beforeEach(async () => {
     await pool.query("DROP TABLE IF EXISTS migration_fixture_partial,migration_fixture_second,migration_fixture_first CASCADE");

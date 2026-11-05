@@ -19,7 +19,7 @@
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -143,16 +143,23 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   };
 
   /* The clock on the lock screen is the branch's clock. The person's own
-     branch when we know them; the desk's branch when the id is unknown,
-     so the sentence does not change shape between the two. No zone is a
-     thrown error. A UTC stand-in would show the wrong hour. */
+     branch when we know them; the desk's first branch when the id is
+     unknown, so the sentence does not change shape between the two.
+     First is oldest, the order the Locations screen lists them in; with
+     no order, a desk with branches in two zones could show either. No
+     zone is a thrown error. A UTC stand-in would show the wrong hour. */
   async function branchZone(user: typeof schema.staffUsers.$inferSelect | undefined, tenantId: string): Promise<string> {
     if (user) {
       const own = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.id, user.branchId)).limit(1);
       const zone = own[0]?.timezone?.trim();
       if (zone) return zone;
     }
-    const desk = await db.select({ timezone: schema.branches.timezone }).from(schema.branches).where(eq(schema.branches.tenantId, tenantId)).limit(1);
+    const desk = await db
+      .select({ timezone: schema.branches.timezone })
+      .from(schema.branches)
+      .where(eq(schema.branches.tenantId, tenantId))
+      .orderBy(asc(schema.branches.createdAt), asc(schema.branches.id))
+      .limit(1);
     const zone = desk[0]?.timezone?.trim();
     if (!zone) throw new Error("Sign-in lock has no branch time zone.");
     return zone;

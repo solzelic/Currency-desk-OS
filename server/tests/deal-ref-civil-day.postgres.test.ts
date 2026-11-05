@@ -83,6 +83,10 @@ postgres("a deal reference uses the branch's civil day", () => {
   }, 120_000);
 
   afterAll(async () => {
+    /* The tests move the seeded branch to Jerusalem. Put it back on the
+       seed's zone: a branch opened later without a zone copies it, and
+       the sign-in lock reads it. */
+    if (pool) await pool.query("UPDATE branches SET timezone=$1 WHERE id=$2", [TORONTO, DEMO.branchId]);
     if (app) await app.close();
     if (handle) await handle.close();
     if (pool) await pool.end();
