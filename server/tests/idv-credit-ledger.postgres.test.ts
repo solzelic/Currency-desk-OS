@@ -18,7 +18,7 @@ const B_BRANCH = "br-idv-credit-b";
 const B_USER = `${B_TENANT}:b.owner`;
 const PLATFORM_STAFF = "p.admin";
 const PLATFORM_USER = `${DEMO.tenantId}:${PLATFORM_STAFF}`;
-/* Not j.masri. Other files leave that staff id active in platform_users. */
+/* Not j.masri. cheque-fee-schedule.postgres.test.ts writes that id into platform_users too. */
 const SHOP_ADMIN = "idv.shop";
 const SHOP_ADMIN_USER = `${DEMO.tenantId}:${SHOP_ADMIN}`;
 const APP_ROLE = "idv_credit_app";

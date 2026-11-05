@@ -265,7 +265,9 @@ postgres("Philippines pack against real PostgreSQL", () => {
       });
       /* PHP per EUR = 2.00 / 0.02 = 100. */
       expect(valued?.pesos.eq("100")).toBe(true);
-      await client.query("DELETE FROM market_rates WHERE id = 'ph-snap'");
+      /* Every snapshot, not just this one: another file can leave a fresh
+         one that prices EUR. This transaction rolls back, so none is lost. */
+      await client.query("DELETE FROM market_rates");
       expect(await philippinesCashPayout(client, "USD", new Decimal("1.00"))).toBe("unpriced");
       expect(await philippinesFxSale(client, "PHP", "EUR", new Decimal("1.00"))).toBe("unpriced");
       expect(await philippinesCashPayout(client, "PHP", new Decimal("1.00"))).toBe("ok");

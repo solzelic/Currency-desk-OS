@@ -15,6 +15,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { WATCH_ACK_TABLE, watchAckGate } from "../src/ledger/structuring-watch.js";
 import { insertCashDeal } from "./helpers/route-sweep.js";
+import { SEED_PLACEHOLDER_FINTRAC } from "../src/staging/fintrac-placeholder.js";
 
 const roles = createRequire(import.meta.url)("../../shared/str-role.js") as {
   canSeeStr: (role: string) => boolean;
@@ -29,6 +30,8 @@ const postgres = url ? describe : describe.skip;
 const STR = ["administrator", "branch_manager", "compliance_officer"];
 const WATCH = [...STR, "supervisor"];
 const HIDDEN = [...roles.STR_KEYS, ...roles.WATCH_KEYS];
+/* A number a real shop could hold. Never the seed's placeholder. */
+const SHOP_FINTRAC = "M87654321";
 
 describe("str and watch role sets", () => {
   it("keeps STR to the three roles and the watch to those three plus supervisor", () => {
@@ -245,17 +248,22 @@ postgres("str filing and the transaction field strip", () => {
     handle = await createDb();
     await seed(handle.db);
     await pool.query("INSERT INTO tenants (id,name) VALUES ($1,'York FX') ON CONFLICT DO NOTHING", [DEMO.tenantId]);
+    /* The ledger side of the desk, with a FINTRAC number a report can be
+       filed under. Another file that ran the seed on this database leaves
+       the seed's placeholder, and every filing here would be refused. */
     await pool.query(
-      `INSERT INTO legal_entities (id,tenant_id,name,jurisdiction,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
-       VALUES ($1,$2,'York FX','FINTRAC','CAD','pack-ca-v1',1)
-       ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-ca-v1', home_currency='CAD', jurisdiction_pack_version=1`,
-      [DEMO.legalEntityId, DEMO.tenantId],
+      `INSERT INTO legal_entities (id,tenant_id,name,jurisdiction,home_currency,jurisdiction_pack_id,jurisdiction_pack_version,msb_number)
+       VALUES ($1,$2,'York FX','FINTRAC','CAD','pack-ca-v1',1,$3)
+       ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id='pack-ca-v1', home_currency='CAD', jurisdiction_pack_version=1, msb_number=EXCLUDED.msb_number`,
+      [DEMO.legalEntityId, DEMO.tenantId, SHOP_FINTRAC],
     );
     app = await buildApp(handle.db);
   });
 
   afterAll(async () => {
     await clearBook();
+    /* Leave the desk with the seed's number. */
+    await pool.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, SEED_PLACEHOLDER_FINTRAC]);
     await app.close();
     await handle.close();
     await pool.end();

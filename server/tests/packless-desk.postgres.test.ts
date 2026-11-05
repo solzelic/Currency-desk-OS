@@ -141,13 +141,16 @@ postgres("a desk with no country pack uses the baseline", () => {
     service = new LedgerService(pool);
   });
   afterAll(async () => {
-    /* This file points the shared demo desk at no pack. Put Canada back
-       so a later file that posts at that desk is still posting in Canada. */
+    /* This file points the shared demo desk at no pack, and one test
+       sets its ID line to 1,000. Put Canada and the seed's empty line
+       back, so a later file that posts at that desk is still posting in
+       Canada under the pack's own line. */
     await pool.query(
       `UPDATE legal_entities
           SET home_currency='CAD',
               jurisdiction_pack_id='pack-ca-v1',
-              jurisdiction_pack_version=1
+              jurisdiction_pack_version=1,
+              id_threshold=NULL
         WHERE id=$1`,
       [DEMO.legalEntityId],
     );

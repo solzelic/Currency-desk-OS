@@ -29,8 +29,11 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { SEED_PLACEHOLDER_FINTRAC } from "../src/staging/fintrac-placeholder.js";
 
 const url = process.env.TEST_DATABASE_URL;
+/* A number a real shop could hold. Never the seed's placeholder. */
+const SHOP_FINTRAC = "M87654321";
 const postgres = url ? describe : describe.skip;
 let pool: pg.Pool;
 let app: FastifyInstance;
@@ -100,7 +103,10 @@ async function resetLedger() {
 /* The legal entity, in the LEDGER database. In production this is one
    database holding both halves; the test harness splits them, so the pack
    an entity operates under has to be stated on this side for the filing
-   path to resolve the same form a real desk would. */
+   path to resolve the same form a real desk would.
+   The FINTRAC number is stated here too. Another file that ran the seed
+   on this database leaves the seed's placeholder, and nothing can be
+   filed under that. */
 async function entityUnderPack(packId: string) {
   await pool.query(
     "INSERT INTO tenants (id,name) VALUES ($1,$1) ON CONFLICT DO NOTHING",
@@ -108,10 +114,10 @@ async function entityUnderPack(packId: string) {
   );
   await pool.query(
     `INSERT INTO legal_entities
-       (id,tenant_id,name,jurisdiction,home_currency,jurisdiction_pack_id,jurisdiction_pack_version)
-     VALUES ($1,$2,'York Currency Exchange Inc.','x','CAD',$3,1)
-     ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id=EXCLUDED.jurisdiction_pack_id`,
-    [DEMO.legalEntityId, DEMO.tenantId, packId],
+       (id,tenant_id,name,jurisdiction,home_currency,jurisdiction_pack_id,jurisdiction_pack_version,msb_number)
+     VALUES ($1,$2,'York Currency Exchange Inc.','x','CAD',$3,1,$4)
+     ON CONFLICT (id) DO UPDATE SET jurisdiction_pack_id=EXCLUDED.jurisdiction_pack_id, msb_number=EXCLUDED.msb_number`,
+    [DEMO.legalEntityId, DEMO.tenantId, packId, SHOP_FINTRAC],
   );
 }
 
@@ -132,16 +138,16 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
 
   afterAll(async () => {
     /* The last test leaves York FX on the British pack. Put the seed
-       pack back, then read that desk. It has to be CAD, pack-ca-v1,
-       version 1. The pool still closes if that read fails.
-       No cheque source is changed. */
+       pack and the seed's FINTRAC number back, then read that desk. It
+       has to be CAD, pack-ca-v1, version 1. The pool still closes if
+       that read fails. No cheque source is changed. */
     try {
       await pool.query(
         `UPDATE legal_entities
             SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1',
-                jurisdiction_pack_version=1
+                jurisdiction_pack_version=1, msb_number=$2
           WHERE id=$1`,
-        [DEMO.legalEntityId],
+        [DEMO.legalEntityId, SEED_PLACEHOLDER_FINTRAC],
       );
       const restored = await pool.query(
         `SELECT home_currency, jurisdiction_pack_id, jurisdiction_pack_version
@@ -168,6 +174,18 @@ postgres("filed regulatory reports against real PostgreSQL", () => {
       .where(eq(schema.staffUsers.id, `${DEMO.tenantId}:r.haddad`));
     await resetLedger();
     await entityUnderPack("pack-ca-v1");
+  });
+
+  /* The other side of SHOP_FINTRAC: under the seed's placeholder the
+     filing is refused and nothing is kept. The next beforeEach states
+     the shop's number again. */
+  it("refuses to file under the demo seed's placeholder FINTRAC number, and keeps nothing", async () => {
+    await pool.query("UPDATE legal_entities SET msb_number=$2 WHERE id=$1", [DEMO.legalEntityId, SEED_PLACEHOLDER_FINTRAC]);
+    const response = await file(AGGREGATE);
+    expect(response.statusCode).toBe(422);
+    expect(response.json().message).toBe("This shop's FINTRAC number is the demo placeholder. Add the real number before filing.");
+    const kept = await pool.query("SELECT count(*)::int AS n FROM ledger_report_filings WHERE tenant_id=$1", [DEMO.tenantId]);
+    expect(kept.rows[0].n).toBe(0);
   });
 
   it("writes the sealed report to the database, not to a browser", async () => {

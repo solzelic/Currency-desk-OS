@@ -20,6 +20,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { backToSeededDesk } from "./helpers/seeded-desk.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -47,12 +48,8 @@ postgres("a new till can take a customer", () => {
     await pool.query(
       "TRUNCATE ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals CASCADE",
     );
-    /* Whatever a previous run of this file opened. The seeded desk stays. */
-    await pool.query("DELETE FROM sessions WHERE user_id LIKE $1", [`${DEMO.tenantId}:%`]);
-    await pool.query("DELETE FROM staff_users WHERE tenant_id=$1 AND branch_id<>$2", [DEMO.tenantId, DEMO.branchId]);
-    await pool.query("DELETE FROM rate_boards WHERE tenant_id=$1 AND branch_id<>$2", [DEMO.tenantId, DEMO.branchId]);
-    await pool.query("DELETE FROM workspaces WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.workspaceId]);
-    await pool.query("DELETE FROM branches WHERE tenant_id=$1 AND id<>$2", [DEMO.tenantId, DEMO.branchId]);
+    /* Whatever another file opened on the desk. The seeded desk stays. */
+    await backToSeededDesk(pool);
 
     await seed(handle.db);
     // the seed leaves an existing account alone, and an earlier file may have
@@ -74,6 +71,8 @@ postgres("a new till can take a customer", () => {
   });
 
   afterAll(async () => {
+    /* Scarborough, its till, T. Mensah and till-11 are this file's. */
+    await backToSeededDesk(pool);
     await app.close();
     await handle.close();
     await pool.end();

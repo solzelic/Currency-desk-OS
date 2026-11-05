@@ -119,6 +119,9 @@ postgres("quote service against real PostgreSQL", () => {
     app = await buildApp(handle.db);
   });
   afterAll(async () => {
+    /* The isolation test opens a second branch on the demo desk. */
+    await pool.query("DELETE FROM rate_boards WHERE branch_id='br-quote-isolation'");
+    await pool.query("DELETE FROM branches WHERE id='br-quote-isolation'");
     await app.close();
     await handle.close();
     await pool.end();
