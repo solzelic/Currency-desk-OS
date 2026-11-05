@@ -57,7 +57,7 @@ describe("the public rate page", () => {
     expect(opened.json()).toEqual({ slug: "york-test", live: true });
     const page = await pub("/api/public/rate-pages/york-test");
     expect(page.statusCode, page.body).toBe(200);
-    expect(page.json().shop).toEqual({ name: expect.any(String), slug: "york-test", home: "CAD" });
+    expect(page.json().shop).toMatchObject({ name: expect.any(String), slug: "york-test", home: "CAD" });
     expect(page.headers["cache-control"]).toBe("public, max-age=60");
   });
 
@@ -77,11 +77,12 @@ describe("the public rate page", () => {
     for (const staffId of ["r.haddad", "a.singh", "m.costa", "s.iqbal"]) {
       expect((await as(staffId, "PUT", "/api/rate-page", { slug: "york-test", live: true })).statusCode, staffId).toBe(403);
     }
-    expect((await as("m.costa", "GET", "/api/rate-page")).json()).toEqual({ slug: null, live: false });
+    /* Every shop has a page from the first ask, at its own address, private. */
+    expect((await as("m.costa", "GET", "/api/rate-page")).json()).toMatchObject({ slug: "yorkfx", live: false });
     await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test" });
     await as("j.masri", "PUT", "/api/rate-page", { live: true });
     expect((await audits("rate_page.change")).slice(-2)).toEqual([
-      { field: "slug", old: null, new: "york-test" },
+      { field: "slug", old: "yorkfx", new: "york-test" },
       { field: "live", old: false, new: true },
     ]);
   });
@@ -106,6 +107,31 @@ describe("the public rate page", () => {
     await handle.db.execute(sql`UPDATE shop_rate_pages SET live = true`);
     await publish({ buyMargin: 0.05, sellMargin: 0.05, rows: { USD: { mid: 2 } }, order: ["USD"] });
     expect((await pub("/api/public/rate-pages/york-test")).json().rates[0].buy).toBe(1.9);
+  });
+
+  it("carries the shop's own time zone, the publishing branch's, and none rather than a wrong one", async () => {
+    /* The page shows when the board was published and whether the shop is
+       open. Both are the shop's clock, not the visitor's. */
+    await publish({ buyMargin: 0.01, sellMargin: 0.01, rows: { USD: { mid: 1.3 } } });
+    const board = (await handle.db.select().from(schema.rateBoards).where(eq(schema.rateBoards.tenantId, DEMO.tenantId))
+      .orderBy(sql`published_at desc`).limit(1))[0]!;
+    const branch = (await handle.db.select().from(schema.branches).where(eq(schema.branches.id, board.branchId)))[0]!;
+    await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test", live: true });
+    /* Made directly, not through the desk: the window screen tests below
+       count the audit rows the desk writes. */
+    const token = "tz-test-token-0123456789abcdefghijk";
+    await handle.db.insert(schema.windowScreens).values({ id: "scr_tz_test", tenantId: DEMO.tenantId, name: "Front window", kind: "tv", layout: "two", theme: "dark", currencies: [], showHours: true, token, createdBy: "j.masri" });
+    try {
+      await handle.db.update(schema.branches).set({ timezone: "Asia/Dubai" }).where(eq(schema.branches.id, branch.id));
+      forgetPublicAnswers();
+      expect((await pub("/api/public/rate-pages/york-test")).json().shop.timeZone).toBe("Asia/Dubai");
+      expect((await pub(`/api/public/screens/${token}`)).json().shop.timeZone).toBe("Asia/Dubai");
+      await handle.db.update(schema.branches).set({ timezone: "Not/AZone" }).where(eq(schema.branches.id, branch.id));
+      forgetPublicAnswers();
+      expect((await pub("/api/public/rate-pages/york-test")).json().shop).not.toHaveProperty("timeZone");
+    } finally {
+      await handle.db.update(schema.branches).set({ timezone: branch.timezone }).where(eq(schema.branches.id, branch.id));
+    }
   });
 
   it("goes dark when the shop is suspended", async () => {
@@ -135,13 +161,25 @@ describe("window screens", () => {
     const shown = await pub(`/api/public/screens/${token}`);
     expect(shown.statusCode, shown.body).toBe(200);
     expect(shown.json().rates.map((r: { code: string }) => r.code)).toEqual(["USD", "EUR", "GBP", "CHF", "AUD", "JPY"]);
-    expect(shown.json().screen).toEqual({ name: "Front window", kind: "tv", layout: "two", theme: "dark", showHours: true });
-    expect(shown.json().shop).toEqual({ name: expect.any(String), home: "CAD" });
+    expect(shown.json().screen).toEqual({ name: "Front window", kind: "tv", layout: "two", theme: "dark", showHours: true, show: { flags: true, names: true, clock: true, logo: true } });
+    expect(shown.json().shop).toMatchObject({ name: expect.any(String), home: "CAD" });
     await as("j.masri", "PATCH", `/api/window-screens/${id}`, { currencies: ["INR", "EUR"] });
     expect((await pub(`/api/public/screens/${token}`)).json().rates.map((r: { code: string }) => r.code)).toEqual(["INR", "EUR"]);
     expect((await as("j.masri", "POST", `/api/window-screens/${id}/retire`)).statusCode).toBe(200);
     expect((await pub(`/api/public/screens/${token}`)).statusCode).toBe(404);
     expect((await pub("/api/public/screens/not-a-real-token-but-long-enough-xx")).statusCode).toBe(404);
+  });
+
+  it("get a new link on reset, and the old one stops at once", async () => {
+    const { id, token } = (await as("r.haddad", "POST", "/api/window-screens", screen)).json();
+    expect((await as("m.costa", "POST", `/api/window-screens/${id}/reset`)).statusCode).toBe(403);
+    const reset = await as("r.haddad", "POST", `/api/window-screens/${id}/reset`);
+    expect(reset.statusCode, reset.body).toBe(200);
+    expect(reset.json().token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(reset.json().token).not.toBe(token);
+    expect((await pub(`/api/public/screens/${token}`)).statusCode).toBe(404);
+    expect((await pub(`/api/public/screens/${reset.json().token}`)).statusCode).toBe(200);
+    expect(await audits("window_screen.reset")).toEqual([{ screenId: id }]);
   });
 
   it("refuse a change with nothing in it, or a field they do not have", async () => {

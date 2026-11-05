@@ -32,6 +32,7 @@ import { audit } from "../audit.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
+import { ensureRatePage } from "../rates/rate-page.js";
 
 /* The design sells three plans; the server gates on three tiers. They are
    not the same axis — "AI Bundle" is Full System plus an assistant, not a
@@ -374,6 +375,9 @@ export async function provisionDesk(
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
     isTestShop: spec.isTestShop === true,
   }).onConflictDoNothing();
+  /* Rates v2.5: every shop has a rate page from the day it opens, at its
+     own address and private until the owner turns it on. */
+  await ensureRatePage(db, tenantId);
   /* "When should the desk ask for ID?" — screen four of onboarding, and the
      answer used to land in `tenants.setup` and stop there. The browser read
      it once into its own saved state on first run; the ledger, which is
@@ -407,7 +411,11 @@ export async function provisionDesk(
     jurisdictionPackVersion: pack?.version ?? 1,
     idThreshold: chosenIdLine,
   }).onConflictDoNothing();
-  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main" }).onConflictDoNothing();
+  /* Sol, 5 Nov 2026: a new shop's board follows the market from the
+     first hour (Rates v2.5 Auto-publish). While the hourly sync runs a
+     board can be quoted for 70 minutes, so a shop that never switched it
+     on would stop quoting within the hour. The owner can switch it off. */
+  await db.insert(schema.branches).values({ id: branchId, tenantId, legalEntityId, name: "Main", autoPublishRates: true }).onConflictDoNothing();
   await db.insert(schema.workspaces).values({ id: workspaceId, tenantId, legalEntityId, branchId, tillId: "till-01" }).onConflictDoNothing();
 
   /* A DESK ARRIVES ABLE TO TRADE.

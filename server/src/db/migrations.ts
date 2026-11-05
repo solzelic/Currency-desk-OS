@@ -86,6 +86,14 @@ export const migrations: readonly Migration[] = [
   /* 062 is each shop's public rate page and its window screens (Rates v2.5).
      061 is taken by the till settings PR. */
   ["062_rate_pages_and_screens", "src/db/migrations/062_rate_pages_and_screens.sql"],
+  /* 063 is what the shop wrote for its rate page (the editor). */
+  ["063_rate_page_content", "src/db/migrations/063_rate_page_content.sql"],
+  /* 064 is the shop's logo and the window screen options. */
+  ["064_rate_page_logo_and_screen_options", "src/db/migrations/064_rate_page_logo_and_screen_options.sql"],
+  /* 065 is the Auto-publish switch on a branch (Rates v2.5). */
+  ["065_branch_auto_publish_rates", "src/db/migrations/065_branch_auto_publish_rates.sql"],
+  /* 066 is when a window screen was last seen (Rates v2.5). */
+  ["066_window_screen_last_seen", "src/db/migrations/066_window_screen_last_seen.sql"],
 ] as const;
 
 type MigrationReader = {

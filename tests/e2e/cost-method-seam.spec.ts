@@ -109,7 +109,8 @@ test("a manager turns it on and the ledger is what changed", async ({ page }) =>
 
 test("a teller cannot reach the setting, and could not use it if they did", async ({ page }) => {
   await signInAtDesk(page, "a.singh");
-  await page.getByText(/Rate Board/i).first().waitFor({ timeout: 45_000 });
+  /* The desk is open once a window is (the Rates window was titled "Rate Board"). */
+  await page.locator("#desktop .win.show").first().waitFor({ timeout: 45_000 });
 
   // Settings is not a screen a teller has at all, so the switch is unreachable
   await expect(page.getByText(/^Settings$/i)).toHaveCount(0);

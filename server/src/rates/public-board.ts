@@ -10,7 +10,7 @@ import { schema, type Db } from "../db/index.js";
 import type { RateBoardRow } from "../db/schema.js";
 
 export type PublicRate = { code: string; buy: number; sell: number };
-export type PublishedRates = { home: string | null; publishedAt: number | null; rates: PublicRate[] };
+export type PublishedRates = { home: string | null; timeZone: string | null; publishedAt: number | null; rates: PublicRate[] };
 
 /* The desk's own two lines, so a customer is shown what the desk will
    charge. The margin is the row's spread, else the board's buy or sell
@@ -42,6 +42,26 @@ async function homeCurrency(db: Db, legalEntityId: string): Promise<string | nul
   return /^[A-Z]{3}$/.test(code) ? code : null;
 }
 
+/* The shop's clock: the time zone of the branch that published the board,
+   else the shop's first branch. The public pages show the publish time and
+   whether the shop is open in it. A zone the runtime does not know is
+   sent as none: a wrong clock would say a shop is open when it is shut. */
+async function shopTimeZone(db: Db, tenantId: string, branchId: string | null): Promise<string | null> {
+  const row = (await db
+    .select({ zone: schema.branches.timezone })
+    .from(schema.branches)
+    .where(branchId ? eq(schema.branches.id, branchId) : eq(schema.branches.tenantId, tenantId))
+    .orderBy(asc(schema.branches.id))
+    .limit(1))[0];
+  const zone = (row?.zone ?? "").trim();
+  if (!zone) return null;
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
 export async function publishedRates(db: Db, tenantId: string): Promise<PublishedRates> {
   const board = (await db
     .select()
@@ -56,14 +76,19 @@ export async function publishedRates(db: Db, tenantId: string): Promise<Publishe
       .where(eq(schema.legalEntities.tenantId, tenantId))
       .orderBy(asc(schema.legalEntities.id))
       .limit(1))[0];
-    return { home: entity ? await homeCurrency(db, entity.id) : null, publishedAt: null, rates: [] };
+    return { home: entity ? await homeCurrency(db, entity.id) : null, timeZone: await shopTimeZone(db, tenantId, null), publishedAt: null, rates: [] };
   }
   const rows = board.boardRows ?? {};
   const order = [...new Set(board.boardOrder ?? Object.keys(rows))];
   const rates = order
     .filter((code) => rows[code] && rows[code]!.show !== false)
     .map((code) => ({ code, ...deskPair(rows[code]!, board.buyMargin, board.sellMargin) }));
-  return { home: await homeCurrency(db, board.legalEntityId), publishedAt: board.publishedAt.getTime(), rates };
+  return {
+    home: await homeCurrency(db, board.legalEntityId),
+    timeZone: await shopTimeZone(db, tenantId, board.branchId),
+    publishedAt: board.publishedAt.getTime(),
+    rates,
+  };
 }
 
 /* ---- public answers from memory ----
@@ -88,4 +113,23 @@ export async function remembered<T>(key: string, load: () => Promise<T | null>):
 
 export function forgetPublicAnswers(): void {
   answers.clear();
+}
+
+/* ---- a window screen that is on ----
+   A screen asks for its rates every minute. Its last sighting is written
+   to window_screens.last_seen_at so the desk can show it as On, at most
+   once a minute per screen whatever answers the request (the memory above
+   or the database), so a screen cannot be made to write more often. */
+const SIGHTING_GAP_MS = 60_000;
+const sightings = new Map<string, number>();
+
+export function screenSighted(id: string, now = Date.now()): boolean {
+  const last = sightings.get(id);
+  if (last !== undefined && now - last < SIGHTING_GAP_MS) return false;
+  sightings.set(id, now);
+  return true;
+}
+
+export function forgetScreenSightings(): void {
+  sightings.clear();
 }

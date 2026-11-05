@@ -81,6 +81,15 @@
       body: 'This is the shop. Earnings, cash, and what the book holds, for the period you choose. The figures are the ledger’s.',
     },
     {
+      /* Rates v2.5: every shop has a rate page from the day it opens. */
+      id: 'site',
+      tour: 'owner',
+      app: 'rates',
+      anchor: 'rate-page',
+      title: 'Your rate page',
+      body: 'Your shop has its own rate page, private until you turn it on. Fill it in here, look at the preview, then take it live and share the link.',
+    },
+    {
       id: 'clients',
       tour: 'owner',
       app: 'clients',

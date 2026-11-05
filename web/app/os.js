@@ -366,6 +366,217 @@
 });
 
 
+/* ---- os-src/rates-board.js ---- */
+/* The Rates app's board, as the desk builds it before Publish.
+
+   The server prices every deal and every public number; these are the
+   desk's own copies, for the preview on screen and the body Publish sends.
+   Spreads are percents on screen (1.5 means 1.5%) and fractions on the wire
+   (0.015). A pinned rate (settings.spotOverride, set in Pricing) beats the
+   market feed, and the market beats the last publish. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, { ratesBoard: api });
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var DEFAULT_SPREAD_PCT = 1.5;
+  /* The publish schema refuses a margin over 0.2 (routes/rates.ts). */
+  var MAX_SPREAD_PCT = 20;
+
+  /* A positive, finite number, or null. Text from settings is trimmed. */
+  function positive(v) {
+    var n = typeof v === "string" ? Number(v.trim()) : v;
+    return typeof n === "number" && isFinite(n) && n > 0 ? n : null;
+  }
+  /* A spread may be zero. Blank, missing or negative is "not set". */
+  function spreadPct(v) {
+    if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
+    var n = typeof v === "string" ? Number(v.trim()) : v;
+    return typeof n === "number" && isFinite(n) && n >= 0 ? n : null;
+  }
+
+  /* ---- exact six-place rounding ----
+     0.0091 x 0.985 is 0.0089635 on paper and 0.00896349... in floating
+     point, which rounds the wrong way. Each figure is read to 15
+     significant digits into a scaled integer, and rounding is half-up, the
+     same as the server's Decimal. */
+  var SCALE = 18;
+  function scaled(n) {
+    var parts = Number(n).toPrecision(15).split("e");
+    var exp = parts.length > 1 ? Number(parts[1]) : 0;
+    var digits = parts[0].replace("-", "");
+    var dot = digits.indexOf(".");
+    var whole = dot < 0 ? digits : digits.slice(0, dot) + digits.slice(dot + 1);
+    var places = (dot < 0 ? 0 : digits.length - dot - 1) - exp;
+    var shift = SCALE - places;
+    return shift >= 0 ? BigInt(whole) * 10n ** BigInt(shift) : BigInt(whole) / 10n ** BigInt(-shift);
+  }
+  function divHalfUp(a, b) { return (a * 2n + b) / (2n * b); }
+  function sixPlaces(value) { return Number(value) / 1e6; }
+
+  /* The desk's lines (quotes/terms.ts): buy at mid x (1 - m), sell at
+     mid / (1 - m). Returns plain numbers at six places for display. */
+  function deskPair(mid, buyPct, sellPct) {
+    var m = scaled(mid);
+    var hundred = scaled(100);
+    var toSix = 10n ** BigInt(SCALE - 6);
+    var buy = divHalfUp(m * (hundred - scaled(buyPct)), hundred * toSix);
+    var sell = divHalfUp(m * hundred, (hundred - scaled(sellPct)) * toSix);
+    return { buy: sixPlaces(buy), sell: sixPlaces(sell) };
+  }
+
+  /* The market in the shop's home currency, from the feed's raw mids
+     (GET /api/rates/market: Canadian dollars per 1 unit, every digit).
+     A CAD shop takes them as they are; any other shop divides by its own
+     currency's mid. Nothing is rounded here: the ticker's six places moved
+     the dong 0.56% off the market, and a publish would have carried that.
+     A feed that cannot price the home currency gives no market at all, so
+     the board falls back to the last publish rather than guess. */
+  function homeMarket(mids, home) {
+    var code = String(home || "").toUpperCase();
+    if (!mids || typeof mids !== "object" || !/^[A-Z]{3}$/.test(code)) return {};
+    var per = code === "CAD" ? (positive(mids.CAD) || 1) : positive(mids[code]);
+    if (per === null) return {};
+    var out = {};
+    Object.keys(mids).forEach(function (c) {
+      var cad = positive(mids[c]);
+      if (c !== code && /^[A-Z]{3}$/.test(c) && cad !== null) out[c] = cad / per;
+    });
+    if (code !== "CAD" && !out.CAD) out.CAD = 1 / per;
+    return out;
+  }
+
+  /* One row per currency the desk shows or has published, in the
+     published order first, then the desk's other currencies. */
+  function draftRows(input) {
+    var home = String(input.home || "").toUpperCase();
+    var settings = input.settings || {};
+    var pinned = settings.spotOverride || {};
+    var custom = settings.spreads || {};
+    var def = spreadPct(settings.defaultSpread);
+    var dflt = def === null ? DEFAULT_SPREAD_PCT : def;
+    var board = input.board || null;
+    var published = (board && board.rows) || {};
+    var market = input.market || {};
+    var seen = {};
+    var order = [];
+    function add(code) {
+      var c = String(code || "").toUpperCase();
+      if (!/^[A-Z]{3}$/.test(c) || c === home || seen[c]) return;
+      seen[c] = true;
+      order.push(c);
+    }
+    ((board && board.order) || []).forEach(add);
+    Object.keys(published).forEach(add);
+    (input.codes || []).forEach(add);
+    return order.map(function (code) {
+      var pub = published[code];
+      var pin = positive(pinned[code]);
+      var own = spreadPct(custom[code]);
+      return {
+        code: code,
+        mid: pin !== null ? pin : (positive(market[code]) !== null ? positive(market[code]) : (pub ? positive(pub.mid) : null)),
+        spreadPct: own === null ? dflt : own,
+        custom: own !== null,
+        pinned: pin !== null,
+        show: pub ? pub.show !== false : true,
+        published: !!pub
+      };
+    });
+  }
+
+  function fraction(pct) { return Number((pct / 100).toPrecision(12)); }
+
+  /* The body for POST /api/rates/publish, or the reason it cannot go. A
+     hidden currency with no rate is left off; a shown one stops the publish. */
+  function publishBody(rows, defaultSpreadPct) {
+    var missing = [], tooWide = [], out = {}, order = [];
+    rows.forEach(function (r) {
+      if (r.mid === null) { if (r.show) missing.push(r.code); return; }
+      if (r.spreadPct > MAX_SPREAD_PCT) tooWide.push(r.code);
+      var row = { mid: r.mid, show: r.show };
+      if (r.custom) row.spread = fraction(r.spreadPct);
+      /* A pinned rate is marked, so the market sync leaves it alone. */
+      if (r.pinned) row.pinned = true;
+      out[r.code] = row;
+      order.push(r.code);
+    });
+    if (defaultSpreadPct > MAX_SPREAD_PCT) tooWide.push("default");
+    if (missing.length || tooWide.length || !order.length) {
+      var refusal = { ok: false, missing: missing };
+      if (tooWide.length) refusal.tooWide = tooWide;
+      return refusal;
+    }
+    var margin = fraction(defaultSpreadPct);
+    return { ok: true, body: { buyMargin: margin, sellMargin: margin, rows: out, order: order } };
+  }
+
+  /* True when Publish would send what customers already see. */
+  function sameAsPublished(rows, published, defaultSpreadPct) {
+    if (!published || !published.rows) return false;
+    var next = publishBody(rows, defaultSpreadPct);
+    if (!next.ok) return false;
+    var margin = fraction(defaultSpreadPct);
+    if (published.buyMargin !== undefined && (Number(published.buyMargin) !== margin || Number(published.sellMargin) !== margin)) return false;
+    /* Only codes that are rows. The seed lists the home currency in its
+       order, and the home currency is never a row on its own board. */
+    var pubOrder = (published.order || Object.keys(published.rows)).filter(function (c) { return !!published.rows[c]; });
+    if (pubOrder.join(",") !== next.body.order.join(",")) return false;
+    return next.body.order.every(function (code) {
+      var a = next.body.rows[code], b = published.rows[code];
+      return !!b && Number(b.mid) === a.mid && (b.show !== false) === a.show
+        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread)
+        /* A pin is part of what is published: the market sync reads it. */
+        && (b.pinned === true) === (a.pinned === true);
+    });
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+});
+
+
+/* ---- shared/currency-face.js ---- */
+/* A currency's face: its flag and its English name, one set for the desk
+   (bundled into the OS) and for the public rate page and window screens
+   (served at /shared/currency-face.js). The flags are the design's own
+   images in assets/flags (flag-icons, MIT). A currency with no image gets
+   the emoji built from its country letters, as the desk's tape does. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CurrencyFace = api;
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  /* The country of each image in assets/flags, by currency code. */
+  var FLAG_FILES = {
+    AED: "ae", AUD: "au", BRL: "br", CAD: "ca", CHF: "ch", CNY: "cn", EUR: "eu", GBP: "gb",
+    HKD: "hk", IDR: "id", INR: "in", JPY: "jp", KRW: "kr", MXN: "mx", MYR: "my", NGN: "ng",
+    NZD: "nz", PHP: "ph", PKR: "pk", QAR: "qa", SAR: "sa", SEK: "se", SGD: "sg", THB: "th",
+    TRY: "tr", USD: "us", VND: "vn", ZAR: "za"
+  };
+  function code3(code) { var c = String(code || "").trim().toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : ""; }
+
+  function flagUrl(code) {
+    var country = FLAG_FILES[code3(code)];
+    return country ? "/assets/flags/" + country + ".svg" : null;
+  }
+  /* ISO 4217 codes start with the ISO 3166 country (USD is US); the euro's
+     EU letters are a flag too. */
+  function flagEmoji(code) {
+    var c = code3(code);
+    if (!c) return "";
+    return String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65, 0x1F1E6 + c.charCodeAt(1) - 65);
+  }
+  var names = null;
+  try { names = new Intl.DisplayNames(["en"], { type: "currency" }); } catch (e) { names = null; }
+  function currencyName(code) {
+    var c = code3(code);
+    if (!c || !names) return c || String(code || "");
+    try { var n = names.of(c); return n && n !== c ? n : c; } catch (e) { return c; }
+  }
+  return { flagUrl: flagUrl, flagEmoji: flagEmoji, currencyName: currencyName };
+});
+
+
 /* ---- shared/counter-cash.js ---- */
 /* What actually crossed the counter, in cash.
 
@@ -8376,7 +8587,10 @@ if (typeof module !== "undefined" && module.exports) {
     const [siteBusy, setSiteBusy] = useState(false);
     const [pubMsg, setPubMsg] = useState('');
     const [pubBusy, setPubBusy] = useState(false);
+    /* Read again each time Business profile is opened, so a change made
+       on the rate page while this desk was open shows here. */
     useEffect(() => {
+      if (tab !== 'business') return;
       if (typeof fetch !== 'function' || window.location.protocol === 'file:') return;
       fetch('/api/tenant', {
         credentials: 'same-origin'
@@ -8397,32 +8611,100 @@ if (typeof module !== "undefined" && module.exports) {
             if (cfg[src] && !s[dst]) patch[dst] = cfg[src];
           });
           if (Array.isArray(cfg.hours) && cfg.hours.length && !(Array.isArray(s.hours) && s.hours.length)) patch.hours = cfg.hours;
+          /* Rates v2.5: the week (hours by day), into a blank like the
+             rest, and when this desk first saw the published profile
+             (siteConfigAt). After that, siteConfigAt moves only when this
+             desk publishes or takes the profile, so a later change from
+             the rate page editor shows as newer. */
+          if (Array.isArray(cfg.week) && !Array.isArray(s.hoursWeek)) patch.hoursWeek = cfg.week;
+          if (cfg.updatedAt && !s.siteConfigAt) patch.siteConfigAt = cfg.updatedAt;
           return Object.keys(patch).length ? {
             ...s,
             ...patch
           } : s;
         });
       });
-    }, []);
+    }, [tab]);
     // business hours: a template until the shop edits them; the editor and the
     // publisher both read this fallback so a fresh shop still ships sane hours
-    const HOURS_SEED = [{
-      days: 'Mon–Fri',
-      hours: '9:30am–6:00pm'
-    }, {
-      days: 'Sat–Sun & holidays',
-      hours: '10:00am–5:00pm'
-    }];
-    const hoursList = Array.isArray(settings.hours) && settings.hours.length ? settings.hours : HOURS_SEED;
-    const setHours = next => setSettings(s => ({
+    /* Rates v2.5: hours by day are the source (the rate page's week:
+       seven days, Sunday first, [opens, closes] in hours or null). The
+       server makes the storefront's lines from them when they are
+       published (server/src/rates/rate-page.ts hoursFromWeek), the same
+       lines shown below. The template week is the old two template rows:
+       Monday to Friday 9:30 am to 6 pm, Saturday and Sunday 10 am to 5 pm. */
+    const WEEK_SEED = [[10, 17], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [9.5, 18], [10, 17]];
+    const week = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 ? settings.hoursWeek : siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week) ? siteInfo.siteConfig.week : WEEK_SEED;
+    const setWeek = next => setSettings(s => ({
       ...s,
-      hours: next
+      hoursWeek: next
     }));
+    /* A shop from before hours by day has its hours as text lines only.
+       Until someone sets a day here, publishing keeps those lines rather
+       than replacing them with the template week. */
+    const weekKnown = Array.isArray(settings.hoursWeek) && settings.hoursWeek.length === 7 || !!(siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.week));
+    const textLines = (Array.isArray(settings.hours) && settings.hours.length ? settings.hours : siteInfo && siteInfo.siteConfig && Array.isArray(siteInfo.siteConfig.hours) ? siteInfo.siteConfig.hours : []).filter(h => h && String(h.days || '').trim() && String(h.hours || '').trim());
+    const keepText = !weekKnown && textLines.length > 0;
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const clockOf = v => {
+      const h = Math.floor(v),
+        m = Math.round((v - h) * 60),
+        h12 = h % 12 || 12;
+      return h12 + (m ? ':' + String(m).padStart(2, '0') : '') + (h < 12 || h === 24 ? ' am' : ' pm');
+    };
+    const weekLines = w => {
+      const order = [1, 2, 3, 4, 5, 6, 0],
+        key = d => d ? d[0] + '-' + d[1] : 'closed',
+        out = [];
+      let i = 0;
+      while (i < 7) {
+        let j = i;
+        while (j + 1 < 7 && key(w[order[j + 1]]) === key(w[order[i]])) j++;
+        const d = w[order[i]];
+        out.push({
+          days: i === j ? DAY_NAMES[order[i]] : DAY_SHORT[order[i]] + ' to ' + DAY_SHORT[order[j]],
+          hours: d ? clockOf(d[0]) + ' to ' + clockOf(d[1]) : 'Closed'
+        });
+        i = j + 1;
+      }
+      return out;
+    };
+    const TIME_OPTS = [];
+    for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push(t);
+    /* The rate page editor published newer contact details or hours than
+       this desk last took or published (a manager's change, or another
+       desk's): say so, and ask before publishing over them. */
+    const published = siteInfo && siteInfo.siteConfig;
+    const serverNewer = !!(published && published.updatedAt && settings.siteConfigAt && published.updatedAt > settings.siteConfigAt);
+    const usePublished = () => {
+      if (!published) return;
+      setSettings(s => ({
+        ...s,
+        bizPhone: published.phone || '',
+        bizEmail: published.email || '',
+        bizAddress: published.address || '',
+        bizCity: published.city || '',
+        bizRegion: published.region || '',
+        bizPostal: published.postal || '',
+        ...(Array.isArray(published.hours) ? {
+          hours: published.hours
+        } : {}),
+        ...(Array.isArray(published.week) ? {
+          hoursWeek: published.week
+        } : {}),
+        siteConfigAt: published.updatedAt
+      }));
+      log('Public site', 'took the published contact & hours');
+    };
     // one source of truth: the same phone/email/address/hours the desk shows
     // are what the public site publishes
     const publishSiteConfig = () => {
+      if (serverNewer && !window.confirm('Your rate page has newer contact details or hours than these. Publish these over them?')) return;
       setPubBusy(true);
       setPubMsg('');
+      /* The week goes, and the server makes the hours lines from it; a
+         shop that has only text lines keeps them until a day is set. */
       const body = {
         siteConfig: {
           phone: settings.bizPhone || '',
@@ -8431,7 +8713,11 @@ if (typeof module !== "undefined" && module.exports) {
           city: settings.bizCity || '',
           region: settings.bizRegion || '',
           postal: settings.bizPostal || '',
-          hours: hoursList.filter(h => h && String(h.days).trim() && String(h.hours).trim())
+          ...(keepText ? {
+            hours: textLines
+          } : {
+            week
+          })
         }
       };
       fetch('/api/tenant', {
@@ -8448,6 +8734,15 @@ if (typeof module !== "undefined" && module.exports) {
             ...siteInfo,
             ...d.tenant
           } : siteInfo);
+          const cfg = d.tenant && d.tenant.siteConfig;
+          if (cfg) setSettings(s => ({
+            ...s,
+            hours: cfg.hours || s.hours,
+            ...(keepText ? {} : {
+              hoursWeek: week
+            }),
+            siteConfigAt: cfg.updatedAt
+          }));
           setPubMsg('Published \u2014 the site shows this now.');
           log('Public site', 'contact & hours published');
         } else if (r.status === 401 || r.status === 403) setPubMsg('Only a manager or the owner can publish site details.');else setPubMsg(d && d.detail || 'Couldn\u2019t publish (' + r.status + ').');
@@ -11702,63 +11997,107 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         maxWidth: 560
       }
-    }, "When you're open. Shown on your public site's Visit page \u2014 each row is a set of days and the hours for it."), hoursList.map((h, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "flex items-center gap-2 mb-1.5"
-    }, /*#__PURE__*/React.createElement("input", {
-      value: h.days || '',
-      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
-        ...x,
-        days: ev.target.value
-      } : x)),
-      placeholder: "Mon\u2013Fri",
-      className: "text-[13px] px-2.5 py-2 outline-none",
+    }, "When you're open, day by day. Shown on your public site's Visit page and your rate page, which says open or closed from it. The same hours as Rates \u2192 Website & window."), serverNewer && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "flex items-center gap-2 flex-wrap p-2.5 mb-3 text-[11.5px]",
       style: {
-        ...inSty,
-        width: 190
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10,
+        background: 'var(--cd-paper-soft)',
+        color: CD.ink
       }
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12px] flex-none",
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "flex-1",
       style: {
-        color: CD.faint
+        minWidth: 220
       }
-    }, "\u2192"), /*#__PURE__*/React.createElement("input", {
-      value: h.hours || '',
-      onChange: ev => setHours(hoursList.map((x, j) => j === i ? {
-        ...x,
-        hours: ev.target.value
-      } : x)),
-      placeholder: "9:30am\u20136:00pm",
-      className: "flex-1 text-[13px] px-2.5 py-2 outline-none",
-      style: inSty
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setHours(hoursList.filter((_, j) => j !== i)),
-      title: "Remove row",
-      className: "grid place-items-center flex-none",
+    }, "Your rate page has newer contact details or hours than these (changed in Rates \u2192 Website & window)."), /*#__PURE__*/React.createElement("button", {
+      onClick: usePublished,
+      className: "text-[12px] px-2.5 py-1.5 font-semibold",
       style: {
-        width: 30,
-        height: 30,
-        borderRadius: 7,
-        color: CD.faint
+        background: CD.ink,
+        color: 'var(--cd-on-ink)',
+        borderRadius: 8
       }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "trash",
-      s: 14
-    })))), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setHours([...hoursList, {
-        days: '',
-        hours: ''
-      }]),
-      className: "text-[12px] px-2.5 py-1.5 flex items-center gap-1.5 mt-1",
+    }, "Use the published details")), keepText && /*#__PURE__*/React.createElement("div", {
+      className: "p-2.5 mb-3 text-[11.5px]",
       style: {
-        border: `1px dashed ${CD.line}`,
-        borderRadius: 8,
-        color: CD.mute
+        border: `1px solid ${CD.line}`,
+        borderRadius: 10,
+        background: 'var(--cd-paper-soft)',
+        color: CD.mute,
+        lineHeight: 1.6
       }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "plus",
-      s: 13
-    }), " Add hours row")), siteInfo && siteInfo.siteSlug && (() => {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: CD.ink
+      }
+    }, "Your hours are published as text:"), textLines.map((h, i) => /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, h.days, " ", h.hours)), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1"
+    }, "Set them day by day below so your rate page can say open or closed. Until you change a day, publishing keeps these lines.")), /*#__PURE__*/React.createElement("div", {
+      role: "group",
+      "aria-label": "Opening hours by day"
+    }, [1, 2, 3, 4, 5, 6, 0].map(di => {
+      const d = week[di];
+      return /*#__PURE__*/React.createElement("div", {
+        key: di,
+        className: "flex items-center gap-2.5 mb-1.5 flex-wrap"
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[13px] font-semibold",
+        style: {
+          width: 96,
+          color: CD.ink
+        }
+      }, DAY_NAMES[di]), /*#__PURE__*/React.createElement(IdSwitch, {
+        on: !!d,
+        label: 'Open on ' + DAY_NAMES[di],
+        onFlip: () => setWeek(week.map((x, j) => j === di ? x ? null : [9.5, 18] : x))
+      }), d ? /*#__PURE__*/React.createElement("span", {
+        className: "flex items-center gap-1.5"
+      }, /*#__PURE__*/React.createElement("select", {
+        "aria-label": DAY_NAMES[di] + ' opens',
+        value: String(d[0]),
+        onChange: ev => {
+          const v = +ev.target.value;
+          setWeek(week.map((x, j) => j === di ? [v, Math.max(v + 0.5, d[1])] : x));
+        },
+        className: "text-[12.5px] px-2 py-1.5 outline-none",
+        style: {
+          ...inSty,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, TIME_OPTS.map(t => /*#__PURE__*/React.createElement("option", {
+        key: t,
+        value: String(t)
+      }, clockOf(t)))), /*#__PURE__*/React.createElement("span", {
+        className: "text-[12px]",
+        style: {
+          color: CD.faint
+        }
+      }, "to"), /*#__PURE__*/React.createElement("select", {
+        "aria-label": DAY_NAMES[di] + ' closes',
+        value: String(d[1]),
+        onChange: ev => {
+          const v = +ev.target.value;
+          setWeek(week.map((x, j) => j === di ? [Math.min(d[0], v - 0.5), v] : x));
+        },
+        className: "text-[12.5px] px-2 py-1.5 outline-none",
+        style: {
+          ...inSty,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, TIME_OPTS.map(t => /*#__PURE__*/React.createElement("option", {
+        key: t,
+        value: String(t)
+      }, clockOf(t))))) : /*#__PURE__*/React.createElement("span", {
+        className: "text-[12.5px]",
+        style: {
+          color: CD.faint
+        }
+      }, "Closed"));
+    }))), siteInfo && siteInfo.siteSlug && (() => {
       const siteUrl = window.location.origin + '/sites/' + siteInfo.siteSlug + '/';
       return /*#__PURE__*/React.createElement("div", {
         className: "mt-5 pt-4",
@@ -11867,7 +12206,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         style: {
           color: CD.ink
         }
-      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), hoursList.filter(h => h.days && h.hours).map((h, i) => /*#__PURE__*/React.createElement("div", {
+      }, settings.bizPhone || '—'), settings.bizEmail ? ' · ' + settings.bizEmail : ''), settings.bizAddress && /*#__PURE__*/React.createElement("div", null, settings.bizAddress, settings.bizCity ? ', ' + settings.bizCity : ''), (keepText ? textLines : weekLines(week)).map((h, i) => /*#__PURE__*/React.createElement("div", {
         key: i
       }, h.days, " ", h.hours))), /*#__PURE__*/React.createElement("button", {
         onClick: publishSiteConfig,
@@ -57485,6 +57824,2309 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/cdos-rates-site.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS: Rates, the Website & window tab (Rates v2.5)
+
+   Where the shop's published board is shown, in the look of the design
+   file (CurrencyDesk Rates v2.5, "isSite"): two tiles with live previews,
+   the rate page editor ("Your online rate page") and the window screens
+   page. Every shop already has a rate page at its own address, private
+   until the owner turns it on.
+
+   The owner names the shop's public rate page (/r/<address>) and takes it
+   live; staff who may change rates add and retire window screens
+   (/s/<token>). The server decides every one of these (PUT /api/rate-page
+   needs site:publish, the screen routes need rates:change); this tab only
+   shows each person what they can do, and says plainly when the server
+   refuses.
+
+   Since the editor: staff who may change rates also edit what the page
+   says (PATCH /api/rate-page/content, rates:change), and the regulator
+   block is the owner's (site:publish), as in auth/permissions.ts. Changes
+   save as you type; the preview reloads after each save.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useCallback,
+    useRef
+  } = React;
+  const FACE = window.CurrencyFace;
+  const EDITORS = ['branch_manager', 'administrator'];
+  const PAGE_ERRORS = {
+    400: 'Use 3 to 40 lowercase letters, numbers and hyphens, starting and ending with a letter or number.',
+    403: 'Only the owner can change that.',
+    409: 'Another shop already uses that address. Pick another.',
+    422: 'Choose an address before the page goes live.'
+  };
+  const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const DAY_INDEX = [1, 2, 3, 4, 5, 6, 0];
+  /* Screen kinds the server knows, with the size each previews at. */
+  const KINDS = [['tv', 'TV in landscape', '16:9 · most shop windows', 1920, 1080], ['portrait', 'Screen on its side', '9:16 · tall and narrow', 1080, 1920], ['tablet', 'Tablet on the counter', '4:3 · facing customers', 1024, 768], ['strip', 'Strip above the counter', '8:1 · scrolling ticker', 1920, 240]];
+  const LAYOUTS = {
+    one: 'One column',
+    two: 'Two columns',
+    rotate: 'Rotate pages'
+  };
+  const SHOWS = [['flags', 'Flags'], ['names', 'Currency names'], ['clock', 'Clock'], ['hours', 'Opening hours'], ['logo', 'Your logo']];
+
+  /* Whatever the owner picks is drawn onto a 240px square and sent as a
+     PNG: the server takes nothing else. Drawing it also turns any picture,
+     an SVG logo included, into plain pixels. */
+  function pngFrom(src, done) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 240,
+          c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const scale = Math.min(size / (img.width || size), size / (img.height || size));
+        const w = (img.width || size) * scale,
+          h = (img.height || size) * scale;
+        c.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        if (done) done();
+        resolve(c.toDataURL('image/png'));
+      };
+      img.onerror = () => {
+        if (done) done();
+        reject(new Error('That picture could not be read.'));
+      };
+      img.src = src;
+    });
+  }
+  function logoPng(file) {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return Promise.reject(new Error('Use a PNG, JPG or WebP picture.'));
+    const url = URL.createObjectURL(file);
+    return pngFrom(url, () => URL.revokeObjectURL(url));
+  }
+  async function call(method, url, body) {
+    const res = await fetch(url, body ? {
+      method,
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    } : {
+      method,
+      credentials: 'same-origin'
+    });
+    /* An error answer may have no JSON body; the status says enough. */
+    const data = await res.json().catch(() => null);
+    return {
+      ok: res.ok,
+      status: res.status,
+      data
+    };
+  }
+  /* A screen's sighting as the design says it: On while it asked in the
+     last ten minutes, then Last seen, or Not opened yet. */
+  function sighting(ms) {
+    if (!ms) return {
+      on: false,
+      seen: false,
+      text: 'Not opened yet'
+    };
+    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    const txt = m < 2 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + 'h ago' : Math.floor(m / 1440) + 'd ago';
+    return m < 10 ? {
+      on: true,
+      seen: true,
+      text: 'On · seen ' + txt
+    } : {
+      on: false,
+      seen: true,
+      text: 'Last seen ' + txt
+    };
+  }
+  const sightDot = s => 'flex:none;width:7px;height:7px;border-radius:50%;background:' + (s.on ? '#2EA36B' : s.seen ? '#D9A441' : 'rgba(23,20,15,0.25)') + ';' + (s.on ? 'animation:rtLive 2s infinite;' : '');
+
+  /* 24 is midnight at the end of the day: 12 am. */
+  function fmtT(v) {
+    const h = Math.floor(v),
+      m = Math.round((v - h) * 60),
+      h12 = h % 12 || 12;
+    return h12 + ':' + String(m).padStart(2, '0') + (h < 12 || h === 24 ? ' am' : ' pm');
+  }
+  const TIME_OPTS = [];
+  for (let t = 6; t <= 23.5; t += 0.5) TIME_OPTS.push({
+    v: String(t),
+    l: fmtT(t)
+  });
+  function initials(name) {
+    return String(name || 'Shop').split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+  }
+
+  /* Typing saves after a short pause, one request for the lot. */
+  function useDebouncedSave(save) {
+    const pending = useRef({});
+    const timer = useRef(null);
+    const latest = useRef(save);
+    latest.current = save;
+    /* Leaving the tab or closing Rates sends what was typed in the last
+       moment rather than dropping it. */
+    useEffect(() => () => {
+      clearTimeout(timer.current);
+      const p = pending.current;
+      pending.current = {};
+      if (Object.keys(p).length) latest.current(p);
+    }, []);
+    return useCallback((patch, now) => {
+      pending.current = {
+        ...pending.current,
+        ...patch
+      };
+      clearTimeout(timer.current);
+      const flush = () => {
+        const p = pending.current;
+        pending.current = {};
+        save(p);
+      };
+      if (now) flush();else timer.current = setTimeout(flush, 700);
+    }, [save]);
+  }
+  function Seg({
+    items,
+    ui
+  }) {
+    return /*#__PURE__*/React.createElement("span", {
+      style: ui.css('display: inline-flex; gap: 3px; padding: 3px; border-radius: 10px; background: rgba(23,20,15,0.06); flex-wrap: wrap;')
+    }, items.map(o => /*#__PURE__*/React.createElement("button", {
+      key: o.label,
+      type: "button",
+      "aria-pressed": o.on,
+      onClick: o.onPick,
+      style: o.style
+    }, o.label)));
+  }
+  function Back({
+    ui,
+    onBack,
+    title,
+    lead
+  }) {
+    const {
+      css
+    } = ui;
+    return /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 6px; animation: rtIn .28s cubic-bezier(.22,1,.36,1) both;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onBack,
+      style: css('align-self: flex-start; appearance: none; border: 0; background: none; padding: 4px 0; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--primary);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      strokeLinejoin: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M15 6l-6 6 6 6"
+    })), "Website & window"), /*#__PURE__*/React.createElement("h2", {
+      style: css('margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em;')
+    }, title), /*#__PURE__*/React.createElement("p", {
+      style: css('margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--mute); max-width: 620px;')
+    }, lead));
+  }
+
+  /* The design's currency chip: flag, code, and its place in the order. */
+  function Chip({
+    ui,
+    code,
+    at,
+    picking,
+    off,
+    onToggle
+  }) {
+    const {
+      css,
+      Flag
+    } = ui;
+    const on = at >= 0;
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-pressed": on,
+      "aria-label": code,
+      onClick: onToggle,
+      disabled: off,
+      style: css('appearance:none;display:flex;align-items:center;gap:8px;height:40px;padding:0 9px 0 8px;border-radius:11px;cursor:' + (off ? 'not-allowed' : 'pointer') + ';transition:border-color .18s ease,opacity .18s ease;background:' + (on ? '#fff' : 'rgba(23,20,15,0.025)') + ';border:' + (on && picking ? '1.5px solid var(--primary)' : '1px solid var(--line)') + ';opacity:' + (on ? '1' : '0.62') + ';')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: code,
+      size: 22
+    }), /*#__PURE__*/React.createElement("b", {
+      style: css('flex: 1; min-width: 0; text-align: left; font-family: var(--m); font-size: 12.5px; color: var(--ink);')
+    }, code), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:999px;display:' + (picking ? 'grid' : 'none') + ';place-items:center;font-family:var(--m);font-size:10.5px;font-weight:700;background:' + (on ? 'var(--primary)' : 'rgba(23,20,15,0.06)') + ';color:' + (on ? '#fff' : 'var(--mute)') + ';')
+    }, picking ? on ? String(at + 1) : '+' : ''));
+  }
+
+  /* The business profile as the desk's Settings keeps it (cdos-settings.jsx,
+     Business profile). Those fields are the owner's (server/src/state/
+     owner-settings.ts), so only the owner's desk copies a saved profile
+     into Settings; a manager's change is offered to the owner there. */
+  const settingsFromProfile = p => ({
+    bizPhone: p.phone || '',
+    bizEmail: p.email || '',
+    bizAddress: p.address || '',
+    bizCity: p.city || '',
+    bizRegion: p.region || '',
+    bizPostal: p.postal || '',
+    hours: p.hours || [],
+    hoursWeek: p.week || null,
+    siteConfigAt: p.updatedAt || null
+  });
+  function RatesSite({
+    serverRole,
+    onToast,
+    settings,
+    setSettings
+  }) {
+    const ui = window.CDOS.ratesUi;
+    const {
+      css,
+      Switch,
+      useWidth,
+      seg,
+      pill
+    } = ui;
+    const owner = serverRole === 'administrator';
+    const readOnly = !EDITORS.includes(serverRole);
+    const rootRef = useRef(null);
+    const w = useWidth(rootRef);
+    const [view, setView] = useState(null);
+    const [page, setPage] = useState(null);
+    const [draft, setDraft] = useState(null);
+    const [screens, setScreens] = useState([]);
+    const [board, setBoard] = useState([]);
+    const [sel, setSel] = useState(null);
+    const [copied, setCopied] = useState(null);
+    const [device, setDevice] = useState('Phone');
+    const [frame, setFrame] = useState(0);
+    const [menu, setMenu] = useState(false);
+    const [slug, setSlug] = useState('');
+    const [err, setErr] = useState(null);
+    const say = useCallback(text => {
+      if (onToast) onToast(text);
+    }, [onToast]);
+    const load = useCallback(async () => {
+      try {
+        const [p, s, r] = await Promise.all([call('GET', '/api/rate-page'), call('GET', '/api/window-screens'), call('GET', '/api/rates')]);
+        if (!p.ok || !s.ok) throw new Error(`the server answered ${p.ok ? s.status : p.status}`);
+        setPage(p.data);
+        setSlug(p.data.slug);
+        setDraft({
+          ...p.data.content,
+          profile: p.data.profile
+        });
+        setScreens(s.data.screens);
+        setSel(cur => s.data.screens.some(x => x.id === cur) ? cur : s.data.screens[0] ? s.data.screens[0].id : null);
+        /* The currencies a page or screen can show: the published board, in its order. */
+        const b = r.ok && r.data && r.data.board;
+        if (b && b.rows) setBoard((b.order || Object.keys(b.rows)).filter(c => b.rows[c] && b.rows[c].show !== false));
+      } catch (e) {
+        setErr(`Your website and screens could not be loaded (${e.message}).`);
+      }
+    }, []);
+    useEffect(() => {
+      load();
+    }, [load]);
+    /* On the screens page, ask again every 30 seconds, so a screen that
+       has just been switched on shows as On. */
+    useEffect(() => {
+      if (view !== 'screen') return undefined;
+      load();
+      const every = setInterval(load, 30 * 1000);
+      return () => clearInterval(every);
+    }, [view, load]);
+    const copy = async (key, path) => {
+      try {
+        await navigator.clipboard.writeText(location.origin + path);
+        setCopied(key);
+        setTimeout(() => setCopied(c => c === key ? null : c), 1600);
+      } catch (e) {
+        say('The link could not be copied. Open it and copy it from the address bar.');
+      }
+    };
+
+    /* ---- the rate page ---- */
+    const saveContent = useCallback(async patch => {
+      if (!Object.keys(patch).length) return;
+      const r = await call('PATCH', '/api/rate-page/content', patch);
+      if (r.ok) {
+        setPage(r.data);
+        setFrame(f => f + 1);
+        if (patch.profile && owner && setSettings) setSettings(s => ({
+          ...s,
+          ...settingsFromProfile(r.data.profile)
+        }));
+        return;
+      }
+      say(r.status === 403 ? 'Only the owner can change that.' : `Not saved: ${r.data && r.data.detail || 'the server answered ' + r.status}.`);
+      load();
+    }, [say, load, owner, setSettings]);
+    const queue = useDebouncedSave(saveContent);
+    const edit = (key, value, now) => {
+      setDraft(d => ({
+        ...d,
+        [key]: value
+      }));
+      queue({
+        [key]: value
+      }, now);
+    };
+    const editProfile = (key, value, now) => {
+      setDraft(d => ({
+        ...d,
+        profile: {
+          ...d.profile,
+          [key]: value
+        }
+      }));
+      /* The whole editable profile goes each time; an unset week (null) is
+         left out, and so are the lines and time the server sends back. */
+      const p = draft.profile || {};
+      const fields = {};
+      ['phone', 'email', 'address', 'city', 'region', 'postal'].forEach(f => {
+        fields[f] = p[f] || '';
+      });
+      if (Array.isArray(p.week)) fields.week = p.week;
+      queue({
+        profile: {
+          ...fields,
+          [key]: value
+        }
+      }, now);
+    };
+    const sendLogo = async pngPromise => {
+      try {
+        const r = await call('PUT', '/api/rate-page/logo', {
+          dataUrl: await pngPromise
+        });
+        if (!r.ok) throw new Error(r.status === 403 ? 'Only the owner and managers can change the logo.' : 'The logo was not saved. Try a smaller picture.');
+        setPage(r.data);
+        setFrame(f => f + 1);
+        say('Logo saved');
+      } catch (err) {
+        say(err.message);
+      }
+    };
+    const uploadLogo = e => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file || readOnly) return;
+      sendLogo(logoPng(file));
+    };
+    /* The logo the desk already has (Settings → Business profile, a data
+       URL the owner set), so the shop does not upload it twice. */
+    const deskLogo = settings && typeof settings.logo === 'string' && settings.logo.startsWith('data:image/') ? settings.logo : null;
+    const useDeskLogo = () => {
+      if (deskLogo && !readOnly) sendLogo(pngFrom(deskLogo));
+    };
+    const removeLogo = async () => {
+      const r = await call('DELETE', '/api/rate-page/logo');
+      if (r.ok) {
+        setPage(r.data);
+        setFrame(f => f + 1);
+        say('Logo removed');
+      } else say(`The logo was not removed (the server answered ${r.status}).`);
+    };
+    const savePage = async patch => {
+      const r = await call('PUT', '/api/rate-page', patch);
+      if (r.ok) {
+        await load();
+        setFrame(f => f + 1);
+        say(patch.live === true ? 'Your rate page is live' : patch.live === false ? 'Your rate page is private' : 'Address saved');
+        return;
+      }
+      say(PAGE_ERRORS[r.status] || `The rate page was not saved (the server answered ${r.status}).`);
+    };
+
+    /* ---- screens ---- */
+    const screen = screens.find(x => x.id === sel) || null;
+    /* A name being typed saves after a pause; any other change to screens
+       takes it along first, so a reload never puts the old name back. */
+    const pendingName = useRef(null);
+    const nameTimer = useRef(null);
+    const patchScreen = useCallback(async (id, patch) => {
+      clearTimeout(nameTimer.current);
+      const typed = pendingName.current;
+      pendingName.current = null;
+      if (typed && typed.id !== id) await call('PATCH', `/api/window-screens/${encodeURIComponent(typed.id)}`, {
+        name: typed.name
+      });
+      if (typed && typed.id === id && !patch.name) patch = {
+        ...patch,
+        name: typed.name
+      };
+      if (!Object.keys(patch).length) return;
+      setScreens(list => list.map(x => x.id === id ? {
+        ...x,
+        ...patch
+      } : x));
+      const r = await call('PATCH', `/api/window-screens/${encodeURIComponent(id)}`, patch);
+      if (!r.ok) {
+        say(r.status === 403 ? 'Only the owner and managers can change screens.' : `Not saved: ${r.data && r.data.detail || 'the server answered ' + r.status}.`);
+        load();
+        return;
+      }
+      setFrame(f => f + 1);
+    }, [say, load]);
+    const renameScreen = (id, name) => {
+      setScreens(list => list.map(x => x.id === id ? {
+        ...x,
+        name
+      } : x));
+      clearTimeout(nameTimer.current);
+      pendingName.current = name.trim() ? {
+        id,
+        name: name.trim()
+      } : null;
+      if (name.trim()) nameTimer.current = setTimeout(() => patchScreen(id, {}), 700);
+    };
+    const flushName = async () => {
+      if (pendingName.current) await patchScreen(pendingName.current.id, {});
+    };
+    const addScreen = async () => {
+      if (readOnly) return;
+      await flushName();
+      const r = await call('POST', '/api/window-screens', {
+        name: 'Screen ' + (screens.length + 1),
+        kind: 'tv',
+        layout: 'two',
+        theme: 'dark',
+        currencies: [],
+        showHours: true
+      });
+      if (!r.ok) {
+        say(r.status === 403 ? 'Only the owner and managers can add screens.' : `The screen was not added (the server answered ${r.status}).`);
+        return;
+      }
+      await load();
+      setSel(r.data.id);
+      setView('screen');
+      say('Screen added · copy its link to the screen');
+    };
+    const resetScreen = async () => {
+      await flushName();
+      const r = await call('POST', `/api/window-screens/${encodeURIComponent(screen.id)}/reset`);
+      setMenu(false);
+      if (!r.ok) {
+        say(`The link was not reset (the server answered ${r.status}).`);
+        return;
+      }
+      await load();
+      setFrame(f => f + 1);
+      say('New link ready · open it on ' + screen.name);
+    };
+    const removeScreen = async () => {
+      await flushName();
+      if (!window.confirm(`Remove ${screen.name}? Its link stops showing rates.`)) return;
+      const r = await call('POST', `/api/window-screens/${encodeURIComponent(screen.id)}/retire`);
+      setMenu(false);
+      if (!r.ok) {
+        say(`${screen.name} was not removed (the server answered ${r.status}).`);
+        return;
+      }
+      await load();
+      say('Screen removed · its link stops working');
+    };
+
+    /* One measured element for every view, so the width follows the tab. */
+    const wrap = el => /*#__PURE__*/React.createElement("div", {
+      ref: rootRef
+    }, el);
+    /* The fee note follows the desk's Pricing (Default commission): when
+       the editor opens and the page says something else, staff who may
+       change rates bring it in step. */
+    const fee = settings && settings.defaultFee != null && settings.defaultFee !== '' ? Number(settings.defaultFee) : 0;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const wantFeeNote = fee > 0 && home ? 'A service fee of ' + fee.toFixed(2) + ' ' + home + ' may apply to each exchange.' : '';
+    /* Once per opening of the editor: a refused save reloads the page,
+       and trying again on every reload would never stop. */
+    const feeSynced = useRef(false);
+    useEffect(() => {
+      if (view !== 'web') {
+        feeSynced.current = false;
+        return;
+      }
+      if (feeSynced.current || readOnly || !page || !page.content) return;
+      feeSynced.current = true;
+      if ((page.content.feeNote || '') !== wantFeeNote) saveContent({
+        feeNote: wantFeeNote
+      });
+    }, [view, readOnly, page, wantFeeNote, saveContent]);
+    if (!page || !draft) return wrap(/*#__PURE__*/React.createElement("div", {
+      style: css('padding: 24px; font-size: 13px; color: var(--mute);')
+    }, err || 'Loading your website and screens…'));
+    const pagePath = `/r/${page.slug}`;
+    const previewPath = `${pagePath}?preview`;
+    const contentW = Math.min(980, w);
+
+    /* ---------- overview: two tiles ---------- */
+    if (!view) {
+      const two = contentW >= 680,
+        tileW = two ? (contentW - 14) / 2 : contentW;
+      const tH = Math.round(Math.min(260, tileW * 0.6));
+      const first = screens[0];
+      const tiles = [{
+        k: 'win',
+        title: 'Window screens',
+        tag: screens.length + (screens.length === 1 ? ' screen' : ' screens'),
+        path: first ? `/s/${first.token}` : null,
+        note: 'Each screen gets its own link. Open it on the TV, tap once and leave it. No login, always on.',
+        vw: 1280,
+        vh: 720,
+        open: 'Open on this screen ↗',
+        edit: first ? 'Set up' : 'Add a screen',
+        go: first ? () => setView('screen') : addScreen,
+        live: screens.some(x => sighting(x.lastSeenAt).on)
+      }, {
+        k: 'site',
+        title: 'Rate page',
+        tag: page.live ? 'Your website' : 'Private',
+        path: pagePath,
+        src: previewPath,
+        note: page.live ? 'Rates, hours, map and a converter. Share it, put it on Google, link to it from anywhere.' : 'Private: only your staff can see it. The owner turns it on in Edit.',
+        vw: 520,
+        vh: 900,
+        open: 'Open page ↗',
+        edit: 'Edit',
+        go: () => setView('web'),
+        live: page.live
+      }];
+      return wrap(/*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; flex-direction: column; gap: 18px; max-width: 980px;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; grid-template-columns: ' + (two ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)') + '; gap: 14px;')
+      }, tiles.map(t => /*#__PURE__*/React.createElement("section", {
+        key: t.k,
+        "aria-label": t.title,
+        style: css('border-radius: 18px; overflow: hidden; background: #fff; border: 1px solid var(--line); display: flex; flex-direction: column;')
+      }, /*#__PURE__*/React.createElement("div", {
+        onClick: t.go,
+        style: css('position:relative;cursor:pointer;height:' + tH + 'px;overflow:hidden;background:' + (t.k === 'win' ? '#0b0a08' : '#f4f0e6') + ';')
+      }, t.path ? /*#__PURE__*/React.createElement("iframe", {
+        key: frame,
+        src: t.src || t.path,
+        title: t.title + ' preview',
+        tabIndex: -1,
+        style: css('position:absolute;top:0;left:0;width:' + t.vw + 'px;height:' + t.vh + 'px;border:0;transform:scale(' + (tileW / t.vw).toFixed(4) + ');transform-origin:0 0;pointer-events:none;')
+      }) : /*#__PURE__*/React.createElement("div", {
+        style: css('position:absolute;inset:0;display:grid;place-items:center;color:rgba(241,238,232,0.6);font-family:var(--m);font-size:11px;letter-spacing:0.14em;text-transform:uppercase;')
+      }, "No screen yet")), /*#__PURE__*/React.createElement("div", {
+        style: css('padding: 14px 16px 16px; border-top: 1px solid var(--line);')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 8px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('width: 7px; height: 7px; border-radius: 50%; background: ' + (t.live ? '#2EA36B; animation: rtLive 2s infinite' : 'rgba(23,20,15,0.25)') + ';')
+      }), /*#__PURE__*/React.createElement("b", {
+        style: css('font-size: 14.5px;')
+      }, t.title), /*#__PURE__*/React.createElement("span", {
+        style: css('font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: var(--primary-deep); background: var(--green-soft); padding: 2px 7px; border-radius: 999px;')
+      }, t.tag)), t.path && /*#__PURE__*/React.createElement("div", {
+        style: css('font-family: var(--m); font-size: 12px; margin-top: 7px; overflow-wrap: anywhere;')
+      }, location.host + t.path), /*#__PURE__*/React.createElement("div", {
+        style: css('font-size: 12.5px; line-height: 1.45; color: var(--mute); margin-top: 4px;')
+      }, t.note), /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; gap: 6px; margin-top: 11px; flex-wrap: wrap;')
+      }, t.path && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => copy(t.k, t.path),
+        style: pill(copied === t.k)
+      }, copied === t.k ? 'Copied' : 'Copy link'), t.path && /*#__PURE__*/React.createElement("a", {
+        href: t.live ? t.path : t.src || t.path,
+        target: "_blank",
+        rel: "noopener",
+        style: css('display: inline-flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink);')
+      }, t.open), /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1;')
+      }), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: t.go,
+        disabled: t.k === 'win' && !first && readOnly,
+        style: css('appearance: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 14px; border-radius: 999px; border: 0; background: var(--ink); color: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer;')
+      }, t.edit, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "12",
+        height: "12",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2.6",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M9 6l6 6-6 6"
+      }))))))))));
+    }
+
+    /* ---------- the rate page editor ---------- */
+    if (view === 'web') {
+      const rpWide = w >= 988;
+      const p = draft.profile || {};
+      const week = Array.isArray(p.week) ? p.week : [null, null, null, null, null, null, null];
+      const setDay = (di, v) => {
+        const h = week.slice();
+        h[di] = v;
+        editProfile('week', h, true);
+      };
+      const input = css('width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: #fff; outline: none; font-size: 14px; color: var(--ink);');
+      const label = css('display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px;');
+      const head = css('font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); font-weight: 700;');
+      const field = (text, value, onChange, ph, opts) => /*#__PURE__*/React.createElement("label", {
+        style: css('display:block;' + (opts && opts.wide ? 'grid-column:1 / -1;' : ''))
+      }, /*#__PURE__*/React.createElement("span", {
+        style: label
+      }, text), /*#__PURE__*/React.createElement("input", {
+        value: value || '',
+        onChange: e => onChange(e.target.value),
+        placeholder: ph,
+        disabled: opts && opts.locked || readOnly,
+        style: input
+      }));
+      const synced = /*#__PURE__*/React.createElement("span", {
+        style: css('display: inline-flex; align-items: center; gap: 5px; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.06em; color: var(--faint);')
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "11",
+        height: "11",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2.2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M20 11a8 8 0 0 0-14.3-4.9L4 8M4 13a8 8 0 0 0 14.3 4.9L20 16M4 4v4h4M20 20v-4h-4"
+      })), "Synced with Settings \xB7 Business profile");
+      const show = draft.show || {};
+      const picking = Array.isArray(draft.codes) && draft.codes.length > 0;
+      const codesNow = picking ? draft.codes.filter(c => board.includes(c)) : board.slice(0, 6);
+      const reg = draft.regulator || {
+        name: '',
+        number: '',
+        officer: ''
+      };
+      const regLocked = readOnly || !owner;
+      const timeSel = css('height:34px;padding:0 8px;border-radius:9px;border:1px solid var(--line);background:#fff;font-family:var(--m);font-size:12.5px;color:var(--ink);outline:none;');
+      const dev = device === 'Computer' ? [1280, 800] : [390, 844];
+      const rpW = rpWide ? 330 : Math.min(330, w - 28),
+        rpS = rpW / dev[0],
+        rpH = Math.round(dev[1] * rpS);
+      return wrap(/*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; flex-direction: column; gap: 18px; max-width: 980px;')
+      }, /*#__PURE__*/React.createElement(Back, {
+        ui: ui,
+        onBack: () => setView(null),
+        title: "Your online rate page",
+        lead: "Free with every desk. A page in your shop\u2019s name you can send to anyone. Set it up here, and every change shows on the page straight away."
+      }), /*#__PURE__*/React.createElement("div", {
+        style: css('display:grid;grid-template-columns:' + (rpWide ? 'minmax(0,1fr) 380px' : 'minmax(0,1fr)') + ';gap:16px;align-items:start;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('min-width: 0; display: flex; flex-direction: column; gap: 14px;')
+      }, /*#__PURE__*/React.createElement("section", {
+        "aria-label": "Your brand",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); padding: 16px;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: head
+      }, "Your brand"), /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        "aria-hidden": "true",
+        style: css('flex:none;width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;overflow:hidden;' + (page.logo ? 'background:#fff;border:1px solid var(--line);' : 'background:var(--ink);'))
+      }, page.logo ? /*#__PURE__*/React.createElement("img", {
+        src: page.logo,
+        alt: "",
+        style: css('width:100%;height:100%;object-fit:contain;')
+      }) : initials(draft.name)), /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1 1 180px; min-width: 0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display: block; font-size: 14px;')
+      }, "Logo"), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 2px;')
+      }, "Square works best. PNG or JPG. We show your initials until you add one.")), /*#__PURE__*/React.createElement("label", {
+        style: css('flex:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);transition:border-color .2s ease,color .2s ease;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';')
+      }, page.logo ? 'Replace logo' : 'Upload logo', /*#__PURE__*/React.createElement("input", {
+        type: "file",
+        accept: "image/png,image/jpeg,image/webp",
+        "aria-label": "Logo",
+        onChange: uploadLogo,
+        disabled: readOnly,
+        style: {
+          display: 'none'
+        }
+      })), deskLogo && !readOnly && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: useDeskLogo,
+        style: css('flex:none;appearance:none;display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;')
+      }, "Use your desk logo"), page.logo && !readOnly && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: removeLogo,
+        style: css('appearance: none; border: 0; background: none; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--mute); padding: 6px 2px;')
+      }, "Remove")), /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px;')
+      }, field('Shop name', draft.name, v => edit('name', v), 'Your shop name'), field('Short line under your name', draft.tagline, v => edit('tagline', v), 'e.g. Best rates in town since 2009'))), /*#__PURE__*/React.createElement("section", {
+        "aria-label": "Where to find you",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); padding: 16px;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: head
+      }, "Where to find you"), synced), /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px;')
+      }, field('Address', p.address, v => editProfile('address', v), 'Street', {
+        wide: true
+      }), field('City', p.city, v => editProfile('city', v), 'City'), field('Phone', p.phone, v => editProfile('phone', v), 'Phone'), field('Email', p.email, v => editProfile('email', v), 'Optional'))), /*#__PURE__*/React.createElement("section", {
+        "aria-label": "Opening hours",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); overflow: hidden;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 16px 6px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: head
+      }, "Opening hours"), /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1; font-size: 12px; color: var(--faint);')
+      }, "Shows open or closed on your page"), synced), DAY_INDEX.map((di, i) => {
+        const hr = week[di];
+        return /*#__PURE__*/React.createElement("div", {
+          key: di,
+          style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;' + (i ? 'border-top:1px solid var(--hair);' : ''))
+        }, /*#__PURE__*/React.createElement("b", {
+          style: css('width: 92px; flex: none; font-size: 13.5px;')
+        }, DAY_NAMES[i]), /*#__PURE__*/React.createElement(Switch, {
+          on: !!hr,
+          off: readOnly,
+          name: `Open on ${DAY_NAMES[i]}`,
+          onClick: () => setDay(di, hr ? null : [9.5, 18])
+        }), hr ? /*#__PURE__*/React.createElement("span", {
+          style: css('display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap;')
+        }, /*#__PURE__*/React.createElement("select", {
+          "aria-label": `${DAY_NAMES[i]} opens`,
+          value: String(hr[0]),
+          disabled: readOnly,
+          onChange: e => {
+            const v = parseFloat(e.target.value);
+            setDay(di, [v, Math.max(v + 0.5, hr[1])]);
+          },
+          style: timeSel
+        }, TIME_OPTS.map(o => /*#__PURE__*/React.createElement("option", {
+          key: o.v,
+          value: o.v
+        }, o.l))), /*#__PURE__*/React.createElement("span", {
+          style: css('font-size: 12px; color: var(--faint);')
+        }, "to"), /*#__PURE__*/React.createElement("select", {
+          "aria-label": `${DAY_NAMES[i]} closes`,
+          value: String(hr[1]),
+          disabled: readOnly,
+          onChange: e => {
+            const v = parseFloat(e.target.value);
+            setDay(di, [Math.min(hr[0], v - 0.5), v]);
+          },
+          style: timeSel
+        }, TIME_OPTS.map(o => /*#__PURE__*/React.createElement("option", {
+          key: o.v,
+          value: o.v
+        }, o.l)))) : /*#__PURE__*/React.createElement("span", {
+          style: css('font-size: 13px; color: var(--faint);')
+        }, "Closed"));
+      })), /*#__PURE__*/React.createElement("section", {
+        "aria-label": "What your page shows",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); overflow: hidden;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('padding: 16px 16px 4px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: head
+      }, "What your page shows")), [['converter', 'The converter', 'Customers work out an amount before they come in.'], ['hours', 'Opening hours and map', 'From the hours above, with a Directions link.'], ['compliance', 'Compliance page', 'Plain-language page on ID, reporting and privacy. Recommended.']].map(([key, text, hint], i) => /*#__PURE__*/React.createElement("div", {
+        key: key,
+        style: css('display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:13px 16px;' + (i ? 'border-top:1px solid var(--hair);' : ''))
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1 1 240px; min-width: 0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display: block; font-size: 14px;')
+      }, text), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-size: 12.5px; line-height: 1.5; color: var(--mute); margin-top: 2px;')
+      }, hint)), /*#__PURE__*/React.createElement(Switch, {
+        on: show[key] !== false,
+        off: readOnly,
+        name: text,
+        onClick: () => edit('show', {
+          ...show,
+          [key]: show[key] === false
+        }, true)
+      }))), /*#__PURE__*/React.createElement("div", {
+        style: css('padding: 14px 16px 16px; border-top: 1px solid var(--hair);')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1 1 220px; min-width: 0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display: block; font-size: 14px;')
+      }, "Currencies"), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px;')
+      }, picking ? codesNow.length + ' on your page, in the order you picked them' : 'The first six on your board. Tap any to choose your own.')), /*#__PURE__*/React.createElement(Seg, {
+        ui: ui,
+        items: seg(['Top 6', 'Choose'], picking ? 'Choose' : 'Top 6', v => edit('codes', v === 'Top 6' ? null : board.slice(0, 6), true), readOnly)
+      })), /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; margin-top: 12px;')
+      }, board.map(c => /*#__PURE__*/React.createElement(Chip, {
+        key: c,
+        ui: ui,
+        code: c,
+        at: codesNow.indexOf(c),
+        picking: true,
+        off: readOnly,
+        onToggle: () => {
+          const cur = codesNow.slice();
+          const i = cur.indexOf(c);
+          if (i >= 0) cur.splice(i, 1);else cur.push(c);
+          edit('codes', cur.length ? cur : null, true);
+        }
+      }))))), /*#__PURE__*/React.createElement("section", {
+        "aria-label": "Always on your page",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); padding: 16px;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 8px; flex-wrap: wrap;')
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "15",
+        height: "15",
+        fill: "none",
+        stroke: "var(--ink)",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z"
+      })), /*#__PURE__*/React.createElement("span", {
+        style: {
+          ...head,
+          color: 'var(--ink)'
+        }
+      }, "Always on your page"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-size: 12px; color: var(--faint);')
+      }, owner ? 'Required, so you can’t switch these off' : 'Only the owner changes these')), /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;')
+      }, field('Regulator', reg.name, v => edit('regulator', {
+        ...reg,
+        name: v
+      }), 'Your regulator', {
+        locked: regLocked
+      }), field('Registration number', reg.number, v => edit('regulator', {
+        ...reg,
+        number: v
+      }), 'As registered', {
+        locked: regLocked
+      }), field('Compliance officer', reg.officer, v => edit('regulator', {
+        ...reg,
+        officer: v
+      }), 'Full name', {
+        locked: regLocked
+      })), /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; flex-direction: column; gap: 7px; margin-top: 14px;')
+      }, ['Your registered name and registration number, in the footer of every page', 'A note that rates are a guide and the rate on the receipt is final', wantFeeNote ? 'Your service fee: “' + wantFeeNote + '”' : 'Any service fee you charge, taken from your pricing', 'Who to contact with a question or a complaint'].map(u => /*#__PURE__*/React.createElement("span", {
+        key: u,
+        style: css('display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "12",
+        height: "12",
+        fill: "none",
+        stroke: "#1D6B45",
+        strokeWidth: "2.8",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: css('flex: none; margin-top: 3px;')
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M4 12.5l5 5L20 6.5"
+      })), u))), /*#__PURE__*/React.createElement("div", {
+        style: css('font-size: 11.5px; line-height: 1.5; color: var(--faint); margin-top: 12px;')
+      }, "Written for ", reg.name || 'your regulator', "\u2019s rules. Have your compliance officer check the wording before you share the page."))), /*#__PURE__*/React.createElement("div", {
+        style: css(rpWide ? 'position:sticky;top:14px;min-width:0;' : 'min-width:0;order:-1;')
+      }, /*#__PURE__*/React.createElement("section", {
+        "aria-label": "Live preview",
+        style: css('border-radius: 16px; background: #fff; border: 1px solid var(--line); overflow: hidden;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--line);')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('width: 7px; height: 7px; border-radius: 50%; background: #2EA36B; animation: rtLive 2s infinite;')
+      }), /*#__PURE__*/React.createElement("b", {
+        style: css('flex: 1; min-width: 0; font-size: 13.5px;')
+      }, "Live preview"), /*#__PURE__*/React.createElement(Seg, {
+        ui: ui,
+        items: seg(['Phone', 'Computer'], device, setDevice)
+      })), /*#__PURE__*/React.createElement("div", {
+        style: css('display: grid; place-items: center; padding: 18px 14px; background: #ECE9E2;')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('padding:' + (device === 'Computer' ? '8px' : '10px') + ';border-radius:' + (device === 'Computer' ? '12px' : '30px') + ';background:#17140F;box-shadow:0 24px 50px -24px rgba(23,20,15,0.6);')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('position:relative;width:' + rpW + 'px;height:' + rpH + 'px;overflow:hidden;border-radius:' + (device === 'Computer' ? '5px' : '22px') + ';background:#F4F0E6;')
+      }, /*#__PURE__*/React.createElement("iframe", {
+        key: frame + device,
+        src: previewPath,
+        title: "Rate page preview",
+        tabIndex: -1,
+        style: css('position:absolute;top:0;left:0;width:' + dev[0] + 'px;height:' + dev[1] + 'px;border:0;transform:scale(' + rpS.toFixed(4) + ');transform-origin:0 0;pointer-events:none;')
+      })))), /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-top: 1px solid var(--line);')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1 1 180px; min-width: 0; font-family: var(--m); font-size: 11.5px; color: var(--mute); overflow-wrap: anywhere;')
+      }, location.host + pagePath), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: () => copy('rp', pagePath),
+        style: pill(copied === 'rp')
+      }, copied === 'rp' ? 'Copied' : 'Copy link'), /*#__PURE__*/React.createElement("a", {
+        href: page.live ? pagePath : previewPath,
+        target: "_blank",
+        rel: "noopener",
+        style: css('display: inline-flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink);')
+      }, "Open \u2197")), /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: rgba(23,20,15,0.02);')
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 10px;')
+      }, /*#__PURE__*/React.createElement(Switch, {
+        on: page.live,
+        off: !owner,
+        name: "Rate page live",
+        onClick: () => savePage({
+          live: !page.live
+        })
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('flex: 1; font-size: 12.5px; line-height: 1.45; color: var(--ink);')
+      }, page.live ? 'Live. Anyone with the link sees your published rates.' : 'Private. Only your staff can see it until the owner turns it on.')), owner && /*#__PURE__*/React.createElement("div", {
+        style: css('display: flex; align-items: center; gap: 6px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('font-family: var(--m); font-size: 11px; color: var(--mute);')
+      }, "/r/"), /*#__PURE__*/React.createElement("input", {
+        "aria-label": "Page address",
+        value: slug,
+        onChange: e => setSlug(e.target.value.toLowerCase()),
+        style: css('flex: 1; min-width: 0; height: 32px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); background: #fff; outline: none; font-family: var(--m); font-size: 12px; color: var(--ink);')
+      }), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        disabled: !slug || slug === page.slug,
+        onClick: () => savePage({
+          slug
+        }),
+        style: pill(false)
+      }, "Save address"))))))));
+    }
+
+    /* ---------- window screens ---------- */
+    const kd = KINDS.find(k => screen && k[0] === screen.kind) || KINDS[0];
+    const side = contentW >= 760;
+    const pw = (side ? contentW - 290 : contentW) - 44,
+      maxH = kd[0] === 'portrait' ? 440 : 340;
+    const zs = Math.min(pw / kd[3], maxH / kd[4]);
+    const bw = Math.round(kd[3] * zs),
+      bh = Math.round(kd[4] * zs);
+    const picking = screen && screen.currencies.length > 0;
+    const shown = screen ? picking ? screen.currencies.filter(c => board.includes(c)) : board.slice(0, 6) : [];
+    const head = css('font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); font-weight: 700; margin-bottom: 8px;');
+    return wrap(/*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 18px; max-width: 980px;')
+    }, /*#__PURE__*/React.createElement(Back, {
+      ui: ui,
+      onBack: () => {
+        setView(null);
+        setMenu(false);
+      },
+      title: "Window screens",
+      lead: "Every screen gets its own web address. Open it on the TV or tablet, go full screen and leave it. It stays on, needs no login, and updates after you publish."
+    }), /*#__PURE__*/React.createElement("div", {
+      role: "list",
+      "aria-label": "Your screens",
+      style: css('display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;')
+    }, screens.map(x => {
+      const on = x.id === sel;
+      const ki = {
+        tv: [22, 13],
+        portrait: [11, 19],
+        tablet: [19, 14],
+        strip: [24, 6]
+      }[x.kind] || [22, 13];
+      return /*#__PURE__*/React.createElement("button", {
+        key: x.id,
+        role: "listitem",
+        type: "button",
+        onClick: () => {
+          setSel(x.id);
+          setMenu(false);
+        },
+        style: css('appearance:none;display:block;width:100%;padding:13px 14px;border-radius:14px;cursor:pointer;background:#fff;transition:border-color .2s ease,box-shadow .2s ease;border:' + (on ? '1.5px solid var(--primary)' : '1px solid var(--line)') + ';box-shadow:' + (on ? '0 10px 24px -18px rgba(29,107,69,0.6)' : 'none') + ';')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display: flex; align-items: center; gap: 10px;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:' + (on ? 'rgba(29,107,69,0.1)' : 'rgba(23,20,15,0.05)') + ';')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;width:' + ki[0] + 'px;height:' + ki[1] + 'px;border-radius:2px;border:1.6px solid ' + (on ? 'var(--primary)' : 'var(--mute)') + ';')
+      })), /*#__PURE__*/React.createElement("b", {
+        style: css('flex: 1; min-width: 0; font-size: 14px; color: var(--ink); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
+      }, x.name)), /*#__PURE__*/React.createElement("span", {
+        style: css('display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--mute); text-align: left;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css(sightDot(sighting(x.lastSeenAt)))
+      }), sighting(x.lastSeenAt).text), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--faint); margin-top: 4px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;')
+      }, ({
+        tv: 'TV · landscape',
+        portrait: 'Screen on its side',
+        tablet: 'Tablet',
+        strip: 'Strip ticker'
+      }[x.kind] || 'Screen') + ' · ' + x.theme));
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: addScreen,
+      disabled: readOnly,
+      style: css('appearance:none;display:flex;align-items:center;justify-content:center;gap:8px;min-height:72px;padding:13px 14px;border-radius:14px;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';background:transparent;border:1.5px dashed rgba(23,20,15,0.22);font-size:13.5px;font-weight:700;color:var(--mute);transition:all .2s ease;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "16",
+      height: "16",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 5v14M5 12h14"
+    })), "Add a screen")), screen && /*#__PURE__*/React.createElement("section", {
+      "aria-label": "Screen setup",
+      style: css('border-radius: 18px; background: #fff; border: 1px solid var(--line); overflow: hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      title: sighting(screen.lastSeenAt).text,
+      style: css(sightDot(sighting(screen.lastSeenAt)).replace('7px;height:7px', '8px;height:8px'))
+    }), /*#__PURE__*/React.createElement("label", {
+      style: css('flex: 0 1 240px; min-width: 150px; position: relative; display: block; cursor: text;')
+    }, /*#__PURE__*/React.createElement("input", {
+      value: screen.name,
+      onChange: e => renameScreen(screen.id, e.target.value),
+      disabled: readOnly,
+      maxLength: 60,
+      "aria-label": "Screen name",
+      placeholder: "Name this screen",
+      style: css('width: 100%; height: 36px; padding: 0 34px 0 11px; border-radius: 10px; border: 1px solid var(--line); background: #fff; outline: none; font-size: 15px; font-weight: 800; color: var(--ink); box-shadow: inset 0 1px 2px rgba(23,20,15,0.05);')
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('flex: 1 1 220px; min-width: 0; font-family: var(--m); font-size: 12px; color: var(--mute); overflow-wrap: anywhere;')
+    }, location.host, "/s/", screen.token), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => copy('scr', `/s/${screen.token}`),
+      style: pill(copied === 'scr')
+    }, copied === 'scr' ? 'Copied' : 'Copy link'), /*#__PURE__*/React.createElement("a", {
+      href: `/s/${screen.token}`,
+      target: "_blank",
+      rel: "noopener",
+      style: css('display: inline-flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink);')
+    }, "Open \u2197"), !readOnly && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setMenu(m => !m),
+      title: "More",
+      "aria-label": "More",
+      "aria-expanded": menu,
+      style: css('flex: none; appearance: none; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: #fff; cursor: pointer; color: var(--mute); font-size: 16px; line-height: 1;')
+    }, "\u22EF"), menu && /*#__PURE__*/React.createElement("div", {
+      style: css('flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: resetScreen,
+      style: css('appearance: none; border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--ink);')
+    }, "Reset link"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: removeScreen,
+      style: css('appearance: none; border: 1px solid rgba(194,69,45,0.3); background: #fff; border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--clay);')
+    }, "Remove screen"), /*#__PURE__*/React.createElement("span", {
+      style: css('flex: 1 1 220px; font-size: 12px; line-height: 1.5; color: var(--mute); align-self: center;')
+    }, "Reset gives this screen a new address. The old one stops working straight away."))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:' + (side ? '290px minmax(0,1fr)' : 'minmax(0,1fr)') + ';')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding: 16px; display: flex; flex-direction: column; gap: 16px; border-right: 1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Screen"), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 6px;')
+    }, KINDS.map(k => {
+      const on = screen.kind === k[0],
+        r = k[3] / k[4],
+        iw = r >= 1 ? 30 : Math.round(30 * r * 1.6),
+        ih = r >= 1 ? Math.max(5, Math.round(30 / r)) : 30;
+      return /*#__PURE__*/React.createElement("button", {
+        key: k[0],
+        type: "button",
+        "aria-pressed": on,
+        disabled: readOnly,
+        onClick: () => patchScreen(screen.id, {
+          kind: k[0]
+        }),
+        style: css('appearance:none;display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:12px;cursor:pointer;text-align:left;transition:border-color .2s ease,background .2s ease;border:1px solid ' + (on ? 'var(--primary)' : 'var(--line)') + ';background:' + (on ? 'rgba(29,107,69,0.05)' : '#fff') + ';')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('width: 32px; display: grid; place-items: center; flex: none;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('flex:none;width:' + iw + 'px;height:' + ih + 'px;border-radius:3px;border:2px solid ' + (on ? 'var(--primary)' : 'rgba(23,20,15,0.35)') + ';background:' + (on ? 'rgba(29,107,69,0.12)' : 'transparent') + ';')
+      })), /*#__PURE__*/React.createElement("span", {
+        style: css('min-width: 0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display: block; font-size: 13px; color: var(--ink);')
+      }, k[1]), /*#__PURE__*/React.createElement("span", {
+        style: css('display: block; font-family: var(--m); font-size: 10.5px; color: var(--mute); margin-top: 2px;')
+      }, k[2])));
+    }))), screen.kind !== 'strip' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Layout"), /*#__PURE__*/React.createElement(Seg, {
+      ui: ui,
+      items: seg(['One column', 'Two columns', 'Rotate pages'], LAYOUTS[screen.layout], v => patchScreen(screen.id, {
+        layout: {
+          'One column': 'one',
+          'Two columns': 'two',
+          'Rotate pages': 'rotate'
+        }[v]
+      }), readOnly)
+    }), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 7px;')
+    }, screen.layout === 'rotate' ? 'Pages turn every 8 seconds when your currencies don’t fit on one screen.' : screen.kind === 'portrait' || screen.kind === 'tablet' ? 'Tall screens always use one column.' : 'Every currency you pick, on one screen.')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Look"), /*#__PURE__*/React.createElement(Seg, {
+      ui: ui,
+      items: seg(['Dark', 'Light'], screen.theme === 'light' ? 'Light' : 'Dark', v => patchScreen(screen.id, {
+        theme: v.toLowerCase()
+      }), readOnly)
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Show on screen"), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-wrap: wrap; gap: 6px;')
+    }, SHOWS.map(([key, text]) => {
+      const on = key === 'hours' ? screen.showHours : (screen.show || {})[key] !== false;
+      return /*#__PURE__*/React.createElement("button", {
+        key: key,
+        type: "button",
+        "aria-pressed": on,
+        disabled: readOnly,
+        onClick: () => patchScreen(screen.id, key === 'hours' ? {
+          showHours: !on
+        } : {
+          show: {
+            ...(screen.show || {}),
+            [key]: !on
+          }
+        }),
+        style: css('appearance:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:600;transition:all .2s ease;border:1px solid ' + (on ? 'var(--ink)' : 'var(--line)') + ';background:' + (on ? 'var(--ink)' : '#fff') + ';color:' + (on ? '#fff' : 'var(--mute)') + ';')
+      }, text);
+    })))), /*#__PURE__*/React.createElement("div", {
+      style: css('min-width: 0; padding: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #ECE9E2; background-image: radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: 18px 18px;')
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: css('padding:' + (kd[0] === 'strip' ? 5 : kd[0] === 'tablet' ? 12 : 8) + 'px;border-radius:' + (kd[0] === 'tablet' ? 20 : 10) + 'px;background:#1b1916;box-shadow:0 24px 50px -24px rgba(23,20,15,0.6),inset 0 0 0 1px rgba(255,255,255,0.06);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('position:relative;width:' + bw + 'px;height:' + bh + 'px;overflow:hidden;border-radius:' + (kd[0] === 'tablet' ? 9 : 3) + 'px;background:#0b0a08;')
+    }, /*#__PURE__*/React.createElement("iframe", {
+      key: frame + screen.token,
+      src: `/s/${screen.token}`,
+      title: "Window screen preview",
+      tabIndex: -1,
+      style: css('position:absolute;top:0;left:0;width:' + kd[3] + 'px;height:' + kd[4] + 'px;border:0;transform:scale(' + zs.toFixed(4) + ');transform-origin:0 0;pointer-events:none;')
+    }))), kd[0] === 'tv' && /*#__PURE__*/React.createElement("div", {
+      style: css('width:' + Math.round(bw * 0.18) + 'px;height:10px;margin:0 auto;border-radius:0 0 6px 6px;background:#2a2723;')
+    })), /*#__PURE__*/React.createElement("div", {
+      style: css('font-family: var(--m); font-size: 10.5px; color: var(--mute); text-align: center;')
+    }, kd[3], " \xD7 ", kd[4], " \xB7 ", kd[1].toLowerCase(), " \xB7 changes show on the real screen within a minute"))), /*#__PURE__*/React.createElement("div", {
+      style: css('padding: 16px; border-top: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: center; gap: 10px; flex-wrap: wrap;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex: 1 1 220px; min-width: 0;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); font-weight: 700;')
+    }, "Currencies on this screen"), /*#__PURE__*/React.createElement("span", {
+      style: css('display: block; font-size: 12.5px; color: var(--mute); margin-top: 4px;')
+    }, picking ? 'Showing ' + shown.length + ' ' + (shown.length === 1 ? 'currency' : 'currencies') + '. Tap a currency to add it or take it off.' : 'Your top six, in board order. Tap a currency to choose your own.'))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 7px; margin-top: 12px;')
+    }, board.map(c => /*#__PURE__*/React.createElement(Chip, {
+      key: c,
+      ui: ui,
+      code: c,
+      at: shown.indexOf(c),
+      picking: true,
+      off: readOnly,
+      onToggle: () => {
+        const cur = shown.slice();
+        const i = cur.indexOf(c);
+        if (i >= 0) cur.splice(i, 1);else cur.push(c);
+        patchScreen(screen.id, {
+          currencies: cur
+        });
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 11.5px; color: var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display: inline-flex; align-items: center; gap: 6px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width: 16px; height: 16px; border-radius: 999px; background: var(--primary); color: #fff; display: grid; place-items: center; font-family: var(--m); font-size: 9px; font-weight: 700;')
+    }, "1"), "On this screen, in this order"), /*#__PURE__*/React.createElement("span", {
+      style: css('display: inline-flex; align-items: center; gap: 6px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width: 16px; height: 16px; border-radius: 999px; background: rgba(23,20,15,0.07); color: var(--mute); display: grid; place-items: center; font-size: 11px; font-weight: 700;')
+    }, "+"), "On your board, tap to add")))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding: 18px; border-radius: 16px; background: #fff; border: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Set up a screen"), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 13px; margin-top: 14px;')
+    }, [['1', 'Copy the link', 'Each screen has its own address. Copy it here, or text it to yourself.'], ['2', 'Open it on the screen', 'In the TV’s web browser, or on whatever is plugged in: a streaming stick, an old laptop, a tablet. No app to install, no account to sign in to.'], ['3', 'Tap to start, then leave it', 'The first tap goes full screen and keeps the screen awake. After that it runs on its own.']].map(([n, h, b]) => /*#__PURE__*/React.createElement("div", {
+      key: n,
+      style: css('display: flex; align-items: flex-start; gap: 12px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: #fff; font-family: var(--m); font-size: 11.5px; font-weight: 700;')
+    }, n), /*#__PURE__*/React.createElement("span", {
+      style: css('min-width: 0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display: block; font-size: 14px;')
+    }, h), /*#__PURE__*/React.createElement("span", {
+      style: css('display: block; font-size: 12.5px; line-height: 1.55; color: var(--mute); margin-top: 2px;')
+    }, b))))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px;')
+    }, ['Smart TV browser', 'Fire TV or Chromecast', 'Any laptop or mini PC', 'iPad or Android tablet'].map(d => /*#__PURE__*/React.createElement("span", {
+      key: d,
+      style: css('font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 999px; background: rgba(23,20,15,0.05); color: var(--mute);')
+    }, d)))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding: 18px; border-radius: 16px; background: #fff; border: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: head
+    }, "Once it's running"), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; flex-direction: column; gap: 9px; margin-top: 12px;')
+    }, ['Updates within a minute of every publish', 'If the wifi drops it keeps showing your last rates, then catches up', 'Shows “On” here while it’s running, so you know it’s working', 'Turn off the TV’s own sleep timer so it stays on all day'].map(f => /*#__PURE__*/React.createElement("span", {
+      key: f,
+      style: css('display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "13",
+      height: "13",
+      fill: "none",
+      stroke: "#1D6B45",
+      strokeWidth: "2.8",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: css('flex: none; margin-top: 3px;')
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M4 12.5l5 5L20 6.5"
+    })), f)))), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: flex-start; gap: 12px; padding: 15px 16px; border-radius: 16px; background: rgba(23,20,15,0.04); border: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "18",
+      height: "18",
+      fill: "none",
+      stroke: "var(--ink)",
+      strokeWidth: "1.9",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: css('flex: none; margin-top: 1px;')
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('min-width: 0; font-size: 12.5px; line-height: 1.55; color: var(--mute);')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('color: var(--ink);')
+    }, "A screen link only shows your published rates."), " Nothing private, and no way into the desk. If one ends up somewhere it shouldn't, reset it from the \u22EF menu and open the new address on the screen."))))));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    RatesSite
+  });
+})();
+
+/* ---- os-src/cdos-rates.jsx ---- */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/* ============================================================
+   CurrencyDesk OS: Rates (Rates v2.5)
+
+   One app for the shop's rates, in place of the Rate Board page. It is a
+   port of Sol's design (handoff rates-v2.5, "CurrencyDesk Rates v2.5"):
+   the header, folder tabs, Board table and cards, publish rail and "What
+   customers see now" keep the design's own markup, copy and style strings.
+   The design's style strings are kept word for word and turned into React
+   styles by css() below, so a reviewer can hold the two side by side.
+
+   The Board tab shows every currency the desk trades: the market, what the
+   desk buys and sells at, and whether it is on the board. Pricing & rates
+   is the existing Pricing console, unchanged.
+
+   Publish sends the board to the server (POST /api/rates/publish,
+   append-only rate_boards), and every surface the shop's customers see
+   reads that publish.
+
+   The server is the record. The board loads from GET /api/rates (this
+   desk's own branch), the market from GET /api/rates/market (raw mids,
+   converted to the shop's home currency without rounding), recent
+   publishes from GET /api/rates/history. The shop's window screens come
+   from GET /api/window-screens, for Open full screen.
+   The publish rights are the server's (rates:change); the screen only
+   mirrors them so nobody types into a board they cannot publish.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useCallback,
+    useRef
+  } = React;
+  const B = window.CDOS.ratesBoard;
+  const FACE = window.CurrencyFace;
+
+  /* The roles that hold rates:change on the server (auth/permissions.ts). */
+  const PUBLISHERS = ['branch_manager', 'administrator'];
+
+  /* The design's style strings, as written, into a React style object.
+     Custom properties (--name) keep their names. */
+  function css(text) {
+    const out = {};
+    String(text || '').split(';').forEach(rule => {
+      const at = rule.indexOf(':');
+      if (at < 0) return;
+      const key = rule.slice(0, at).trim();
+      const value = rule.slice(at + 1).trim();
+      if (!key || !value) return;
+      out[key.startsWith('--') ? key : key.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+    });
+    return out;
+  }
+
+  /* The design's tokens (data-rates), scoped to this window. */
+  const TOKENS = css("--f: 'Archivo', system-ui, sans-serif; --m: 'Space Mono', monospace; --ink: #17140F; --mute: #6E675E; --faint: #9a938a; --line: rgba(23,20,15,0.12); --hair: rgba(23,20,15,0.07); --primary: #1D6B45; --primary-deep: #17583A; --green-soft: #E2EFE8; --amber: #9a6b1f; --amber-soft: #f5e8cf; --lock: #e0a106; --lock-soft: rgba(224,161,6,0.12); --lock-text: #6b5119; --clay: #C2452D; --clay-soft: #F6E3DE; font-family: var(--f); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; color: var(--ink);");
+  const TIPS = {
+    publish: ['Publishing', 'Nothing you change here reaches customers until you press Publish. Then your website and window screen update together, and the change is logged with your name. Auto-publish does it for you every time the market refreshes.']
+  };
+  async function getJson(url) {
+    const res = await fetch(url, {
+      credentials: 'same-origin'
+    });
+    if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+    return res.json();
+  }
+
+  /* The design's "1h 41m ago". */
+  function ago(ms) {
+    const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    return mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins / 60) + 'h ' + mins % 60 + 'm ago';
+  }
+  /* The desk's one clock (cdos-desk-time.js): today's publishes by the
+     time on the branch clock, older ones by their civil date there. */
+  function when(ms, settings) {
+    const zone = settings && settings.timezone;
+    const {
+      deskTime,
+      deskDay
+    } = window.CDOS;
+    return deskDay(ms, zone) === deskDay(Date.now(), zone) ? deskTime(ms, settings && settings.timeFormat, zone) : deskDay(ms, zone);
+  }
+  /* The design's fx(): four places at 1 and over, more for small units. */
+  function fx(v) {
+    const a = Math.abs(v);
+    return a >= 1 ? v.toFixed(4) : a >= 0.01 ? v.toFixed(5) : a >= 0.0001 ? v.toFixed(6) : v.toFixed(8);
+  }
+
+  /* The design's flag box, with the shop's image or its emoji. */
+  function Flag({
+    code,
+    size
+  }) {
+    const w = size || 30,
+      h = Math.round(w * 0.68);
+    const url = FACE.flagUrl(code);
+    const box = 'flex:none;width:' + w + 'px;height:' + h + 'px;border-radius:4px;box-shadow:0 0 0 1px rgba(23,20,15,0.1);background:rgba(23,20,15,0.06) center/cover no-repeat' + (url ? ' url(' + url + ')' : '') + ';display:inline-grid;place-items:center;font-size:' + Math.round(h * 0.8) + 'px;line-height:1;';
+    return /*#__PURE__*/React.createElement("span", {
+      "aria-hidden": "true",
+      style: css(box)
+    }, url ? null : FACE.flagEmoji(code));
+  }
+
+  /* The design's track(): a switch, and its knob. */
+  function track(on, off) {
+    return {
+      track: css('flex:none;position:relative;width:40px;height:24px;border-radius:999px;border:0;padding:0;transition:background .25s cubic-bezier(.22,1,.36,1);cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off ? '0.55' : '1') + ';background:' + (on ? 'var(--primary)' : 'rgba(23,20,15,0.16)') + ';'),
+      knob: css('position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25);transition:transform .25s cubic-bezier(.22,1,.36,1);transform:translateX(' + (on ? '16px' : '0') + ');')
+    };
+  }
+  function Switch({
+    on,
+    off,
+    onClick,
+    name
+  }) {
+    const t = track(on, off);
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": on,
+      "aria-label": name,
+      disabled: off,
+      onClick: e => {
+        e.stopPropagation();
+        if (!off) onClick();
+      },
+      style: t.track
+    }, /*#__PURE__*/React.createElement("span", {
+      style: t.knob
+    }));
+  }
+  const chip = t => css('display:inline-block;font-family:var(--m);font-size:12px;font-weight:700;padding:3px 8px;border-radius:7px;background:' + (t === 'green' ? 'var(--green-soft)' : t === 'amber' ? 'var(--amber-soft)' : 'var(--clay-soft)') + ';color:' + (t === 'green' ? 'var(--primary-deep)' : t === 'amber' ? 'var(--amber)' : 'var(--clay)') + ';');
+
+  /* Width of this window, for the design's breakpoints (cards under 880,
+     the rail beside the board at 1240 and over). */
+  function useWidth(ref) {
+    const [w, setW] = useState(1280);
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return undefined;
+      const measure = () => setW(el.clientWidth);
+      measure();
+      const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+      if (ro) ro.observe(el);
+      return () => {
+        if (ro) ro.disconnect();
+      };
+    }, [ref]);
+    return w;
+  }
+  function Tip({
+    tipKey,
+    open,
+    onToggle
+  }) {
+    const btn = css('flex:none;appearance:none;width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;padding:0;cursor:pointer;font-family:var(--m);font-size:10.5px;font-weight:700;line-height:1;letter-spacing:0;text-transform:none;transition:background .2s ease,color .2s ease,border-color .2s ease;border:1.5px solid ' + (open ? 'var(--ink)' : 'rgba(23,20,15,0.28)') + ';background:' + (open ? 'var(--ink)' : '#fff') + ';color:' + (open ? '#fff' : 'var(--mute)') + ';');
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onToggle(open ? null : tipKey),
+      title: "What is this?",
+      "aria-label": `What is ${TIPS[tipKey][0].toLowerCase()}?`,
+      style: btn
+    }, "i");
+  }
+  function Board({
+    settings,
+    serverRole,
+    me,
+    log,
+    w,
+    onTip,
+    tip,
+    onToast,
+    onOpenSite
+  }) {
+    const canPublish = PUBLISHERS.includes(serverRole);
+    const readOnly = !canPublish;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const defPct = settings.defaultSpread != null && settings.defaultSpread !== '' ? +settings.defaultSpread : B.DEFAULT_SPREAD_PCT;
+    const floor = settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    const target = settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
+    const [data, setData] = useState({
+      loading: true,
+      error: null,
+      board: null,
+      history: [],
+      market: {},
+      screens: []
+    });
+    const [edits, setEdits] = useState({
+      order: null,
+      show: {},
+      added: []
+    });
+    const [q, setQ] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState(null);
+    const [liveOpen, setLiveOpen] = useState(true);
+    const [copied, setCopied] = useState(false);
+    const [picking, setPicking] = useState(false);
+    const drag = useRef(null);
+    const cards = w < 880,
+      wide = w >= 1240;
+    const load = useCallback(async () => {
+      try {
+        const [rates, history, feed, screens] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market'), getJson('/api/window-screens').catch(e => {
+          console.warn('[rates] window screens could not be read', e);
+          return {
+            screens: []
+          };
+        })]);
+        setData({
+          loading: false,
+          error: null,
+          board: rates.board,
+          autoPublish: rates.autoPublish === true,
+          history: history.publications || [],
+          market: B.homeMarket(feed.mids, home),
+          screens: screens.screens || []
+        });
+      } catch (e) {
+        setData(d => ({
+          ...d,
+          loading: false,
+          error: 'The board could not be loaded (' + e.message + '). Nothing has changed for customers.'
+        }));
+      }
+      /* Again when the shop's home currency is known: the market is
+         divided into it, and a board read before the desk's pack arrived
+         would be priced in the wrong currency. */
+    }, [home]);
+    useEffect(() => {
+      load();
+    }, [load]);
+    const rows = useMemo(() => {
+      const base = B.draftRows({
+        codes: (window.CDOS.CCY || []).concat(edits.added),
+        home,
+        board: data.board,
+        market: data.market,
+        settings
+      }).map(r => edits.show[r.code] === undefined ? r : {
+        ...r,
+        show: edits.show[r.code]
+      });
+      if (!edits.order) return base;
+      const at = c => {
+        const i = edits.order.indexOf(c);
+        return i < 0 ? edits.order.length : i;
+      };
+      return base.slice().sort((a, b) => at(a.code) - at(b.code));
+    }, [data, edits, settings, home]);
+
+    /* Two different things. A change is something somebody did here: on or
+       off, order, a spread or a pinned rate. That is compared at the
+       published mids. The market moving since the last publish is not a
+       change anyone made; it gets its own line, and Publish sends it. */
+    const atPublishedMids = data.board ? rows.map(r => !r.pinned && data.board.rows[r.code] ? {
+      ...r,
+      mid: Number(data.board.rows[r.code].mid)
+    } : r) : rows;
+    const dirty = !B.sameAsPublished(atPublishedMids, data.board, defPct);
+    const marketMoved = !dirty && !B.sameAsPublished(rows, data.board, defPct);
+    const pubOff = readOnly || !(dirty || marketMoved) || busy;
+    const moveTo = (code, target) => setEdits(e => {
+      const order = rows.map(r => r.code).filter(c => c !== code);
+      const at = order.indexOf(target);
+      order.splice(at < 0 ? order.length : at, 0, code);
+      return {
+        ...e,
+        order
+      };
+    });
+    const step = (code, by) => {
+      const order = rows.map(r => r.code),
+        i = order.indexOf(code),
+        j = i + by;
+      if (i >= 0 && j >= 0 && j < order.length) moveTo(code, by < 0 ? order[j] : order[j + 1]);
+    };
+    const toggle = r => setEdits(e => ({
+      ...e,
+      show: {
+        ...e.show,
+        [r.code]: !r.show
+      }
+    }));
+
+    /* Auto-publish (PUT /api/rates/auto-publish): every market refresh
+       publishes this branch's board again, in the shop's own currency,
+       keeping spreads, order and pinned rates. The server decides who may. */
+    const setAuto = async () => {
+      if (readOnly) return;
+      const on = !data.autoPublish;
+      setData(d => ({
+        ...d,
+        autoPublish: on
+      }));
+      let res = null;
+      try {
+        res = await fetch('/api/rates/auto-publish', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            on
+          })
+        });
+      } catch (e) {
+        console.warn('[rates] Auto-publish could not be saved', e);
+      }
+      /* Not saved: the switch goes back to what the server holds. */
+      if (!res || !res.ok) {
+        setData(d => ({
+          ...d,
+          autoPublish: !on
+        }));
+        setNotice(!res ? 'Auto-publish was not changed: the server could not be reached.' : res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`);
+        return;
+      }
+      log('Rates', `Auto-publish ${on ? 'on' : 'off'}`);
+      if (onToast) onToast(on ? 'Auto-publish on · the board follows the market' : 'Auto-publish off');
+    };
+    const publish = async () => {
+      if (pubOff) return;
+      setNotice(null);
+      const out = B.publishBody(rows, defPct);
+      if (!out.ok) {
+        setNotice(out.missing.length ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.` : 'A spread is over 20%. Lower it in Pricing & rates.');
+        return;
+      }
+      setBusy(true);
+      try {
+        const res = await fetch('/api/rates/publish', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(out.body)
+        });
+        if (!res.ok) {
+          setNotice(res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`);
+          return;
+        }
+        const saved = (await res.json()).board;
+        /* The desk's rate engine reads this browser cache (cdos-os.jsx,
+           publishedBook). The server board is the record; this only spares
+           the desk a reload before its next deal prices off the new board. */
+        try {
+          const cache = JSON.stringify({
+            buyMargin: saved.buyMargin,
+            sellMargin: saved.sellMargin,
+            rows: saved.rows,
+            publishedAt: saved.publishedAt,
+            publishedBy: saved.publishedBy
+          });
+          localStorage.setItem('yorkfx_rates_v1', cache);
+          localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'yorkfx_rates_v1',
+            newValue: cache
+          }));
+        } catch (e) {
+          console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e);
+        }
+        if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
+        setEdits({
+          order: null,
+          show: {},
+          added: []
+        });
+        onToast('Published · your site and window updated');
+        await load();
+      } catch (e) {
+        setNotice('No connection. Nothing was published.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    if (data.loading) return /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
+    }, "Loading your board\u2026");
+    const ql = q.trim().toLowerCase();
+    const list = rows.filter(r => !ql || r.code.toLowerCase().includes(ql) || FACE.currencyName(r.code).toLowerCase().includes(ql));
+    const onBoard = rows.filter(r => r.show).length;
+    const pub = data.board;
+    const preview = pub ? (pub.order || Object.keys(pub.rows)).filter(c => pub.rows[c] && pub.rows[c].show !== false).slice(0, 6).map(c => {
+      const r = pub.rows[c];
+      const pct = m => (r.spread != null ? r.spread : m) * 100;
+      return {
+        code: c,
+        ...B.deskPair(r.mid, pct(pub.buyMargin), pct(pub.sellMargin))
+      };
+    }) : [];
+    const screen = data.screens[0] || null;
+    const cols = '22px minmax(130px,1.6fr) minmax(80px,1fr) minmax(84px,1fr) minmax(84px,1fr) minmax(90px,1fr) 64px';
+    const btnBase = 'flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';';
+    const ghostBtn = btnBase + 'border:1px solid var(--line);background:#fff;color:var(--ink);transition:border-color .2s ease,color .2s ease,background .2s ease;';
+    const addable = Object.keys(data.market).filter(c => !rows.some(r => r.code === c)).sort();
+    return /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:' + (wide ? 'minmax(0,1fr) 330px' : 'minmax(0,1fr)') + ';gap:14px;align-items:start;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('min-width:0;display:flex;flex-direction:column;gap:14px;')
+    }, data.error && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      style: css('padding:11px 13px;border-radius:12px;background:var(--clay-soft);color:var(--clay);font-size:13px;')
+    }, data.error), /*#__PURE__*/React.createElement("div", {
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 200px;min-width:0;position:relative;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "var(--faint)",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      style: css('position:absolute;left:12px;top:50%;transform:translateY(-50%);')
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: "11",
+      cy: "11",
+      r: "7"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M20 20l-4-4"
+    })), /*#__PURE__*/React.createElement("input", {
+      value: q,
+      onChange: e => setQ(e.target.value),
+      placeholder: "Find a currency",
+      "aria-label": "Find a currency",
+      style: css('width:100%;height:38px;padding:0 12px 0 36px;border-radius:10px;border:1px solid var(--line);background:rgba(23,20,15,0.03);outline:none;font-size:14px;color:var(--ink);')
+    })), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: readOnly,
+      onClick: () => setPicking(p => !p),
+      style: css(ghostBtn)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 5v14M5 12h14"
+    })), "Add currency")), picking && !readOnly && /*#__PURE__*/React.createElement("div", {
+      role: "listbox",
+      "aria-label": "Add a currency",
+      style: css('display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.02);')
+    }, addable.length ? addable.map(c => /*#__PURE__*/React.createElement("button", {
+      key: c,
+      type: "button",
+      role: "option",
+      "aria-selected": "false",
+      onClick: () => {
+        setEdits(e => ({
+          ...e,
+          added: e.added.concat(c),
+          show: {
+            ...e.show,
+            [c]: true
+          }
+        }));
+        setPicking(false);
+      },
+      style: css('display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: c,
+      size: 18
+    }), c)) : /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:13px;color:var(--mute);')
+    }, "Every currency the market feed prices is already on your list.")), !cards && /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:' + cols + ';gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "Market"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We sell"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "Over market"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'center'
+      }
+    }, "On board")), list.map((r, i) => {
+      const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
+      const pct = pair ? (pair.sell - r.mid) / r.mid * 100 : 0;
+      const keepChip = chip(pct < 0 ? 'red' : pct < floor ? 'red' : pct < target ? 'amber' : 'green');
+      const keep = pair ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%' : '·';
+      const name = FACE.currencyName(r.code);
+      const dragProps = readOnly || ql ? {} : {
+        draggable: true,
+        onDragStart: e => {
+          drag.current = r.code;
+          e.dataTransfer.effectAllowed = 'move';
+        },
+        onDragOver: e => {
+          if (drag.current && drag.current !== r.code) e.preventDefault();
+        },
+        onDrop: e => {
+          e.preventDefault();
+          if (drag.current && drag.current !== r.code) moveTo(drag.current, r.code);
+          drag.current = null;
+        },
+        onKeyDown: e => {
+          if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            e.preventDefault();
+            step(r.code, e.key === 'ArrowUp' ? -1 : 1);
+          }
+        }
+      };
+      if (cards) return /*#__PURE__*/React.createElement("div", _extends({
+        key: r.code
+      }, dragProps, {
+        tabIndex: dragProps.draggable ? 0 : undefined,
+        "aria-label": `${r.code} ${name}`,
+        style: css('padding:14px 16px;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
+      }), /*#__PURE__*/React.createElement("div", {
+        style: css('display:flex;align-items:center;gap:11px;')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: r.code
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('font-size:15px;font-weight:800;')
+      }, r.code), " ", /*#__PURE__*/React.createElement("span", {
+        style: css('font-size:12.5px;color:var(--mute);')
+      }, name)), /*#__PURE__*/React.createElement(Switch, {
+        on: r.show,
+        off: readOnly,
+        onClick: () => toggle(r),
+        name: `${r.code} on the board`
+      })), /*#__PURE__*/React.createElement("div", {
+        style: css('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px;margin-top:12px;')
+      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "We buy"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:15px;')
+      }, pair ? fx(pair.buy) : 'No rate')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "We sell"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:15px;font-weight:700;')
+      }, pair ? fx(pair.sell) : 'No rate')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "Over market"), /*#__PURE__*/React.createElement("span", {
+        style: keepChip
+      }, keep))), /*#__PURE__*/React.createElement("div", {
+        style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')
+      }, r.mid ? 'Market ' + fx(r.mid) + (r.pinned ? ' · pinned' : '') : 'No market rate'));
+      return /*#__PURE__*/React.createElement("div", _extends({
+        key: r.code
+      }, dragProps, {
+        tabIndex: dragProps.draggable ? 0 : undefined,
+        "aria-label": `${r.code} ${name}`,
+        style: css('display:grid;grid-template-columns:' + cols + ';min-width:0;align-items:center;gap:12px;padding:12px 16px;transition:background .15s ease;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
+      }), /*#__PURE__*/React.createElement("span", {
+        title: dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined,
+        style: css('color:var(--faint);font-size:14px;letter-spacing:-2px;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
+      }, "\u22EE\u22EE"), /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;align-items:center;gap:11px;min-width:0;')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: r.code
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('min-width:0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display:block;font-size:14.5px;font-weight:800;')
+      }, r.code), /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+      }, name, r.pinned ? ' · pinned' : ''))), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:13px;color:var(--mute);')
+      }, r.mid ? fx(r.mid) : 'No rate'), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:14.5px;')
+      }, pair ? fx(pair.buy) : '·'), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:14.5px;font-weight:700;')
+      }, pair ? fx(pair.sell) : '·'), /*#__PURE__*/React.createElement("span", {
+        style: {
+          textAlign: 'right'
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: keepChip
+      }, keep)), /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;justify-content:center;')
+      }, /*#__PURE__*/React.createElement(Switch, {
+        on: r.show,
+        off: readOnly,
+        onClick: () => toggle(r),
+        name: `${r.code} on the board`
+      })));
+    }), !list.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
+    }, "No currency matches \u201C", q, "\u201D."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line);font-family:var(--m);font-size:11px;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null, onBoard, " of ", rows.length, " on the board \xB7 the top six show on your homepage"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--primary);')
+    }), "On target"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--amber);')
+    }), "Thin"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--clay);')
+    }), "Below your floor"))))), /*#__PURE__*/React.createElement("div", {
+      style: css('min-width:0;display:flex;flex-direction:column;gap:14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding:16px;border-radius:18px;background:#fff;border:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:12px;font-size:14px;font-weight:700;background:' + (dirty ? 'var(--amber-soft)' : 'var(--green-soft)') + ';color:' + (dirty ? 'var(--amber)' : 'var(--primary-deep)') + ';')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:8px;height:8px;border-radius:50%;background:' + (dirty ? 'var(--amber)' : 'var(--primary)') + ';')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, dirty ? 'Unpublished changes' : 'Live on your site and window'), /*#__PURE__*/React.createElement(Tip, {
+      tipKey: "publish",
+      open: tip === 'publish',
+      onToggle: onTip
+    })), marketMoved && /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;line-height:1.45;color:var(--mute);margin-top:10px;')
+    }, "The market has moved since this publish. Publish to send today's rates."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: publish,
+      disabled: pubOff,
+      style: css('width:100%;margin-top:12px;height:50px;border:0;border-radius:13px;font-family:var(--m);font-size:13px;letter-spacing:0.16em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;cursor:' + (pubOff ? 'default' : 'pointer') + ';background:' + (pubOff ? 'rgba(23,20,15,0.08)' : 'var(--primary)') + ';color:' + (pubOff ? 'rgba(23,20,15,0.35)' : '#fff') + ';')
+    }, busy ? 'Publishing…' : 'Publish'), notice && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      style: css('font-size:12.5px;line-height:1.45;color:var(--clay);margin-top:10px;')
+    }, notice), /*#__PURE__*/React.createElement("div", {
+      style: css('display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 11px 13px; border-radius: 13px; border: 1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex: 1; min-width: 0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display: block; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;')
+    }, "Auto-publish"), /*#__PURE__*/React.createElement("span", {
+      style: css('display: block; font-size: 12px; line-height: 1.4; color: var(--mute); margin-top: 2px;')
+    }, "Every market refresh goes straight out.")), /*#__PURE__*/React.createElement(Switch, {
+      on: !!data.autoPublish,
+      off: readOnly,
+      name: "Auto-publish",
+      onClick: setAuto
+    })), /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:11px;line-height:1.6;color:var(--mute);margin-top:11px;')
+    }, !pub ? 'Nothing published yet' : data.autoPublish ? 'Auto · updates with the market · last ' + ago(pub.publishedAt) : 'Updated ' + ago(pub.publishedAt) + ' by ' + (pub.publishedBy || 'the market feed')), /*#__PURE__*/React.createElement("div", {
+      style: css('margin-top:12px;padding-top:11px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:6px;')
+    }, "Recent publishes"), data.history.slice(0, 3).map(h => /*#__PURE__*/React.createElement("div", {
+      key: h.publicationId,
+      style: css('display:flex;align-items:baseline;gap:8px;padding:4px 0;font-family:var(--m);font-size:11px;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('flex:none;width:74px;color:var(--ink);')
+    }, when(h.publishedAt, settings)), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+    }, h.publishedBy || 'market feed'), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;color:var(--faint);')
+    }, Object.keys(h.rows || {}).length + ' ccy · ' + (Number(h.sellMargin) * 100).toFixed(1) + '%'))))), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "What customers see now",
+      style: css('border-radius:18px;overflow:hidden;background:#17140F;color:#F1EEE8;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setLiveOpen(o => !o),
+      "aria-expanded": liveOpen,
+      style: css('width:100%;appearance:none;border:0;background:none;color:inherit;cursor:pointer;display:flex;align-items:center;gap:8px;padding:13px 16px;text-align:left;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:7px;height:7px;border-radius:50%;background:#2EA36B;animation:rtLive 2s infinite;')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;font-family:var(--m);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;')
+    }, "What customers see now"), /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "rgba(241,238,232,0.5)",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: css('flex:none;transition:transform .25s cubic-bezier(.22,1,.36,1);transform:rotate(' + (liveOpen ? '180deg' : '0') + ');')
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M6 9l6 6 6-6"
+    }))), liveOpen && /*#__PURE__*/React.createElement(React.Fragment, null, dirty && /*#__PURE__*/React.createElement("div", {
+      style: css('margin:0 16px 8px;padding:8px 11px;border-radius:9px;background:rgba(217,169,44,0.16);color:#e5c56a;font-size:12px;line-height:1.45;')
+    }, "Your changes aren't live yet. Customers see your last publish."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;padding:4px 16px 2px;font-family:var(--m);font-size:8.5px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(241,238,232,0.45);border-top:1px solid rgba(241,238,232,0.1);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;')
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;')
+    }, "We sell")), !preview.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:7px 16px;font-size:12px;color:rgba(241,238,232,0.75);')
+    }, "Nothing published yet."), preview.map(p => /*#__PURE__*/React.createElement("div", {
+      key: p.code,
+      style: css('display:flex;align-items:center;gap:9px;padding:7px 16px;border-top:1px solid rgba(241,238,232,0.07);')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: p.code,
+      size: 20
+    }), /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1;font-family:var(--m);font-size:12.5px;')
+    }, p.code), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;font-family:var(--m);font-size:12px;color:rgba(241,238,232,0.75);')
+    }, fx(p.buy)), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;font-family:var(--m);font-size:12px;font-weight:700;color:#5FD69B;')
+    }, fx(p.sell)))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;gap:6px;padding:12px 16px 14px;border-top:1px solid rgba(241,238,232,0.1);')
+    }, screen ? /*#__PURE__*/React.createElement("a", {
+      href: '/s/' + screen.token,
+      target: "_blank",
+      rel: "noopener",
+      style: css('flex:1;display:inline-flex;align-items:center;justify-content:center;height:34px;border-radius:10px;background:#F1EEE8;color:#17140F;font-size:12.5px;font-weight:700;text-decoration:none;')
+    }, "Open full screen \u2197") : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onOpenSite,
+      style: css('flex:1;appearance:none;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;height:34px;border-radius:10px;background:#F1EEE8;color:#17140F;font-size:12.5px;font-weight:700;')
+    }, "Set up a window screen"), screen && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(location.origin + '/s/' + screen.token);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch (e) {
+          onToast('The link could not be copied. Open it and copy it from the address bar.');
+        }
+      },
+      style: css('flex:none;appearance:none;height:34px;padding:0 13px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:700;border:1px solid rgba(241,238,232,0.3);background:' + (copied ? '#2EA36B' : 'transparent') + ';color:#F1EEE8;')
+    }, copied ? 'Copied' : 'Copy link'))))));
+  }
+
+  /* The design's folder tabs. */
+  const TAB_ICON = {
+    board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4',
+    site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18',
+    rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4'
+  };
+  function Rates({
+    settings,
+    setSettings,
+    me,
+    log,
+    serverRole
+  }) {
+    const [tab, setTab] = useState('board');
+    const [tip, setTip] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [feed, setFeed] = useState(null);
+    const rootRef = useRef(null);
+    const w = useWidth(rootRef);
+    const cards = w < 880;
+    const readOnly = !PUBLISHERS.includes(serverRole);
+    const Pricing = window.CDOS.Pricing;
+    const flash = useCallback(t => {
+      setToast(t);
+      clearTimeout(flash.t);
+      flash.t = setTimeout(() => setToast(null), 2400);
+    }, []);
+    useEffect(() => {
+      getJson('/api/rates/market').then(m => setFeed(m), e => console.warn('[rates] the market feed could not be read', e));
+      const esc = e => {
+        if (e.key === 'Escape') setTip(null);
+      };
+      window.addEventListener('keydown', esc);
+      return () => window.removeEventListener('keydown', esc);
+    }, []);
+    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates']];
+    const feedAgo = feed && feed.fetchedAt ? ago(feed.fetchedAt) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      ref: rootRef,
+      "data-rates": "true",
+      style: {
+        ...TOKENS,
+        position: 'relative',
+        lineHeight: 'normal',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: 'rgba(251,250,247,0.96)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;padding:' + (cards ? '16px 16px 0' : '22px 26px 0') + ';border-bottom:1px solid var(--line);background:#fbfaf7;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("h1", {
+      style: css('margin:0;font-size:clamp(28px, 3.4vw, 42px);font-weight:800;letter-spacing:-0.03em;line-height:1;')
+    }, "Today's rates"), /*#__PURE__*/React.createElement("p", {
+      style: css("margin:8px 0 0;font-family:var(--m);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);")
+    }, "What it's worth \xB7 what you paid \xB7 what you charge")), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:9px;height:40px;max-width:100%;padding:0 13px;border-radius:11px;border:1px solid var(--line);background:#fff;text-align:left;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:8px;height:8px;border-radius:50%;background:' + (feed && feed.provider ? '#2EA36B' : '#9a938a') + ';' + (feed && feed.provider ? 'animation:rtLive 2s infinite;' : ''))
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('min-width:0;line-height:1.15;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:12.5px;white-space:nowrap;')
+    }, feed && feed.provider ? 'Live feed' : 'No market feed'), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+    }, feed && feed.provider ? feed.provider + ' · hourly' + (feedAgo ? ' · ' + feedAgo : '') : 'Rates hold at the last publish'))))), /*#__PURE__*/React.createElement("div", {
+      role: "tablist",
+      "aria-label": "Rates",
+      style: css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')
+    }, tabs.map(([id, label]) => {
+      const on = tab === id;
+      return /*#__PURE__*/React.createElement("button", {
+        key: id,
+        type: "button",
+        role: "tab",
+        "aria-selected": on,
+        "data-tour": id === 'site' ? 'rate-page' : undefined,
+        onClick: () => {
+          setTab(id);
+          setTip(null);
+        },
+        style: css('flex:none;display:inline-flex;align-items:center;gap:9px;appearance:none;border:0;cursor:pointer;white-space:nowrap;font-family:var(--m);font-size:' + (cards ? '11px' : '12.5px') + ';letter-spacing:0.12em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;' + (on ? 'background:var(--primary);color:#fff;padding:' + (cards ? '11px 26px 11px 13px' : '13px 34px 13px 18px') + ';border-radius:5px 0 0 0;clip-path:polygon(0 0,calc(100% - 20px) 0,100% 100%,0 100%);' : 'background:transparent;color:var(--mute);padding:' + (cards ? '11px 13px' : '13px 16px') + ';'))
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "15",
+        height: "15",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: {
+          flex: 'none'
+        }
+      }, /*#__PURE__*/React.createElement("path", {
+        d: TAB_ICON[id]
+      })), label);
+    }))), readOnly && /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:12.5px;font-weight:500;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.04);color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: {
+        flex: 'none'
+      }
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, "You can see today's rates. Changing them is for the owner and managers.")), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1;min-height:0;overflow-y:auto;')
+    }, /*#__PURE__*/React.createElement("div", {
+      key: 't-' + tab,
+      style: css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')
+    }, tab === 'board' && /*#__PURE__*/React.createElement(Board, {
+      settings: settings,
+      serverRole: serverRole,
+      me: me,
+      log: log,
+      w: w,
+      tip: tip,
+      onTip: setTip,
+      onToast: flash,
+      onOpenSite: () => setTab('site')
+    }), tab === 'site' && /*#__PURE__*/React.createElement(window.CDOS.RatesSite, {
+      serverRole: serverRole,
+      onToast: flash,
+      settings: settings,
+      setSettings: setSettings
+    }), tab === 'rules' && /*#__PURE__*/React.createElement(Pricing, {
+      settings: settings,
+      setSettings: setSettings,
+      me: me,
+      log: log
+    }))), tip && TIPS[tip] && /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": TIPS[tip][0],
+      style: css('position:absolute;right:' + (cards ? '12px' : '22px') + ';bottom:' + (cards ? '12px' : '22px') + ';z-index:55;width:min(360px, calc(100% - 24px));padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 26px 60px -24px rgba(23,20,15,0.5);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--ink);color:#fff;font-family:var(--m);font-size:11px;font-weight:700;')
+    }, "i"), /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1;min-width:0;font-size:14.5px;')
+    }, TIPS[tip][0]), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setTip(null),
+      title: "Close",
+      "aria-label": "Close",
+      style: css('flex:none;appearance:none;border:0;background:rgba(23,20,15,0.06);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "12",
+      height: "12",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M6 6l12 12M18 6L6 18"
+    })))), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:13px;line-height:1.6;color:var(--ink);margin:10px 0 0;')
+    }, TIPS[tip][1]), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setTip(null),
+      style: css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary);')
+    }, "Got it"))), toast && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      style: css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "#5FD69B",
+      strokeWidth: "2.8",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: {
+        flex: 'none'
+      }
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M4 12.5l5 5L20 6.5"
+    })), toast));
+  }
+
+  /* The design helpers, shared with the Website & window tab
+     (cdos-rates-site.jsx), so both tabs draw the same switch, flag and
+     segmented control from the same design strings. */
+  function seg(opts, cur, fn, off) {
+    return opts.map(o => ({
+      label: o,
+      on: cur === o,
+      onPick: () => {
+        if (!off) fn(o);
+      },
+      style: css('appearance:none;border:0;cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off && cur !== o ? '0.6' : '1') + ';font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;transition:background .2s ease,color .2s ease,box-shadow .2s ease;background:' + (cur === o ? '#fff' : 'transparent') + ';color:' + (cur === o ? 'var(--ink)' : 'var(--mute)') + ';box-shadow:' + (cur === o ? '0 1px 3px rgba(23,20,15,0.14)' : 'none') + ';')
+    }));
+  }
+  const pill = copied => css('appearance:none;display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;transition:all .2s ease;border:1px solid ' + (copied ? 'var(--primary)' : 'var(--line)') + ';background:' + (copied ? 'var(--primary)' : '#fff') + ';color:' + (copied ? '#fff' : 'var(--ink)') + ';');
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    Rates,
+    ratesUi: {
+      css,
+      Flag,
+      track,
+      Switch,
+      useWidth,
+      seg,
+      pill
+    }
+  });
+})();
+
 /* ---- os-src/cdos-import.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Ledger Import
@@ -60554,6 +63196,13 @@ ${snap}`;
     contacts,
     onSend
   }) {
+    /* Rates v2.5: the shop's rate page, once it is live, can go in a text. */
+    const [pageLink, setPageLink] = useState(null);
+    useEffect(() => {
+      fetch('/api/rate-page', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(p => setPageLink(p && p.live && p.slug ? location.origin + '/r/' + p.slug : null)).catch(() => setPageLink(null));
+    }, []);
     const [body, setBody] = useState('');
     const [aud, setAud] = useState('all');
     const [whoId, setWhoId] = useState(null);
@@ -60696,7 +63345,17 @@ ${snap}`;
         resize: 'vertical',
         color: CD.ink
       }
-    }), /*#__PURE__*/React.createElement("div", {
+    }), pageLink && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setBody(b => (b.trim() ? b.trim() + ' ' : '') + pageLink),
+      className: "text-[11.5px] px-2.5 py-1 mt-1.5 font-semibold",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 7,
+        color: CD.ink,
+        background: 'var(--cd-panel)'
+      }
+    }, "Add your rate page link"), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] mt-1 mb-2",
       style: {
         color: CD.faint
@@ -64854,6 +67513,15 @@ window.CDOS_PERSIST = (function () {
       body: 'This is the shop. Earnings, cash, and what the book holds, for the period you choose. The figures are the ledger’s.',
     },
     {
+      /* Rates v2.5: every shop has a rate page from the day it opens. */
+      id: 'site',
+      tour: 'owner',
+      app: 'rates',
+      anchor: 'rate-page',
+      title: 'Your rate page',
+      body: 'Your shop has its own rate page, private until you turn it on. Fill it in here, look at the preview, then take it live and share the link.',
+    },
+    {
       id: 'clients',
       tour: 'owner',
       app: 'clients',
@@ -65907,6 +68575,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     Branches,
     APP_ACCENT,
     Pricing,
+    Rates,
     Telegraph,
     SignIn,
     LockDesk,
@@ -65936,10 +68605,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }();
   const APPMETA = {
     rates: {
-      title: 'Rate Board',
+      title: 'Rates',
       icon: 'rateboard',
-      w: 1060,
-      h: 660
+      w: 1180,
+      h: 720
     },
     telegraph: {
       title: 'Texts',
@@ -70934,10 +73603,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const storeLocked = orderedApps.filter(id => !planAllows(id)).map(mkApp);
     function renderApp(id) {
       switch (baseApp(id)) {
+        /* Rates v2.5: the desk's own Rates app replaces the York FX Rate
+           Board page that was framed here. The page itself stays until the
+           old apps are retired. */
         case 'rates':
-          return /*#__PURE__*/React.createElement("iframe", {
-            src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
-            title: "Rate Board"
+          return /*#__PURE__*/React.createElement(Rates, {
+            settings: settings,
+            setSettings: setSettings,
+            me: me,
+            log: log,
+            serverRole: srvUser ? srvUser.role : null
           });
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {

@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="index, follow">
+<title>Today's rates</title>
+<!-- Rates v2.5: a shop's public rate page, served at /r/<address>.
+     One file for every shop, in the look of the design file
+     "CurrencyDesk Rate Page.dc.html": its style strings are kept as
+     written. It reads /api/public/rate-pages/<address>, which answers only
+     once the owner has turned the page on, and only with the shop's latest
+     PUBLISHED board. Shop text is written with textContent, never as HTML.
+     The fonts are served from this site (/web/fonts), not from Google. -->
+<link rel="stylesheet" href="/web/fonts/fonts.css">
+<script src="/shared/currency-face.js"></script>
+<style>
+  body { margin: 0; background: #E7E3DA; }
+  * { box-sizing: border-box; }
+  ::selection { background: #1D6B45; color: #F7F4ED; }
+  a { color: inherit; text-decoration: none; }
+  button, input, select { font-family: inherit; }
+  @keyframes cdPulse { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.55); } 70% { box-shadow: 0 0 0 8px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
+  @keyframes cdFlipIn { 0% { opacity: 0; transform: translateY(-6px); } 100% { opacity: 1; transform: none; } }
+  @media (max-width: 560px) {
+    [data-pad] { padding-left: 18px !important; padding-right: 18px !important; }
+    [data-hero] { font-size: 34px !important; }
+    [data-rate] { font-size: 19px !important; }
+    [data-cols] { grid-template-columns: minmax(0, 1fr) !important; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; } }
+  /* The design's style-hover and style-focus. */
+  .h-display:hover { background: rgba(241,238,232,0.14) !important; color: #fff !important; }
+  .h-swap:hover { border-color: var(--green) !important; color: var(--green) !important; }
+  .h-green:hover { color: var(--green-deep) !important; }
+  .h-ink:hover { color: var(--ink) !important; }
+  .h-credit:hover { color: var(--green) !important; }
+  .f-green:focus { border-color: var(--green) !important; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body data-rate-page>
+<div style="--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --paper: #F4F0E6; --panel: #FBF9F4; --line: rgba(23,20,15,0.12); --hair: rgba(23,20,15,0.07); --soft: rgba(23,20,15,0.05); --mute: #5C554C; --faint: #9A938A; --green: #1D6B45; --green-deep: #17583A; --green-bright: #2EA36B; --green-soft: #E4EFE7; --brass: #A9791C; --clay: #C2452D; font-family: var(--f); color: var(--ink); background: var(--paper); min-height: 100vh;">
+
+  <div style="position: sticky; top: 0; z-index: 40; background: rgba(244,240,230,0.92); backdrop-filter: saturate(160%) blur(18px); -webkit-backdrop-filter: saturate(160%) blur(18px); border-bottom: 1px solid var(--line);">
+    <div data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 11px 26px; display: flex; align-items: center; gap: 12px;">
+      <span id="mark" aria-hidden="true" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;font-family:var(--m);font-size:12px;font-weight:700;letter-spacing:0.02em;background:var(--ink);color:var(--paper);overflow:hidden;"></span>
+      <span style="min-width: 0; flex: 1;">
+        <span id="shop-name" style="display: block; font-size: 14.5px; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
+        <span id="open-line" hidden style="display: flex; align-items: center; gap: 6px; margin-top: 1px;">
+          <span id="open-dot" style="width:6px;height:6px;border-radius:50%;flex:none;background:var(--green-bright);"></span>
+          <span id="open-label" style="font-family: var(--m); font-size: 10px; letter-spacing: 0.06em; color: var(--mute);"></span>
+        </span>
+      </span>
+      <a id="call" hidden style="flex: none; display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 15px; border-radius: 999px; background: var(--green); color: #fff; font-family: var(--m); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h3l1.5 4-2 1.5a12 12 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4.5 5.7 2 2 0 0 1 6.5 3.5Z"></path></svg>Call</a>
+    </div>
+  </div>
+
+  <!-- Not live, or no such address. Not in the design file; written in its type. -->
+  <div id="missing" hidden data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 34px 26px 0;">
+    <h1 data-hero="true" style="font-family: var(--serif); font-weight: 400; font-size: 46px; line-height: 1.0; letter-spacing: -0.02em; margin: 0;">This rate page is not available.</h1>
+    <p style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 11px 0 0;">It may not be open yet. Ask the shop for its address.</p>
+  </div>
+
+  <main id="home" hidden>
+  <div data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 34px 26px 0;">
+    <div id="eyebrow" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brass); font-weight: 600;">Foreign exchange</div>
+    <h1 id="hero" data-hero="true" style="font-family: var(--serif); font-weight: 400; font-size: 46px; line-height: 1.0; letter-spacing: -0.02em; margin: 11px 0 0;"></h1>
+    <p id="tagline" hidden style="font-size: 16px; line-height: 1.5; color: var(--ink); margin: 10px 0 0;"></p>
+    <div id="closed" hidden style="display: inline-flex; align-items: center; gap: 9px; margin-top: 14px; padding: 8px 13px; border-radius: 999px; background: rgba(194,69,45,0.1); border: 1px solid rgba(194,69,45,0.25); color: #A33A25; font-size: 13.5px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #C2452D;"></span><b style="font-weight: 800;">Closed</b><span id="closed-line"></span></div>
+    <p id="address" style="font-size: 15px; line-height: 1.55; color: var(--mute); margin: 11px 0 0;"></p>
+  </div>
+
+  <div data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 22px 26px 0;">
+    <section aria-labelledby="rates-title" style="border-radius: 20px; overflow: hidden; background: var(--ink); color: #F1EEE8; box-shadow: 0 26px 60px -30px rgba(23,20,15,0.7);">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 15px 20px 14px; border-bottom: 1px solid rgba(241,238,232,0.13);">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--green-bright); flex: none; animation: cdPulse 2.2s infinite;"></span>
+        <h2 id="rates-title" style="margin: 0; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600;">Today's rates</h2>
+        <span id="updated" style="margin-left: auto; font-family: var(--m); font-size: 10px; letter-spacing: 0.05em; color: rgba(241,238,232,0.55);"></span>
+        <button type="button" id="tv-on" class="h-display" title="Show on a screen" style="flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid rgba(241,238,232,0.22); border-radius: 999px; background: rgba(241,238,232,0.06); color: rgba(241,238,232,0.8); font-family: var(--m); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; cursor: pointer;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"></path></svg>Display</button>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 11px 20px 9px; border-bottom: 1px solid rgba(241,238,232,0.1);">
+        <span style="flex: 1; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(241,238,232,0.45);">Currency</span>
+        <span id="head-buy" style="flex: none; min-width: 92px; text-align: right; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(241,238,232,0.45);">We buy</span>
+        <span id="head-sell" style="flex: none; min-width: 92px; text-align: right; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-bright);">We sell</span>
+      </div>
+
+      <div id="rates"></div>
+
+      <div style="padding: 13px 20px 16px; background: rgba(241,238,232,0.04);">
+        <div id="rates-note" style="font-size: 11.5px; line-height: 1.5; color: rgba(241,238,232,0.55);"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="calc" data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 20px 26px 0;">
+    <section aria-labelledby="calc-title" style="border: 1px solid var(--line); border-radius: 18px; background: var(--panel); overflow: hidden;">
+      <div style="padding: 15px 20px 13px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <h2 id="calc-title" style="margin: 0; font-family: var(--m); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mute); font-weight: 600;">Work out your amount</h2>
+        <button type="button" id="calc-swap" class="h-swap" style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--mute); font-family: var(--m); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; cursor: pointer;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14M15 5l3 3-3 3M20 16H6M9 13l-3 3 3 3"></path></svg><span id="calc-swap-label"></span></button>
+      </div>
+
+      <div style="padding: 18px 20px 20px;">
+        <div style="display: flex; align-items: center; gap: 11px;">
+          <input id="calc-amount" class="f-green" value="500" inputmode="decimal" aria-label="Amount" style="flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: #fff; outline: none; font-family: var(--m); font-size: 24px; font-weight: 600; padding: 14px 15px; color: var(--ink);">
+          <select id="calc-code" aria-label="Currency" style="flex: none; border: 1px solid var(--line); border-radius: 12px; background: #fff; outline: none; font-family: var(--m); font-size: 15px; font-weight: 700; padding: 15px 12px; color: var(--ink); cursor: pointer;"></select>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin: 15px 0 0;">
+          <span style="flex: 1; height: 1px; background: var(--hair);"></span>
+          <span id="calc-direction" style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint);"></span>
+          <span style="flex: 1; height: 1px; background: var(--hair);"></span>
+        </div>
+
+        <div id="calc-box" role="status" style="margin-top: 15px; padding: 17px 19px; border-radius: 14px; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.22); animation: cdFlipIn 0.28s ease;">
+          <div id="calc-label" style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green-deep); font-weight: 700;"></div>
+          <div id="calc-result" style="font-family: var(--m); font-size: 32px; font-weight: 700; letter-spacing: -0.02em; color: var(--green-deep); margin-top: 6px;"></div>
+          <div id="calc-rate" style="font-size: 12px; color: var(--mute); margin-top: 6px;"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="find" role="region" aria-label="Find us" data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 20px 26px 0;">
+    <div data-cols="true" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 18px; overflow: hidden;">
+      <div id="find-us" style="background: var(--panel); padding: 17px 19px 18px;">
+        <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Find us</div>
+        <div id="find-address" style="font-size: 14px; line-height: 1.55; margin-top: 8px;"></div>
+        <a id="directions" class="h-green" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 13px; font-weight: 700; color: var(--green);">Directions<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+      </div>
+      <div id="open-hours" style="background: var(--panel); padding: 17px 19px 18px;">
+        <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Open</div>
+        <div id="hours" style="display: flex; flex-direction: column; gap: 5px; margin-top: 8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reg" hidden data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 20px 26px 0;">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 15px 19px; border-radius: 16px; background: rgba(23,20,15,0.04); border: 1px solid var(--line);">
+      <span style="flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.2);"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z"></path><path d="M9.2 12.2 11.3 14.4 15 10.4"></path></svg></span>
+      <span style="min-width: 0; font-size: 12.5px; line-height: 1.5; color: var(--mute);"><b id="reg-line" style="color: var(--ink); font-weight: 700;"></b> Every exchange is recorded and receipted. <button type="button" id="to-compliance" style="appearance: none; border: 0; background: none; padding: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--green);">How we protect you →</button></span>
+    </div>
+  </div>
+  </main>
+
+  <main id="compliance" hidden>
+    <div data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 26px 26px 0; animation: cdFlipIn 0.3s ease;">
+      <a href="#" class="h-green" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--green);"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"></path></svg>Today's rates</a>
+      <div id="c-eyebrow" style="font-family: var(--m); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--brass); font-weight: 600; margin-top: 22px;"></div>
+      <h1 data-hero="true" style="font-family: var(--serif); font-weight: 400; font-size: 40px; line-height: 1.04; letter-spacing: -0.02em; margin: 11px 0 0;">How we keep your exchange on the record</h1>
+      <p id="c-intro" style="font-size: 15px; line-height: 1.6; color: var(--mute); margin: 12px 0 0;"></p>
+
+      <div style="margin-top: 20px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 16px 19px; border-bottom: 1px solid var(--hair);">
+          <span style="flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--green-soft); border: 1px solid rgba(29,107,69,0.2);"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z"></path><path d="M9.2 12.2 11.3 14.4 15 10.4"></path></svg></span>
+          <span style="min-width: 0; flex: 1;"><b id="c-registered" style="display: block; font-size: 15px;"></b><span id="c-body" style="display: block; font-size: 12.5px; color: var(--mute); margin-top: 2px;"></span></span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--hair);">
+          <div style="background: var(--panel); padding: 13px 19px;"><div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Registration</div><div id="c-number" style="font-family: var(--m); font-size: 14px; font-weight: 700; margin-top: 5px;"></div></div>
+          <div id="c-officer-cell" style="background: var(--panel); padding: 13px 19px;"><div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600;">Compliance officer</div><div id="c-officer" style="font-size: 14px; font-weight: 700; margin-top: 5px;"></div></div>
+        </div>
+        <a id="c-registry" class="h-green" target="_blank" rel="noopener" style="display: flex; align-items: center; gap: 7px; padding: 12px 19px; border-top: 1px solid var(--hair); font-size: 13px; font-weight: 700; color: var(--green);">Check our registration on the public register<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"></path></svg></a>
+      </div>
+
+      <div id="c-rules-block">
+        <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 26px 0 10px;">When we ask for more</div>
+        <div id="c-rules" style="border-radius: 18px; background: var(--panel); border: 1px solid var(--line); overflow: hidden;"></div>
+      </div>
+
+      <div id="c-ids-block">
+        <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 26px 0 10px;">What to bring</div>
+        <div id="c-ids" style="display: flex; flex-wrap: wrap; gap: 7px;"></div>
+        <p style="font-size: 12.5px; line-height: 1.55; color: var(--mute); margin: 10px 0 0;">Original and not expired. We can't accept a photo of your ID on a phone.</p>
+      </div>
+
+      <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 26px 0 10px;">Your information</div>
+      <div id="c-privacy" style="padding: 16px 19px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px;"></div>
+
+      <div style="margin-top: 20px; padding: 18px 19px; border-radius: 18px; background: var(--ink); color: #F1EEE8; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+        <span style="flex: 1 1 240px; min-width: 0;"><b style="display: block; font-size: 15px;">A question or a complaint?</b><span id="c-ask" style="display: block; font-size: 13px; line-height: 1.5; color: rgba(241,238,232,0.7); margin-top: 3px;"></span></span>
+        <a id="c-call" hidden style="flex: none; display: inline-flex; align-items: center; height: 38px; padding: 0 16px; border-radius: 999px; background: #F1EEE8; color: var(--ink); font-size: 13px; font-weight: 700;">Call us</a>
+      </div>
+      <p id="c-legal" style="font-size: 11.5px; line-height: 1.55; color: var(--faint); margin: 14px 0 0;"></p>
+    </div>
+  </main>
+
+  <footer id="footer" hidden data-pad="true" style="max-width: 640px; margin: 0 auto; padding: 30px 26px 40px;">
+    <div style="padding-top: 20px; border-top: 1px solid var(--line);">
+      <nav aria-label="This page" style="display: flex; align-items: center; gap: 4px 18px; flex-wrap: wrap;">
+        <a href="#" id="nav-rates" style="font-size: 13px; padding: 6px 0;">Today's rates</a>
+        <a href="#compliance" id="nav-compliance" hidden style="font-size: 13px; padding: 6px 0;">Compliance</a>
+        <a id="nav-directions" class="h-ink" target="_blank" rel="noopener" hidden style="font-size: 13px; font-weight: 600; color: var(--mute); padding: 6px 0;">Directions</a>
+        <a id="nav-call" class="h-ink" hidden style="font-size: 13px; font-weight: 600; color: var(--mute); padding: 6px 0;">Call</a>
+      </nav>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-top: 14px;">
+        <span id="copyright" style="font-family: var(--m); font-size: 10.5px; color: var(--faint);"></span>
+        <a id="credit" href="/" class="h-credit" style="display: inline-flex; align-items: baseline; gap: 5px; font-family: var(--m); font-size: 10px; letter-spacing: 0.08em; color: var(--faint);">Website by<span style="font-weight: 800; letter-spacing: 0.05em; color: var(--mute);">CURRENCYDESK</span></a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Display: the board full screen, for a screen at the counter. -->
+  <div id="tv" hidden role="dialog" aria-label="Today's rates, full screen" style="position: fixed; inset: 0; z-index: 200; background: #0C0A07; color: #F1EEE8; display: flex; flex-direction: column; padding: 2.6vh 2.6vw;">
+    <div style="display: flex; align-items: center; gap: 2vw; flex: none; padding-bottom: 1.8vh; border-bottom: 1px solid rgba(241,238,232,0.14);">
+      <span id="tv-logo" aria-hidden="true" style="flex: none; display: grid; place-items: center; width: clamp(46px, 4.6vw, 92px); height: clamp(46px, 4.6vw, 92px); border-radius: clamp(11px, 1.1vw, 22px); background: #F1EEE8; color: #17140F; font-family: var(--m); font-weight: 700; font-size: clamp(16px, 1.7vw, 34px); letter-spacing: 0.02em; overflow: hidden;"></span>
+      <span style="min-width: 0;">
+        <span id="tv-name" style="display: block; font-family: var(--serif); font-size: clamp(22px, 3.4vw, 62px); line-height: 1; letter-spacing: -0.02em;"></span>
+        <span style="display: flex; align-items: center; gap: 0.8vw; margin-top: 0.8vh;">
+          <span style="width: clamp(6px, 0.6vw, 11px); height: clamp(6px, 0.6vw, 11px); border-radius: 50%; background: var(--green-bright); animation: cdPulse 2.2s infinite;"></span>
+          <span id="tv-ago" style="font-family: var(--m); font-size: clamp(9px, 0.85vw, 15px); letter-spacing: 0.22em; text-transform: uppercase; color: rgba(241,238,232,0.6);"></span>
+        </span>
+      </span>
+      <span style="margin-left: auto; text-align: right; flex: none;">
+        <span id="tv-clock" style="display: block; font-family: var(--m); font-size: clamp(26px, 4.2vw, 78px); font-weight: 600; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;"></span>
+        <span id="tv-date" style="display: block; font-family: var(--m); font-size: clamp(9px, 0.85vw, 15px); letter-spacing: 0.18em; text-transform: uppercase; color: rgba(241,238,232,0.5); margin-top: 0.7vh;"></span>
+      </span>
+      <button type="button" id="tv-off" class="h-display" title="Exit display mode" aria-label="Exit display mode" style="flex:none;display:grid;place-items:center;width:clamp(32px,3vw,54px);height:clamp(32px,3vw,54px);border:1px solid rgba(241,238,232,0.2);border-radius:50%;background:rgba(241,238,232,0.05);color:rgba(241,238,232,0.6);cursor:pointer;transition:opacity .55s ease;opacity:1;"><svg viewBox="0 0 24 24" width="45%" height="45%" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+    </div>
+
+    <div id="tv-cols" style="flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; column-gap: 2.6vw; padding-top: 1.4vh;"></div>
+
+    <div style="flex: none; display: flex; align-items: center; gap: 2.4vw; padding-top: 1.7vh; margin-top: 1.2vh; border-top: 1px solid rgba(241,238,232,0.14);">
+      <span style="display: inline-flex; align-items: stretch; gap: 1.4vw; min-width: 0;">
+        <span id="tv-status" hidden style="display:inline-flex;align-items:center;gap:0.6vw;padding:0 1.1vw;border-radius:999px;flex:none;">
+          <span style="width: clamp(6px, 0.55vw, 10px); height: clamp(6px, 0.55vw, 10px); border-radius: 50%; flex: none; background: currentColor;"></span>
+          <span id="tv-status-label" style="font-family: var(--m); font-size: clamp(9px, 0.86vw, 16px); letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700;"></span>
+        </span>
+        <span id="tv-hours" style="display: inline-flex; align-items: center; gap: 1.3vw;"></span>
+      </span>
+      <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 1.4vw; flex: none;">
+        <span id="tv-per" style="font-family: var(--m); font-size: clamp(8px, 0.74vw, 14px); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(241,238,232,0.32);"></span>
+        <span id="tv-reg" hidden style="display: inline-flex; align-items: center; gap: 0.75vw; padding: 0.7vh 1.1vw; border-radius: 0.6vw; background: rgba(241,238,232,0.06); border: 1px solid rgba(241,238,232,0.14);">
+          <svg viewBox="0 0 24 24" style="width: clamp(14px, 1.35vw, 26px); height: clamp(14px, 1.35vw, 26px); flex: none;" fill="none" stroke="#5FD69B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4z"></path><path d="M9.2 12.2 11.3 14.4 15 10.4"></path></svg>
+          <span style="min-width: 0;">
+            <span id="tv-reg-label" style="display: block; font-family: var(--m); font-size: clamp(7.5px, 0.68vw, 13px); letter-spacing: 0.2em; text-transform: uppercase; color: rgba(241,238,232,0.42); line-height: 1;"></span>
+            <span id="tv-reg-name" style="display: block; font-family: var(--m); font-size: clamp(10px, 1vw, 19px); font-weight: 700; letter-spacing: 0.04em; color: #F1EEE8; margin-top: 0.45vh; line-height: 1;"></span>
+          </span>
+        </span>
+      </span>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var FACE = window.CurrencyFace;
+  /* The server refuses a malformed escape (400) before this page loads,
+     so the path here always decodes. */
+  var slug = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
+  /* ?preview: the desk's own preview of its page, live or not. It reads
+     the signed-in answer, which only the shop's own staff get. */
+  var preview = new URLSearchParams(location.search).has("preview");
+  /* "sell": the customer buys foreign cash, at our selling rate. "buy":
+     the customer has foreign cash, at our buying rate. The design opens
+     on "sell". The amount is always in the foreign currency. */
+  var state = { data: null, dir: "sell" };
+  var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function el(tag, style, text) { var e = document.createElement(tag); if (style) e.setAttribute("style", style); if (text != null) e.textContent = text; return e; }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  /* Six places at most, fewer for a large rate: what the desk shows, so
+     the figure here is the figure on the board and the receipt. */
+  function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
+  function money(v, code) {
+    var n = Math.abs(v) >= 1000 ? v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v.toFixed(2);
+    return n + " " + code;
+  }
+  function initials(name) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase(); }
+
+  /* The shop's clock. A shop in Dubai is open on Dubai's hours whoever is
+     looking. Without a time zone from the shop there is no open or closed
+     and times are the visitor's own. */
+  function zoned(zone) {
+    var at = new Date();
+    if (!zone) return { day: at.getDay(), h: at.getHours(), m: at.getMinutes(), s: at.getSeconds(), at: at };
+    var parts = {};
+    new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", hour: "numeric", minute: "numeric", second: "numeric", hourCycle: "h23" })
+      .formatToParts(at).forEach(function (p) { parts[p.type] = p.value; });
+    return { day: SHORT.indexOf(parts.weekday), h: Number(parts.hour), m: Number(parts.minute), s: Number(parts.second), at: at };
+  }
+  function clockOf(ms, zone) {
+    var o = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+    if (zone) o.timeZone = zone;
+    return new Intl.DateTimeFormat("en-GB", o).format(new Date(ms));
+  }
+  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 || h === 24 ? " am" : " pm"); }
+
+  /* Open or closed, only from the shop's own week (seven days, Sunday
+     first, [opens, closes] in hours or null) in the shop's time zone. */
+  function openState(shop) {
+    var week = shop.week;
+    if (!shop.timeZone || !Array.isArray(week) || week.length !== 7) return null;
+    var now = zoned(shop.timeZone), t = now.h + now.m / 60, today = week[now.day];
+    var open = !!today && t >= today[0] && t < today[1];
+    var next = "";
+    if (!open) {
+      for (var d = 0; d < 8; d++) {
+        var di = (now.day + d) % 7, hr = week[di];
+        if (!hr || (d === 0 && t >= hr[0])) continue;
+        next = (d === 0 ? "today" : d === 1 ? "tomorrow" : DAYS[di]) + " at " + fmtT(hr[0]);
+        break;
+      }
+    }
+    return { open: open, closes: open ? fmtT(today[1]) : "", next: next, day: now.day };
+  }
+
+  /* The week as the design lists it: Monday first, equal days joined. */
+  function weekLines(week) {
+    var order = [1, 2, 3, 4, 5, 6, 0], key = function (h) { return h ? h[0] + "-" + h[1] : "x"; }, out = [], i = 0;
+    while (i < 7) {
+      var j = i;
+      while (j + 1 < 7 && key(week[order[j + 1]]) === key(week[order[i]])) j++;
+      var h = week[order[i]];
+      out.push({ day: i === j ? DAYS[order[i]] : SHORT[order[i]] + " to " + SHORT[order[j]], time: h ? fmtT(h[0]) + " to " + fmtT(h[1]) : "Closed", closed: !h, days: order.slice(i, j + 1) });
+      i = j + 1;
+    }
+    return out;
+  }
+  /* The shop's hours as the storefront keeps them (free text), or its week. */
+  function hourLines(shop) {
+    if (Array.isArray(shop.week) && shop.week.length === 7) return weekLines(shop.week);
+    return (shop.hours || []).map(function (h) { return { day: h.days, time: h.hours, closed: /^closed$/i.test(String(h.hours).trim()) }; });
+  }
+
+  function flag(code, style) {
+    var url = FACE.flagUrl(code), f = el("span", style);
+    f.setAttribute("aria-hidden", "true");
+    f.setAttribute("data-flag", code);
+    if (url) f.style.background = "#333 center/cover no-repeat url(" + url + ")";
+    else { f.textContent = FACE.flagEmoji(code); f.style.display = "inline-grid"; f.style.placeItems = "center"; f.style.fontSize = "18px"; f.style.lineHeight = "1"; }
+    return f;
+  }
+
+  function calc() {
+    var d = state.data; if (!d) return;
+    var code = $("calc-code").value;
+    var r = d.rates.filter(function (x) { return x.code === code; })[0];
+    var amount = parseFloat(String($("calc-amount").value).replace(/,/g, "")) || 0;
+    var selling = state.dir === "sell", home = d.shop.home;
+    $("calc-swap-label").textContent = selling ? "I want to buy" : "I have foreign cash";
+    if (!r) return;
+    /* Selling foreign cash: we buy it. Buying foreign cash: we sell it. */
+    var at = selling ? r.sell : r.buy;
+    $("calc-direction").textContent = r.code + " → " + home;
+    $("calc-label").textContent = selling ? "You pay us" : "You get";
+    $("calc-result").textContent = money(amount * at, home);
+    $("calc-rate").textContent = "1 " + r.code + " = " + rate(at) + " " + home + (selling ? " · our selling rate" : " · our buying rate");
+    /* The design's flip-in on each new result. */
+    var box = $("calc-box"); box.style.animation = "none"; void box.offsetWidth; box.style.animation = "";
+  }
+
+  function renderRates(d) {
+    var list = $("rates"); list.textContent = "";
+    d.rates.forEach(function (r, i) {
+      var row = el("div", "display:flex;align-items:center;padding:13px 20px;" + (i > 0 ? "border-top:1px solid rgba(241,238,232,0.08);" : ""));
+      row.setAttribute("data-code", r.code);
+      var left = el("span", "flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 11px;");
+      left.appendChild(flag(r.code, "display:inline-flex;width:28px;height:19px;border-radius:3px;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.26), 0 1px 2px rgba(0,0,0,0.35);"));
+      var names = el("span", "min-width: 0;");
+      names.appendChild(el("b", "display: block; font-family: var(--m); font-size: 14px; font-weight: 700; letter-spacing: 0.04em;", r.code));
+      names.appendChild(el("span", "display: block; font-size: 11.5px; color: rgba(241,238,232,0.5); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;", FACE.currencyName(r.code)));
+      left.appendChild(names);
+      row.appendChild(left);
+      /* The design's 92px columns, allowed to grow: a six-place rate is
+         wider than the design's five, and two must never run together. */
+      var buy = el("span", "flex: none; min-width: 92px; padding-left: 8px; white-space: nowrap; text-align: right; font-family: var(--m); font-size: 21px; font-weight: 500; letter-spacing: -0.01em;", rate(r.buy));
+      var sell = el("span", "flex: none; min-width: 92px; padding-left: 8px; white-space: nowrap; text-align: right; font-family: var(--m); font-size: 21px; font-weight: 700; letter-spacing: -0.01em; color: var(--green-bright);", rate(r.sell));
+      buy.setAttribute("data-rate", "true"); sell.setAttribute("data-rate", "true");
+      row.appendChild(buy); row.appendChild(sell);
+      list.appendChild(row);
+    });
+  }
+
+  /* The open line, the closed notice and the display's status pill, from
+     the shop's week in the shop's clock. Repainted every minute. */
+  function paintOpen(shop) {
+    var st = openState(shop);
+    $("open-line").hidden = !st;
+    $("closed").hidden = !st || st.open;
+    $("tv-status").hidden = !st;
+    if (st) {
+      $("open-dot").style.background = st.open ? "var(--green-bright)" : "var(--clay)";
+      $("open-label").textContent = st.open ? "Open now · closes " + st.closes : "Closed" + (st.next ? " · opens " + st.next : "");
+      $("closed-line").textContent = st.next ? "Opens " + st.next : "See our hours below";
+      $("tv-status-label").textContent = st.open ? "Shop open" : "Shop closed";
+      $("tv-status").setAttribute("style", "display:inline-flex;align-items:center;gap:0.6vw;padding:0 1.1vw;border-radius:999px;flex:none;border:1px solid " + (st.open ? "rgba(46,163,107,0.45)" : "rgba(194,69,45,0.45)") + ";background:" + (st.open ? "rgba(46,163,107,0.13)" : "rgba(194,69,45,0.13)") + ";color:" + (st.open ? "#5FD69B" : "#E8836E") + ";");
+    }
+    return st;
+  }
+
+  function render(d) {
+    state.data = d;
+    var shop = d.shop, contact = shop.contact || {}, reg = shop.regulator || null;
+    var on = shop.show || {};
+    document.title = shop.name + " · Today's rates";
+    $("shop-name").textContent = shop.name; $("hero").textContent = shop.name; $("tv-name").textContent = shop.name;
+    /* A logo only from this site's own public answers; otherwise the
+       design's initials. */
+    var mark = $("mark"); mark.textContent = "";
+    if (typeof shop.logo === "string" && (shop.logo.indexOf("/api/public/") === 0 || (preview && shop.logo.indexOf("/api/rate-page/logo") === 0))) {
+      var img = el("img", "width:100%;height:100%;object-fit:contain;background:#fff;"); img.alt = ""; img.src = shop.logo; mark.appendChild(img);
+      var tvImg = img.cloneNode(); $("tv-logo").textContent = ""; $("tv-logo").appendChild(tvImg);
+    } else { mark.textContent = initials(shop.name); $("tv-logo").textContent = initials(shop.name); }
+
+    $("eyebrow").textContent = "Foreign exchange" + (contact.city ? " · " + contact.city : "");
+    $("tagline").hidden = !shop.tagline; $("tagline").textContent = shop.tagline || "";
+    var where = [contact.address, contact.city, contact.region, contact.postal].filter(Boolean).join(", ");
+    $("address").textContent = where; $("address").hidden = !where;
+    $("find-address").textContent = where;
+    var maps = where ? "https://maps.google.com/?q=" + encodeURIComponent(where) : "";
+    ["directions", "nav-directions"].forEach(function (id) { $(id).hidden = !where; if (where) $(id).href = maps; });
+    var tel = contact.phone ? "tel:" + contact.phone.replace(/[^\d+]/g, "") : "";
+    ["call", "nav-call", "c-call"].forEach(function (id) { $(id).hidden = !tel; if (tel) $(id).href = tel; });
+
+    var st = paintOpen(shop);
+
+    $("updated").textContent = d.publishedAt ? "Published " + clockOf(d.publishedAt, shop.timeZone) : "";
+    renderRates(d);
+    /* The column heads sit over the widest figure in their column. */
+    ["buy", "sell"].forEach(function (side, i) {
+      var widest = 92;
+      $("rates").querySelectorAll("[data-code]").forEach(function (row) { widest = Math.max(widest, row.children[i + 1].getBoundingClientRect().width); });
+      $("head-" + side).style.minWidth = widest + "px";
+    });
+    $("rates-note").textContent = d.rates.length
+      ? "Rates shown per 1 unit in " + shop.home + ". Indicative: the rate on your receipt is the one that counts. Large amounts, ask us for a better price." + (shop.feeNote ? " " + shop.feeNote : "")
+      : "No rates are published yet.";
+
+    var pick = $("calc-code"), kept = pick.value || (d.rates.some(function (r) { return r.code === "USD"; }) ? "USD" : "");
+    pick.textContent = "";
+    d.rates.forEach(function (r) { var o = el("option", null, r.code); o.value = r.code; pick.appendChild(o); });
+    if (kept && d.rates.some(function (r) { return r.code === kept; })) pick.value = kept;
+    $("calc").hidden = !d.rates.length || on.converter === false;
+
+    var lines = hourLines(shop), box = $("hours"); box.textContent = "";
+    lines.forEach(function (h) {
+      var line = el("span", "display:flex;align-items:baseline;gap:10px;font-size:13px;color:" + (h.closed ? "var(--faint)" : "var(--ink)") + ";");
+      line.appendChild(el("span", "flex: 1;", h.day)); line.appendChild(el("span", "font-family: var(--m); font-size: 12.5px;", h.time));
+      box.appendChild(line);
+    });
+    $("find-us").hidden = !where; $("open-hours").hidden = !lines.length;
+    $("find").hidden = on.hours === false || (!where && !lines.length);
+
+    var showComp = !!(reg && reg.name && reg.number) && on.compliance !== false;
+    $("reg").hidden = !(reg && reg.name);
+    if (reg && reg.name) $("reg-line").textContent = "Registered with " + reg.name + ".";
+    $("to-compliance").hidden = !showComp; $("nav-compliance").hidden = !showComp;
+    if (showComp) renderCompliance(shop, reg);
+
+    $("copyright").textContent = "© " + new Date().getFullYear() + " " + shop.name + (reg && reg.name && reg.number ? " · " + reg.name + " " + reg.number : "");
+    $("credit").hidden = on.credit === false;
+    renderTv(d, st, lines);
+    route();
+    calc();
+  }
+
+  function renderCompliance(shop, reg) {
+    var home = shop.home;
+    $("c-eyebrow").textContent = "Compliance · " + reg.name;
+    $("c-intro").textContent = shop.name + " is a registered money services business. The law asks us to check ID, keep records and report some transactions. Here is what that means for you, in plain words.";
+    $("c-registered").textContent = "Registered with " + reg.name;
+    $("c-body").textContent = reg.body || ""; $("c-body").hidden = !reg.body;
+    $("c-number").textContent = reg.number;
+    $("c-officer-cell").hidden = !reg.officer; $("c-officer").textContent = reg.officer || "";
+    var registry = typeof reg.registryUrl === "string" && /^https:\/\//.test(reg.registryUrl) ? reg.registryUrl : "";
+    $("c-registry").hidden = !registry; if (registry) $("c-registry").href = registry;
+    var rules = Array.isArray(reg.rules) ? reg.rules : [], box = $("c-rules"); box.textContent = "";
+    rules.forEach(function (r, i) {
+      var row = el("div", "display:flex;align-items:flex-start;gap:16px;padding:14px 19px;" + (i ? "border-top:1px solid var(--hair);" : ""));
+      row.appendChild(el("span", "flex: none; min-width: 84px; font-family: var(--m); font-size: 13px; font-weight: 700; color: var(--ink);", r.when));
+      var txt = el("span", "min-width: 0;");
+      txt.appendChild(el("b", "display: block; font-size: 14px;", r.what));
+      txt.appendChild(el("span", "display: block; font-size: 12.5px; line-height: 1.5; color: var(--mute); margin-top: 3px;", r.why));
+      row.appendChild(txt); box.appendChild(row);
+    });
+    $("c-rules-block").hidden = !rules.length;
+    var ids = Array.isArray(reg.ids) ? reg.ids : [], idBox = $("c-ids"); idBox.textContent = "";
+    ids.forEach(function (name) {
+      var chip = el("span", "display: inline-flex; align-items: center; gap: 7px; padding: 9px 13px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-weight: 600;");
+      chip.appendChild(el("span", "color: var(--green); font-weight: 800;", "✓")); chip.appendChild(document.createTextNode(name));
+      idBox.appendChild(chip);
+    });
+    $("c-ids-block").hidden = !ids.length;
+    var privacy = $("c-privacy"); privacy.textContent = "";
+    ["We keep your record for five years, because the law requires it.",
+     "It’s only shared with " + reg.name + ", and only when the law requires it.",
+     "We never sell it, and we never use it for marketing."].forEach(function (x) {
+      var line = el("span", "display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.55;");
+      line.appendChild(el("span", "flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--green); margin-top: 8px;"));
+      line.appendChild(document.createTextNode(x)); privacy.appendChild(line);
+    });
+    $("c-ask").textContent = (reg.officer ? "Ask for " + reg.officer.split(" ")[0] + ", our compliance officer." : "Ask for our compliance officer.") + " We answer within two business days.";
+    $("c-legal").textContent = reg.name + " sets these rules. This page explains them in plain words and isn’t legal advice. Amounts are in " + home + ".";
+  }
+
+  /* ---- Display: the board full screen ---- */
+  var tvIdle = null;
+  function tvWake() {
+    $("tv-off").style.opacity = "1"; $("tv-off").style.pointerEvents = "";
+    clearTimeout(tvIdle);
+    tvIdle = setTimeout(function () { $("tv-off").style.opacity = "0"; $("tv-off").style.pointerEvents = "none"; }, 3000);
+  }
+  function renderTv(d, st, lines) {
+    var shop = d.shop, half = Math.ceil(d.rates.length / 2), cols = $("tv-cols"); cols.textContent = "";
+    [d.rates.slice(0, half), d.rates.slice(half)].forEach(function (list) {
+      var col = el("div", "min-width: 0; display: flex; flex-direction: column; border-radius: 1vw; overflow: hidden; background: rgba(241,238,232,0.035);");
+      var head = el("div", "flex: none; display: flex; align-items: center; gap: 1vw; padding: 0.9vh 1.5vw; background: rgba(241,238,232,0.06);");
+      head.appendChild(el("span", "flex: 1; font-family: var(--m); font-size: clamp(8px, 0.72vw, 13px); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(241,238,232,0.38);", "Currency"));
+      head.appendChild(el("span", "width: 26%; text-align: right; font-family: var(--m); font-size: clamp(8px, 0.72vw, 13px); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(241,238,232,0.5);", "We buy"));
+      head.appendChild(el("span", "width: 26%; text-align: right; font-family: var(--m); font-size: clamp(8px, 0.72vw, 13px); letter-spacing: 0.24em; text-transform: uppercase; color: var(--green-bright); font-weight: 600;", "We sell"));
+      col.appendChild(head);
+      list.forEach(function (r, i) {
+        var row = el("div", "flex:1;min-height:0;display:flex;align-items:center;gap:1vw;padding:0 1.5vw;background:" + (i % 2 ? "rgba(241,238,232,0.035)" : "transparent") + ";");
+        row.appendChild(flag(r.code, "display:inline-flex;width:clamp(26px,2.5vw,48px);height:clamp(18px,1.7vw,33px);border-radius:0.28vw;overflow:hidden;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.28), 0 1px 3px rgba(0,0,0,0.4);"));
+        var names = el("span", "flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.7vw;");
+        names.appendChild(el("b", "font-family: var(--m); font-size: clamp(16px, 2.05vw, 40px); font-weight: 700; letter-spacing: 0.02em; line-height: 1;", r.code));
+        names.appendChild(el("span", "font-size: clamp(8px, 0.76vw, 15px); color: rgba(241,238,232,0.38); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;", FACE.currencyName(r.code)));
+        row.appendChild(names);
+        row.appendChild(el("span", "width: 26%; text-align: right; font-family: var(--m); font-size: clamp(16px, 2.05vw, 40px); font-weight: 400; line-height: 1; letter-spacing: -0.02em; color: rgba(241,238,232,0.82); font-variant-numeric: tabular-nums;", rate(r.buy)));
+        row.appendChild(el("span", "width: 26%; text-align: right; font-family: var(--m); font-size: clamp(16px, 2.05vw, 40px); font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--green-bright); font-variant-numeric: tabular-nums;", rate(r.sell)));
+        col.appendChild(row);
+      });
+      cols.appendChild(col);
+    });
+    var hours = $("tv-hours"); hours.textContent = "";
+    lines.forEach(function (h) {
+      var today = st && h.days && h.days.indexOf(st.day) >= 0;
+      var wrap = el("span", "display:inline-flex;flex-direction:column;gap:0.4vh;padding:0.55vh 0.9vw;border-radius:0.55vw;background:" + (today ? "rgba(241,238,232,0.09)" : "transparent") + ";");
+      wrap.appendChild(el("span", "font-family:var(--m);font-size:clamp(7.5px,0.68vw,13px);letter-spacing:0.2em;text-transform:uppercase;color:" + (today ? "rgba(241,238,232,0.72)" : "rgba(241,238,232,0.34)") + ";", h.day));
+      wrap.appendChild(el("b", "font-family:var(--m);font-size:clamp(11px,1.05vw,20px);font-weight:600;letter-spacing:0.01em;line-height:1;color:" + (h.closed ? "rgba(241,238,232,0.36)" : today ? "#F1EEE8" : "rgba(241,238,232,0.6)") + ";", h.time));
+      hours.appendChild(wrap);
+    });
+    $("tv-per").textContent = "Per 1 unit in " + shop.home + " · indicative";
+    var reg = shop.regulator;
+    $("tv-reg").hidden = !(reg && reg.name);
+    if (reg && reg.name) { $("tv-reg-label").textContent = reg.number ? "Regulated by · " + reg.number : "Regulated by"; $("tv-reg-name").textContent = reg.name; }
+    tvTick();
+  }
+  function tvTick() {
+    var d = state.data; if (!d) return;
+    var zone = d.shop.timeZone, now = zoned(zone);
+    $("tv-clock").textContent = pad(now.h) + ":" + pad(now.m) + ":" + pad(now.s);
+    var o = { weekday: "long", day: "numeric", month: "long" }; if (zone) o.timeZone = zone;
+    $("tv-date").textContent = new Date().toLocaleDateString(undefined, o);
+    var s = d.publishedAt ? Math.max(0, Math.floor((Date.now() - d.publishedAt) / 1000)) : 0, m = Math.floor(s / 60);
+    $("tv-ago").textContent = "Live · updated " + (!d.publishedAt ? "never" : s < 60 ? "just now" : m < 60 ? (m === 1 ? "1 min ago" : m + " min ago") : "at " + clockOf(d.publishedAt, zone));
+  }
+  function tvOn() {
+    $("tv").hidden = false;
+    window.addEventListener("mousemove", tvWake); window.addEventListener("touchstart", tvWake);
+    tvWake();
+    var el2 = $("tv");
+    if (el2.requestFullscreen) el2.requestFullscreen().catch(function (e) { console.warn("[rate page] full screen refused", e); });
+  }
+  function tvOff() {
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    clearTimeout(tvIdle);
+    window.removeEventListener("mousemove", tvWake); window.removeEventListener("touchstart", tvWake);
+    $("tv").hidden = true;
+  }
+  $("tv-on").addEventListener("click", tvOn);
+  $("tv-off").addEventListener("click", tvOff);
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("tv").hidden) tvOff(); });
+  /* Leaving full screen with the browser's own key leaves display mode too. */
+  document.addEventListener("fullscreenchange", function () { if (!document.fullscreenElement && !$("tv").hidden) tvOff(); });
+
+  /* ---- the two pages: today's rates, and #compliance ---- */
+  function route() {
+    var d = state.data; if (!d) return;
+    var comp = location.hash === "#compliance" && !$("nav-compliance").hidden;
+    $("home").hidden = comp; $("compliance").hidden = !comp;
+    $("nav-rates").setAttribute("style", "font-size:13px;padding:6px 0;font-weight:" + (comp ? 600 : 800) + ";color:" + (comp ? "var(--mute)" : "var(--ink)") + ";");
+    $("nav-compliance").setAttribute("style", "font-size:13px;padding:6px 0;font-weight:" + (comp ? 800 : 600) + ";color:" + (comp ? "var(--ink)" : "var(--mute)") + ";");
+    $("nav-compliance").hidden = !(d.shop.regulator && d.shop.regulator.name && d.shop.regulator.number) || (d.shop.show || {}).compliance === false;
+    $("footer").hidden = false; $("missing").hidden = true;
+  }
+  window.addEventListener("hashchange", function () { route(); window.scrollTo(0, 0); });
+  $("to-compliance").addEventListener("click", function () { location.hash = "#compliance"; });
+
+  function load() {
+    fetch(preview ? "/api/rate-page/preview" : "/api/public/rate-pages/" + encodeURIComponent(slug))
+      .then(function (res) { if (res.status === 404 || res.status === 401) return null; if (!res.ok) throw new Error("rates answered " + res.status); return res.json(); })
+      .then(function (d) {
+        if (d) return render(d);
+        if (!state.data) { $("missing").hidden = false; $("home").hidden = true; $("compliance").hidden = true; $("footer").hidden = true; }
+      })
+      /* A failed refresh keeps the rates already on screen; the first
+         load failing says so instead of showing an empty page. */
+      .catch(function (e) { console.warn("[rate page]", e); if (!state.data) $("missing").hidden = false; });
+  }
+  $("calc-amount").addEventListener("input", function (e) { e.target.value = e.target.value.replace(/[^\d.,]/g, ""); calc(); });
+  $("calc-code").addEventListener("change", calc);
+  $("calc-swap").addEventListener("click", function () { state.dir = state.dir === "sell" ? "buy" : "sell"; calc(); });
+  load();
+  setInterval(load, 5 * 60 * 1000);
+  /* The open line and the display clock follow the shop's clock. */
+  setInterval(function () { if (!state.data) return; if (!$("tv").hidden) tvTick(); }, 1000);
+  setInterval(function () { if (state.data) paintOpen(state.data.shop); }, 60 * 1000);
+})();
+</script>
+</body>
+</html>

@@ -472,7 +472,8 @@ for (const [who, staffId, hasSettings] of [
 ] as const) {
   test(`${who} is refused the reporting line`, async ({ page }) => {
     await signInAtDesk(page, staffId);
-    await page.getByText(/Rate Board/i).first().waitFor({ timeout: 45_000 });
+    /* The desk is open once a window is (the Rates window was titled "Rate Board"). */
+    await page.locator("#desktop .win.show").first().waitFor({ timeout: 45_000 });
 
     if (hasSettings) {
       /* A manager HAS Settings — hiding the screen is not what protects

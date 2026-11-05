@@ -70,6 +70,8 @@ export interface SiteConfig {
   region?: string;
   postal?: string;
   hours?: { days: string; hours: string }[];
+  /* Hours by day, from the rate page editor: what says open or closed. */
+  week?: OpeningDay[];
   updatedAt?: string;
 }
 
@@ -297,6 +299,10 @@ export const branches = pgTable(
        it. Migration 033 adds the column on Postgres; the default keeps
        every existing branch off. */
     airsideOrCasino: boolean("airside_or_casino").notNull().default(false),
+    /* Rates v2.5 Auto-publish: every market pull publishes this branch's
+       board again, in the shop's home currency. Migration 065; off until
+       staff who may change rates turn it on. */
+    autoPublishRates: boolean("auto_publish_rates").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("branches_entity_idx").on(t.legalEntityId)],
@@ -440,6 +446,8 @@ export interface RateBoardRow {
   mid: number;
   spread?: number;
   show?: boolean;
+  /* The shop pinned this rate (Pricing): the market sync never moves it. */
+  pinned?: boolean;
 }
 
 export const rateBoards = pgTable(
@@ -465,15 +473,35 @@ export const rateBoards = pgTable(
    from the newest snapshot, preserving staff margins/spreads/order. */
 /* Rates v2.5 (migration 062). Where a shop's published board is shown. */
 export const shopRatePages = pgTable("shop_rate_pages", {
-  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id, { onDelete: "cascade" }),
   slug: text("slug").notNull(),
   live: boolean("live").notNull().default(false),
+  /* What the shop wrote for its page (migration 063). See rates/rate-page.ts. */
+  content: jsonb("content").$type<RatePageContent>().notNull().default({}),
+  /* The shop's logo, a checked PNG data URL, and when it changed (064). */
+  logo: text("logo"),
+  logoAt: timestamp("logo_at", { withTimezone: true }),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export type WindowScreenKind = "tv" | "tablet";
-export type WindowScreenLayout = "one" | "two";
+/* A day's opening hours, [opens, closes] in hours (9.5 is 9:30), or null
+   for closed. A week is seven of them, Sunday first. */
+export type OpeningDay = [number, number] | null;
+export type RatePageContent = {
+  name?: string;
+  tagline?: string;
+  show?: { converter?: boolean; hours?: boolean; compliance?: boolean };
+  /* null or absent: the first six of the board, in board order. */
+  codes?: string[] | null;
+  regulator?: { name: string; number: string; officer: string };
+  feeNote?: string;
+};
+
+export type WindowScreenKind = "tv" | "portrait" | "tablet" | "strip";
+export type WindowScreenLayout = "one" | "two" | "rotate";
+/* What shows on a screen; an absent key means shown (064). */
+export type WindowScreenShow = { flags?: boolean; names?: boolean; clock?: boolean; logo?: boolean };
 export type WindowScreenTheme = "light" | "dark";
 export const windowScreens = pgTable("window_screens", {
   id: text("id").primaryKey(),
@@ -484,10 +512,13 @@ export const windowScreens = pgTable("window_screens", {
   theme: text("theme").$type<WindowScreenTheme>().notNull(),
   currencies: jsonb("currencies").$type<string[]>().notNull().default([]),
   showHours: boolean("show_hours").notNull().default(true),
+  show: jsonb("show").$type<WindowScreenShow>().notNull().default({}),
   token: text("token").notNull(),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   retiredAt: timestamp("retired_at", { withTimezone: true }),
+  /* When the screen last asked for its rates (066), for "On" at the desk. */
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });
 
 export const marketRates = pgTable(
