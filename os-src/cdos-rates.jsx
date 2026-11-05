@@ -163,7 +163,7 @@
      the board. A change here is a draft like any other on the board;
      Publish sends it. The spread is the shop's setting (spreads), the
      same one Pricing & rates edits. */
-  function CurrencyPanel({ row, home, defPct, floor, target, stock, low, readOnly, onClose, onSpread, onToggle, cards }) {
+  function CurrencyPanel({ row, home, defPct, floor, target, stock, low, readOnly, onClose, onSpread, onToggle, onRecord, cards }) {
     const closeRef = useRef(null);
     useEffect(() => {
       if (closeRef.current) closeRef.current.focus();
@@ -222,6 +222,7 @@
           </div>}
         </div>
         <div style={css('flex:none;display:flex;gap:8px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line);background:#fff;')}>
+          {onRecord && <button type="button" onClick={onRecord} style={css('flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;border:0;background:var(--primary);color:#fff;cursor:pointer;')}>Record cash bought</button>}
           <span style={{ flex: 1 }} />
           <button type="button" disabled={readOnly} onClick={onToggle} style={ghostBtn}>{row.show ? 'Take off the board' : 'Put on the board'}</button>
         </div>
@@ -229,7 +230,7 @@
     </div>);
   }
 
-  function Board({ settings, setSettings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite, locked, onLock }) {
+  function Board({ settings, setSettings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite, locked, onLock, onRecordCash }) {
     const canPublish = PUBLISHERS.includes(serverRole);
     /* Locked rates take no changes until a manager unlocks them (the
        server refuses a publish meanwhile). */
@@ -558,12 +559,13 @@
           inside it. */}
       {selRow && boardRef.current && ReactDOM.createPortal(<CurrencyPanel row={selRow} home={home} defPct={defPct} floor={B.floorFor(settings, selRow.code)} target={target} stock={stock}
         low={settings.vaultFloors ? Number(settings.vaultFloors[selRow.code]) : 0} readOnly={readOnly} cards={cards}
-        onClose={closePanel} onSpread={pct => setSpread(selRow.code, pct)} onToggle={() => toggle(selRow)} />, boardRef.current.closest('[data-rates]') || document.body)}
+        onClose={closePanel} onSpread={pct => setSpread(selRow.code, pct)} onToggle={() => toggle(selRow)}
+        onRecord={hasCost && onRecordCash && ['supervisor', 'branch_manager', 'administrator'].includes(serverRole) ? () => onRecordCash(selRow.code) : null} />, boardRef.current.closest('[data-rates]') || document.body)}
     </div>);
   }
 
   /* The design's folder tabs. */
-  const TAB_ICON = { board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4', site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18', rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4', guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4' };
+  const TAB_ICON = { board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4', site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18', rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4', guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4', stock: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8' };
 
   function Rates({ settings, setSettings, me, log, serverRole, deals }) {
     const [tab, setTab] = useState('board');
@@ -588,7 +590,16 @@
       window.addEventListener('keydown', esc);
       return () => window.removeEventListener('keydown', esc);
     }, []);
-    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']];
+    /* The design's tabs. Cost & stock is for plans with the ledger; on a
+       Rates plan the owner sees what Full System adds (locked), and staff
+       do not see it. */
+    const hasDeals = (settings.billingPlan || 'premium') !== 'basic';
+    const owns = (serverRole || (me && me.role === 'Owner' ? 'administrator' : '')) === 'administrator';
+    const tabs = [['board', 'Board']].concat(hasDeals ? [['stock', 'Cost & stock']] : (owns ? [['stock', 'Cost & stock', true]] : []),
+      [['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']]);
+    /* Record cash bought: from Cost & stock, or a currency's panel. */
+    const [buying, setBuying] = useState(null);
+    const [stockVersion, setStockVersion] = useState(0);
     const setLocked = async (on) => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -640,11 +651,11 @@
           </div>
         </div>
         <div role="tablist" aria-label="Rates" style={css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')}>
-          {tabs.map(([id, label]) => { const on = tab === id; return (<button key={id} type="button" role="tab" aria-selected={on} data-tour={id === 'site' ? 'rate-page' : undefined} onClick={() => { setTab(id); setTip(null); }}
+          {tabs.map(([id, label, lockedTab]) => { const on = tab === id; return (<button key={id} type="button" role="tab" aria-selected={on} data-tour={id === 'site' ? 'rate-page' : undefined} onClick={() => { setTab(id); setTip(null); }}
             style={css('flex:none;display:inline-flex;align-items:center;gap:9px;appearance:none;border:0;cursor:pointer;white-space:nowrap;font-family:var(--m);font-size:' + (cards ? '11px' : '12.5px') + ';letter-spacing:0.12em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;'
               + (on ? 'background:var(--primary);color:#fff;padding:' + (cards ? '11px 26px 11px 13px' : '13px 34px 13px 18px') + ';border-radius:5px 0 0 0;clip-path:polygon(0 0,calc(100% - 20px) 0,100% 100%,0 100%);'
                 : 'background:transparent;color:var(--mute);padding:' + (cards ? '11px 13px' : '13px 16px') + ';'))}>
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d={TAB_ICON[id]} /></svg>{label}</button>); })}
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d={TAB_ICON[id]} /></svg>{label}{lockedTab && <svg aria-label="Full System" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>}</button>); })}
         </div>
       </div>
       {readOnly && <div style={css('flex:none;display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:12.5px;font-weight:500;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.04);color:var(--mute);')}>
@@ -658,7 +669,8 @@
       </div>}
       <div style={css('flex:1;min-height:0;overflow-y:auto;')}>
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
-          {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
+          {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onRecordCash={hasDeals ? (code) => setBuying({ code }) : null} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
+          {tab === 'stock' && <window.CDOS.RatesStock settings={settings} serverRole={serverRole} me={me} hasDeals={hasDeals} owns={owns} w={w} version={stockVersion} onRecord={(code) => setBuying({ code })} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
           {tab === 'rules' && <window.CDOS.RatesPricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} onToast={flash} locked={isLocked} w={w} onGoGuard={() => setTab('guard')} />}
           {tab === 'guard' && <window.CDOS.RatesGuard settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} deals={deals} locked={isLocked} />}
@@ -676,6 +688,7 @@
           <button type="button" onClick={() => setTip(null)} style={css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary);')}>Got it</button>
         </div>
       </div>}
+      {buying && <window.CDOS.RatesRecordCash code={buying.code} onClose={() => setBuying(null)} onDone={(msg) => { setBuying(null); setStockVersion(v => v + 1); flash(msg); }} />}
       {toast && <div role="status" style={css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#5FD69B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M4 12.5l5 5L20 6.5" /></svg>{toast}</div>}
     </div>);

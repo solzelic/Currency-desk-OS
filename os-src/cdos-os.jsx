@@ -1227,7 +1227,10 @@
        balances against it. It is recorded server-first like every other
        movement, so a delivery that the ledger refused never shows up as
        stock the desk does not have. */
-    const creditVault = async (ccy2, units, supplier, idempotencyKey) => {
+    /* costHome: what the delivery cost in the shop's own currency, from the
+       Vault's receive form. Without it the delivery took the vault's old
+       average, or no cost at all, and the desk's cost was not what was paid. */
+    const creditVault = async (ccy2, units, supplier, idempotencyKey, costHome) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return { ok: false, message: 'Nothing to receive.' };
       if (srvUser && window.CDOS.Backend && vaultTracked) {
@@ -1246,6 +1249,7 @@
             counterpartyType: 'supplier',
             counterpartyRef: supplier || 'Wholesale order',
             reason: `Wholesale delivery into ${b.code} vault`,
+            ...(Number(costHome) > 0 ? { costHome: Number(costHome).toFixed(2) } : {}),
           });
         } catch (error) {
           log('Order receipt failed', error.message || 'The ledger refused the delivery');

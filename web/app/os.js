@@ -20956,7 +20956,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.faint,
         fontFamily: 'Space Mono'
       }
-    }, "CAD paid"), /*#__PURE__*/React.createElement("input", {
+    }, (homeCcy() || 'Home') + ' paid'), /*#__PURE__*/React.createElement("input", {
       type: "number",
       autoFocus: receiveOnly,
       value: costCad,
@@ -21509,7 +21509,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
          Marking it received in the list before that answer arrives is how
          a second tap became a second credit. */
       if (onOrderReceived) {
-        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey);
+        const posted = await onOrderReceived(p.ccy, units, p.supplier || 'Wholesale notes', p.idempotencyKey, costCad);
         if (posted && posted.ok === false) return posted;
       }
       const unitCost = +(costCad / units).toFixed(6);
@@ -60658,6 +60658,709 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/cdos-rates-stock.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS: Rates, the Cost & stock tab and Record cash bought
+   (Rates v2.5)
+
+   A port of the design's Cost & stock tab and its "buy" sheet (handoff
+   rates-v2.5, "CurrencyDesk Rates v2.5", the isStock and isBuy sections):
+   the design's markup and style strings, turned into React styles by the
+   Rates app's css().
+
+   What the desk holds and what it cost, from the server:
+   - GET /api/ledger/position: each currency's quantity, in the vault and
+     this till, and its cost basis. A Rates plan is refused (the ledger is
+     not in it); a role that cannot read the shop's earnings gets the
+     quantities without the cost.
+   - The market value is the quantity at the market feed's mid in the
+     shop's own currency (GET /api/rates/market), the same market the Board
+     prices from.
+   - Running low: Settings vaultFloors, the Vault's reorder points.
+   - Recent cash bought: GET /api/ledger/vault/movements.
+   - The cost method: GET /api/ledger/cost-method.
+
+   Record cash bought sends a delivery into the vault with what it cost
+   (POST /api/ledger/vault/receipts, costHome), so the desk's average cost
+   is real. Staff who may move vault cash record it (vault:move, the
+   server's rule). The design also counts the notes by denomination; the
+   ledger does not keep denominations, so that step is not here.
+
+   A Rates plan shows the owner what Full System adds, and hides the tab
+   from staff, as the design does.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useCallback,
+    useRef
+  } = React;
+  const B = window.CDOS.ratesBoard;
+  const FACE = window.CurrencyFace;
+  const num = v => {
+    const n = Number(String(v == null ? '' : v).replace(/,/g, ''));
+    return isFinite(n) ? n : NaN;
+  };
+  const money = (v, dp = 0) => Number(v).toLocaleString('en-CA', {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp
+  });
+  const units = v => Number(v).toLocaleString('en-CA', {
+    maximumFractionDigits: 2
+  });
+  const MOVERS = ['supervisor', 'branch_manager', 'administrator'];
+
+  /* The desk's position as the Rates app reads it: per currency the
+     quantity, vault and this till, and the cost when the server gives it. */
+  function readPosition(pos) {
+    const byCode = {};
+    (pos.currencies || []).forEach(c => {
+      const qty = Number(c.quantity),
+        basis = c.costBasisHome == null ? null : Number(c.costBasisHome);
+      byCode[c.currency] = {
+        qty,
+        basis,
+        cost: basis !== null && qty > 0 ? basis / qty : null,
+        vault: c.vault ? Number(c.vault.quantity) : 0,
+        till: c.till ? Number(c.till.quantity) : 0
+      };
+    });
+    return {
+      hasCost: 'costBasisHome' in pos,
+      byCode,
+      unpriced: pos.unpricedCurrencies || []
+    };
+  }
+
+  /* ---- Record cash bought (the design's buy sheet, step one) ---- */
+  function RecordCash({
+    code: first,
+    onClose,
+    onDone
+  }) {
+    const ui = window.CDOS.ratesUi;
+    const {
+      css,
+      Flag,
+      fx,
+      getJson
+    } = ui;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    /* The market and what is on hand, for the preview: the rate paid
+       against the market, and the new average. */
+    const [market, setMarket] = useState({});
+    const [position, setPosition] = useState(null);
+    useEffect(() => {
+      Promise.all([getJson('/api/rates/market').catch(() => ({
+        mids: null
+      })), getJson('/api/rates').catch(() => ({
+        board: null
+      }))]).then(([f, r]) => {
+        const mids = {};
+        B.draftRows({
+          codes: window.CDOS.CCY || [],
+          home,
+          board: r.board,
+          market: B.homeMarket(f.mids, home),
+          settings: {}
+        }).forEach(x => {
+          if (x.mid) mids[x.code] = x.mid;
+        });
+        setMarket(mids);
+      });
+      getJson('/api/ledger/position').then(p => setPosition(readPosition(p)), () => setPosition(null));
+    }, [home]);
+    const codes = (window.CDOS.CCY || []).filter(c => c && c !== home);
+    const [code, setCode] = useState(first && codes.includes(first) ? first : '');
+    const [q, setQ] = useState('');
+    const [amt, setAmt] = useState('');
+    const [paid, setPaid] = useState('');
+    const [from, setFrom] = useState('');
+    const [kind, setKind] = useState('supplier');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    /* One key for this sheet: a retry after a lost answer is the same
+       delivery, not a second one. */
+    const key = useRef('rates-buy:' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2, 10));
+    const closeRef = useRef(null);
+    useEffect(() => {
+      if (closeRef.current) closeRef.current.focus();
+      const esc = e => {
+        if (e.key === 'Escape' && !busy) onClose();
+      };
+      document.addEventListener('keydown', esc);
+      return () => document.removeEventListener('keydown', esc);
+    }, [busy, onClose]);
+    const a = num(amt),
+      p = num(paid);
+    const rate = a > 0 && p > 0 ? p / a : null;
+    const mid = code && market[code] ? market[code] : null;
+    const held = code && position ? position.byCode[code] : null;
+    const newAvg = rate && held && position.hasCost && held.basis !== null ? (held.basis + p) / (held.qty + a) : null;
+    const off = rate && mid ? (rate / mid - 1) * 100 : null;
+    const odd = off !== null && Math.abs(off) > 5;
+    const ready = !!code && a > 0 && p > 0 && from.trim() && !busy;
+    const shown = codes.filter(c => !q.trim() || c.toLowerCase().includes(q.trim().toLowerCase()) || FACE.currencyName(c).toLowerCase().includes(q.trim().toLowerCase()));
+    const field = css('width:100%;height:44px;padding:0 13px;border-radius:11px;border:1px solid var(--line);background:#fff;outline:none;font-size:15px;color:var(--ink);box-sizing:border-box;');
+    const record = async () => {
+      if (!ready) return;
+      setBusy(true);
+      setErr('');
+      try {
+        const res = await fetch('/api/ledger/vault/receipts', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            idempotencyKey: key.current,
+            direction: 'in',
+            currency: code,
+            amount: a.toFixed(2),
+            counterpartyType: kind,
+            counterpartyRef: from.trim(),
+            reason: 'Cash bought from ' + from.trim(),
+            costHome: p.toFixed(2)
+          })
+        });
+        if (!res.ok) {
+          let body = null;
+          try {
+            body = await res.json();
+          } catch (e) {
+            body = null;
+          }
+          setErr(res.status === 403 ? 'Only a supervisor, manager or the owner can record cash into the vault.' : body && body.message || 'The ledger refused this delivery (it answered ' + res.status + '). Nothing was recorded.');
+          return;
+        }
+        onDone(units(a) + ' ' + code + ' recorded at ' + fx(rate));
+      } catch (e) {
+        setErr('No connection. Nothing was recorded; try again.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      onClick: () => {
+        if (!busy) onClose();
+      },
+      style: css('position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:28px;background:rgba(23,20,15,0.32);animation:rtFade .2s ease both;')
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-modal": "true",
+      "aria-label": "Record cash bought",
+      onClick: e => e.stopPropagation(),
+      style: css('display:flex;flex-direction:column;width:min(560px, 100%);max-height:100%;background:#FBFAF7;overflow:hidden;border-radius:18px;box-shadow:0 40px 90px -30px rgba(23,20,15,0.6),0 0 0 1px rgba(23,20,15,0.08);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:flex-start;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mute);')
+    }, "Vault"), /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:19px;font-weight:800;margin-top:3px;')
+    }, "Record cash bought"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;color:var(--mute);margin-top:3px;')
+    }, "What came in, and what you paid for it. This is what makes your cost real.")), /*#__PURE__*/React.createElement("button", {
+      ref: closeRef,
+      type: "button",
+      onClick: onClose,
+      disabled: busy,
+      title: "Close",
+      "aria-label": "Close",
+      style: css('flex:none;appearance:none;border:0;background:rgba(23,20,15,0.06);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "13",
+      height: "13",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M6 6l12 12M18 6L6 18"
+    })))), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1;min-height:0;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px;')
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:13px;font-weight:700;')
+    }, "Currency"), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;')
+    }), /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Find a currency",
+      value: q,
+      onChange: e => setQ(e.target.value),
+      placeholder: "Find a currency",
+      style: css('flex:0 1 190px;min-width:140px;height:34px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:rgba(23,20,15,0.03);outline:none;font-size:13px;')
+    })), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fill, minmax(104px, 1fr));gap:6px;max-height:176px;overflow-y:auto;')
+    }, shown.map(c => {
+      const on = c === code;
+      const h = position && position.byCode[c];
+      return /*#__PURE__*/React.createElement("button", {
+        key: c,
+        type: "button",
+        "aria-pressed": on,
+        onClick: () => setCode(c),
+        style: css('appearance:none;display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:10px;cursor:pointer;text-align:left;border:' + (on ? '1.5px solid var(--primary)' : '1px solid var(--line)') + ';background:' + (on ? 'var(--green-soft)' : '#fff') + ';')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: c,
+        size: 24
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('min-width:0;line-height:1.15;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display:block;font-family:var(--m);font-size:13px;')
+      }, c), /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-size:10.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+      }, h ? units(h.qty) + ' on hand' : FACE.currencyName(c))));
+    }), !shown.length && /*#__PURE__*/React.createElement("span", {
+      style: css('grid-column:1 / -1;padding:14px 4px;font-size:13px;color:var(--mute);')
+    }, 'No currency matches “' + q + '”.'))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;')
+    }, /*#__PURE__*/React.createElement("label", {
+      style: css('display:block;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:13px;font-weight:700;margin-bottom:7px;')
+    }, 'Amount you got · ' + (code || 'currency')), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      min: "0",
+      value: amt,
+      onChange: e => setAmt(e.target.value),
+      placeholder: "10000",
+      style: field
+    })), /*#__PURE__*/React.createElement("label", {
+      style: css('display:block;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:13px;font-weight:700;margin-bottom:7px;')
+    }, 'Total you paid · ' + home), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      min: "0",
+      value: paid,
+      onChange: e => setPaid(e.target.value),
+      placeholder: "13600",
+      style: field
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;align-items:end;')
+    }, /*#__PURE__*/React.createElement("label", {
+      style: css('display:block;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:13px;font-weight:700;margin-bottom:7px;')
+    }, "Bought from"), /*#__PURE__*/React.createElement("input", {
+      value: from,
+      onChange: e => setFrom(e.target.value),
+      placeholder: "Your wholesaler or bank",
+      style: field
+    })), /*#__PURE__*/React.createElement("span", {
+      role: "group",
+      "aria-label": "Who sold it",
+      style: css('display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:rgba(23,20,15,0.06);justify-self:start;')
+    }, [['supplier', 'Wholesaler'], ['bank', 'Bank'], ['other', 'Other']].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+      key: v,
+      type: "button",
+      "aria-pressed": kind === v,
+      onClick: () => setKind(v),
+      style: css('appearance:none;border:0;cursor:pointer;font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;background:' + (kind === v ? '#fff' : 'transparent') + ';color:' + (kind === v ? 'var(--ink)' : 'var(--mute)') + ';box-shadow:' + (kind === v ? '0 1px 3px rgba(23,20,15,0.14)' : 'none') + ';')
+    }, l)))), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;color:var(--mute);')
+    }, "It goes into the vault. Move it to a till from the Vault when you need it there."), rate && /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;border-radius:13px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;padding:11px 14px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;font-size:13px;font-weight:600;')
+    }, 'You paid ' + fx(rate) + ' ' + home + ' per ' + code), mid && /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:12px;color:var(--mute);')
+    }, 'Market ' + fx(mid))), newAvg !== null && /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;font-size:13px;')
+    }, "New average cost"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:13px;font-weight:700;')
+    }, fx(newAvg))), off !== null && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:11px 14px;border-top:1px solid var(--hair);font-size:12.5px;line-height:1.5;color:' + (odd ? 'var(--clay)' : 'var(--mute)') + ';font-weight:' + (odd ? '600' : '400') + ';')
+    }, odd ? 'That is ' + Math.abs(off).toFixed(1) + '% ' + (off > 0 ? 'over' : 'under') + ' the market. Check the amount and what you paid before you record it.' : Math.abs(off).toFixed(2) + '% ' + (off >= 0 ? 'over' : 'under') + ' the market.')), err && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      style: css('flex:none;padding:11px 14px;border-radius:12px;background:var(--clay-soft);color:var(--clay);font-size:13px;font-weight:600;')
+    }, err), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:center;gap:10px;padding:11px 13px;border-radius:12px;background:rgba(23,20,15,0.04);font-size:12px;line-height:1.5;color:var(--mute);')
+    }, "Only for cash bought from a wholesaler or a bank. Cash a customer sells you at the counter is a deal, and goes through the Ledger.")), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--line);background:#fff;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      disabled: busy,
+      style: css('appearance:none;border:0;background:none;cursor:pointer;font-size:13px;font-weight:700;color:var(--mute);padding:8px 4px;')
+    }, "Cancel"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: record,
+      disabled: !ready,
+      style: css('flex:none;appearance:none;border:0;border-radius:11px;padding:12px 20px;font-family:var(--m);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;cursor:' + (ready ? 'pointer' : 'not-allowed') + ';background:' + (ready ? 'var(--primary)' : 'rgba(23,20,15,0.08)') + ';color:' + (ready ? '#fff' : 'rgba(23,20,15,0.35)') + ';')
+    }, busy ? 'Recording…' : 'Record'))));
+  }
+
+  /* ---- the Cost & stock tab ---- */
+  function RatesStock({
+    settings,
+    serverRole,
+    me,
+    hasDeals,
+    owns,
+    onRecord,
+    version,
+    w
+  }) {
+    const ui = window.CDOS.ratesUi;
+    const {
+      css,
+      Flag,
+      fx,
+      getJson,
+      chip
+    } = ui;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const canMove = MOVERS.includes(serverRole || (me && me.role === 'Owner' ? 'administrator' : me && me.role === 'Manager' ? 'branch_manager' : 'teller'));
+    const [data, setData] = useState({
+      loading: true,
+      error: null,
+      position: null,
+      market: {},
+      board: null,
+      moves: [],
+      method: null
+    });
+    const load = useCallback(async () => {
+      try {
+        const [pos, feed, rates] = await Promise.all([getJson('/api/ledger/position'), getJson('/api/rates/market'), getJson('/api/rates')]);
+        const [moves, cm] = await Promise.all([getJson('/api/ledger/vault/movements?limit=40').catch(() => ({
+          movements: []
+        })), getJson('/api/ledger/cost-method').catch(() => null)]);
+        setData({
+          loading: false,
+          error: null,
+          position: readPosition(pos),
+          market: B.homeMarket(feed.mids, home),
+          board: rates.board,
+          moves: moves.movements || [],
+          method: cm && cm.method
+        });
+      } catch (e) {
+        setData(d => ({
+          ...d,
+          loading: false,
+          error: e.message
+        }));
+      }
+    }, [home]);
+    useEffect(() => {
+      if (hasDeals) load();
+    }, [load, hasDeals, version]);
+    if (!hasDeals) {
+      /* A Rates plan: the owner sees what Full System adds. */
+      const upgrade = () => {
+        if (window.CDOS.openSettingsTab) window.CDOS.openSettingsTab('billing');else if (window.CDOS.openApp) window.CDOS.openApp('settings');
+      };
+      return /*#__PURE__*/React.createElement("div", {
+        style: css('max-width:640px;padding:26px;border-radius:20px;background:#fff;border:1px solid var(--line);')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display:inline-flex;align-items:center;gap:7px;font-family:var(--m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;color:var(--mute);background:rgba(23,20,15,0.05);padding:5px 10px;border-radius:999px;')
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "12",
+        height: "12",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2.4",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("rect", {
+        x: "5",
+        y: "11",
+        width: "14",
+        height: "10",
+        rx: "2"
+      }), /*#__PURE__*/React.createElement("path", {
+        d: "M8 11V8a4 4 0 0 1 8 0v3"
+      })), "Full System and AI Bundle"), /*#__PURE__*/React.createElement("h2", {
+        style: css('margin:14px 0 0;font-size:24px;font-weight:800;letter-spacing:-0.02em;')
+      }, "Know what you actually make"), /*#__PURE__*/React.createElement("p", {
+        style: css('font-size:14px;line-height:1.6;color:var(--mute);margin:8px 0 0;')
+      }, "You're on Rates. You price against the market, which is all a board needs. Full System adds the vault, so the desk knows what you paid for every note."), /*#__PURE__*/React.createElement("div", {
+        style: css('display:flex;flex-direction:column;gap:9px;margin-top:16px;')
+      }, ['What every currency cost you, and what it is worth now', 'What you would make selling it today', 'What is running low, before a customer asks for it', 'Deals, commission and a check on every deal before it posts'].map(u => /*#__PURE__*/React.createElement("span", {
+        key: u,
+        style: css('display:flex;align-items:flex-start;gap:9px;font-size:13.5px;line-height:1.5;')
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "14",
+        height: "14",
+        fill: "none",
+        stroke: "#1D6B45",
+        strokeWidth: "2.8",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: {
+          flex: 'none',
+          marginTop: 3
+        }
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M4 12.5l5 5L20 6.5"
+      })), u))), owns && /*#__PURE__*/React.createElement("div", {
+        style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:20px;')
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        onClick: upgrade,
+        style: css('flex:none;appearance:none;height:40px;padding:0 16px;border-radius:11px;border:0;background:var(--ink);color:#fff;font-size:13px;font-weight:700;cursor:pointer;')
+      }, "See Full System"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-size:12.5px;color:var(--faint);')
+      }, "Your board, website and window keep working either way.")));
+    }
+    if (data.loading) return /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
+    }, "Loading your cash\u2026");
+    if (data.error || !data.position) return /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      style: css('padding:16px 18px;border-radius:14px;background:#fff;border:1px solid var(--line);font-size:13.5px;color:var(--mute);')
+    }, 'The desk’s cash could not be read (' + (data.error || 'no answer') + '). Your board is not affected.');
+    const pos = data.position;
+    const drafted = B.draftRows({
+      codes: window.CDOS.CCY || [],
+      home,
+      board: data.board,
+      market: data.market,
+      settings
+    });
+    const onBoard = new Set(drafted.filter(r => r.show).map(r => r.code));
+    /* The market the Board shows: a pinned rate, the feed, else the last publish. */
+    const midOf = {};
+    drafted.forEach(r => {
+      if (r.mid) midOf[r.code] = r.mid;
+    });
+    const floors = settings.vaultFloors || {};
+    const codes = Object.keys(pos.byCode).filter(c => c !== home).sort((a, b) => (onBoard.has(b) ? 1 : 0) - (onBoard.has(a) ? 1 : 0) || a.localeCompare(b));
+    const lines = codes.map(c => {
+      const h = pos.byCode[c];
+      const mid = midOf[c] || data.market[c] || null;
+      const atCost = pos.hasCost && h.basis !== null ? h.basis : null;
+      const atMkt = mid ? h.qty * mid : null;
+      const gain = atCost !== null && atMkt !== null ? atMkt - atCost : null;
+      const low = num(floors[c]);
+      const status = h.qty <= 0 ? 'none' : low > 0 && h.qty < low ? 'low' : 'ok';
+      const fill = low > 0 ? Math.min(100, h.qty / (low * 2) * 100) : h.qty > 0 ? 60 : 0;
+      return {
+        c,
+        h,
+        mid,
+        atCost,
+        atMkt,
+        gain,
+        status,
+        fill
+      };
+    });
+    const sum = k => lines.every(l => l[k] !== null) ? lines.reduce((a, l) => a + l[k], 0) : null;
+    const totCost = pos.hasCost ? sum('atCost') : null,
+      totMkt = sum('atMkt'),
+      totGain = totCost !== null && totMkt !== null ? totMkt - totCost : null;
+    const lowList = lines.filter(l => l.status !== 'ok').map(l => l.c);
+    const big = (v, tone) => css('font-family:var(--m);font-size:20px;font-weight:700;margin-top:5px;color:' + tone + ';');
+    const stats = [{
+      label: 'Cash at cost',
+      value: totCost !== null ? home + ' ' + money(totCost) : '·',
+      note: pos.hasCost ? 'What you paid for everything on hand' : 'Your role does not see what the cash cost',
+      vStyle: big(0, 'var(--ink)')
+    }, {
+      label: 'At market',
+      value: totMkt !== null ? home + ' ' + money(totMkt) : '·',
+      note: 'What it is worth right now',
+      vStyle: big(0, 'var(--primary-deep)')
+    }, {
+      label: 'If sold at market',
+      value: totGain !== null ? (totGain >= 0 ? '+' : '−') + home + ' ' + money(Math.abs(totGain)) : '·',
+      note: 'Before spread or fees',
+      vStyle: big(0, totGain !== null && totGain < 0 ? 'var(--clay)' : 'var(--primary-deep)')
+    }, {
+      label: 'Running low',
+      value: String(lowList.length),
+      note: lowList.length ? lowList.join(', ') + ' below the line' : 'Nothing below its reorder point',
+      vStyle: big(0, lowList.length ? 'var(--clay)' : 'var(--ink)')
+    }];
+    const wide = (w || 1280) >= 880;
+    const cols = 'display:grid;grid-template-columns:minmax(170px,1.7fr) minmax(110px,1fr) minmax(84px,0.8fr) minmax(90px,0.9fr) minmax(90px,0.9fr) minmax(90px,0.9fr) 110px;gap:12px;';
+    const methodName = data.method === 'fifo' ? 'FIFO' : 'Average';
+    const bought = (data.moves || []).filter(m => m.direction === 'in' && (m.counterpartyType === 'supplier' || m.counterpartyType === 'bank')).slice(0, 5);
+    const when = iso => {
+      const t = Date.parse(iso);
+      if (!isFinite(t)) return '';
+      const {
+        deskTime,
+        deskDay
+      } = window.CDOS;
+      const zone = settings && settings.timezone;
+      return deskDay(t, zone) === deskDay(Date.now(), zone) ? deskTime(t, settings && settings.timeFormat, zone) : deskDay(t, zone);
+    };
+    const statusChip = s => ({
+      ...chip(s === 'ok' ? 'green' : s === 'low' ? 'red' : 'amber'),
+      fontSize: 10,
+      letterSpacing: '0.1em',
+      textTransform: 'uppercase'
+    });
+    const statusText = s => s === 'ok' ? 'In stock' : s === 'low' ? 'Reorder now' : 'None on hand';
+    const primaryBtn = css('flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;border:0;background:var(--primary);color:#fff;cursor:pointer;');
+    return /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;flex-direction:column;gap:14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(170px, 1fr));gap:1px;border-radius:16px;overflow:hidden;background:var(--line);border:1px solid var(--line);')
+    }, stats.map(g => /*#__PURE__*/React.createElement("div", {
+      key: g.label,
+      style: css('padding:14px 16px;background:#fff;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, g.label), /*#__PURE__*/React.createElement("div", {
+      style: g.vStyle
+    }, g.value), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12px;color:var(--mute);margin-top:3px;')
+    }, g.note)))), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "By currency",
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1 1 160px;display:inline-flex;align-items:center;gap:8px;font-size:14.5px;')
+    }, "By currency"), /*#__PURE__*/React.createElement("span", {
+      style: css('border:1px solid var(--line);background:rgba(23,20,15,0.03);border-radius:999px;padding:6px 11px;font-family:var(--m);font-size:10.5px;color:var(--mute);')
+    }, 'Cost method · ' + methodName), canMove && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onRecord(null),
+      style: primaryBtn
+    }, "Record cash bought")), wide && lines.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: css(cols + 'padding:11px 16px;background:rgba(23,20,15,0.035);border-bottom:1px solid var(--line);font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "On hand"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "Avg cost"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "At cost"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "At market"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "If sold now"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "Stock")), !lines.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:16px;font-size:13.5px;color:var(--mute);')
+    }, "The vault and this till hold no foreign cash yet. Record cash bought when a delivery comes in."), lines.map((l, i) => {
+      const head = /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;align-items:center;gap:11px;min-width:0;')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: l.c,
+        size: 30
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('min-width:0;flex:1;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;align-items:baseline;gap:7px;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('font-size:14.5px;font-weight:800;')
+      }, l.c), onBoard.has(l.c) && /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+      }, "On board")), /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;height:4px;border-radius:999px;background:rgba(23,20,15,0.07);margin-top:6px;overflow:hidden;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;height:100%;width:' + l.fill + '%;background:' + (l.status === 'ok' ? 'var(--primary)' : 'var(--clay)') + ';')
+      }))));
+      const cells = [['On hand', /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:13px;')
+      }, units(l.h.qty)), /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-size:11px;color:var(--faint);white-space:nowrap;')
+      }, 'Vault ' + units(l.h.vault) + ' · your till ' + units(l.h.till)))], ['Avg cost', /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:13px;')
+      }, pos.hasCost && l.h.cost ? fx(l.h.cost) : '·')], ['At cost', /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:13px;')
+      }, l.atCost !== null ? money(l.atCost) : '·')], ['At market', /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:13px;')
+      }, l.atMkt !== null ? money(l.atMkt) : '·')], ['If sold now', /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:13px;font-weight:700;color:' + (l.gain === null ? 'var(--mute)' : l.gain < 0 ? 'var(--clay)' : 'var(--primary-deep)') + ';')
+      }, l.gain === null ? '·' : (l.gain >= 0 ? '+' : '−') + money(Math.abs(l.gain)))]];
+      if (wide) return /*#__PURE__*/React.createElement("div", {
+        key: l.c,
+        "data-stock-row": l.c,
+        style: css(cols + 'align-items:center;padding:12px 16px;' + (i ? 'border-top:1px solid var(--hair);' : ''))
+      }, head, cells.map(([k, v]) => /*#__PURE__*/React.createElement("span", {
+        key: k,
+        style: css('text-align:right;min-width:0;')
+      }, v)), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;')
+      }, /*#__PURE__*/React.createElement("span", {
+        style: statusChip(l.status)
+      }, statusText(l.status))));
+      return /*#__PURE__*/React.createElement("div", {
+        key: l.c,
+        "data-stock-row": l.c,
+        style: css('padding:13px 16px;' + (i ? 'border-top:1px solid var(--hair);' : ''))
+      }, /*#__PURE__*/React.createElement("div", {
+        style: css('display:flex;align-items:center;gap:10px;')
+      }, head, /*#__PURE__*/React.createElement("span", {
+        style: statusChip(l.status)
+      }, statusText(l.status))), /*#__PURE__*/React.createElement("div", {
+        style: css('display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px 12px;margin-top:10px;')
+      }, cells.map(([k, v]) => /*#__PURE__*/React.createElement("span", {
+        key: k
+      }, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, k), v))));
+    })), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "Recent cash bought",
+      style: css('padding:16px;border-radius:16px;background:#fff;border:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:6px;')
+    }, "Recent cash bought"), !bought.length && /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:13px;color:var(--mute);padding:6px 0;')
+    }, "No deliveries recorded yet."), bought.map((m, i) => /*#__PURE__*/React.createElement("div", {
+      key: m.movementId || i,
+      style: css('display:flex;align-items:center;gap:10px;padding:9px 0;' + (i ? 'border-top:1px solid var(--hair);' : ''))
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('font-size:13px;')
+    }, units(m.amount) + ' ' + m.currency), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:11.5px;color:var(--mute);')
+    }, m.counterpartyRef)), /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:11px;color:var(--faint);')
+    }, when(m.createdAt))))), pos.hasCost && pos.unpriced.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 15px;border-radius:14px;background:var(--amber-soft);font-size:13px;line-height:1.45;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 240px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", null, pos.unpriced.join(', ') + ' cost is not known.'), " Profit on it isn't real until a delivery comes in with what you paid.")), window.CDOS.openApp && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => window.CDOS.openApp('vault'),
+      style: css('align-self:flex-start;appearance:none;border:0;background:none;padding:0;cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);')
+    }, "Counts, moves and ordering are in the Vault \u2192"));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    RatesStock,
+    RatesRecordCash: RecordCash,
+    ratesReadPosition: readPosition
+  });
+})();
+
 /* ---- os-src/cdos-rates.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
@@ -60918,6 +61621,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onClose,
     onSpread,
     onToggle,
+    onRecord,
     cards
   }) {
     const closeRef = useRef(null);
@@ -61076,7 +61780,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: css('font-size:12.5px;color:var(--mute);margin-top:3px;')
     }, 'Vault ' + n(held.vault) + ' · your till ' + n(held.till) + (low > 0 && held.qty < low ? ' · below your ' + n(low) + ' reorder point' : '')))), /*#__PURE__*/React.createElement("div", {
       style: css('flex:none;display:flex;gap:8px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line);background:#fff;')
-    }, /*#__PURE__*/React.createElement("span", {
+    }, onRecord && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onRecord,
+      style: css('flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;border:0;background:var(--primary);color:#fff;cursor:pointer;')
+    }, "Record cash bought"), /*#__PURE__*/React.createElement("span", {
       style: {
         flex: 1
       }
@@ -61099,7 +61807,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onToast,
     onOpenSite,
     locked,
-    onLock
+    onLock,
+    onRecordCash
   }) {
     const canPublish = PUBLISHERS.includes(serverRole);
     /* Locked rates take no changes until a manager unlocks them (the
@@ -61789,7 +62498,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       cards: cards,
       onClose: closePanel,
       onSpread: pct => setSpread(selRow.code, pct),
-      onToggle: () => toggle(selRow)
+      onToggle: () => toggle(selRow),
+      onRecord: hasCost && onRecordCash && ['supervisor', 'branch_manager', 'administrator'].includes(serverRole) ? () => onRecordCash(selRow.code) : null
     }), boardRef.current.closest('[data-rates]') || document.body));
   }
 
@@ -61798,7 +62508,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4',
     site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18',
     rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4',
-    guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4'
+    guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4',
+    stock: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8'
   };
   function Rates({
     settings,
@@ -61836,7 +62547,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       window.addEventListener('keydown', esc);
       return () => window.removeEventListener('keydown', esc);
     }, []);
-    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']];
+    /* The design's tabs. Cost & stock is for plans with the ledger; on a
+       Rates plan the owner sees what Full System adds (locked), and staff
+       do not see it. */
+    const hasDeals = (settings.billingPlan || 'premium') !== 'basic';
+    const owns = (serverRole || (me && me.role === 'Owner' ? 'administrator' : '')) === 'administrator';
+    const tabs = [['board', 'Board']].concat(hasDeals ? [['stock', 'Cost & stock']] : owns ? [['stock', 'Cost & stock', true]] : [], [['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']]);
+    /* Record cash bought: from Cost & stock, or a currency's panel. */
+    const [buying, setBuying] = useState(null);
+    const [stockVersion, setStockVersion] = useState(0);
     const setLocked = async on => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -61956,7 +62675,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       role: "tablist",
       "aria-label": "Rates",
       style: css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')
-    }, tabs.map(([id, label]) => {
+    }, tabs.map(([id, label, lockedTab]) => {
       const on = tab === id;
       return /*#__PURE__*/React.createElement("button", {
         key: id,
@@ -61983,7 +62702,28 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, /*#__PURE__*/React.createElement("path", {
         d: TAB_ICON[id]
-      })), label);
+      })), label, lockedTab && /*#__PURE__*/React.createElement("svg", {
+        "aria-label": "Full System",
+        viewBox: "0 0 24 24",
+        width: "12",
+        height: "12",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2.4",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: {
+          flex: 'none'
+        }
+      }, /*#__PURE__*/React.createElement("rect", {
+        x: "5",
+        y: "11",
+        width: "14",
+        height: "10",
+        rx: "2"
+      }), /*#__PURE__*/React.createElement("path", {
+        d: "M8 11V8a4 4 0 0 1 8 0v3"
+      })));
     }))), readOnly && /*#__PURE__*/React.createElement("div", {
       style: css('flex:none;display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:12.5px;font-weight:500;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.04);color:var(--mute);')
     }, /*#__PURE__*/React.createElement("svg", {
@@ -62034,6 +62774,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       settings: settings,
       setSettings: setSettings,
       locked: isLocked,
+      onRecordCash: hasDeals ? code => setBuying({
+        code
+      }) : null,
       onLock: l => setLock(l || null),
       serverRole: serverRole,
       me: me,
@@ -62043,6 +62786,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onTip: setTip,
       onToast: flash,
       onOpenSite: () => setTab('site')
+    }), tab === 'stock' && /*#__PURE__*/React.createElement(window.CDOS.RatesStock, {
+      settings: settings,
+      serverRole: serverRole,
+      me: me,
+      hasDeals: hasDeals,
+      owns: owns,
+      w: w,
+      version: stockVersion,
+      onRecord: code => setBuying({
+        code
+      })
     }), tab === 'site' && /*#__PURE__*/React.createElement(window.CDOS.RatesSite, {
       serverRole: serverRole,
       onToast: flash,
@@ -62104,7 +62858,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       type: "button",
       onClick: () => setTip(null),
       style: css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary);')
-    }, "Got it"))), toast && /*#__PURE__*/React.createElement("div", {
+    }, "Got it"))), buying && /*#__PURE__*/React.createElement(window.CDOS.RatesRecordCash, {
+      code: buying.code,
+      onClose: () => setBuying(null),
+      onDone: msg => {
+        setBuying(null);
+        setStockVersion(v => v + 1);
+        flash(msg);
+      }
+    }), toast && /*#__PURE__*/React.createElement("div", {
       role: "status",
       style: css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')
     }, /*#__PURE__*/React.createElement("svg", {
@@ -73503,7 +74265,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        balances against it. It is recorded server-first like every other
        movement, so a delivery that the ledger refused never shows up as
        stock the desk does not have. */
-    const creditVault = async (ccy2, units, supplier, idempotencyKey) => {
+    /* costHome: what the delivery cost in the shop's own currency, from the
+       Vault's receive form. Without it the delivery took the vault's old
+       average, or no cost at all, and the desk's cost was not what was paid. */
+    const creditVault = async (ccy2, units, supplier, idempotencyKey, costHome) => {
       const b = branches.find(x => x.id === station.branchId);
       if (!b || !units) return {
         ok: false,
@@ -73530,7 +74295,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             amount: Number(units).toFixed(2),
             counterpartyType: 'supplier',
             counterpartyRef: supplier || 'Wholesale order',
-            reason: `Wholesale delivery into ${b.code} vault`
+            reason: `Wholesale delivery into ${b.code} vault`,
+            ...(Number(costHome) > 0 ? {
+              costHome: Number(costHome).toFixed(2)
+            } : {})
           });
         } catch (error) {
           log('Order receipt failed', error.message || 'The ledger refused the delivery');
