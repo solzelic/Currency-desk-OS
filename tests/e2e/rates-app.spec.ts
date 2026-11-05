@@ -164,6 +164,36 @@ test("a teller opens a currency's panel and cannot change it", async ({ page }) 
   await expect(panel).toBeHidden();
 });
 
+/* The design's Lock rates: the button turns amber and says Locked, a bar
+   says the rates are locked with Unlock beside it, and the board cannot
+   be changed or published until a manager unlocks it. The server refuses
+   a publish while locked whatever the screen does. */
+test("a manager locks the rates, the board stops taking changes, and Unlock opens it again", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const lock = page.getByRole("button", { name: "Lock rates" });
+  const banner = page.getByText("Rates are locked. Unlock them to make changes.");
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await lock.click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked" })).toBeVisible();
+    await expect(banner).toBeVisible();
+    await expect(page.getByRole("switch", { name: "USD on the board" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+    await expect(page.getByRole("switch", { name: "Auto-publish" })).toBeDisabled();
+    expect((await page.evaluate(async () => (await fetch("/api/rates")).json())).locked).toMatchObject({ by: "r.haddad" });
+
+    await page.getByRole("button", { name: "Unlock", exact: true }).click();
+    await expect(banner).toBeHidden();
+    await expect(lock).toBeVisible();
+    await expect(page.getByRole("switch", { name: "USD on the board" })).toBeEnabled();
+  } finally {
+    /* Never leave the shared desk locked. */
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
