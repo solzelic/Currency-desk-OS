@@ -652,6 +652,13 @@ button { font-family: inherit; }
 .fld-tab:hover { background: color-mix(in srgb, var(--ft, #1D6B45) 15%, transparent); color: #17140F; }
 .fld-tab.on { background: var(--ft, #1D6B45); color: #fff; }
 .fld-tab.on:hover { color: #fff; }
+/* Rates: the board beside its publish rail when the window is wide,
+   stacked when it is narrow. The scroller is the container. */
+.rates-scroll { container-type: inline-size; }
+.rates-board { display: grid; gap: 14px; padding: 16px 18px 40px; grid-template-columns: minmax(0, 1fr); }
+.rates-table th, .rates-table td { padding-right: 12px; white-space: nowrap; }
+@container (min-width: 880px) { .rates-board { grid-template-columns: minmax(0, 1fr) 320px; } }
+@container (max-width: 640px) { .rates-board { padding: 12px 10px 32px; } .rates-table .rc-wide { display: none; } }
 /* click the CurrencyDesk logo to collapse the tenant + app rows for more desktop room */
 #tenantbar.collapsed, #appbar.collapsed { display: none; }
 .edge-rail.collapsed { display: none; }

@@ -143,7 +143,7 @@ test("each tab opens that app", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await atDesk(page);
   const tabs: Array<[string, RegExp]> = [
-    ["rates", /Rate Board/],
+    ["rates", /^Rates$/],
     ["ledger", /^Ledger/],
     ["clients", /Clients/],
     ["till", /Cash Drawer/],

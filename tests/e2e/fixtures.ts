@@ -124,8 +124,8 @@ export const seamTest = test.extend({
  * a till on it lands straight on the desktop.
  *
  * The desk signal is an open window. The module strip used to be the
- * signal, because it always said "Rate Board", and a phone hides that
- * strip.
+ * signal, because it always said "Rates" (once "Rate Board"), and a phone
+ * hides that strip.
  *
  * Exported because ANY reload puts an owner back on that screen, and a
  * helper that reloads mid-test (to open a till, to top up a drawer) leaves
@@ -135,9 +135,9 @@ export const seamTest = test.extend({
 export async function landOnDesktop(page: Page): Promise<void> {
   const chooser = page.getByRole("heading", { name: /Where are you working/i });
   const deskWin = page.locator("#desktop .win.show");
-  /* A wide window still paints "Rate Board" on the module strip before
-     the window has finished opening. A phone hides that strip. */
-  const rateBoard = page.getByText(/Rate Board/i).first();
+  /* A wide window still paints "Rates" on the module strip before the
+     window has finished opening. A phone hides that strip. */
+  const rateBoard = page.getByText(/^Rates$/i).first();
   /* isVisible answers this instant. A missing window or label is
      false, not an error, so there is nothing to catch. A throw is a
      broken page and the helper should fail on it. */
@@ -191,7 +191,7 @@ export async function landOnDesktop(page: Page): Promise<void> {
   await frontWindow(page);
 }
 
-/* The desk opens the Ledger (or the Rate Board, on a basic plan) as the
+/* The desk opens the Ledger (or Rates, on a basic plan) as the
    desktop appears. Waiting for the dock is not enough: a window that is
    still arriving sits on top of the next click. */
 async function frontWindow(page: Page): Promise<void> {
