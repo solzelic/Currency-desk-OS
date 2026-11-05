@@ -86,6 +86,10 @@ const order = (page: Page) => page.getByTitle(HANDLE).evaluateAll((els) => els.m
 async function fingerDrag(page: Page, from: number, to: number): Promise<void> {
   const handle = page.getByTitle(HANDLE).nth(from);
   const target = page.getByTitle(HANDLE).nth(to);
+  /* A finger lands on what is on screen: both rows in view first, and
+     clear of a phone's bottom bar. */
+  await target.evaluate((el) => el.scrollIntoView({ block: "center" }));
+  await handle.evaluate((el) => el.scrollIntoView({ block: "nearest" }));
   const a = (await handle.boundingBox())!, b = (await target.boundingBox())!;
   const at = (box: { x: number; y: number; width: number; height: number }) => ({ clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 });
   await handle.dispatchEvent("pointerdown", { pointerType: "touch", pointerId: 11, isPrimary: true, button: 0, ...at(a) });

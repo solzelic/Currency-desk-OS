@@ -656,8 +656,11 @@ button { font-family: inherit; }
    stacked when it is narrow. The window's own width decides it now
    (useWidth in cdos-rates.jsx: cards under 880px, the rail beside the
    board at 1240px and over), so no container rules are left here.
-   Rates v2.5: the design's two animations, used inside the Rates window. */
+   Rates v2.5: the design's animations, used inside the Rates window
+   (rtFade and rtDrawer open the currency panel). */
 @keyframes rtIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes rtFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rtDrawer { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
 @keyframes rtLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.5); } 70% { box-shadow: 0 0 0 6px rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
 @media (prefers-reduced-motion: reduce) { [data-rates] * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; } }
 /* click the CurrencyDesk logo to collapse the tenant + app rows for more desktop room */

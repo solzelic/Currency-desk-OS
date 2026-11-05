@@ -117,7 +117,85 @@
     return <button type="button" onClick={() => onToggle(open ? null : tipKey)} title="What is this?" aria-label={`What is ${TIPS[tipKey][0].toLowerCase()}?`} style={btn}>i</button>;
   }
 
-  function Board({ settings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite }) {
+  /* The design's tone for a margin: red under the floor (or a loss),
+     amber under the target, green on target. */
+  const toneOf = (pct, floor, target) => (pct < 0 || pct < floor ? 'red' : pct < target ? 'amber' : 'green');
+
+  /* The design's currency panel (CURRENCY DRAWER): a row's › opens it.
+     The market, what the desk paid when the server will say (GET
+     /api/ledger/position, which a Rates plan or a teller does not get),
+     what it sells at, the margin against the floor and target, the
+     currency's own spread or the default, cash on hand, and on or off
+     the board. A change here is a draft like any other on the board;
+     Publish sends it. The spread is the shop's setting (spreads), the
+     same one Pricing & rates edits. */
+  function CurrencyPanel({ row, home, defPct, floor, target, stock, low, readOnly, onClose, onSpread, onToggle, cards }) {
+    const closeRef = useRef(null);
+    useEffect(() => {
+      if (closeRef.current) closeRef.current.focus();
+      const key = e => { if (e.key === 'Escape') onClose(); };
+      document.addEventListener('keydown', key);
+      return () => document.removeEventListener('keydown', key);
+    }, [onClose]);
+    const name = FACE.currencyName(row.code);
+    const pair = row.mid ? B.deskPair(row.mid, row.spreadPct, row.spreadPct) : null;
+    const held = stock && stock.byCode[row.code];
+    const cost = stock && stock.hasCost && held && held.cost ? held.cost : null;
+    const keep = pair ? (cost ? pair.sell - cost : pair.sell - row.mid) : null;
+    const pct = pair ? keep / (cost || row.mid) * 100 : null;
+    const t = pct === null ? null : toneOf(pct, floor, target);
+    const head = pct === null ? 'No market rate' : pct < 0 ? 'You lose on every sale' : t === 'red' ? 'Below your floor' : t === 'amber' ? 'Thin margin' : 'On target';
+    const levels = 'Floor ' + floor.toFixed(1) + '%, target ' + target.toFixed(1) + '%.';
+    const line = pct === null ? 'There is no market rate for ' + row.code + ' yet, so it has no price. ' + levels
+      : cost ? ((pct < 0 ? 'You sell for less than you paid: ' : 'You keep ') + fx(Math.abs(keep)) + ' ' + home + ' on every ' + row.code + ' you sell (' + Math.abs(pct).toFixed(2) + '%). ' + levels)
+        : ('You sell ' + fx(Math.abs(keep)) + ' ' + home + ' over the market on every ' + row.code + ' (' + Math.abs(pct).toFixed(2) + '%). ' + levels);
+    const trio = [
+      { label: 'Market', value: row.mid ? fx(row.mid) : 'No rate', note: row.pinned ? 'Pinned by you' : 'Market mid', bg: '#fff' },
+      cost ? { label: 'You paid', value: fx(cost), note: stock.method, bg: '#fff' } : { label: 'You buy at', value: pair ? fx(pair.buy) : '·', note: 'Under market', bg: '#fff' },
+      { label: 'You sell at', value: pair ? fx(pair.sell) : '·', note: pair ? 'Buy at ' + fx(pair.buy) : 'No rate', bg: 'rgba(29,107,69,0.06)' },
+    ];
+    const tr = track(!row.custom, readOnly);
+    const step = by => onSpread(Math.min(8, Math.max(0, Math.round((row.spreadPct + by) * 10) / 10)));
+    const stepBtn = css('width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:18px;color:var(--ink);cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';');
+    const ghostBtn = css('flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';border:1px solid var(--line);background:#fff;color:var(--ink);transition:border-color .2s ease,color .2s ease,background .2s ease;');
+    const n = v => Number(v).toLocaleString('en-CA', { maximumFractionDigits: 2 });
+    return (<div onClick={onClose} style={css('position:absolute;inset:0;z-index:20;background:rgba(23,20,15,0.22);animation:rtFade 0.2s ease both;')}>
+      <div role="dialog" aria-modal="true" aria-label={row.code + ' ' + name} onClick={e => e.stopPropagation()}
+        style={css('position:absolute;top:0;right:0;bottom:0;width:' + (cards ? '100%' : 'min(440px, 100%)') + ';display:flex;flex-direction:column;background:#fbfaf7;box-shadow:-30px 0 60px -30px rgba(23,20,15,0.45);animation:rtDrawer .3s cubic-bezier(.22,1,.36,1) both;')}>
+        <div style={css('flex:none;display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);')}>
+          <Flag code={row.code} size={40} />
+          <span style={css('flex:1;min-width:0;')}><b style={css('display:block;font-size:20px;font-weight:800;')}>{row.code}</b><span style={css('font-size:13px;color:var(--mute);')}>{name}</span></span>
+          <button ref={closeRef} type="button" onClick={onClose} title="Close" aria-label="Close" style={css('appearance:none;border:0;background:rgba(23,20,15,0.06);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--mute);')}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+        </div>
+        <div style={css('flex:1;min-height:0;overflow-y:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:14px;')}>
+          <div style={css('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:1px;border-radius:14px;overflow:hidden;background:var(--line);border:1px solid var(--line);')}>
+            {trio.map(x => (<div key={x.label} style={css('padding:13px 12px;background:' + x.bg + ';')}><div style={css('font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')}>{x.label}</div><div style={css('font-family:var(--m);font-size:17px;font-weight:700;margin-top:5px;')}>{x.value}</div><div style={css('font-size:11.5px;color:var(--mute);margin-top:3px;')}>{x.note}</div></div>))}
+          </div>
+          <div style={css('padding:14px 16px;border-radius:14px;background:' + (t === 'green' ? 'var(--green-soft)' : t === 'amber' ? 'var(--amber-soft)' : 'var(--clay-soft)') + ';color:' + (t === 'green' ? 'var(--primary-deep)' : t === 'amber' ? 'var(--amber)' : 'var(--clay)') + ';')}><div style={css('font-family:var(--m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;')}>{head}</div><div style={css('font-size:14px;line-height:1.5;margin-top:5px;')}>{line}</div></div>
+          <div style={css('padding:14px 16px;border-radius:14px;background:#fff;border:1px solid var(--line);')}>
+            <div style={css('display:flex;align-items:center;gap:12px;')}><span style={css('flex:1;min-width:0;')}><b style={css('display:block;font-size:14px;')}>Use the default spread</b><span style={css('display:block;font-size:12px;color:var(--mute);margin-top:2px;')}>{row.custom ? 'Off: ' + row.code + ' has its own spread.' : defPct.toFixed(1) + '% above and below the market.'}</span></span>
+              <button type="button" role="switch" aria-checked={!row.custom} aria-label="Use the default spread" disabled={readOnly} onClick={() => onSpread(row.custom ? null : Math.round(defPct * 10) / 10)} style={tr.track}><span style={tr.knob} /></button></div>
+            {row.custom && <div style={css('display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--hair);')}>
+              <div><div style={css('font-family:var(--m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mute);margin-bottom:7px;')}>Spread</div><div style={css('display:flex;align-items:center;gap:5px;')}>
+                <button type="button" aria-label="Lower the spread" disabled={readOnly} onClick={() => step(-0.1)} style={stepBtn}>−</button>
+                <output aria-label="Spread" style={css('min-width:70px;height:38px;display:grid;place-items:center;border-radius:10px;background:rgba(23,20,15,0.05);font-family:var(--m);font-size:16px;font-weight:700;')}>{row.spreadPct.toFixed(1) + '%'}</output>
+                <button type="button" aria-label="Raise the spread" disabled={readOnly} onClick={() => step(0.1)} style={stepBtn}>+</button></div></div>
+            </div>}
+          </div>
+          {stock && <div style={css('padding:14px 16px;border-radius:14px;background:#fff;border:1px solid var(--line);')}>
+            <div style={css('display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;')}><b style={css('font-size:14px;')}>On hand</b><span style={css('font-family:var(--m);font-size:13px;')}>{held ? n(held.qty) + ' ' + row.code + (held.basis !== null && held.basis !== undefined ? ' · ' + home + ' ' + n(held.basis) + ' at cost' : '') : 'None'}</span></div>
+            {held && <div style={css('font-size:12.5px;color:var(--mute);margin-top:3px;')}>{'Vault ' + n(held.vault) + ' · your till ' + n(held.till) + (low > 0 && held.qty < low ? ' · below your ' + n(low) + ' reorder point' : '')}</div>}
+          </div>}
+        </div>
+        <div style={css('flex:none;display:flex;gap:8px;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line);background:#fff;')}>
+          <span style={{ flex: 1 }} />
+          <button type="button" disabled={readOnly} onClick={onToggle} style={ghostBtn}>{row.show ? 'Take off the board' : 'Put on the board'}</button>
+        </div>
+      </div>
+    </div>);
+  }
+
+  function Board({ settings, setSettings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite }) {
     const canPublish = PUBLISHERS.includes(serverRole);
     const readOnly = !canPublish;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
@@ -132,8 +210,46 @@
     const [liveOpen, setLiveOpen] = useState(true);
     const [copied, setCopied] = useState(false);
     const [picking, setPicking] = useState(false);
+    const [sel, setSel] = useState(null);
+    const [stock, setStock] = useState(null);
     const drag = useRef(null);
+    const opener = useRef(null);
+    const boardRef = useRef(null);
     const cards = w < 880, wide = w >= 1240;
+
+    /* What the desk holds and what it paid, when the server will say. A
+       Rates plan is refused (the ledger is not in it), and a role that
+       cannot read the shop's earnings gets the quantities without the
+       cost. Without it the board shows the margin over the market, as
+       the design does for a Rates plan. */
+    useEffect(() => {
+      let live = true;
+      Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(() => null)]).then(([pos, cm]) => {
+        if (!live) return;
+        const byCode = {};
+        (pos.currencies || []).forEach(c => {
+          const qty = Number(c.quantity), basis = c.costBasisHome == null ? null : Number(c.costBasisHome);
+          byCode[c.currency] = { qty, basis, cost: basis !== null && qty > 0 ? basis / qty : null,
+            vault: c.vault ? Number(c.vault.quantity) : 0, till: c.till ? Number(c.till.quantity) : 0 };
+        });
+        setStock({ hasCost: 'costBasisHome' in pos, byCode, method: cm && cm.method === 'fifo' ? 'First in, first out' : 'Average' });
+      }).catch(() => { if (live) setStock(null); });
+      return () => { live = false; };
+    }, []);
+    /* A desk that has recorded no cost yet shows the margin over the
+       market, not a column of blanks. */
+    const hasCost = !!(stock && stock.hasCost && Object.keys(stock.byCode).some(c => stock.byCode[c].cost));
+    const costOf = code => (hasCost && stock.byCode[code] && stock.byCode[code].cost) || null;
+
+    /* A currency's own spread, or null for the default (Settings, spreads:
+       the same key Pricing & rates edits). */
+    const setSpread = (code, pct) => setSettings(s => {
+      const sp = { ...(s.spreads || {}) };
+      if (pct === null) delete sp[code]; else sp[code] = pct;
+      return { ...s, spreads: sp };
+    });
+    const openPanel = (code, e) => { opener.current = e && e.currentTarget; setSel(code); };
+    const closePanel = useCallback(() => { setSel(null); if (opener.current && opener.current.focus) opener.current.focus(); }, []);
 
     const load = useCallback(async () => {
       try {
@@ -202,6 +318,7 @@
       window.addEventListener('pointercancel', done);
     };
     const toggle = (r) => setEdits(e => ({ ...e, show: { ...e.show, [r.code]: !r.show } }));
+    const selRow = sel ? rows.find(r => r.code === sel) || null : null;
 
     /* Auto-publish (PUT /api/rates/auto-publish): every market refresh
        publishes this branch's board again, in the shop's own currency,
@@ -273,12 +390,20 @@
       return { code: c, ...B.deskPair(r.mid, pct(pub.buyMargin), pct(pub.sellMargin)) };
     }) : [];
     const screen = data.screens[0] || null;
-    const cols = '22px minmax(130px,1.6fr) minmax(80px,1fr) minmax(84px,1fr) minmax(84px,1fr) minmax(90px,1fr) 64px';
+    /* The design's columns. You paid and You keep when the server gives
+       this desk's cost; Over market without it. Then the › that opens
+       the currency panel. */
+    const cols = hasCost
+      ? '22px minmax(130px,1.5fr) minmax(76px,1fr) minmax(76px,1fr) minmax(80px,1fr) minmax(80px,1fr) minmax(76px,0.9fr) 64px 20px'
+      : '22px minmax(130px,1.6fr) minmax(80px,1fr) minmax(84px,1fr) minmax(84px,1fr) minmax(90px,1fr) 64px 20px';
+    const keepHead = hasCost ? 'You keep' : 'Over market';
+    const more = (r, name) => (<button type="button" aria-label={'Open ' + r.code} title={'Open ' + r.code + ' ' + name} onClick={e => { e.stopPropagation(); openPanel(r.code, e); }}
+      style={css('appearance:none;border:0;background:transparent;padding:0;width:20px;height:28px;display:grid;place-items:center;cursor:pointer;color:var(--faint);')}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg></button>);
     const btnBase = 'flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';';
     const ghostBtn = btnBase + 'border:1px solid var(--line);background:#fff;color:var(--ink);transition:border-color .2s ease,color .2s ease,background .2s ease;';
     const addable = Object.keys(data.market).filter(c => !rows.some(r => r.code === c)).sort();
 
-    return (<div style={css('display:grid;grid-template-columns:' + (wide ? 'minmax(0,1fr) 330px' : 'minmax(0,1fr)') + ';gap:14px;align-items:start;')}>
+    return (<div ref={boardRef} style={css('display:grid;grid-template-columns:' + (wide ? 'minmax(0,1fr) 330px' : 'minmax(0,1fr)') + ';gap:14px;align-items:start;')}>
       <div style={css('min-width:0;display:flex;flex-direction:column;gap:14px;')}>
         {data.error && <div role="alert" style={css('padding:11px 13px;border-radius:12px;background:var(--clay-soft);color:var(--clay);font-size:13px;')}>{data.error}</div>}
         <div style={css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')}>
@@ -296,12 +421,13 @@
           </div>}
 
           {!cards && <div style={css('display:grid;grid-template-columns:' + cols + ';gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')}>
-            <span /><span>Currency</span><span style={{ textAlign: 'right' }}>Market</span><span style={{ textAlign: 'right' }}>We buy</span><span style={{ textAlign: 'right' }}>We sell</span><span style={{ textAlign: 'right' }}>Over market</span><span style={{ textAlign: 'center' }}>On board</span>
+            <span /><span>Currency</span><span style={{ textAlign: 'right' }}>Market</span>{hasCost && <span style={{ textAlign: 'right' }}>You paid</span>}<span style={{ textAlign: 'right' }}>We buy</span><span style={{ textAlign: 'right' }}>We sell</span><span style={{ textAlign: 'right' }}>{keepHead}</span><span style={{ textAlign: 'center' }}>On board</span><span />
           </div>}
           {list.map((r, i) => {
             const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
-            const pct = pair ? (pair.sell - r.mid) / r.mid * 100 : 0;
-            const keepChip = chip(pct < 0 ? 'red' : pct < floor ? 'red' : pct < target ? 'amber' : 'green');
+            const cost = costOf(r.code);
+            const pct = pair ? (pair.sell - (cost || r.mid)) / (cost || r.mid) * 100 : 0;
+            const keepChip = chip(toneOf(pct, floor, target));
             const keep = pair ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%' : '·';
             const name = FACE.currencyName(r.code);
             const dragProps = readOnly || ql ? {} : {
@@ -321,11 +447,12 @@
                 <Flag code={r.code} />
                 <span style={css('flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')}><b style={css('font-size:15px;font-weight:800;')}>{r.code}</b> <span style={css('font-size:12.5px;color:var(--mute);')}>{name}</span></span>
                 <Switch on={r.show} off={readOnly} onClick={() => toggle(r)} name={`${r.code} on the board`} />
+                {more(r, name)}
               </div>
               <div style={css('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px;margin-top:12px;')}>
                 <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>We buy</span><span style={css('font-family:var(--m);font-size:15px;')}>{pair ? fx(pair.buy) : 'No rate'}</span></span>
                 <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>We sell</span><span style={css('font-family:var(--m);font-size:15px;font-weight:700;')}>{pair ? fx(pair.sell) : 'No rate'}</span></span>
-                <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>Over market</span><span style={keepChip}>{keep}</span></span>
+                <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>{keepHead}</span><span style={keepChip}>{keep}</span></span>
               </div>
               <div style={css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')}>{r.mid ? 'Market ' + fx(r.mid) + (r.pinned ? ' · pinned' : '') : 'No market rate'}</div>
             </div>);
@@ -334,10 +461,12 @@
               {handle}
               <span style={css('display:flex;align-items:center;gap:11px;min-width:0;')}><Flag code={r.code} /><span style={css('min-width:0;')}><b style={css('display:block;font-size:14.5px;font-weight:800;')}>{r.code}</b><span style={css('display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')}>{name}{r.pinned ? ' · pinned' : ''}</span></span></span>
               <span style={css('text-align:right;font-family:var(--m);font-size:13px;color:var(--mute);')}>{r.mid ? fx(r.mid) : 'No rate'}</span>
+              {hasCost && <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;')}>{cost ? fx(cost) : '·'}</span>}
               <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;')}>{pair ? fx(pair.buy) : '·'}</span>
               <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;font-weight:700;')}>{pair ? fx(pair.sell) : '·'}</span>
               <span style={{ textAlign: 'right' }}><span style={keepChip}>{keep}</span></span>
               <span style={css('display:flex;justify-content:center;')}><Switch on={r.show} off={readOnly} onClick={() => toggle(r)} name={`${r.code} on the board`} /></span>
+              {more(r, name)}
             </div>);
           })}
           {!list.length && <div style={css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')}>No currency matches “{q}”.</div>}
@@ -405,6 +534,12 @@
           </>}
         </section>
       </div>
+      {/* Over the whole Rates window, as the design's drawer is: the tab
+          body animates in, and an animated box would hold the panel
+          inside it. */}
+      {selRow && boardRef.current && ReactDOM.createPortal(<CurrencyPanel row={selRow} home={home} defPct={defPct} floor={floor} target={target} stock={stock}
+        low={settings.vaultFloors ? Number(settings.vaultFloors[selRow.code]) : 0} readOnly={readOnly} cards={cards}
+        onClose={closePanel} onSpread={pct => setSpread(selRow.code, pct)} onToggle={() => toggle(selRow)} />, boardRef.current.closest('[data-rates]') || document.body)}
     </div>);
   }
 
@@ -459,7 +594,7 @@
       </div>}
       <div style={css('flex:1;min-height:0;overflow-y:auto;')}>
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
-          {tab === 'board' && <Board settings={settings} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
+          {tab === 'board' && <Board settings={settings} setSettings={setSettings} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
           {tab === 'rules' && <Pricing settings={settings} setSettings={setSettings} me={me} log={log} />}
         </div>
