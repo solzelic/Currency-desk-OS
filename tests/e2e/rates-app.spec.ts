@@ -218,6 +218,23 @@ test("the desk's top-bar lock and the Rates lock are the same lock", async ({ pa
   }
 });
 
+/* Pricing & rates offers what the server allows: a teller only sees it,
+   a manager prices but the guardrails are the owner's. */
+test("Pricing & rates: a teller sees it and cannot change it; a manager cannot change the guardrails", async ({ page, browser }) => {
+  await openRates(page, "m.costa");
+  await page.getByRole("tab", { name: "Pricing & rates" }).click();
+  await expect(page.getByText("You can see the shop's pricing. Changing it is for the owner and managers.")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Pricing" }).locator("input").first()).toBeDisabled();
+
+  const manager = await (await browser.newContext()).newPage();
+  await openRates(manager, "r.haddad");
+  await manager.getByRole("tab", { name: "Pricing & rates" }).click();
+  await expect(manager.getByText("The guardrails are the owner's. You can change the rest.")).toBeVisible();
+  await expect(manager.getByRole("group", { name: "Margin guardrails" }).locator("input").first()).toBeDisabled();
+  await expect(manager.getByRole("group", { name: "Pricing" }).locator('input[type="number"]').first()).toBeEnabled();
+  await manager.close();
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
