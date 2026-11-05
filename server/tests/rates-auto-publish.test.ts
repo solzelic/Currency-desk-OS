@@ -14,6 +14,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { midsInHome, publishFromMarket, syncMarketRates, type MarketPull } from "../src/rates/market.js";
+import { provisionDesk } from "../src/onboarding/provision.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -105,5 +106,21 @@ describe("the Auto-publish switch", () => {
     expect(dubai.boardRows.USD!.mid).toBeCloseTo(1.37 / 0.372, 8);
     expect((await newest("br-off")).id).toBe("off-board");
     expect((await newest(DEMO.branchId)).publishedBy).toBe("market-sync (test-feed)");
+  });
+});
+
+describe("a new shop", () => {
+  /* Sol, 5 Nov 2026: new shops start with Auto-publish on. While the
+     hourly sync runs a board can be quoted for 70 minutes, so a shop that
+     never switched it on would stop quoting within the hour. Shops that
+     already exist keep what they have. */
+  it("opens with Auto-publish on, and a shop that already exists keeps its own", async () => {
+    const made = await provisionDesk(handle.db, {
+      businessName: "Fresh Exchange", legalName: "Fresh Exchange Inc.", ownerName: "Owner", email: "fresh@example.test",
+      slug: "fresh-exchange", plan: "pro", setup: { country: "CA", homeCurrency: "CAD" }, msbNumber: null, regulator: "FINTRAC", team: [],
+    }, "hash", "test");
+    const branch = (await handle.db.select().from(schema.branches).where(eq(schema.branches.tenantId, made.tenantId)))[0]!;
+    expect(branch.autoPublishRates).toBe(true);
+    expect((await handle.db.select().from(schema.branches).where(eq(schema.branches.id, DEMO.branchId)))[0]!.autoPublishRates).toBe(false);
   });
 });
