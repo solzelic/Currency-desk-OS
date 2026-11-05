@@ -58298,6 +58298,18 @@ ${snap}`;
     const wrap = el => /*#__PURE__*/React.createElement("div", {
       ref: rootRef
     }, el);
+    /* The fee note follows the desk's Pricing (Default commission): when
+       the editor opens and the page says something else, staff who may
+       change rates bring it in step. */
+    const fee = settings && settings.defaultFee != null && settings.defaultFee !== '' ? Number(settings.defaultFee) : 0;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const wantFeeNote = fee > 0 && home ? 'A service fee of ' + fee.toFixed(2) + ' ' + home + ' may apply to each exchange.' : '';
+    useEffect(() => {
+      if (view !== 'web' || readOnly || !page || !page.content) return;
+      if ((page.content.feeNote || '') !== wantFeeNote) saveContent({
+        feeNote: wantFeeNote
+      });
+    }, [view, readOnly, page, wantFeeNote, saveContent]);
     if (!page || !draft) return wrap(/*#__PURE__*/React.createElement("div", {
       style: css('padding: 24px; font-size: 13px; color: var(--mute);')
     }, err || 'Loading your website and screens…'));
@@ -58663,7 +58675,7 @@ ${snap}`;
         locked: regLocked
       })), /*#__PURE__*/React.createElement("div", {
         style: css('display: flex; flex-direction: column; gap: 7px; margin-top: 14px;')
-      }, ['Your registered name and registration number, in the footer of every page', 'A note that rates are a guide and the rate on the receipt is final', 'Who to contact with a question or a complaint'].map(u => /*#__PURE__*/React.createElement("span", {
+      }, ['Your registered name and registration number, in the footer of every page', 'A note that rates are a guide and the rate on the receipt is final', wantFeeNote ? 'Your service fee: “' + wantFeeNote + '”' : 'Any service fee you charge, taken from your pricing', 'Who to contact with a question or a complaint'].map(u => /*#__PURE__*/React.createElement("span", {
         key: u,
         style: css('display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')
       }, /*#__PURE__*/React.createElement("svg", {
@@ -59905,6 +59917,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         type: "button",
         role: "tab",
         "aria-selected": on,
+        "data-tour": id === 'site' ? 'rate-page' : undefined,
         onClick: () => {
           setTab(id);
           setTip(null);
@@ -63123,6 +63136,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     contacts,
     onSend
   }) {
+    /* Rates v2.5: the shop's rate page, once it is live, can go in a text. */
+    const [pageLink, setPageLink] = useState(null);
+    useEffect(() => {
+      fetch('/api/rate-page', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(p => setPageLink(p && p.live && p.slug ? location.origin + '/r/' + p.slug : null)).catch(() => setPageLink(null));
+    }, []);
     const [body, setBody] = useState('');
     const [aud, setAud] = useState('all');
     const [whoId, setWhoId] = useState(null);
@@ -63265,7 +63285,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         resize: 'vertical',
         color: CD.ink
       }
-    }), /*#__PURE__*/React.createElement("div", {
+    }), pageLink && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setBody(b => (b.trim() ? b.trim() + ' ' : '') + pageLink),
+      className: "text-[11.5px] px-2.5 py-1 mt-1.5 font-semibold",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 7,
+        color: CD.ink,
+        background: 'var(--cd-panel)'
+      }
+    }, "Add your rate page link"), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] mt-1 mb-2",
       style: {
         color: CD.faint
@@ -67421,6 +67451,15 @@ window.CDOS_PERSIST = (function () {
       anchor: 'shop',
       title: 'The shop',
       body: 'This is the shop. Earnings, cash, and what the book holds, for the period you choose. The figures are the ledger’s.',
+    },
+    {
+      /* Rates v2.5: every shop has a rate page from the day it opens. */
+      id: 'site',
+      tour: 'owner',
+      app: 'rates',
+      anchor: 'rate-page',
+      title: 'Your rate page',
+      body: 'Your shop has its own rate page, private until you turn it on. Fill it in here, look at the preview, then take it live and share the link.',
     },
     {
       id: 'clients',

@@ -150,6 +150,7 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
         home: board.home,
         ...(board.timeZone ? { timeZone: board.timeZone } : {}),
         ...(content.tagline ? { tagline: content.tagline } : {}),
+        ...(content.feeNote ? { feeNote: content.feeNote } : {}),
         /* The logo's own address; ?v changes with each upload so a browser
            never keeps an old one. */
         ...(page.logo && page.logoAt ? { logo: `${preview ? "/api/rate-page/logo" : `/api/public/rate-pages/${page.slug}/logo`}?v=${page.logoAt.getTime()}` } : {}),
