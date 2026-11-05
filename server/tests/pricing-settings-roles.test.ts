@@ -27,17 +27,17 @@ let app: FastifyInstance;
 const who: Record<string, Record<string, string>> = {};
 
 const PRICING = ["spreads", "spotOverride", "defaultFee", "feeTiers", "rateRounding", "rateLockMins", "payoutRoundTo", "payoutRoundMode", "rateProvider"] as const;
-const GUARDRAILS = ["marginTargetPct", "marginFloorPct", "marginEnforce"] as const;
+const GUARDRAILS = ["marginTargetPct", "marginFloorPct", "marginEnforce", "marginFloorByCcy"] as const;
 
 const start: Record<string, unknown> = {
   spreads: { USD: 1.2 }, spotOverride: {}, defaultFee: 2, feeTiers: [], rateRounding: 4, rateLockMins: 15,
   payoutRoundTo: 0.01, payoutRoundMode: "nearest", rateProvider: "OANDA",
-  marginTargetPct: 1, marginFloorPct: 0.5, marginEnforce: "block", defaultSpread: 1.5,
+  marginTargetPct: 1, marginFloorPct: 0.5, marginEnforce: "block", marginFloorByCcy: {}, defaultSpread: 1.5,
 };
 const changed: Record<string, unknown> = {
   spreads: { USD: 2.4 }, spotOverride: { USD: 1.31 }, defaultFee: 9, feeTiers: [{ over: 10000, fee: 25 }], rateRounding: 2, rateLockMins: 60,
   payoutRoundTo: 5, payoutRoundMode: "down", rateProvider: "XE Currency Data",
-  marginTargetPct: 0.1, marginFloorPct: 0, marginEnforce: "warn", defaultSpread: 0.9,
+  marginTargetPct: 0.1, marginFloorPct: 0, marginEnforce: "warn", marginFloorByCcy: { USD: 0.1 }, defaultSpread: 0.9,
 };
 const baseline = { cdos_settings: start };
 

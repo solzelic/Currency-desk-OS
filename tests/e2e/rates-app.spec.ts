@@ -21,7 +21,7 @@ const toggle = (page: Page, code: string) => page.getByRole("switch", { name: `$
 
 test("a manager takes a currency off the board and publishes it, and customers see the publish, not the draft", async ({ page }) => {
   await openRates(page, "r.haddad");
-  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Website & window", "Pricing & rates"]);
+  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Website & window", "Pricing & rates", "Guardrails"]);
   await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
   /* Each row shows the currency's flag and name, as the design does. */
   const usd = page.getByLabel("USD US Dollar");
@@ -261,6 +261,42 @@ test("a manager adds a commission tier, and the example says what a big deal pay
     const remove = page.getByRole("button", { name: "Remove this tier" });
     while (await remove.count()) await remove.first().click();
     await fee.fill(was);
+  }
+});
+
+/* The design's Guardrails tab: one floor, checked on the board, on every
+   deal, and afterwards. The levels and each currency's own floor are the
+   owner's; others see them. Put back at the end: the settings are the
+   shop's. */
+test("the owner sets the guardrails and a currency's own floor; a manager sees them and cannot change them", async ({ page, browser }) => {
+  await openRates(page, "j.masri");
+  await page.getByRole("tab", { name: "Guardrails" }).click();
+  await expect(page.getByRole("heading", { name: "One floor, checked in three places" })).toBeVisible();
+  const floor = page.getByLabel("Minimum floor", { exact: true });
+  const was = await floor.inputValue();
+  const usd = page.getByLabel("USD floor", { exact: true });
+  try {
+    await page.getByRole("button", { name: "Raise the minimum floor" }).click();
+    await expect(floor).toHaveValue((parseFloat(was) + 0.1).toFixed(1));
+    /* USD's own floor above what it sells at turns it red, here and on the Board. */
+    await usd.fill("9");
+    await expect(page.locator('[data-floor-row="USD"] [data-tone]')).toHaveAttribute("data-tone", "red");
+    await page.getByRole("tab", { name: "Board" }).click();
+    await expect(page.locator('[data-rate-row="USD"] [data-tone]')).toHaveAttribute("data-tone", "red");
+    await page.getByRole("tab", { name: "Guardrails" }).click();
+
+    const manager = await (await browser.newContext()).newPage();
+    await openRates(manager, "r.haddad");
+    await manager.getByRole("tab", { name: "Guardrails" }).click();
+    await expect(manager.getByText("Only the owner can change the guardrails.")).toBeVisible();
+    await expect(manager.getByRole("button", { name: "Raise the minimum floor" })).toBeDisabled();
+    await expect(manager.getByLabel("USD floor", { exact: true })).toBeDisabled();
+    await manager.close();
+  } finally {
+    await page.getByRole("tab", { name: "Guardrails" }).click();
+    await usd.fill("");
+    await floor.fill(was);
+    await floor.blur();
   }
 });
 

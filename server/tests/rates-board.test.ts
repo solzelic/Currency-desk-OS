@@ -18,6 +18,7 @@ const board = () => require("../../os-src/rates-board.js") as {
   }) => Row[];
   publishBody: (rows: Row[], defaultSpreadPct: number) => { ok: true; body: { buyMargin: number; sellMargin: number; rows: Record<string, unknown>; order: string[] } } | { ok: false; missing: string[] };
   homeMarket: (mids: Record<string, unknown> | null | undefined, home: string) => Record<string, number>;
+  floorFor: (settings: { marginFloorPct?: unknown; marginFloorByCcy?: unknown } | null | undefined, code: string) => number;
   feeFor: (settings: { defaultFee?: unknown; feeTiers?: unknown } | null | undefined, homeAmount: number) => number | null;
   sameAsPublished: (rows: Row[], published: { rows: Record<string, { mid: number; spread?: number; show?: boolean }>; order?: string[] } | null, defaultSpreadPct: number) => boolean;
 };
@@ -141,6 +142,22 @@ describe("the fee a deal pays", () => {
     expect(board().feeFor(null, 500)).toBeNull();
     expect(board().feeFor({ defaultFee: "", feeTiers: [{ over: 1000, fee: 10 }] }, 500)).toBeNull();
     expect(board().feeFor({ defaultFee: "", feeTiers: [{ over: 1000, fee: 10 }] }, 5000)).toBe(10);
+  });
+});
+
+/* Rates v2.5 Guardrails, floor by currency: a currency's own floor, or
+   the shop's floor when it has none. */
+describe("the floor a currency is held to", () => {
+  it("is its own floor when it has one, else the shop's, else 0.5%", () => {
+    const s = { marginFloorPct: 0.8, marginFloorByCcy: { USD: 0.3, GBP: "1.2", JPY: "", MXN: "x", TRY: -1 } };
+    expect(board().floorFor(s, "USD")).toBe(0.3);
+    expect(board().floorFor(s, "GBP")).toBe(1.2);
+    expect(board().floorFor(s, "EUR")).toBe(0.8);
+    expect(board().floorFor(s, "JPY")).toBe(0.8);
+    expect(board().floorFor(s, "MXN")).toBe(0.8);
+    expect(board().floorFor(s, "TRY")).toBe(0.8);
+    expect(board().floorFor({}, "USD")).toBe(0.5);
+    expect(board().floorFor(null, "USD")).toBe(0.5);
   });
 });
 
