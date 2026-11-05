@@ -5,56 +5,110 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Rates</title>
-<!-- Rates v2.5: one window screen, served at /s/<token>. Open it on the TV
-     or tablet and leave it: no sign-in, it refreshes every minute. The
-     token is the screen's only credential, so the page is not indexed. It
-     reads /api/public/screens/<token>, the shop's latest PUBLISHED board.
-     Shop text is written with textContent, never as HTML. -->
+<!-- Rates v2.5: one window screen, served at /s/<token>, in the look of
+     the design file "CurrencyDesk Window Screen.dc.html": its sizes are
+     worked out from the screen's width and height as the design does.
+     Open it on the TV or tablet and leave it: no sign-in, it refreshes
+     every minute. The token is the screen's only credential, so the page
+     is not indexed. It reads /api/public/screens/<token>, the shop's latest
+     PUBLISHED board. Shop text is written with textContent, never as HTML.
+     The fonts are the desk's own (Archivo, Space Mono). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="/shared/currency-face.js"></script>
 <style>
-  :root { --bg: #F7F4ED; --fg: #17140F; --mute: #6E675E; --line: rgba(23,20,15,0.14); --mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
-  body.dark { --bg: #0F0D0A; --fg: #F4F0E6; --mute: #B8B0A3; --line: rgba(244,240,230,0.16); }
-  * { box-sizing: border-box; margin: 0; }
-  html, body { height: 100%; }
-  body { background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; padding: 3vh 4vw; cursor: none; }
-  header { display: flex; align-items: baseline; gap: 2vw; }
-  header b { flex: 1; font-size: clamp(20px, 3.4vw, 48px); letter-spacing: -0.01em; }
-  header span { font-family: var(--mono); font-size: clamp(14px, 1.8vw, 26px); color: var(--mute); }
-  .grid { flex: 1; display: grid; gap: 0 5vw; margin-top: 3vh; align-content: start; }
-  .grid.two { grid-template-columns: 1fr 1fr; }
-  .head, .rate { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr); column-gap: 2vw; align-items: baseline; padding: 1.4vh 0; border-bottom: 1px solid var(--line); }
-  .head { font-family: var(--mono); font-size: clamp(11px, 1.2vw, 18px); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); }
-  .rate b { font-size: clamp(22px, 3.6vw, 64px); }
-  .rate span { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: clamp(16px, 2.4vw, 46px); text-align: right; white-space: nowrap; }
-  .head span { text-align: right; }
-  .head span:first-child { text-align: left; }
-  .rate .sell { font-weight: 700; }
-  footer { display: flex; justify-content: space-between; gap: 2vw; flex-wrap: wrap; font-size: clamp(12px, 1.4vw, 20px); color: var(--mute); margin-top: 2vh; }
-  #missing { margin: auto; text-align: center; max-width: 34em; }
-  #missing b { display: block; font-size: clamp(22px, 3vw, 40px); margin-bottom: 1vh; }
-  #missing span { font-size: clamp(14px, 1.8vw, 24px); color: var(--mute); }
-  #start { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 1.5vh; background: var(--bg); cursor: pointer; padding: 6vw; }
-  #start b { font-size: clamp(22px, 3.2vw, 44px); }
-  #start span { color: var(--mute); max-width: 34em; }
-  #offline { position: fixed; left: 50%; bottom: 3vh; transform: translateX(-50%); padding: 1vh 2vw; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: clamp(12px, 1.4vw, 20px); white-space: nowrap; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a08; }
+  * { box-sizing: border-box; }
+  @keyframes wsFade { from { opacity: 0; transform: translateY(0.6vh); } to { opacity: 1; transform: none; } }
+  @keyframes wsLive { 0% { box-shadow: 0 0 0 0 rgba(46,163,107,0.55); } 70% { box-shadow: 0 0 0 0.6em rgba(46,163,107,0); } 100% { box-shadow: 0 0 0 0 rgba(46,163,107,0); } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; } }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body data-window-screen>
-<div id="missing" hidden><b>This screen link was replaced</b><span>The shop reset it. Open the new link from Rates → Website &amp; window → Window screens.</span></div>
-<div id="start" role="button" tabindex="0"><b id="start-name">Tap anywhere to start</b><span>Goes full screen and keeps the screen awake. No login. It updates by itself whenever the shop publishes new rates.</span></div>
-<div id="offline" role="status" hidden></div>
-<header id="top" hidden><b id="shop"></b><span id="updated"></span><span id="clock"></span></header>
-<div class="grid" id="grid"></div>
-<footer id="foot" hidden><span id="note"></span><span id="hours"></span></footer>
+<div id="root" data-ws="true" style="position:fixed;inset:0;overflow:hidden;font-family:Archivo,system-ui,sans-serif;color:#F1EEE8;background:#0b0a08;">
+  <div id="board" hidden style="height: 100%; display: flex; flex-direction: column;">
+    <div id="head">
+      <span id="logo" aria-hidden="true"></span>
+      <span style="flex: 1; min-width: 0;"><b id="shop"></b><span id="status-line"><span id="status-dot"></span><span id="status-text"></span></span></span>
+      <span id="clock"></span>
+    </div>
+    <div id="closed" hidden><span id="closed-dot"></span><b style="font-weight: 800; letter-spacing: 0.02em;">Closed</b><span id="closed-line" style="opacity: 0.9;"></span><span style="flex: 1;"></span><span id="closed-sub">Rates shown are from our last update. Today’s rate is confirmed at the counter.</span></div>
+    <div id="grid"></div>
+    <div id="foot"><span id="hours"></span><span style="flex: 1;"></span><span id="note"></span></div>
+  </div>
+
+  <div id="start" role="button" tabindex="0" style="position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(11,10,8,0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; color: #F1EEE8; font-family: Archivo, system-ui, sans-serif;">
+    <div style="text-align: center; max-width: 580px;">
+      <div id="start-initials" aria-hidden="true" style="width: 68px; height: 68px; border-radius: 18px; margin: 0 auto; display: grid; place-items: center; background: #1D6B45; color: #fff; font-weight: 800; font-size: 22px; letter-spacing: -0.01em;"></div>
+      <div id="start-name" style="font-family: 'Space Mono', monospace; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: #8fe0b3; margin-top: 24px;">Window screen</div>
+      <div style="font-size: clamp(30px, 4.4vw, 54px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.05; margin-top: 12px;">Tap anywhere to start</div>
+      <div style="font-size: clamp(14px, 1.5vw, 19px); line-height: 1.55; color: rgba(241,238,232,0.72); margin-top: 14px;">Goes full screen and keeps the screen awake. No login. It updates by itself whenever the shop publishes new rates.</div>
+    </div>
+  </div>
+
+  <div id="offline" role="status" hidden style="position: fixed; left: 2vw; bottom: 2vh; z-index: 40; display: inline-flex; align-items: center; gap: 0.6em; padding: 0.55em 0.95em; border-radius: 999px; background: rgba(217,164,65,0.18); color: #E7C27A; font-family: 'Space Mono', monospace; font-size: clamp(11px, 0.9vw, 16px);"><span style="width: 0.55em; height: 0.55em; border-radius: 50%; background: #D9A441;"></span><span id="offline-text"></span></div>
+
+  <div id="missing" hidden style="position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; background: #0b0a08; color: #F1EEE8; font-family: Archivo, system-ui, sans-serif; text-align: center;">
+    <div style="max-width: 560px;">
+      <div style="font-family: 'Space Mono', monospace; font-size: 13px; letter-spacing: 0.2em; text-transform: uppercase; color: #E7C27A;">Link reset</div>
+      <div style="font-size: clamp(26px, 3.6vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin-top: 12px;">This screen link was replaced</div>
+      <div style="font-size: clamp(14px, 1.4vw, 18px); line-height: 1.55; color: rgba(241,238,232,0.7); margin-top: 12px;">The shop reset it. Open the new link from Rates → Website &amp; window → Window screens.</div>
+    </div>
+  </div>
+</div>
 <script>
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
+  var FACE = window.CurrencyFace;
   /* The server refuses a malformed escape (400) before this page loads,
      so the path here always decodes. */
   var token = decodeURIComponent(location.pathname.split("/").filter(Boolean)[1] || "");
-  var shown = false;
+  var data = null;
   var shownAt = null;
+  var DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  var SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  function el(tag, style, text) { var e = document.createElement(tag); if (style) e.setAttribute("style", style); if (text != null) e.textContent = text; return e; }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  /* Six places at most, fewer for a large rate: what the desk shows. */
+  function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
+  function initials(name) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase(); }
+  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 ? " am" : " pm"); }
+
+  /* The shop's clock, not the TV's: the shop's time zone when the shop
+     sends one. */
+  function zoned(zone) {
+    var at = new Date();
+    if (!zone) return { day: at.getDay(), h: at.getHours(), m: at.getMinutes() };
+    var parts = {};
+    new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", hour: "numeric", minute: "numeric", hourCycle: "h23" })
+      .formatToParts(at).forEach(function (p) { parts[p.type] = p.value; });
+    return { day: SHORT.indexOf(parts.weekday), h: Number(parts.hour), m: Number(parts.minute) };
+  }
+  function clockOf(ms, zone) {
+    var o = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+    if (zone) o.timeZone = zone;
+    return new Intl.DateTimeFormat("en-GB", o).format(new Date(ms));
+  }
+  /* Open or closed only from the shop's own week in the shop's clock. */
+  function openState(shop) {
+    var week = shop.week;
+    if (!shop.timeZone || !Array.isArray(week) || week.length !== 7) return null;
+    var now = zoned(shop.timeZone), t = now.h + now.m / 60, today = week[now.day];
+    var open = !!today && t >= today[0] && t < today[1], next = "";
+    if (!open) {
+      for (var d = 0; d < 8; d++) {
+        var di = (now.day + d) % 7, hr = week[di];
+        if (!hr || (d === 0 && t >= hr[0])) continue;
+        next = (d === 0 ? "today" : d === 1 ? "tomorrow" : DAYS[di]) + " at " + fmtT(hr[0]);
+        break;
+      }
+    }
+    return { open: open, closes: open ? fmtT(today[1]) : "", next: next };
+  }
 
   /* One tap: full screen, and a wake lock so the TV does not sleep. Both
      are best effort; a browser that refuses either still shows the rates. */
@@ -65,66 +119,149 @@
   }
   function start() {
     $("start").hidden = true;
-    var el = document.documentElement;
-    if (el.requestFullscreen) el.requestFullscreen().catch(function (e) { console.warn("[window screen] full screen refused", e); });
+    var root = document.documentElement;
+    if (root.requestFullscreen) root.requestFullscreen().catch(function (e) { console.warn("[window screen] full screen refused", e); });
     keepAwake();
   }
   $("start").addEventListener("click", start);
   $("start").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") start(); });
   /* A wake lock is released when the tab is hidden; take it again on return. */
   document.addEventListener("visibilitychange", function () { if (!$("start").hidden || wake === null) return; keepAwake(); });
+  /* The pointer hides after three still seconds, as the design does. */
+  var idle = null;
+  window.addEventListener("mousemove", function () {
+    $("root").style.cursor = ""; clearTimeout(idle);
+    idle = setTimeout(function () { $("root").style.cursor = "none"; }, 3000);
+  });
 
-  function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
-  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  function time(ms) { return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
-  function tick() { $("clock").textContent = time(Date.now()); }
-
-  function column(rates) {
-    var col = el("div");
-    var head = el("div", "head"); head.appendChild(el("span", null, "Currency")); head.appendChild(el("span", null, "We buy")); head.appendChild(el("span", null, "We sell"));
-    col.appendChild(head);
-    rates.forEach(function (r) { var row = el("div", "rate"); row.appendChild(el("b", null, r.code)); row.appendChild(el("span", null, rate(r.buy))); row.appendChild(el("span", "sell", rate(r.sell))); col.appendChild(row); });
-    return col;
+  function flag(code, px, dark) {
+    var url = FACE.flagUrl(code);
+    var f = el("span", "flex:none;width:" + px + "px;height:" + Math.round(px * 0.68) + "px;border-radius:" + Math.max(2, px * 0.12) + "px;box-shadow:0 0 0 1px " + (dark ? "rgba(0,0,0,0.35)" : "rgba(23,20,15,0.12)") + ";");
+    f.setAttribute("aria-hidden", "true");
+    f.setAttribute("data-flag", code);
+    if (url) f.style.background = "#333 center/cover no-repeat url(" + url + ")";
+    else { f.textContent = FACE.flagEmoji(code); f.style.display = "inline-grid"; f.style.placeItems = "center"; f.style.fontSize = Math.round(px * 0.6) + "px"; }
+    return f;
   }
 
-  function render(d) {
-    shown = true;
-    shownAt = d.publishedAt || Date.now();
-    $("offline").hidden = true;
-    document.body.className = d.screen.theme === "dark" ? "dark" : "";
-    document.title = d.shop.name + " · Rates";
-    $("shop").textContent = d.shop.name;
-    $("updated").textContent = d.publishedAt ? "Updated " + time(d.publishedAt) : "";
+  /* The design's board, sized from the screen. */
+  function paint() {
+    if (!data) return;
+    var shop = data.shop, scr = data.screen, rows = data.rates;
+    var W = window.innerWidth, H = window.innerHeight, dark = scr.theme !== "light";
+    var ink = dark ? "#F1EEE8" : "#17140F", mute = dark ? "rgba(241,238,232,0.55)" : "rgba(23,20,15,0.55)", hair = dark ? "rgba(241,238,232,0.09)" : "rgba(23,20,15,0.08)";
+    var sell = dark ? "#5FD69B" : "#1D6B45", bg = dark ? "#0b0a08" : "#F6F3EC";
+    var st = openState(shop);
+    document.body.className = dark ? "dark" : "light";
+    document.body.style.background = bg;
+
+    var portrait = H > W * 1.1;
+    var ncol = scr.layout === "one" || portrait || scr.kind === "tablet" ? 1 : 2;
+    if (W / H > 2.6 && scr.layout !== "one") ncol = 3;
+    var padPx = Math.round(Math.min(W, H) * 0.045);
+    var headH = H * (portrait ? 0.1 : 0.14), footH = H * 0.07;
+    var bodyH = H - padPx * 2 - headH - footH;
+    var fitRows = Math.max(3, Math.floor(bodyH / Math.max(28, Math.min(H * 0.11, W * 0.06))));
+    /* Fill the columns evenly. The design's max(fitRows, ...) put a short
+       list all in the first column and left the second empty. */
+    var perCol = Math.max(1, Math.ceil(rows.length / ncol));
+    /* A long list shrinks to fit. A short one keeps the design's row
+       height (fitRows to a column) and leaves the rest of the column clear. */
+    var rowH = (bodyH - Math.min(H * 0.05, 40)) / Math.max(perCol, fitRows);
+    var fs = Math.max(11, Math.min(rowH * 0.42, W / ncol * 0.045));
+    var flagPx = Math.round(fs * 1.35), numW = fs * 5.4;
+
+    $("root").style.color = ink; $("root").style.background = bg; $("root").style.fontSize = fs + "px";
+    $("board").style.padding = padPx + "px";
+    $("head").setAttribute("style", "flex:none;height:" + headH + "px;display:flex;align-items:center;gap:0.8em;border-bottom:1px solid " + hair + ";");
+    $("logo").setAttribute("style", "flex:none;display:grid;place-items:center;width:" + headH * 0.62 + "px;height:" + headH * 0.62 + "px;border-radius:" + headH * 0.14 + "px;background:" + ink + ";color:" + bg + ";font-family:Space Mono,monospace;font-weight:700;font-size:" + headH * 0.24 + "px;");
+    $("logo").textContent = initials(shop.name);
+    $("shop").setAttribute("style", "display:block;font-weight:800;letter-spacing:-0.02em;font-size:" + headH * 0.34 + "px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;");
+    $("shop").textContent = shop.name;
+    $("status-line").setAttribute("style", "display:flex;align-items:center;gap:0.5em;margin-top:0.25em;font-family:Space Mono,monospace;font-size:" + Math.max(10, headH * 0.15) + "px;letter-spacing:0.08em;text-transform:uppercase;color:" + mute + ";");
+    var live = !st || st.open;
+    $("status-dot").setAttribute("style", "width:0.7em;height:0.7em;border-radius:50%;background:" + (live ? "#2EA36B" : "#C2452D") + ";" + (live ? "animation:wsLive 2.2s infinite;" : ""));
+    /* Without the shop's week there is no open or closed to say: the line
+       says when the rates were published instead. */
+    $("status-text").textContent = st ? (st.open ? "Shop open · closes " + st.closes : "Shop closed")
+      : data.publishedAt ? "Updated " + clockOf(data.publishedAt, shop.timeZone) : "No rates published yet";
+    $("clock").setAttribute("style", "flex:none;font-family:Space Mono,monospace;font-weight:700;font-size:" + headH * 0.36 + "px;");
+    tick();
+
+    var unit = Math.max(10, Math.min(W, H * 1.8) * 0.017);
+    $("closed").hidden = !st || st.open;
+    $("closed").setAttribute("style", "display:flex;align-items:center;gap:0.8em;flex-wrap:wrap;margin:0 0 " + (unit * 0.9).toFixed(1) + "px;padding:" + (unit * 0.6).toFixed(1) + "px " + unit.toFixed(1) + "px;border-radius:" + (unit * 0.6).toFixed(1) + "px;font-size:" + (unit * 1.15).toFixed(1) + "px;background:" + (dark ? "rgba(194,69,45,0.16)" : "rgba(194,69,45,0.1)") + ";color:" + (dark ? "#F0A493" : "#A33A25") + ";border:1px solid " + (dark ? "rgba(194,69,45,0.35)" : "rgba(194,69,45,0.25)") + ";");
+    $("closed-dot").setAttribute("style", "flex:none;width:0.6em;height:0.6em;border-radius:50%;background:#C2452D;");
+    $("closed-line").textContent = st && st.next ? "Opens " + st.next : "";
+    $("closed-sub").setAttribute("style", "font-family:Space Mono,monospace;font-size:0.68em;letter-spacing:0.04em;opacity:0.75;");
+
     var grid = $("grid"); grid.textContent = "";
-    grid.className = "grid" + (d.screen.layout === "two" ? " two" : "");
-    if (d.screen.layout === "two") {
-      var half = Math.ceil(d.rates.length / 2);
-      grid.appendChild(column(d.rates.slice(0, half))); grid.appendChild(column(d.rates.slice(half)));
-    } else grid.appendChild(column(d.rates));
-    $("note").textContent = d.shop.home ? "Per 1 unit in " + d.shop.home + ". The rate on your receipt is the one that counts." : "";
-    $("hours").textContent = (d.shop.hours || []).map(function (h) { return h.days + " " + h.hours; }).join(" · ");
-    $("top").hidden = false; $("foot").hidden = false; $("missing").hidden = true;
+    grid.setAttribute("style", "flex:1;min-height:0;display:grid;grid-template-columns:repeat(" + ncol + ",minmax(0,1fr));gap:0 " + padPx + "px;padding-top:" + Math.min(H * 0.02, 18) + "px;animation:wsFade .6s ease both;");
+    grid.setAttribute("data-columns", String(ncol));
+    var numHead = "flex:none;width:" + numW + "px;text-align:right;";
+    var showNames = W > 520;
+    for (var c = 0; c < ncol; c++) {
+      var col = el("div", "min-width: 0; display: flex; flex-direction: column;");
+      var head = el("div", "flex:none;display:flex;align-items:center;gap:0.8em;padding:0 0.5em 0.4em;font-family:Space Mono,monospace;font-size:" + Math.max(9, fs * 0.42) + "px;letter-spacing:0.16em;text-transform:uppercase;color:" + mute + ";border-bottom:1px solid " + hair + ";");
+      head.appendChild(el("span", "flex: 1;", "Currency")); head.appendChild(el("span", numHead, "We buy")); head.appendChild(el("span", numHead + "color:" + sell + ";", "We sell"));
+      col.appendChild(head);
+      rows.slice(c * perCol, (c + 1) * perCol).forEach(function (r) {
+        var row = el("div", "flex:none;height:" + rowH + "px;display:flex;align-items:center;gap:0.8em;padding:0 0.5em;border-bottom:1px solid " + hair + ";");
+        row.setAttribute("data-code", r.code);
+        row.appendChild(flag(r.code, flagPx, dark));
+        var names = el("span", "flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5em; overflow: hidden;");
+        names.appendChild(el("b", "font-family: 'Space Mono', monospace; font-weight: 700;", r.code));
+        if (showNames) names.appendChild(el("span", "font-size:0.62em;color:" + mute + ";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;", FACE.currencyName(r.code)));
+        row.appendChild(names);
+        row.appendChild(el("span", "flex:none;width:" + numW + "px;text-align:right;font-family:Space Mono,monospace;color:" + (dark ? "rgba(241,238,232,0.82)" : "rgba(23,20,15,0.75)") + ";", rate(r.buy)));
+        row.appendChild(el("span", "flex:none;width:" + numW + "px;text-align:right;font-family:Space Mono,monospace;font-weight:700;color:" + sell + ";", rate(r.sell)));
+        col.appendChild(row);
+      });
+      grid.appendChild(col);
+    }
+
+    $("foot").setAttribute("style", "flex:none;height:" + footH + "px;display:flex;align-items:center;gap:1.2em;font-family:Space Mono,monospace;font-size:" + Math.max(9, footH * 0.26) + "px;letter-spacing:0.06em;color:" + mute + ";border-top:1px solid " + hair + ";");
+    $("hours").textContent = (shop.hours || []).map(function (h) { return h.days + " " + h.hours; }).join(" · ");
+    var reg = shop.regulator;
+    $("note").textContent = (shop.home ? "Per 1 unit in " + shop.home : "") + (reg && reg.name && reg.number ? " · " + reg.name + " " + reg.number : "");
+    $("start-initials").textContent = initials(shop.name);
+    $("start-name").textContent = scr.name || "Window screen";
+    $("board").hidden = false;
+  }
+  function tick() {
+    if (!data) return;
+    var now = zoned(data.shop.timeZone);
+    $("clock").textContent = pad(now.h) + ":" + pad(now.m);
   }
 
   function load() {
     fetch("/api/public/screens/" + encodeURIComponent(token))
       .then(function (res) { if (res.status === 404) return null; if (!res.ok) throw new Error("screen answered " + res.status); return res.json(); })
       .then(function (d) {
-        if (d) return render(d);
+        if (d) {
+          data = d; shownAt = d.publishedAt || Date.now();
+          $("offline").hidden = true; $("missing").hidden = true;
+          document.title = d.shop.name + " · Rates";
+          return paint();
+        }
         /* Retired or never real: clear the board rather than leave old prices up. */
-        shown = false; $("grid").textContent = ""; $("top").hidden = true; $("foot").hidden = true; $("offline").hidden = true;
+        data = null; $("grid").textContent = ""; $("board").hidden = true; $("offline").hidden = true;
         $("start").hidden = true; $("missing").hidden = false;
       })
       /* A failed refresh keeps the last rates up and says how old they are;
          the next poll tries again. A screen that never loaded says so. */
       .catch(function (e) {
         console.warn("[window screen]", e);
-        if (!shown) { $("start").hidden = true; $("missing").hidden = false; return; }
-        $("offline").textContent = "Offline · showing rates from " + time(shownAt) + " · reconnecting";
+        if (!data) { $("start").hidden = true; $("missing").hidden = false; return; }
+        $("offline-text").textContent = "Offline · showing rates from " + clockOf(shownAt, data.shop.timeZone) + " · reconnecting";
         $("offline").hidden = false;
       });
   }
-  tick(); setInterval(tick, 15 * 1000);
+  var resized = null;
+  window.addEventListener("resize", function () { clearTimeout(resized); resized = setTimeout(paint, 100); });
+  setInterval(tick, 15 * 1000);
+  /* Open or closed changes on the hour, not on a publish. */
+  setInterval(paint, 60 * 1000);
   load(); setInterval(load, 60 * 1000);
 })();
 </script>

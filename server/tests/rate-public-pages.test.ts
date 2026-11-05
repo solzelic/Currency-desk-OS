@@ -48,7 +48,11 @@ describe("the two pages", () => {
     for (const file of PAGES) {
       const page = readFileSync(path.join(ROOT, file), "utf8");
       expect(page, file).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
-      expect(page, file).not.toMatch(/yorkfx|York FX|\bCAD\b/);
+      /* Nothing about one shop, one currency or one country's regulator:
+         each comes from the shop's own answer. */
+      expect(page, file).not.toMatch(/yorkfx|York FX|\bCAD\b|FINTRAC|AUSTRAC|\bFCA\b|\bBSP\b/);
+      /* The house rule: no em or en dashes in what a customer reads. */
+      expect(page, file).not.toMatch(/[\u2013\u2014]/);
       expect(page, file).toContain("/api/public/");
     }
   });

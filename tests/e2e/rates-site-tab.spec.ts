@@ -33,7 +33,7 @@ test("the owner names the rate page and takes it live, and the link opens it", a
   await expect(card.getByRole("link", { name: "Open page" })).toHaveAttribute("href", `/r/${SLUG}`);
   const stranger = await (await browser.newContext()).newPage();
   await stranger.goto(`/r/${SLUG}`);
-  await expect(stranger.locator("#rates tr").first()).toBeVisible();
+  await expect(stranger.locator("[data-code]").first()).toBeVisible();
   await stranger.close();
 });
 
