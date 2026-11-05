@@ -171,13 +171,13 @@ test("a teller opens a currency's panel and cannot change it", async ({ page }) 
 test("a manager locks the rates, the board stops taking changes, and Unlock opens it again", async ({ page }) => {
   await openRates(page, "r.haddad");
   await expect(page.getByTitle(HANDLE).first()).toBeVisible();
-  const lock = page.getByRole("button", { name: "Lock rates" });
+  const lock = page.getByRole("button", { name: "Lock rates", exact: true });
   const banner = page.getByText("Rates are locked. Unlock them to make changes.");
   try {
     const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
     await lock.click();
     expect((await locked).status()).toBe(200);
-    await expect(page.getByRole("button", { name: "Locked" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
     await expect(banner).toBeVisible();
     await expect(page.getByRole("switch", { name: "USD on the board" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
@@ -190,6 +190,28 @@ test("a manager locks the rates, the board stops taking changes, and Unlock open
     await expect(page.getByRole("switch", { name: "USD on the board" })).toBeEnabled();
   } finally {
     /* Never leave the shared desk locked. */
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
+});
+
+/* One lock. The desk's top bar had its own lock, kept in this browser
+   only: it held this desk's prices and nobody else knew. Both buttons
+   now lock the branch on the server, and each shows what the other did. */
+test("the desk's top-bar lock and the Rates lock are the same lock", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const top = page.getByTitle("Lock rates for this branch", { exact: true });
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await top.click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
+    await expect(page.getByText("Rates are locked. Unlock them to make changes.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Unlock", exact: true }).click();
+    await expect(page.getByTitle("Lock rates for this branch", { exact: true })).toBeVisible();
+    expect((await page.evaluate(async () => (await fetch("/api/rates")).json())).locked).toBeNull();
+  } finally {
     await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
   }
 });
