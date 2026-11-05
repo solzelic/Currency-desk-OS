@@ -110,6 +110,56 @@ test("a manager drags a currency with a finger by its handle, on the table and o
   await expect.poll(() => order(page)).toEqual([phone[0], phone[2], phone[1], ...phone.slice(3)]);
 });
 
+/* The design's currency panel: a row's › opens it. Market, what the desk
+   sells at, the margin against the floor and target, the currency's own
+   spread (or the default), and on or off the board. Every change is a
+   draft until Publish, and the test puts the spread back. */
+test("a manager opens a currency's panel, gives it its own spread, and takes it off the board", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const code = (await order(page))[0];
+  await page.getByRole("button", { name: `Open ${code}`, exact: true }).click();
+  const panel = page.getByRole("dialog", { name: new RegExp(`^${code} `) });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("Market", { exact: true })).toBeVisible();
+  await expect(panel.getByText("You sell at", { exact: true })).toBeVisible();
+  await expect(panel).toContainText(/Floor \d+\.\d%, target \d+\.\d%\./);
+
+  const own = panel.getByRole("switch", { name: "Use the default spread" });
+  await expect(own).toHaveAttribute("aria-checked", "true");
+  await own.click();
+  try {
+    await expect(own).toHaveAttribute("aria-checked", "false");
+    const value = panel.getByLabel("Spread", { exact: true });
+    const before = parseFloat((await value.textContent()) ?? "");
+    await panel.getByRole("button", { name: "Raise the spread" }).click();
+    await expect(value).toHaveText(`${(before + 0.1).toFixed(1)}%`);
+    await expect(page.getByText("Unpublished changes")).toBeVisible();
+  } finally {
+    /* Back to the default spread: the setting is the shop's, saved. */
+    if ((await own.getAttribute("aria-checked")) === "false") await own.click();
+    await expect(own).toHaveAttribute("aria-checked", "true");
+  }
+
+  await panel.getByRole("button", { name: "Take off the board" }).click();
+  await expect(page.getByRole("switch", { name: `${code} on the board` })).toHaveAttribute("aria-checked", "false");
+  await panel.getByRole("button", { name: "Put on the board" }).click();
+  await expect(page.getByRole("switch", { name: `${code} on the board` })).toHaveAttribute("aria-checked", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+});
+
+test("a teller opens a currency's panel and cannot change it", async ({ page }) => {
+  await openRates(page, "m.costa");
+  await page.getByRole("button", { name: "Open USD", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: /^USD / });
+  await expect(panel.getByRole("switch", { name: "Use the default spread" })).toBeDisabled();
+  await expect(panel.getByRole("button", { name: "Take off the board" })).toBeDisabled();
+  await panel.getByRole("button", { name: "Close" }).click();
+  await expect(panel).toBeHidden();
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
