@@ -366,6 +366,171 @@
 });
 
 
+/* ---- os-src/rates-board.js ---- */
+/* The Rates app's board, as the desk builds it before Publish.
+
+   The server prices every deal and every public number; these are the
+   desk's own copies, for the preview on screen and the body Publish sends.
+   Spreads are percents on screen (1.5 means 1.5%) and fractions on the wire
+   (0.015). A pinned rate (settings.spotOverride, set in Pricing) beats the
+   market feed, and the market beats the last publish. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, { ratesBoard: api });
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var DEFAULT_SPREAD_PCT = 1.5;
+  /* The publish schema refuses a margin over 0.2 (routes/rates.ts). */
+  var MAX_SPREAD_PCT = 20;
+
+  /* A positive, finite number, or null. Text from settings is trimmed. */
+  function positive(v) {
+    var n = typeof v === "string" ? Number(v.trim()) : v;
+    return typeof n === "number" && isFinite(n) && n > 0 ? n : null;
+  }
+  /* A spread may be zero. Blank, missing or negative is "not set". */
+  function spreadPct(v) {
+    if (v === null || v === undefined || (typeof v === "string" && v.trim() === "")) return null;
+    var n = typeof v === "string" ? Number(v.trim()) : v;
+    return typeof n === "number" && isFinite(n) && n >= 0 ? n : null;
+  }
+
+  /* ---- exact six-place rounding ----
+     0.0091 x 0.985 is 0.0089635 on paper and 0.00896349... in floating
+     point, which rounds the wrong way. Each figure is read to 15
+     significant digits into a scaled integer, and rounding is half-up, the
+     same as the server's Decimal. */
+  var SCALE = 18;
+  function scaled(n) {
+    var parts = Number(n).toPrecision(15).split("e");
+    var exp = parts.length > 1 ? Number(parts[1]) : 0;
+    var digits = parts[0].replace("-", "");
+    var dot = digits.indexOf(".");
+    var whole = dot < 0 ? digits : digits.slice(0, dot) + digits.slice(dot + 1);
+    var places = (dot < 0 ? 0 : digits.length - dot - 1) - exp;
+    var shift = SCALE - places;
+    return shift >= 0 ? BigInt(whole) * 10n ** BigInt(shift) : BigInt(whole) / 10n ** BigInt(-shift);
+  }
+  function divHalfUp(a, b) { return (a * 2n + b) / (2n * b); }
+  function sixPlaces(value) { return Number(value) / 1e6; }
+
+  /* The desk's lines (quotes/terms.ts): buy at mid x (1 - m), sell at
+     mid / (1 - m). Returns plain numbers at six places for display. */
+  function deskPair(mid, buyPct, sellPct) {
+    var m = scaled(mid);
+    var hundred = scaled(100);
+    var toSix = 10n ** BigInt(SCALE - 6);
+    var buy = divHalfUp(m * (hundred - scaled(buyPct)), hundred * toSix);
+    var sell = divHalfUp(m * hundred, (hundred - scaled(sellPct)) * toSix);
+    return { buy: sixPlaces(buy), sell: sixPlaces(sell) };
+  }
+
+  /* The market in the shop's home currency, from the feed's raw mids
+     (GET /api/rates/market: Canadian dollars per 1 unit, every digit).
+     A CAD shop takes them as they are; any other shop divides by its own
+     currency's mid. Nothing is rounded here: the ticker's six places moved
+     the dong 0.56% off the market, and a publish would have carried that.
+     A feed that cannot price the home currency gives no market at all, so
+     the board falls back to the last publish rather than guess. */
+  function homeMarket(mids, home) {
+    var code = String(home || "").toUpperCase();
+    if (!mids || typeof mids !== "object" || !/^[A-Z]{3}$/.test(code)) return {};
+    var per = code === "CAD" ? (positive(mids.CAD) || 1) : positive(mids[code]);
+    if (per === null) return {};
+    var out = {};
+    Object.keys(mids).forEach(function (c) {
+      var cad = positive(mids[c]);
+      if (c !== code && /^[A-Z]{3}$/.test(c) && cad !== null) out[c] = cad / per;
+    });
+    if (code !== "CAD" && !out.CAD) out.CAD = 1 / per;
+    return out;
+  }
+
+  /* One row per currency the desk shows or has published, in the
+     published order first, then the desk's other currencies. */
+  function draftRows(input) {
+    var home = String(input.home || "").toUpperCase();
+    var settings = input.settings || {};
+    var pinned = settings.spotOverride || {};
+    var custom = settings.spreads || {};
+    var def = spreadPct(settings.defaultSpread);
+    var dflt = def === null ? DEFAULT_SPREAD_PCT : def;
+    var board = input.board || null;
+    var published = (board && board.rows) || {};
+    var market = input.market || {};
+    var seen = {};
+    var order = [];
+    function add(code) {
+      var c = String(code || "").toUpperCase();
+      if (!/^[A-Z]{3}$/.test(c) || c === home || seen[c]) return;
+      seen[c] = true;
+      order.push(c);
+    }
+    ((board && board.order) || []).forEach(add);
+    Object.keys(published).forEach(add);
+    (input.codes || []).forEach(add);
+    return order.map(function (code) {
+      var pub = published[code];
+      var pin = positive(pinned[code]);
+      var own = spreadPct(custom[code]);
+      return {
+        code: code,
+        mid: pin !== null ? pin : (positive(market[code]) !== null ? positive(market[code]) : (pub ? positive(pub.mid) : null)),
+        spreadPct: own === null ? dflt : own,
+        custom: own !== null,
+        pinned: pin !== null,
+        show: pub ? pub.show !== false : true,
+        published: !!pub
+      };
+    });
+  }
+
+  function fraction(pct) { return Number((pct / 100).toPrecision(12)); }
+
+  /* The body for POST /api/rates/publish, or the reason it cannot go. A
+     hidden currency with no rate is left off; a shown one stops the publish. */
+  function publishBody(rows, defaultSpreadPct) {
+    var missing = [], tooWide = [], out = {}, order = [];
+    rows.forEach(function (r) {
+      if (r.mid === null) { if (r.show) missing.push(r.code); return; }
+      if (r.spreadPct > MAX_SPREAD_PCT) tooWide.push(r.code);
+      var row = { mid: r.mid, show: r.show };
+      if (r.custom) row.spread = fraction(r.spreadPct);
+      out[r.code] = row;
+      order.push(r.code);
+    });
+    if (defaultSpreadPct > MAX_SPREAD_PCT) tooWide.push("default");
+    if (missing.length || tooWide.length || !order.length) {
+      var refusal = { ok: false, missing: missing };
+      if (tooWide.length) refusal.tooWide = tooWide;
+      return refusal;
+    }
+    var margin = fraction(defaultSpreadPct);
+    return { ok: true, body: { buyMargin: margin, sellMargin: margin, rows: out, order: order } };
+  }
+
+  /* True when Publish would send what customers already see. */
+  function sameAsPublished(rows, published, defaultSpreadPct) {
+    if (!published || !published.rows) return false;
+    var next = publishBody(rows, defaultSpreadPct);
+    if (!next.ok) return false;
+    var margin = fraction(defaultSpreadPct);
+    if (published.buyMargin !== undefined && (Number(published.buyMargin) !== margin || Number(published.sellMargin) !== margin)) return false;
+    /* Only codes that are rows. The seed lists the home currency in its
+       order, and the home currency is never a row on its own board. */
+    var pubOrder = (published.order || Object.keys(published.rows)).filter(function (c) { return !!published.rows[c]; });
+    if (pubOrder.join(",") !== next.body.order.join(",")) return false;
+    return next.body.order.every(function (code) {
+      var a = next.body.rows[code], b = published.rows[code];
+      return !!b && Number(b.mid) === a.mid && (b.show !== false) === a.show
+        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread);
+    });
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished };
+});
+
+
 /* ---- shared/counter-cash.js ---- */
 /* What actually crossed the counter, in cash.
 
@@ -57485,6 +57650,623 @@ ${snap}`;
   });
 })();
 
+/* ---- os-src/cdos-rates.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS: Rates (Rates v2.5, the desk side, part one)
+
+   One app for the shop's rates, in place of the Rate Board page. The
+   Board tab shows every currency the desk trades: the market, what the
+   desk buys and sells at, and whether it is on the board. Publish sends
+   the board to the server (POST /api/rates/publish, append-only
+   rate_boards), and every surface the shop's customers see reads that
+   publish. Pricing & rates is the existing Pricing console, unchanged.
+
+   The server is the record. The board loads from GET /api/rates (this
+   desk's own branch), the market from GET /api/rates/market (raw mids,
+   converted to the shop's home currency without rounding), recent
+   publishes from GET /api/rates/history.
+   The publish rights are the server's (rates:change); the screen only
+   mirrors them so nobody types into a board they cannot publish.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useMemo,
+    useCallback
+  } = React;
+  const {
+    CD,
+    Ic
+  } = window.CDOS;
+  const B = window.CDOS.ratesBoard;
+
+  /* The roles that hold rates:change on the server (auth/permissions.ts). */
+  const PUBLISHERS = ['branch_manager', 'administrator'];
+  const card = {
+    background: 'var(--cd-panel)',
+    border: `1px solid ${CD.line}`,
+    borderRadius: 13
+  };
+  const mono = {
+    fontFamily: 'Space Mono, monospace',
+    fontVariantNumeric: 'tabular-nums'
+  };
+  const label = {
+    color: CD.faint,
+    fontFamily: 'Space Mono, monospace',
+    fontSize: 10.5,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    fontWeight: 700
+  };
+  async function getJson(url) {
+    const res = await fetch(url, {
+      credentials: 'same-origin'
+    });
+    if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+    return res.json();
+  }
+  function ago(ms) {
+    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    if (m < 1) return 'just now';
+    if (m < 60) return m + ' min ago';
+    const h = Math.round(m / 60);
+    return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
+  }
+  /* The desk's one clock (cdos-desk-time.js): today's publishes by the
+     time on the branch clock, older ones by their civil date there. */
+  function when(ms, settings) {
+    const zone = settings && settings.timezone;
+    const {
+      deskTime,
+      deskDay
+    } = window.CDOS;
+    return deskDay(ms, zone) === deskDay(Date.now(), zone) ? deskTime(ms, settings && settings.timeFormat, zone) : deskDay(ms, zone);
+  }
+  const six = n => n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6);
+  function Toggle({
+    on,
+    onClick,
+    disabled,
+    name
+  }) {
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": on,
+      "aria-label": name,
+      disabled: disabled,
+      onClick: onClick,
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: on ? CD.green : 'var(--cd-disabled)',
+        borderRadius: 999,
+        opacity: disabled ? 0.55 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background .15s'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: on ? 22 : 2,
+        background: 'var(--cd-panel)',
+        borderRadius: 999,
+        transition: 'left .15s'
+      }
+    }));
+  }
+  function Board({
+    settings,
+    serverRole,
+    me,
+    log
+  }) {
+    const canPublish = PUBLISHERS.includes(serverRole);
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const defPct = settings.defaultSpread != null && settings.defaultSpread !== '' ? +settings.defaultSpread : B.DEFAULT_SPREAD_PCT;
+    const floor = settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    const target = settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
+    const [data, setData] = useState({
+      loading: true,
+      error: null,
+      board: null,
+      history: [],
+      market: {}
+    });
+    const [edits, setEdits] = useState({
+      order: null,
+      show: {}
+    });
+    const [q, setQ] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [notice, setNotice] = useState(null);
+    const load = useCallback(async () => {
+      try {
+        const [rates, history, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market')]);
+        const market = B.homeMarket(feed.mids, home);
+        setData({
+          loading: false,
+          error: null,
+          board: rates.board,
+          history: history.publications || [],
+          market
+        });
+      } catch (e) {
+        setData(d => ({
+          ...d,
+          loading: false,
+          error: 'The board could not be loaded (' + e.message + '). Nothing has changed for customers.'
+        }));
+      }
+    }, []);
+    useEffect(() => {
+      load();
+    }, [load]);
+    const rows = useMemo(() => {
+      const base = B.draftRows({
+        codes: window.CDOS.CCY || [],
+        home,
+        board: data.board,
+        market: data.market,
+        settings
+      }).map(r => edits.show[r.code] === undefined ? r : {
+        ...r,
+        show: edits.show[r.code]
+      });
+      if (!edits.order) return base;
+      const at = c => {
+        const i = edits.order.indexOf(c);
+        return i < 0 ? edits.order.length : i;
+      };
+      return base.slice().sort((a, b) => at(a.code) - at(b.code));
+    }, [data, edits, settings, home]);
+
+    /* Two different things. A change is something somebody did here: on or
+       off, order, a spread or a pinned rate. That is compared at the
+       published mids. The market moving since the last publish is not a
+       change anyone made; it gets its own line, and Publish sends it. */
+    const atPublishedMids = data.board ? rows.map(r => !r.pinned && data.board.rows[r.code] ? {
+      ...r,
+      mid: Number(data.board.rows[r.code].mid)
+    } : r) : rows;
+    const dirty = !B.sameAsPublished(atPublishedMids, data.board, defPct);
+    const marketMoved = !dirty && !B.sameAsPublished(rows, data.board, defPct);
+    const canSend = canPublish && (dirty || marketMoved) && !busy;
+    const move = (code, by) => setEdits(e => {
+      const order = rows.map(r => r.code);
+      const i = order.indexOf(code),
+        j = i + by;
+      if (i < 0 || j < 0 || j >= order.length) return e;
+      [order[i], order[j]] = [order[j], order[i]];
+      return {
+        ...e,
+        order
+      };
+    });
+    const toggle = r => setEdits(e => ({
+      ...e,
+      show: {
+        ...e.show,
+        [r.code]: !r.show
+      }
+    }));
+    const publish = async () => {
+      setNotice(null);
+      const out = B.publishBody(rows, defPct);
+      if (!out.ok) {
+        setNotice(out.missing.length ? `No rate for ${out.missing.join(', ')}. Take it off the board, or pin a rate in Pricing & rates.` : 'A spread is over 20%. Lower it in Pricing & rates.');
+        return;
+      }
+      setBusy(true);
+      try {
+        const res = await fetch('/api/rates/publish', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify(out.body)
+        });
+        if (!res.ok) {
+          setNotice(res.status === 403 ? 'Only the owner and managers can publish rates.' : `Publish failed (the server answered ${res.status}). Customers still see your last publish.`);
+          return;
+        }
+        const saved = (await res.json()).board;
+        /* The desk's rate engine reads this browser cache (cdos-os.jsx,
+           publishedBook). The server board is the record; this only spares
+           the desk a reload before its next deal prices off the new board. */
+        try {
+          const cache = JSON.stringify({
+            buyMargin: saved.buyMargin,
+            sellMargin: saved.sellMargin,
+            rows: saved.rows,
+            publishedAt: saved.publishedAt,
+            publishedBy: saved.publishedBy
+          });
+          localStorage.setItem('yorkfx_rates_v1', cache);
+          localStorage.setItem('yorkfx_board_order', JSON.stringify(saved.order || out.body.order));
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'yorkfx_rates_v1',
+            newValue: cache
+          }));
+        } catch (e) {
+          console.warn('[rates] the browser cache was not updated; the desk reloads the board on its next read', e);
+        }
+        if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
+        setEdits({
+          order: null,
+          show: {}
+        });
+        setNotice('Published. Your site and window screens show it now.');
+        await load();
+      } catch (e) {
+        setNotice('No connection. Nothing was published.');
+      } finally {
+        setBusy(false);
+      }
+    };
+    const list = rows.filter(r => !q.trim() || r.code.toLowerCase().includes(q.trim().toLowerCase()));
+    const onBoard = rows.filter(r => r.show).length;
+    const pub = data.board;
+    const preview = pub ? (pub.order || Object.keys(pub.rows)).filter(c => pub.rows[c] && pub.rows[c].show !== false).map(c => {
+      const r = pub.rows[c];
+      const pct = m => (r.spread != null ? r.spread : m) * 100;
+      return {
+        code: c,
+        ...B.deskPair(r.mid, pct(pub.buyMargin), pct(pub.sellMargin))
+      };
+    }) : [];
+    const tone = pct => pct < floor ? [CD.flag, CD.flagSoft] : pct < target ? [CD.amber, CD.amberSoft] : [CD.green, CD.greenSoft];
+    if (data.loading) return /*#__PURE__*/React.createElement("div", {
+      className: "p-6 text-[13px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Loading your board\u2026");
+    return /*#__PURE__*/React.createElement("div", {
+      className: "rates-board"
+    }, data.error && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      className: "text-[12.5px] px-3 py-2.5",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag,
+        borderRadius: 9
+      }
+    }, data.error), /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...card,
+        overflow: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2",
+      style: {
+        padding: 12,
+        borderBottom: `1px solid ${CD.lineSoft}`
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "search",
+      s: 14,
+      c: CD.faint
+    }), /*#__PURE__*/React.createElement("input", {
+      value: q,
+      onChange: e => setQ(e.target.value),
+      placeholder: "Find a currency",
+      "aria-label": "Find a currency",
+      className: "flex-1 text-[13px] outline-none bg-transparent",
+      style: {
+        color: CD.ink
+      }
+    })), /*#__PURE__*/React.createElement("table", {
+      className: "w-full rates-table",
+      style: {
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      className: "text-left",
+      style: label
+    }, /*#__PURE__*/React.createElement("th", {
+      style: {
+        padding: '9px 14px'
+      }
+    }, "Currency"), /*#__PURE__*/React.createElement("th", {
+      className: "rc-wide",
+      style: {
+        textAlign: 'right'
+      }
+    }, "Market"), /*#__PURE__*/React.createElement("th", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We buy"), /*#__PURE__*/React.createElement("th", {
+      style: {
+        textAlign: 'right'
+      }
+    }, "We sell"), /*#__PURE__*/React.createElement("th", {
+      className: "rc-wide",
+      style: {
+        textAlign: 'right'
+      }
+    }, "Over market"), /*#__PURE__*/React.createElement("th", {
+      style: {
+        textAlign: 'center'
+      }
+    }, "On board"), /*#__PURE__*/React.createElement("th", {
+      "aria-label": "Order"
+    }))), /*#__PURE__*/React.createElement("tbody", null, list.map((r, i) => {
+      const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
+      const [fg, bg] = tone(r.spreadPct);
+      return /*#__PURE__*/React.createElement("tr", {
+        key: r.code,
+        style: {
+          borderTop: `1px solid ${CD.lineSoft}`,
+          opacity: r.show ? 1 : 0.6
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: '10px 14px'
+        }
+      }, /*#__PURE__*/React.createElement("b", {
+        className: "text-[13.5px]",
+        style: {
+          color: CD.ink
+        }
+      }, r.code), r.pinned && /*#__PURE__*/React.createElement("span", {
+        className: "ml-2 text-[10px]",
+        style: {
+          color: CD.amber
+        }
+      }, "pinned")), /*#__PURE__*/React.createElement("td", {
+        className: "rc-wide",
+        style: {
+          ...mono,
+          textAlign: 'right',
+          color: CD.mute
+        }
+      }, r.mid ? six(r.mid) : 'No rate'), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...mono,
+          textAlign: 'right',
+          color: CD.ink
+        }
+      }, pair ? six(pair.buy) : '·'), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...mono,
+          textAlign: 'right',
+          color: CD.ink,
+          fontWeight: 700
+        }
+      }, pair ? six(pair.sell) : '·'), /*#__PURE__*/React.createElement("td", {
+        className: "rc-wide",
+        style: {
+          textAlign: 'right'
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "text-[11.5px] px-2 py-0.5",
+        style: {
+          ...mono,
+          background: bg,
+          color: fg,
+          borderRadius: 7,
+          fontWeight: 700
+        }
+      }, r.spreadPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          textAlign: 'center'
+        }
+      }, /*#__PURE__*/React.createElement(Toggle, {
+        on: r.show,
+        disabled: !canPublish,
+        onClick: () => toggle(r),
+        name: `${r.code} on the board`
+      })), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: '0 10px',
+          whiteSpace: 'nowrap'
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": `Move ${r.code} up`,
+        disabled: !canPublish || i === 0 || !!q,
+        onClick: () => move(r.code, -1),
+        style: {
+          opacity: canPublish && i > 0 && !q ? 1 : 0.3
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "arrowup",
+        s: 13,
+        c: CD.mute
+      })), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-label": `Move ${r.code} down`,
+        disabled: !canPublish || i === list.length - 1 || !!q,
+        onClick: () => move(r.code, 1),
+        style: {
+          opacity: canPublish && i < list.length - 1 && !q ? 1 : 0.3
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "arrowdown",
+        s: 13,
+        c: CD.mute
+      }))));
+    }))), !list.length && /*#__PURE__*/React.createElement("div", {
+      className: "p-4 text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "No currency matches \u201C", q, "\u201D."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px]",
+      style: {
+        padding: '10px 14px',
+        borderTop: `1px solid ${CD.lineSoft}`,
+        color: CD.faint
+      }
+    }, onBoard, " of ", rows.length, " on the board \xB7 the top six show on your homepage")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gap: 14,
+        alignContent: 'start'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...card,
+        padding: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 text-[13px] font-semibold px-3 py-2.5",
+      style: {
+        borderRadius: 9,
+        background: dirty ? CD.amberSoft : CD.greenSoft,
+        color: dirty ? CD.amber : CD.green
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 8,
+        height: 8,
+        borderRadius: 999,
+        background: 'currentColor'
+      }
+    }), dirty ? 'Unpublished changes' : 'Live on your site and window'), marketMoved && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "The market has moved since this publish. Publish to send today's rates."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: publish,
+      disabled: !canSend,
+      className: "w-full mt-3 text-[13px] font-bold",
+      style: {
+        height: 46,
+        borderRadius: 12,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        background: canSend ? CD.green : 'var(--cd-chip)',
+        color: canSend ? '#fff' : CD.faint
+      }
+    }, busy ? 'Publishing…' : 'Publish'), notice && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "text-[12px] mt-2",
+      style: {
+        color: CD.ink
+      }
+    }, notice), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-3",
+      style: {
+        color: CD.mute
+      }
+    }, pub ? `Updated ${ago(pub.publishedAt)} by ${pub.publishedBy || 'the market feed'}` : 'Nothing published yet'), /*#__PURE__*/React.createElement("div", {
+      className: "mt-3",
+      style: label
+    }, "Recent publishes"), data.history.slice(0, 3).map(h => /*#__PURE__*/React.createElement("div", {
+      key: h.publicationId,
+      className: "flex items-center gap-2 text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: CD.ink,
+        minWidth: 64
+      }
+    }, when(h.publishedAt, settings)), /*#__PURE__*/React.createElement("span", {
+      className: "flex-1 truncate"
+    }, h.publishedBy || 'market feed'), /*#__PURE__*/React.createElement("span", {
+      style: mono
+    }, Object.keys(h.rows || {}).length, " ccy \xB7 ", (Number(h.sellMargin) * 100).toFixed(1), "%")))), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "What customers see now",
+      style: {
+        ...card,
+        padding: 14,
+        background: CD.ink,
+        color: 'var(--cd-on-ink)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...label,
+        color: 'var(--cd-on-ink-faint)'
+      }
+    }, "What customers see now"), dirty && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-2",
+      style: {
+        color: 'var(--cd-on-ink)'
+      }
+    }, /*#__PURE__*/React.createElement("b", null, "Your changes aren't live yet."), " Customers see your last publish."), !preview.length && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-2"
+    }, "Nothing published yet."), preview.map(p => /*#__PURE__*/React.createElement("div", {
+      key: p.code,
+      className: "flex items-center gap-3 text-[12.5px] mt-2",
+      style: mono
+    }, /*#__PURE__*/React.createElement("b", {
+      className: "flex-1"
+    }, p.code), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: 'var(--cd-on-ink-faint)'
+      }
+    }, six(p.buy)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700
+      }
+    }, six(p.sell)))))));
+  }
+  function Rates({
+    settings,
+    setSettings,
+    me,
+    log,
+    serverRole
+  }) {
+    const [tab, setTab] = useState('board');
+    const canPublish = PUBLISHERS.includes(serverRole);
+    const Pricing = window.CDOS.Pricing;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-col",
+      style: {
+        height: '100%',
+        background: CD.paper,
+        overflow: 'hidden'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "fld-bar fld-pinned"
+    }, [['board', 'Board', 'rateboard'], ['pricing', 'Pricing & rates', 'percent']].map(([id, name, icon]) => /*#__PURE__*/React.createElement("button", {
+      key: id,
+      type: "button",
+      onClick: () => setTab(id),
+      className: 'fld-tab' + (tab === id ? ' on' : '')
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: icon,
+      s: 13,
+      c: tab === id ? '#fff' : CD.mute
+    }), " ", name))), !canPublish && /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 text-[12.5px] px-5 py-2.5",
+      style: {
+        background: 'var(--cd-chip)',
+        color: CD.mute
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "info",
+      s: 14,
+      c: CD.mute
+    }), " You can see today's rates. Changing them is for the owner and managers."), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1 overflow-auto rates-scroll"
+    }, tab === 'board' ? /*#__PURE__*/React.createElement(Board, {
+      settings: settings,
+      serverRole: serverRole,
+      me: me,
+      log: log
+    }) : /*#__PURE__*/React.createElement(Pricing, {
+      settings: settings,
+      setSettings: setSettings,
+      me: me,
+      log: log
+    })));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    Rates
+  });
+})();
+
 /* ---- os-src/cdos-import.jsx ---- */
 /* ============================================================
    CurrencyDesk OS — Ledger Import
@@ -65907,6 +66689,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     Branches,
     APP_ACCENT,
     Pricing,
+    Rates,
     Telegraph,
     SignIn,
     LockDesk,
@@ -65936,10 +66719,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   }();
   const APPMETA = {
     rates: {
-      title: 'Rate Board',
+      title: 'Rates',
       icon: 'rateboard',
-      w: 1060,
-      h: 660
+      w: 1180,
+      h: 720
     },
     telegraph: {
       title: 'Texts',
@@ -70934,10 +71717,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const storeLocked = orderedApps.filter(id => !planAllows(id)).map(mkApp);
     function renderApp(id) {
       switch (baseApp(id)) {
+        /* Rates v2.5: the desk's own Rates app replaces the York FX Rate
+           Board page that was framed here. The page itself stays until the
+           old apps are retired. */
         case 'rates':
-          return /*#__PURE__*/React.createElement("iframe", {
-            src: window.__resources && window.__resources.rateBoard ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1',
-            title: "Rate Board"
+          return /*#__PURE__*/React.createElement(Rates, {
+            settings: settings,
+            setSettings: setSettings,
+            me: me,
+            log: log,
+            serverRole: srvUser ? srvUser.role : null
           });
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {
