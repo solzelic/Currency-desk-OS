@@ -77,11 +77,12 @@ describe("the public rate page", () => {
     for (const staffId of ["r.haddad", "a.singh", "m.costa", "s.iqbal"]) {
       expect((await as(staffId, "PUT", "/api/rate-page", { slug: "york-test", live: true })).statusCode, staffId).toBe(403);
     }
-    expect((await as("m.costa", "GET", "/api/rate-page")).json()).toEqual({ slug: null, live: false });
+    /* Every shop has a page from the first ask, at its own address, private. */
+    expect((await as("m.costa", "GET", "/api/rate-page")).json()).toMatchObject({ slug: "yorkfx", live: false });
     await as("j.masri", "PUT", "/api/rate-page", { slug: "york-test" });
     await as("j.masri", "PUT", "/api/rate-page", { live: true });
     expect((await audits("rate_page.change")).slice(-2)).toEqual([
-      { field: "slug", old: null, new: "york-test" },
+      { field: "slug", old: "yorkfx", new: "york-test" },
       { field: "live", old: false, new: true },
     ]);
   });
@@ -167,6 +168,18 @@ describe("window screens", () => {
     expect((await as("j.masri", "POST", `/api/window-screens/${id}/retire`)).statusCode).toBe(200);
     expect((await pub(`/api/public/screens/${token}`)).statusCode).toBe(404);
     expect((await pub("/api/public/screens/not-a-real-token-but-long-enough-xx")).statusCode).toBe(404);
+  });
+
+  it("get a new link on reset, and the old one stops at once", async () => {
+    const { id, token } = (await as("r.haddad", "POST", "/api/window-screens", screen)).json();
+    expect((await as("m.costa", "POST", `/api/window-screens/${id}/reset`)).statusCode).toBe(403);
+    const reset = await as("r.haddad", "POST", `/api/window-screens/${id}/reset`);
+    expect(reset.statusCode, reset.body).toBe(200);
+    expect(reset.json().token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(reset.json().token).not.toBe(token);
+    expect((await pub(`/api/public/screens/${token}`)).statusCode).toBe(404);
+    expect((await pub(`/api/public/screens/${reset.json().token}`)).statusCode).toBe(200);
+    expect(await audits("window_screen.reset")).toEqual([{ screenId: id }]);
   });
 
   it("refuse a change with nothing in it, or a field they do not have", async () => {

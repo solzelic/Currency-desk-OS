@@ -70,6 +70,8 @@ export interface SiteConfig {
   region?: string;
   postal?: string;
   hours?: { days: string; hours: string }[];
+  /* Hours by day, from the rate page editor: what says open or closed. */
+  week?: OpeningDay[];
   updatedAt?: string;
 }
 
@@ -465,12 +467,26 @@ export const rateBoards = pgTable(
    from the newest snapshot, preserving staff margins/spreads/order. */
 /* Rates v2.5 (migration 062). Where a shop's published board is shown. */
 export const shopRatePages = pgTable("shop_rate_pages", {
-  tenantId: text("tenant_id").primaryKey().references(() => tenants.id),
+  tenantId: text("tenant_id").primaryKey().references(() => tenants.id, { onDelete: "cascade" }),
   slug: text("slug").notNull(),
   live: boolean("live").notNull().default(false),
+  /* What the shop wrote for its page (migration 063). See rates/rate-page.ts. */
+  content: jsonb("content").$type<RatePageContent>().notNull().default({}),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* A day's opening hours, [opens, closes] in hours (9.5 is 9:30), or null
+   for closed. A week is seven of them, Sunday first. */
+export type OpeningDay = [number, number] | null;
+export type RatePageContent = {
+  name?: string;
+  tagline?: string;
+  show?: { converter?: boolean; hours?: boolean; compliance?: boolean };
+  /* null or absent: the first six of the board, in board order. */
+  codes?: string[] | null;
+  regulator?: { name: string; number: string; officer: string };
+};
 
 export type WindowScreenKind = "tv" | "tablet";
 export type WindowScreenLayout = "one" | "two";
