@@ -1454,11 +1454,13 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (!needs.length) {
       const role = ((who as any).platform as { role: PlatformRole }).role;
       if (!can(role, "security:manage") && !can(role, "billing:write")) {
-        reply.code(403).send({
+        /* Return the reply: an async handler that sends and then resolves
+           undefined can be sent twice while an onSend hook is still
+           running. */
+        return reply.code(403).send({
           error: "permission_denied",
           detail: `Your role (${role}) cannot security manage or billing write.`,
         });
-        return;
       }
     }
     const parsed = patchTenantBody.safeParse(req.body);
