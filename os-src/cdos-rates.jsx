@@ -151,6 +151,58 @@
     return { ok: true, board: saved };
   }
 
+  /* The design's feed sheet: where the market column comes from. On this
+     desk the feed is the platform's own, pulled every hour (GET
+     /api/rates/market); holding today's rates is Lock rates, and typing
+     them is pinning a currency in Pricing & rates. There is no other feed
+     to pick yet, so none is listed. */
+  function FeedSheet({ feed, locked, canLock, onLock, onPins, onClose, cards }) {
+    const closeRef = useRef(null);
+    useEffect(() => {
+      if (closeRef.current) closeRef.current.focus();
+      const esc = (e) => { if (e.key === 'Escape') onClose(); };
+      document.addEventListener('keydown', esc);
+      return () => document.removeEventListener('keydown', esc);
+    }, [onClose]);
+    const live = !!(feed && feed.provider);
+    const mode = locked ? 'held' : 'live';
+    const DOT = { live: '#2EA36B', held: '#e0a106', manual: '#9a938a' };
+    const modes = [
+      ['live', 'Live feed', live ? 'Market rates update on their own from the feed below, every hour.' : 'There is no market feed right now. Your board holds its last publish.', null],
+      ['held', 'Hold today’s rates', canLock ? (locked ? 'Your rates are locked. Unlock them in the header to follow the market again.' : 'Lock your rates: nothing publishes and the market leaves your board alone until you unlock it.') : 'The owner or a manager can lock the rates.', canLock && !locked ? onLock : null],
+      ['manual', 'Type them myself', 'Pin a currency’s market rate in Pricing & rates. The market then leaves that currency alone.', onPins],
+    ];
+    const optStyle = (on, active) => css('appearance:none;width:100%;display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:12px;text-align:left;transition:border-color .2s ease;cursor:' + (active ? 'pointer' : 'default') + ';border:' + (on ? '1.5px solid var(--primary)' : '1px solid var(--line)') + ';background:' + (on ? 'var(--green-soft)' : '#fff') + ';');
+    return (<div onClick={onClose} style={css('position:absolute;inset:0;z-index:40;display:flex;align-items:' + (cards ? 'stretch' : 'center') + ';justify-content:center;padding:' + (cards ? '0' : '28px') + ';background:rgba(23,20,15,0.32);animation:rtFade .2s ease both;')}>
+      <div role="dialog" aria-modal="true" aria-label="Where your market rates come from" onClick={e => e.stopPropagation()} style={css('display:flex;flex-direction:column;width:' + (cards ? '100%' : 'min(560px, 100%)') + ';max-height:100%;background:#FBFAF7;overflow:hidden;border-radius:' + (cards ? '0' : '18px') + ';box-shadow:0 40px 90px -30px rgba(23,20,15,0.6),0 0 0 1px rgba(23,20,15,0.08);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')}>
+        <div style={css('flex:1;min-height:0;overflow-y:auto;padding:22px 22px 18px;')}>
+          <div style={css('display:flex;align-items:flex-start;gap:12px;')}><span style={css('flex:1;min-width:0;font-family:var(--m);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mute);')}>Market rates</span>
+            <button ref={closeRef} type="button" onClick={onClose} title="Close" aria-label="Close" style={css('flex:none;appearance:none;border:0;background:rgba(23,20,15,0.06);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--mute);')}><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg></button></div>
+          <h2 style={css('margin:0;font-size:23px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;')}>Where your market rates come from</h2>
+          <p style={css('font-size:13.5px;line-height:1.55;color:var(--mute);margin:6px 0 0;')}>This is the column your prices are built on. Your margins sit on top of it.</p>
+          <div style={css('margin-top:18px;')}>
+            <span style={css('display:block;font-size:13px;font-weight:700;margin-bottom:8px;')}>How the market column behaves</span>
+            <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+              {modes.map(([id, name, body, act]) => (<button key={id} type="button" aria-current={mode === id ? 'true' : undefined} onClick={() => { if (act) act(); }} style={optStyle(mode === id, !!act)}><span style={css('flex:none;width:10px;height:10px;border-radius:50%;margin-top:4px;background:' + DOT[id] + ';')} /><span style={css('flex:1;min-width:0;text-align:left;')}><b style={css('display:block;font-size:13.5px;')}>{name}</b><span style={css('display:block;font-size:12px;line-height:1.45;color:var(--mute);margin-top:2px;')}>{body}</span></span></button>))}
+            </div>
+          </div>
+          <div style={css('margin-top:20px;')}>
+            <span style={css('display:block;font-size:13px;font-weight:700;margin-bottom:8px;')}>Your feed</span>
+            <div style={css('display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:12px;border:1px solid var(--line);background:#fff;')}>
+              <span style={css('flex:none;width:18px;height:18px;border-radius:50%;margin-top:1px;border:' + (live ? '5px solid var(--primary)' : '1.5px solid rgba(23,20,15,0.25)') + ';background:#fff;box-sizing:border-box;')} />
+              <span style={css('flex:1;min-width:0;')}><span style={css('display:flex;align-items:center;gap:7px;flex-wrap:wrap;')}><b style={css('font-size:14px;')}>{live ? feed.provider : 'No market feed'}</b>{live && <span style={css('font-family:var(--m);font-size:8.5px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:999px;color:var(--primary-deep);background:var(--green-soft);')}>Connected</span>}</span>
+                <span style={css('display:block;font-family:var(--m);font-size:11px;color:var(--mute);margin-top:4px;')}>{live ? 'every hour' + (feed.fetchedAt ? ' · last pulled ' + ago(feed.fetchedAt) : '') : 'rates hold at the last publish'}</span></span>
+            </div>
+          </div>
+          <p style={css('font-size:12px;line-height:1.5;color:var(--mute);margin:12px 0 0;')}>The feed is the same for every shop on CurrencyDesk and updates every hour. Faster feeds will come as paid add-ons.</p>
+        </div>
+        <div style={css('flex:none;display:flex;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--line);background:#fff;')}>
+          <button type="button" onClick={onClose} style={css('flex:none;appearance:none;border:0;border-radius:11px;padding:12px 20px;font-family:var(--m);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;cursor:pointer;background:var(--primary);color:#fff;')}>Done</button>
+        </div>
+      </div>
+    </div>);
+  }
+
   /* The design's tone for a margin: red under the floor (or a loss),
      amber under the target, green on target. */
   const toneOf = (pct, floor, target) => (pct < 0 || pct < floor ? 'red' : pct < target ? 'amber' : 'green');
@@ -599,6 +651,7 @@
       [['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']]);
     /* Record cash bought: from Cost & stock, or a currency's panel. */
     const [buying, setBuying] = useState(null);
+    const [feedOpen, setFeedOpen] = useState(false);
     const [stockVersion, setStockVersion] = useState(0);
     const setLocked = async (on) => {
       if (readOnly || locking) return;
@@ -640,10 +693,11 @@
             <p style={css("margin:8px 0 0;font-family:var(--m);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);")}>What it's worth · what you paid · what you charge</p>
           </div>
           <div style={css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')}>
-            <span style={css('display:inline-flex;align-items:center;gap:9px;height:40px;max-width:100%;padding:0 13px;border-radius:11px;border:1px solid var(--line);background:#fff;text-align:left;')}>
+            <button type="button" onClick={() => setFeedOpen(true)} style={css('display:inline-flex;align-items:center;gap:9px;height:40px;max-width:100%;padding:0 12px 0 13px;border-radius:11px;border:1px solid var(--line);background:#fff;cursor:pointer;text-align:left;')}>
               <span style={css('flex:none;width:8px;height:8px;border-radius:50%;background:' + (feed && feed.provider ? '#2EA36B' : '#9a938a') + ';' + (feed && feed.provider ? 'animation:rtLive 2s infinite;' : ''))} />
               <span style={css('min-width:0;line-height:1.15;')}><b style={css('display:block;font-size:12.5px;white-space:nowrap;')}>{feed && feed.provider ? 'Live feed' : 'No market feed'}</b><span style={css('display:block;font-family:var(--m);font-size:9.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')}>{feed && feed.provider ? feed.provider + ' · hourly' + (feedAgo ? ' · ' + feedAgo : '') : 'Rates hold at the last publish'}</span></span>
-            </span>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--mute)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M6 9l6 6 6-6" /></svg>
+            </button>
             <button type="button" onClick={() => setLocked(!isLocked)} disabled={readOnly || locking} title={isLocked && lock.by ? 'Locked by ' + lock.by : undefined}
               style={css('display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 14px;border-radius:11px;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';font-family:var(--m);font-size:10.5px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;transition:background .25s cubic-bezier(.22,1,.36,1),border-color .25s ease,box-shadow .25s ease,color .2s ease;border:1px solid ' + (isLocked ? 'var(--lock)' : 'var(--line)') + ';background:' + (isLocked ? 'var(--lock)' : '#fff') + ';color:' + (isLocked ? '#fff' : 'var(--ink)') + ';box-shadow:' + (isLocked ? '0 1px 0 rgba(255,255,255,0.25) inset, 0 2px 7px rgba(224,161,6,0.45)' : 'none') + ';')}>
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d={isLocked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.5-2'} /></svg>{isLocked ? 'Locked' : 'Lock rates'}
@@ -688,6 +742,8 @@
           <button type="button" onClick={() => setTip(null)} style={css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary);')}>Got it</button>
         </div>
       </div>}
+      {feedOpen && <FeedSheet feed={feed} locked={isLocked} canLock={!readOnly} cards={cards} onClose={() => setFeedOpen(false)}
+        onLock={() => { setFeedOpen(false); setLocked(true); }} onPins={() => { setFeedOpen(false); setTab('rules'); }} />}
       {buying && <window.CDOS.RatesRecordCash code={buying.code} onClose={() => setBuying(null)} onDone={(msg) => { setBuying(null); setStockVersion(v => v + 1); flash(msg); }} />}
       {toast && <div role="status" style={css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#5FD69B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M4 12.5l5 5L20 6.5" /></svg>{toast}</div>}
