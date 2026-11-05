@@ -120,14 +120,14 @@ describe("who is shown which path", () => {
 
   it("drops the file folder when there is no customer to open", () => {
     const steps = tour.stepsFor({ role: "Owner", apps: DOCK, hasClient: false });
-    expect(ids(steps)).toEqual(["shop", "clients"]);
+    expect(ids(steps)).toEqual(["shop", "site", "clients"]);
   });
 
   it("drops a step the screen did not render", () => {
     const steps = tour.stepsFor({ role: "Owner", apps: DOCK, hasClient: true });
     const left = tour.dropUnplaced(steps, ["file-search"]);
-    expect(ids(left)).toEqual(["shop", "clients", "standing", "folder"]);
-    expect(tour.dropUnplaced(steps, ["shop", "clients", "identification", "file-folder", "file-search"])).toEqual([]);
+    expect(ids(left)).toEqual(["shop", "site", "clients", "standing", "folder"]);
+    expect(tour.dropUnplaced(steps, ["shop", "rate-page", "clients", "identification", "file-folder", "file-search"])).toEqual([]);
   });
 });
 

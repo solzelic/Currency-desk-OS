@@ -124,7 +124,7 @@ test("the page shows the shop's service fee from Pricing, and Texts can add the 
     await openApp(page, "telegraph");
     await page.getByRole("button", { name: "Broadcasts" }).click();
     await page.getByRole("button", { name: "Add your rate page link" }).click();
-    await expect(page.getByPlaceholder(/^e\.g\. /)).toHaveValue(new RegExp(`/r/${slug}$`));
+    await expect(page.locator('textarea[placeholder^="e.g."]')).toHaveValue(new RegExp(`/r/${slug}$`));
   } finally {
     await openApp(page, "rates");
     await setFee("0");
