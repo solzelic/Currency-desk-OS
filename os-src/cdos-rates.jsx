@@ -423,5 +423,13 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { Rates });
+  /* The design helpers, shared with the Website & window tab
+     (cdos-rates-site.jsx), so both tabs draw the same switch, flag and
+     segmented control from the same design strings. */
+  function seg(opts, cur, fn, off) {
+    return opts.map(o => ({ label: o, on: cur === o, onPick: () => { if (!off) fn(o); },
+      style: css('appearance:none;border:0;cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off && cur !== o ? '0.6' : '1') + ';font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;transition:background .2s ease,color .2s ease,box-shadow .2s ease;background:' + (cur === o ? '#fff' : 'transparent') + ';color:' + (cur === o ? 'var(--ink)' : 'var(--mute)') + ';box-shadow:' + (cur === o ? '0 1px 3px rgba(23,20,15,0.14)' : 'none') + ';') }));
+  }
+  const pill = (copied) => css('appearance:none;display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;transition:all .2s ease;border:1px solid ' + (copied ? 'var(--primary)' : 'var(--line)') + ';background:' + (copied ? 'var(--primary)' : '#fff') + ';color:' + (copied ? '#fff' : 'var(--ink)') + ';');
+  window.CDOS = Object.assign(window.CDOS || {}, { Rates, ratesUi: { css, Flag, track, Switch, useWidth, seg, pill } });
 })();
