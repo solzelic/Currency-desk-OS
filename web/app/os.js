@@ -531,6 +531,48 @@
 });
 
 
+/* ---- shared/currency-face.js ---- */
+/* A currency's face: its flag and its English name, one set for the desk
+   (bundled into the OS) and for the public rate page and window screens
+   (served at /shared/currency-face.js). The flags are the design's own
+   images in assets/flags (flag-icons, MIT). A currency with no image gets
+   the emoji built from its country letters, as the desk's tape does. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CurrencyFace = api;
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  /* The country of each image in assets/flags, by currency code. */
+  var FLAG_FILES = {
+    AED: "ae", AUD: "au", BRL: "br", CAD: "ca", CHF: "ch", CNY: "cn", EUR: "eu", GBP: "gb",
+    HKD: "hk", IDR: "id", INR: "in", JPY: "jp", KRW: "kr", MXN: "mx", MYR: "my", NGN: "ng",
+    NZD: "nz", PHP: "ph", PKR: "pk", QAR: "qa", SAR: "sa", SEK: "se", SGD: "sg", THB: "th",
+    TRY: "tr", USD: "us", VND: "vn", ZAR: "za"
+  };
+  function code3(code) { var c = String(code || "").trim().toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : ""; }
+
+  function flagUrl(code) {
+    var country = FLAG_FILES[code3(code)];
+    return country ? "/assets/flags/" + country + ".svg" : null;
+  }
+  /* ISO 4217 codes start with the ISO 3166 country (USD is US); the euro's
+     EU letters are a flag too. */
+  function flagEmoji(code) {
+    var c = code3(code);
+    if (!c) return "";
+    return String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65, 0x1F1E6 + c.charCodeAt(1) - 65);
+  }
+  var names = null;
+  try { names = new Intl.DisplayNames(["en"], { type: "currency" }); } catch (e) { names = null; }
+  function currencyName(code) {
+    var c = code3(code);
+    if (!c || !names) return c || String(code || "");
+    try { var n = names.of(c); return n && n !== c ? n : c; } catch (e) { return c; }
+  }
+  return { flagUrl: flagUrl, flagEmoji: flagEmoji, currencyName: currencyName };
+});
+
+
 /* ---- shared/counter-cash.js ---- */
 /* What actually crossed the counter, in cash.
 
@@ -58103,20 +58145,30 @@ ${snap}`;
 })();
 
 /* ---- os-src/cdos-rates.jsx ---- */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* ============================================================
-   CurrencyDesk OS: Rates (Rates v2.5, the desk side, part one)
+   CurrencyDesk OS: Rates (Rates v2.5)
 
-   One app for the shop's rates, in place of the Rate Board page. The
-   Board tab shows every currency the desk trades: the market, what the
-   desk buys and sells at, and whether it is on the board. Publish sends
-   the board to the server (POST /api/rates/publish, append-only
-   rate_boards), and every surface the shop's customers see reads that
-   publish. Pricing & rates is the existing Pricing console, unchanged.
+   One app for the shop's rates, in place of the Rate Board page. It is a
+   port of Sol's design (handoff rates-v2.5, "CurrencyDesk Rates v2.5"):
+   the header, folder tabs, Board table and cards, publish rail and "What
+   customers see now" keep the design's own markup, copy and style strings.
+   The design's style strings are kept word for word and turned into React
+   styles by css() below, so a reviewer can hold the two side by side.
+
+   The Board tab shows every currency the desk trades: the market, what the
+   desk buys and sells at, and whether it is on the board. Pricing & rates
+   is the existing Pricing console, unchanged.
+
+   Publish sends the board to the server (POST /api/rates/publish,
+   append-only rate_boards), and every surface the shop's customers see
+   reads that publish.
 
    The server is the record. The board loads from GET /api/rates (this
    desk's own branch), the market from GET /api/rates/market (raw mids,
    converted to the shop's home currency without rounding), recent
-   publishes from GET /api/rates/history.
+   publishes from GET /api/rates/history. The shop's window screens come
+   from GET /api/window-screens, for Open full screen.
    The publish rights are the server's (rates:change); the screen only
    mirrors them so nobody types into a board they cannot publish.
    ============================================================ */
@@ -58125,32 +58177,34 @@ ${snap}`;
     useState,
     useEffect,
     useMemo,
-    useCallback
+    useCallback,
+    useRef
   } = React;
-  const {
-    CD,
-    Ic
-  } = window.CDOS;
   const B = window.CDOS.ratesBoard;
+  const FACE = window.CurrencyFace;
 
   /* The roles that hold rates:change on the server (auth/permissions.ts). */
   const PUBLISHERS = ['branch_manager', 'administrator'];
-  const card = {
-    background: 'var(--cd-panel)',
-    border: `1px solid ${CD.line}`,
-    borderRadius: 13
-  };
-  const mono = {
-    fontFamily: 'Space Mono, monospace',
-    fontVariantNumeric: 'tabular-nums'
-  };
-  const label = {
-    color: CD.faint,
-    fontFamily: 'Space Mono, monospace',
-    fontSize: 10.5,
-    letterSpacing: '0.12em',
-    textTransform: 'uppercase',
-    fontWeight: 700
+
+  /* The design's style strings, as written, into a React style object.
+     Custom properties (--name) keep their names. */
+  function css(text) {
+    const out = {};
+    String(text || '').split(';').forEach(rule => {
+      const at = rule.indexOf(':');
+      if (at < 0) return;
+      const key = rule.slice(0, at).trim();
+      const value = rule.slice(at + 1).trim();
+      if (!key || !value) return;
+      out[key.startsWith('--') ? key : key.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+    });
+    return out;
+  }
+
+  /* The design's tokens (data-rates), scoped to this window. */
+  const TOKENS = css("--f: 'Archivo', system-ui, sans-serif; --m: 'Space Mono', monospace; --ink: #17140F; --mute: #6E675E; --faint: #9a938a; --line: rgba(23,20,15,0.12); --hair: rgba(23,20,15,0.07); --primary: #1D6B45; --primary-deep: #17583A; --green-soft: #E2EFE8; --amber: #9a6b1f; --amber-soft: #f5e8cf; --lock: #e0a106; --lock-soft: rgba(224,161,6,0.12); --lock-text: #6b5119; --clay: #C2452D; --clay-soft: #F6E3DE; font-family: var(--f); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; color: var(--ink);");
+  const TIPS = {
+    publish: ['Publishing', 'Nothing you change here reaches customers until you press Publish. Then your website and window screen update together, and the change is logged with your name. Auto-publish does it for you every time the market refreshes.']
   };
   async function getJson(url) {
     const res = await fetch(url, {
@@ -58159,12 +58213,11 @@ ${snap}`;
     if (!res.ok) throw new Error(`${url} answered ${res.status}`);
     return res.json();
   }
+
+  /* The design's "1h 41m ago". */
   function ago(ms) {
-    const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
-    if (m < 1) return 'just now';
-    if (m < 60) return m + ' min ago';
-    const h = Math.round(m / 60);
-    return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
+    const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+    return mins < 1 ? 'just now' : mins < 60 ? mins + 'm ago' : Math.floor(mins / 60) + 'h ' + mins % 60 + 'm ago';
   }
   /* The desk's one clock (cdos-desk-time.js): today's publishes by the
      time on the branch clock, older ones by their civil date there. */
@@ -58176,45 +58229,102 @@ ${snap}`;
     } = window.CDOS;
     return deskDay(ms, zone) === deskDay(Date.now(), zone) ? deskTime(ms, settings && settings.timeFormat, zone) : deskDay(ms, zone);
   }
-  const six = n => n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6);
-  function Toggle({
+  /* The design's fx(): four places at 1 and over, more for small units. */
+  function fx(v) {
+    const a = Math.abs(v);
+    return a >= 1 ? v.toFixed(4) : a >= 0.01 ? v.toFixed(5) : a >= 0.0001 ? v.toFixed(6) : v.toFixed(8);
+  }
+
+  /* The design's flag box, with the shop's image or its emoji. */
+  function Flag({
+    code,
+    size
+  }) {
+    const w = size || 30,
+      h = Math.round(w * 0.68);
+    const url = FACE.flagUrl(code);
+    const box = 'flex:none;width:' + w + 'px;height:' + h + 'px;border-radius:4px;box-shadow:0 0 0 1px rgba(23,20,15,0.1);background:rgba(23,20,15,0.06) center/cover no-repeat' + (url ? ' url(' + url + ')' : '') + ';display:inline-grid;place-items:center;font-size:' + Math.round(h * 0.8) + 'px;line-height:1;';
+    return /*#__PURE__*/React.createElement("span", {
+      "aria-hidden": "true",
+      style: css(box)
+    }, url ? null : FACE.flagEmoji(code));
+  }
+
+  /* The design's track(): a switch, and its knob. */
+  function track(on, off) {
+    return {
+      track: css('flex:none;position:relative;width:40px;height:24px;border-radius:999px;border:0;padding:0;transition:background .25s cubic-bezier(.22,1,.36,1);cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off ? '0.55' : '1') + ';background:' + (on ? 'var(--primary)' : 'rgba(23,20,15,0.16)') + ';'),
+      knob: css('position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.25);transition:transform .25s cubic-bezier(.22,1,.36,1);transform:translateX(' + (on ? '16px' : '0') + ');')
+    };
+  }
+  function Switch({
     on,
+    off,
     onClick,
-    disabled,
     name
   }) {
+    const t = track(on, off);
     return /*#__PURE__*/React.createElement("button", {
       type: "button",
       role: "switch",
       "aria-checked": on,
       "aria-label": name,
-      disabled: disabled,
-      onClick: onClick,
-      className: "w-11 h-6 relative flex-none",
-      style: {
-        background: on ? CD.green : 'var(--cd-disabled)',
-        borderRadius: 999,
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background .15s'
-      }
+      disabled: off,
+      onClick: e => {
+        e.stopPropagation();
+        if (!off) onClick();
+      },
+      style: t.track
     }, /*#__PURE__*/React.createElement("span", {
-      className: "absolute top-0.5 w-5 h-5",
-      style: {
-        left: on ? 22 : 2,
-        background: 'var(--cd-panel)',
-        borderRadius: 999,
-        transition: 'left .15s'
-      }
+      style: t.knob
     }));
+  }
+  const chip = t => css('display:inline-block;font-family:var(--m);font-size:12px;font-weight:700;padding:3px 8px;border-radius:7px;background:' + (t === 'green' ? 'var(--green-soft)' : t === 'amber' ? 'var(--amber-soft)' : 'var(--clay-soft)') + ';color:' + (t === 'green' ? 'var(--primary-deep)' : t === 'amber' ? 'var(--amber)' : 'var(--clay)') + ';');
+
+  /* Width of this window, for the design's breakpoints (cards under 880,
+     the rail beside the board at 1240 and over). */
+  function useWidth(ref) {
+    const [w, setW] = useState(1280);
+    useEffect(() => {
+      const el = ref.current;
+      if (!el) return undefined;
+      const measure = () => setW(el.clientWidth);
+      measure();
+      const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+      if (ro) ro.observe(el);
+      return () => {
+        if (ro) ro.disconnect();
+      };
+    }, [ref]);
+    return w;
+  }
+  function Tip({
+    tipKey,
+    open,
+    onToggle
+  }) {
+    const btn = css('flex:none;appearance:none;width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;padding:0;cursor:pointer;font-family:var(--m);font-size:10.5px;font-weight:700;line-height:1;letter-spacing:0;text-transform:none;transition:background .2s ease,color .2s ease,border-color .2s ease;border:1.5px solid ' + (open ? 'var(--ink)' : 'rgba(23,20,15,0.28)') + ';background:' + (open ? 'var(--ink)' : '#fff') + ';color:' + (open ? '#fff' : 'var(--mute)') + ';');
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => onToggle(open ? null : tipKey),
+      title: "What is this?",
+      "aria-label": `What is ${TIPS[tipKey][0].toLowerCase()}?`,
+      style: btn
+    }, "i");
   }
   function Board({
     settings,
     serverRole,
     me,
-    log
+    log,
+    w,
+    onTip,
+    tip,
+    onToast,
+    onOpenSite
   }) {
     const canPublish = PUBLISHERS.includes(serverRole);
+    const readOnly = !canPublish;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
     const defPct = settings.defaultSpread != null && settings.defaultSpread !== '' ? +settings.defaultSpread : B.DEFAULT_SPREAD_PCT;
     const floor = settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
@@ -58224,25 +58334,38 @@ ${snap}`;
       error: null,
       board: null,
       history: [],
-      market: {}
+      market: {},
+      screens: []
     });
     const [edits, setEdits] = useState({
       order: null,
-      show: {}
+      show: {},
+      added: []
     });
     const [q, setQ] = useState('');
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState(null);
+    const [liveOpen, setLiveOpen] = useState(true);
+    const [copied, setCopied] = useState(false);
+    const [picking, setPicking] = useState(false);
+    const drag = useRef(null);
+    const cards = w < 880,
+      wide = w >= 1240;
     const load = useCallback(async () => {
       try {
-        const [rates, history, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market')]);
-        const market = B.homeMarket(feed.mids, home);
+        const [rates, history, feed, screens] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market'), getJson('/api/window-screens').catch(e => {
+          console.warn('[rates] window screens could not be read', e);
+          return {
+            screens: []
+          };
+        })]);
         setData({
           loading: false,
           error: null,
           board: rates.board,
           history: history.publications || [],
-          market
+          market: B.homeMarket(feed.mids, home),
+          screens: screens.screens || []
         });
       } catch (e) {
         setData(d => ({
@@ -58257,7 +58380,7 @@ ${snap}`;
     }, [load]);
     const rows = useMemo(() => {
       const base = B.draftRows({
-        codes: window.CDOS.CCY || [],
+        codes: (window.CDOS.CCY || []).concat(edits.added),
         home,
         board: data.board,
         market: data.market,
@@ -58284,18 +58407,22 @@ ${snap}`;
     } : r) : rows;
     const dirty = !B.sameAsPublished(atPublishedMids, data.board, defPct);
     const marketMoved = !dirty && !B.sameAsPublished(rows, data.board, defPct);
-    const canSend = canPublish && (dirty || marketMoved) && !busy;
-    const move = (code, by) => setEdits(e => {
-      const order = rows.map(r => r.code);
-      const i = order.indexOf(code),
-        j = i + by;
-      if (i < 0 || j < 0 || j >= order.length) return e;
-      [order[i], order[j]] = [order[j], order[i]];
+    const pubOff = readOnly || !(dirty || marketMoved) || busy;
+    const moveTo = (code, target) => setEdits(e => {
+      const order = rows.map(r => r.code).filter(c => c !== code);
+      const at = order.indexOf(target);
+      order.splice(at < 0 ? order.length : at, 0, code);
       return {
         ...e,
         order
       };
     });
+    const step = (code, by) => {
+      const order = rows.map(r => r.code),
+        i = order.indexOf(code),
+        j = i + by;
+      if (i >= 0 && j >= 0 && j < order.length) moveTo(code, by < 0 ? order[j] : order[j + 1]);
+    };
     const toggle = r => setEdits(e => ({
       ...e,
       show: {
@@ -58304,6 +58431,7 @@ ${snap}`;
       }
     }));
     const publish = async () => {
+      if (pubOff) return;
       setNotice(null);
       const out = B.publishBody(rows, defPct);
       if (!out.ok) {
@@ -58348,9 +58476,10 @@ ${snap}`;
         if (log) log('Rates published', `${out.body.order.length} currencies · default ${defPct}% · by ${me ? me.name : 'staff'}`);
         setEdits({
           order: null,
-          show: {}
+          show: {},
+          added: []
         });
-        setNotice('Published. Your site and window screens show it now.');
+        onToast('Published · your site and window updated');
         await load();
       } catch (e) {
         setNotice('No connection. Nothing was published.');
@@ -58358,10 +58487,14 @@ ${snap}`;
         setBusy(false);
       }
     };
-    const list = rows.filter(r => !q.trim() || r.code.toLowerCase().includes(q.trim().toLowerCase()));
+    if (data.loading) return /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
+    }, "Loading your board\u2026");
+    const ql = q.trim().toLowerCase();
+    const list = rows.filter(r => !ql || r.code.toLowerCase().includes(ql) || FACE.currencyName(r.code).toLowerCase().includes(ql));
     const onBoard = rows.filter(r => r.show).length;
     const pub = data.board;
-    const preview = pub ? (pub.order || Object.keys(pub.rows)).filter(c => pub.rows[c] && pub.rows[c].show !== false).map(c => {
+    const preview = pub ? (pub.order || Object.keys(pub.rows)).filter(c => pub.rows[c] && pub.rows[c].show !== false).slice(0, 6).map(c => {
       const r = pub.rows[c];
       const pct = m => (r.spread != null ? r.spread : m) * 100;
       return {
@@ -58369,299 +58502,355 @@ ${snap}`;
         ...B.deskPair(r.mid, pct(pub.buyMargin), pct(pub.sellMargin))
       };
     }) : [];
-    const tone = pct => pct < floor ? [CD.flag, CD.flagSoft] : pct < target ? [CD.amber, CD.amberSoft] : [CD.green, CD.greenSoft];
-    if (data.loading) return /*#__PURE__*/React.createElement("div", {
-      className: "p-6 text-[13px]",
-      style: {
-        color: CD.mute
-      }
-    }, "Loading your board\u2026");
+    const screen = data.screens[0] || null;
+    const cols = '22px minmax(130px,1.6fr) minmax(80px,1fr) minmax(84px,1fr) minmax(84px,1fr) minmax(90px,1fr) 64px';
+    const btnBase = 'flex:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;border-radius:10px;font-size:13px;font-weight:700;cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';';
+    const ghostBtn = btnBase + 'border:1px solid var(--line);background:#fff;color:var(--ink);transition:border-color .2s ease,color .2s ease,background .2s ease;';
+    const addable = Object.keys(data.market).filter(c => !rows.some(r => r.code === c)).sort();
     return /*#__PURE__*/React.createElement("div", {
-      className: "rates-board"
+      style: css('display:grid;grid-template-columns:' + (wide ? 'minmax(0,1fr) 330px' : 'minmax(0,1fr)') + ';gap:14px;align-items:start;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('min-width:0;display:flex;flex-direction:column;gap:14px;')
     }, data.error && /*#__PURE__*/React.createElement("div", {
       role: "alert",
-      className: "text-[12.5px] px-3 py-2.5",
-      style: {
-        background: CD.flagSoft,
-        color: CD.flag,
-        borderRadius: 9
-      }
+      style: css('padding:11px 13px;border-radius:12px;background:var(--clay-soft);color:var(--clay);font-size:13px;')
     }, data.error), /*#__PURE__*/React.createElement("div", {
-      style: {
-        ...card,
-        overflow: 'auto'
-      }
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
     }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2",
-      style: {
-        padding: 12,
-        borderBottom: `1px solid ${CD.lineSoft}`
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "search",
-      s: 14,
-      c: CD.faint
-    }), /*#__PURE__*/React.createElement("input", {
+      style: css('display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 200px;min-width:0;position:relative;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "15",
+      height: "15",
+      fill: "none",
+      stroke: "var(--faint)",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      style: css('position:absolute;left:12px;top:50%;transform:translateY(-50%);')
+    }, /*#__PURE__*/React.createElement("circle", {
+      cx: "11",
+      cy: "11",
+      r: "7"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M20 20l-4-4"
+    })), /*#__PURE__*/React.createElement("input", {
       value: q,
       onChange: e => setQ(e.target.value),
       placeholder: "Find a currency",
       "aria-label": "Find a currency",
-      className: "flex-1 text-[13px] outline-none bg-transparent",
-      style: {
-        color: CD.ink
-      }
-    })), /*#__PURE__*/React.createElement("table", {
-      className: "w-full rates-table",
-      style: {
-        borderCollapse: 'collapse'
-      }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-      className: "text-left",
-      style: label
-    }, /*#__PURE__*/React.createElement("th", {
-      style: {
-        padding: '9px 14px'
-      }
-    }, "Currency"), /*#__PURE__*/React.createElement("th", {
-      className: "rc-wide",
+      style: css('width:100%;height:38px;padding:0 12px 0 36px;border-radius:10px;border:1px solid var(--line);background:rgba(23,20,15,0.03);outline:none;font-size:14px;color:var(--ink);')
+    })), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: readOnly,
+      onClick: () => setPicking(p => !p),
+      style: css(ghostBtn)
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 5v14M5 12h14"
+    })), "Add currency")), picking && !readOnly && /*#__PURE__*/React.createElement("div", {
+      role: "listbox",
+      "aria-label": "Add a currency",
+      style: css('display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.02);')
+    }, addable.length ? addable.map(c => /*#__PURE__*/React.createElement("button", {
+      key: c,
+      type: "button",
+      role: "option",
+      "aria-selected": "false",
+      onClick: () => {
+        setEdits(e => ({
+          ...e,
+          added: e.added.concat(c),
+          show: {
+            ...e.show,
+            [c]: true
+          }
+        }));
+        setPicking(false);
+      },
+      style: css('display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:12.5px;font-weight:700;')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: c,
+      size: 18
+    }), c)) : /*#__PURE__*/React.createElement("span", {
+      style: css('font-size:13px;color:var(--mute);')
+    }, "Every currency the market feed prices is already on your list.")), !cards && /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:' + cols + ';gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null), /*#__PURE__*/React.createElement("span", null, "Currency"), /*#__PURE__*/React.createElement("span", {
       style: {
         textAlign: 'right'
       }
-    }, "Market"), /*#__PURE__*/React.createElement("th", {
+    }, "Market"), /*#__PURE__*/React.createElement("span", {
       style: {
         textAlign: 'right'
       }
-    }, "We buy"), /*#__PURE__*/React.createElement("th", {
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
       style: {
         textAlign: 'right'
       }
-    }, "We sell"), /*#__PURE__*/React.createElement("th", {
-      className: "rc-wide",
+    }, "We sell"), /*#__PURE__*/React.createElement("span", {
       style: {
         textAlign: 'right'
       }
-    }, "Over market"), /*#__PURE__*/React.createElement("th", {
+    }, "Over market"), /*#__PURE__*/React.createElement("span", {
       style: {
         textAlign: 'center'
       }
-    }, "On board"), /*#__PURE__*/React.createElement("th", {
-      "aria-label": "Order"
-    }))), /*#__PURE__*/React.createElement("tbody", null, list.map((r, i) => {
+    }, "On board")), list.map((r, i) => {
       const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
-      const [fg, bg] = tone(r.spreadPct);
-      return /*#__PURE__*/React.createElement("tr", {
-        key: r.code,
-        style: {
-          borderTop: `1px solid ${CD.lineSoft}`,
-          opacity: r.show ? 1 : 0.6
+      const pct = pair ? (pair.sell - r.mid) / r.mid * 100 : 0;
+      const keepChip = chip(pct < 0 ? 'red' : pct < floor ? 'red' : pct < target ? 'amber' : 'green');
+      const keep = pair ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%' : '·';
+      const name = FACE.currencyName(r.code);
+      const dragProps = readOnly || ql ? {} : {
+        draggable: true,
+        onDragStart: e => {
+          drag.current = r.code;
+          e.dataTransfer.effectAllowed = 'move';
+        },
+        onDragOver: e => {
+          if (drag.current && drag.current !== r.code) e.preventDefault();
+        },
+        onDrop: e => {
+          e.preventDefault();
+          if (drag.current && drag.current !== r.code) moveTo(drag.current, r.code);
+          drag.current = null;
+        },
+        onKeyDown: e => {
+          if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            e.preventDefault();
+            step(r.code, e.key === 'ArrowUp' ? -1 : 1);
+          }
         }
-      }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: '10px 14px'
-        }
+      };
+      if (cards) return /*#__PURE__*/React.createElement("div", _extends({
+        key: r.code
+      }, dragProps, {
+        tabIndex: dragProps.draggable ? 0 : undefined,
+        "aria-label": `${r.code} ${name}`,
+        style: css('padding:14px 16px;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
+      }), /*#__PURE__*/React.createElement("div", {
+        style: css('display:flex;align-items:center;gap:11px;')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: r.code
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
       }, /*#__PURE__*/React.createElement("b", {
-        className: "text-[13.5px]",
-        style: {
-          color: CD.ink
-        }
-      }, r.code), r.pinned && /*#__PURE__*/React.createElement("span", {
-        className: "ml-2 text-[10px]",
-        style: {
-          color: CD.amber
-        }
-      }, "pinned")), /*#__PURE__*/React.createElement("td", {
-        className: "rc-wide",
-        style: {
-          ...mono,
-          textAlign: 'right',
-          color: CD.mute
-        }
-      }, r.mid ? six(r.mid) : 'No rate'), /*#__PURE__*/React.createElement("td", {
-        style: {
-          ...mono,
-          textAlign: 'right',
-          color: CD.ink
-        }
-      }, pair ? six(pair.buy) : '·'), /*#__PURE__*/React.createElement("td", {
-        style: {
-          ...mono,
-          textAlign: 'right',
-          color: CD.ink,
-          fontWeight: 700
-        }
-      }, pair ? six(pair.sell) : '·'), /*#__PURE__*/React.createElement("td", {
-        className: "rc-wide",
+        style: css('font-size:15px;font-weight:800;')
+      }, r.code), " ", /*#__PURE__*/React.createElement("span", {
+        style: css('font-size:12.5px;color:var(--mute);')
+      }, name)), /*#__PURE__*/React.createElement(Switch, {
+        on: r.show,
+        off: readOnly,
+        onClick: () => toggle(r),
+        name: `${r.code} on the board`
+      })), /*#__PURE__*/React.createElement("div", {
+        style: css('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px;margin-top:12px;')
+      }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "We buy"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:15px;')
+      }, pair ? fx(pair.buy) : 'No rate')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "We sell"), /*#__PURE__*/React.createElement("span", {
+        style: css('font-family:var(--m);font-size:15px;font-weight:700;')
+      }, pair ? fx(pair.sell) : 'No rate')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
+      }, "Over market"), /*#__PURE__*/React.createElement("span", {
+        style: keepChip
+      }, keep))), /*#__PURE__*/React.createElement("div", {
+        style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')
+      }, r.mid ? 'Market ' + fx(r.mid) + (r.pinned ? ' · pinned' : '') : 'No market rate'));
+      return /*#__PURE__*/React.createElement("div", _extends({
+        key: r.code
+      }, dragProps, {
+        tabIndex: dragProps.draggable ? 0 : undefined,
+        "aria-label": `${r.code} ${name}`,
+        style: css('display:grid;grid-template-columns:' + cols + ';min-width:0;align-items:center;gap:12px;padding:12px 16px;transition:background .15s ease;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
+      }), /*#__PURE__*/React.createElement("span", {
+        title: dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined,
+        style: css('color:var(--faint);font-size:14px;letter-spacing:-2px;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
+      }, "\u22EE\u22EE"), /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;align-items:center;gap:11px;min-width:0;')
+      }, /*#__PURE__*/React.createElement(Flag, {
+        code: r.code
+      }), /*#__PURE__*/React.createElement("span", {
+        style: css('min-width:0;')
+      }, /*#__PURE__*/React.createElement("b", {
+        style: css('display:block;font-size:14.5px;font-weight:800;')
+      }, r.code), /*#__PURE__*/React.createElement("span", {
+        style: css('display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+      }, name, r.pinned ? ' · pinned' : ''))), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:13px;color:var(--mute);')
+      }, r.mid ? fx(r.mid) : 'No rate'), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:14.5px;')
+      }, pair ? fx(pair.buy) : '·'), /*#__PURE__*/React.createElement("span", {
+        style: css('text-align:right;font-family:var(--m);font-size:14.5px;font-weight:700;')
+      }, pair ? fx(pair.sell) : '·'), /*#__PURE__*/React.createElement("span", {
         style: {
           textAlign: 'right'
         }
       }, /*#__PURE__*/React.createElement("span", {
-        className: "text-[11.5px] px-2 py-0.5",
-        style: {
-          ...mono,
-          background: bg,
-          color: fg,
-          borderRadius: 7,
-          fontWeight: 700
-        }
-      }, r.spreadPct.toFixed(2), "%")), /*#__PURE__*/React.createElement("td", {
-        style: {
-          textAlign: 'center'
-        }
-      }, /*#__PURE__*/React.createElement(Toggle, {
+        style: keepChip
+      }, keep)), /*#__PURE__*/React.createElement("span", {
+        style: css('display:flex;justify-content:center;')
+      }, /*#__PURE__*/React.createElement(Switch, {
         on: r.show,
-        disabled: !canPublish,
+        off: readOnly,
         onClick: () => toggle(r),
         name: `${r.code} on the board`
-      })), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: '0 10px',
-          whiteSpace: 'nowrap'
-        }
-      }, /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        "aria-label": `Move ${r.code} up`,
-        disabled: !canPublish || i === 0 || !!q,
-        onClick: () => move(r.code, -1),
-        style: {
-          opacity: canPublish && i > 0 && !q ? 1 : 0.3
-        }
-      }, /*#__PURE__*/React.createElement(Ic, {
-        n: "arrowup",
-        s: 13,
-        c: CD.mute
-      })), /*#__PURE__*/React.createElement("button", {
-        type: "button",
-        "aria-label": `Move ${r.code} down`,
-        disabled: !canPublish || i === list.length - 1 || !!q,
-        onClick: () => move(r.code, 1),
-        style: {
-          opacity: canPublish && i < list.length - 1 && !q ? 1 : 0.3
-        }
-      }, /*#__PURE__*/React.createElement(Ic, {
-        n: "arrowdown",
-        s: 13,
-        c: CD.mute
-      }))));
-    }))), !list.length && /*#__PURE__*/React.createElement("div", {
-      className: "p-4 text-[12.5px]",
-      style: {
-        color: CD.mute
-      }
+      })));
+    }), !list.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:30px;text-align:center;font-size:13.5px;color:var(--mute);')
     }, "No currency matches \u201C", q, "\u201D."), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px]",
+      style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line);font-family:var(--m);font-size:11px;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("span", null, onBoard, " of ", rows.length, " on the board \xB7 the top six show on your homepage"), /*#__PURE__*/React.createElement("span", {
       style: {
-        padding: '10px 14px',
-        borderTop: `1px solid ${CD.lineSoft}`,
-        color: CD.faint
+        flex: 1
       }
-    }, onBoard, " of ", rows.length, " on the board \xB7 the top six show on your homepage")), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'grid',
-        gap: 14,
-        alignContent: 'start'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        ...card,
-        padding: 14
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 text-[13px] font-semibold px-3 py-2.5",
-      style: {
-        borderRadius: 9,
-        background: dirty ? CD.amberSoft : CD.greenSoft,
-        color: dirty ? CD.amber : CD.green
-      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;')
     }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 8,
-        height: 8,
-        borderRadius: 999,
-        background: 'currentColor'
-      }
-    }), dirty ? 'Unpublished changes' : 'Live on your site and window'), marketMoved && /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-2",
-      style: {
-        color: CD.mute
-      }
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--primary);')
+    }), "On target"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--amber);')
+    }), "Thin"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:8px;height:8px;border-radius:50%;background:var(--clay);')
+    }), "Below your floor"))))), /*#__PURE__*/React.createElement("div", {
+      style: css('min-width:0;display:flex;flex-direction:column;gap:14px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding:16px;border-radius:18px;background:#fff;border:1px solid var(--line);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:12px;font-size:14px;font-weight:700;background:' + (dirty ? 'var(--amber-soft)' : 'var(--green-soft)') + ';color:' + (dirty ? 'var(--amber)' : 'var(--primary-deep)') + ';')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:8px;height:8px;border-radius:50%;background:' + (dirty ? 'var(--amber)' : 'var(--primary)') + ';')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, dirty ? 'Unpublished changes' : 'Live on your site and window'), /*#__PURE__*/React.createElement(Tip, {
+      tipKey: "publish",
+      open: tip === 'publish',
+      onToggle: onTip
+    })), marketMoved && /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;line-height:1.45;color:var(--mute);margin-top:10px;')
     }, "The market has moved since this publish. Publish to send today's rates."), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: publish,
-      disabled: !canSend,
-      className: "w-full mt-3 text-[13px] font-bold",
-      style: {
-        height: 46,
-        borderRadius: 12,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
-        background: canSend ? CD.green : 'var(--cd-chip)',
-        color: canSend ? '#fff' : CD.faint
-      }
+      disabled: pubOff,
+      style: css('width:100%;margin-top:12px;height:50px;border:0;border-radius:13px;font-family:var(--m);font-size:13px;letter-spacing:0.16em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;cursor:' + (pubOff ? 'default' : 'pointer') + ';background:' + (pubOff ? 'rgba(23,20,15,0.08)' : 'var(--primary)') + ';color:' + (pubOff ? 'rgba(23,20,15,0.35)' : '#fff') + ';')
     }, busy ? 'Publishing…' : 'Publish'), notice && /*#__PURE__*/React.createElement("div", {
-      role: "status",
-      className: "text-[12px] mt-2",
-      style: {
-        color: CD.ink
-      }
+      role: "alert",
+      style: css('font-size:12.5px;line-height:1.45;color:var(--clay);margin-top:10px;')
     }, notice), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] mt-3",
-      style: {
-        color: CD.mute
-      }
-    }, pub ? `Updated ${ago(pub.publishedAt)} by ${pub.publishedBy || 'the market feed'}` : 'Nothing published yet'), /*#__PURE__*/React.createElement("div", {
-      className: "mt-3",
-      style: label
+      style: css('font-family:var(--m);font-size:11px;line-height:1.6;color:var(--mute);margin-top:11px;')
+    }, pub ? 'Updated ' + ago(pub.publishedAt) + ' by ' + (pub.publishedBy || 'the market feed') : 'Nothing published yet'), /*#__PURE__*/React.createElement("div", {
+      style: css('margin-top:12px;padding-top:11px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:6px;')
     }, "Recent publishes"), data.history.slice(0, 3).map(h => /*#__PURE__*/React.createElement("div", {
       key: h.publicationId,
-      className: "flex items-center gap-2 text-[11.5px] mt-1.5",
-      style: {
-        color: CD.mute
-      }
+      style: css('display:flex;align-items:baseline;gap:8px;padding:4px 0;font-family:var(--m);font-size:11px;')
     }, /*#__PURE__*/React.createElement("b", {
-      style: {
-        color: CD.ink,
-        minWidth: 64
-      }
+      style: css('flex:none;width:74px;color:var(--ink);')
     }, when(h.publishedAt, settings)), /*#__PURE__*/React.createElement("span", {
-      className: "flex-1 truncate"
+      style: css('flex:1;min-width:0;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
     }, h.publishedBy || 'market feed'), /*#__PURE__*/React.createElement("span", {
-      style: mono
-    }, Object.keys(h.rows || {}).length, " ccy \xB7 ", (Number(h.sellMargin) * 100).toFixed(1), "%")))), /*#__PURE__*/React.createElement("section", {
+      style: css('flex:none;color:var(--faint);')
+    }, Object.keys(h.rows || {}).length + ' ccy · ' + (Number(h.sellMargin) * 100).toFixed(1) + '%'))))), /*#__PURE__*/React.createElement("section", {
       "aria-label": "What customers see now",
+      style: css('border-radius:18px;overflow:hidden;background:#17140F;color:#F1EEE8;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setLiveOpen(o => !o),
+      "aria-expanded": liveOpen,
+      style: css('width:100%;appearance:none;border:0;background:none;color:inherit;cursor:pointer;display:flex;align-items:center;gap:8px;padding:13px 16px;text-align:left;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:7px;height:7px;border-radius:50%;background:#2EA36B;animation:rtLive 2s infinite;')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;font-family:var(--m);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;')
+    }, "What customers see now"), /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "rgba(241,238,232,0.5)",
+      strokeWidth: "2.4",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: css('flex:none;transition:transform .25s cubic-bezier(.22,1,.36,1);transform:rotate(' + (liveOpen ? '180deg' : '0') + ');')
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M6 9l6 6 6-6"
+    }))), liveOpen && /*#__PURE__*/React.createElement(React.Fragment, null, dirty && /*#__PURE__*/React.createElement("div", {
+      style: css('margin:0 16px 8px;padding:8px 11px;border-radius:9px;background:rgba(217,169,44,0.16);color:#e5c56a;font-size:12px;line-height:1.45;')
+    }, "Your changes aren't live yet. Customers see your last publish."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;padding:4px 16px 2px;font-family:var(--m);font-size:8.5px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(241,238,232,0.45);border-top:1px solid rgba(241,238,232,0.1);')
+    }, /*#__PURE__*/React.createElement("span", {
       style: {
-        ...card,
-        padding: 14,
-        background: CD.ink,
-        color: 'var(--cd-on-ink)'
+        flex: 1
       }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        ...label,
-        color: 'var(--cd-on-ink-faint)'
-      }
-    }, "What customers see now"), dirty && /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] mt-2",
-      style: {
-        color: 'var(--cd-on-ink)'
-      }
-    }, /*#__PURE__*/React.createElement("b", null, "Your changes aren't live yet."), " Customers see your last publish."), !preview.length && /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-2"
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;')
+    }, "We buy"), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;')
+    }, "We sell")), !preview.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:7px 16px;font-size:12px;color:rgba(241,238,232,0.75);')
     }, "Nothing published yet."), preview.map(p => /*#__PURE__*/React.createElement("div", {
       key: p.code,
-      className: "flex items-center gap-3 text-[12.5px] mt-2",
-      style: mono
-    }, /*#__PURE__*/React.createElement("b", {
-      className: "flex-1"
+      style: css('display:flex;align-items:center;gap:9px;padding:7px 16px;border-top:1px solid rgba(241,238,232,0.07);')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: p.code,
+      size: 20
+    }), /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1;font-family:var(--m);font-size:12.5px;')
     }, p.code), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: 'var(--cd-on-ink-faint)'
-      }
-    }, six(p.buy)), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 700
-      }
-    }, six(p.sell)))))));
+      style: css('width:66px;text-align:right;font-family:var(--m);font-size:12px;color:rgba(241,238,232,0.75);')
+    }, fx(p.buy)), /*#__PURE__*/React.createElement("span", {
+      style: css('width:66px;text-align:right;font-family:var(--m);font-size:12px;font-weight:700;color:#5FD69B;')
+    }, fx(p.sell)))), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;gap:6px;padding:12px 16px 14px;border-top:1px solid rgba(241,238,232,0.1);')
+    }, screen ? /*#__PURE__*/React.createElement("a", {
+      href: '/s/' + screen.token,
+      target: "_blank",
+      rel: "noopener",
+      style: css('flex:1;display:inline-flex;align-items:center;justify-content:center;height:34px;border-radius:10px;background:#F1EEE8;color:#17140F;font-size:12.5px;font-weight:700;text-decoration:none;')
+    }, "Open full screen \u2197") : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onOpenSite,
+      style: css('flex:1;appearance:none;border:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;height:34px;border-radius:10px;background:#F1EEE8;color:#17140F;font-size:12.5px;font-weight:700;')
+    }, "Set up a window screen"), screen && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(location.origin + '/s/' + screen.token);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch (e) {
+          onToast('The link could not be copied. Open it and copy it from the address bar.');
+        }
+      },
+      style: css('flex:none;appearance:none;height:34px;padding:0 13px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:700;border:1px solid rgba(241,238,232,0.3);background:' + (copied ? '#2EA36B' : 'transparent') + ';color:#F1EEE8;')
+    }, copied ? 'Copied' : 'Copy link'))))));
   }
+
+  /* The design's folder tabs. */
+  const TAB_ICON = {
+    board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4',
+    site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18',
+    rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4'
+  };
   function Rates({
     settings,
     setSettings,
@@ -58670,51 +58859,192 @@ ${snap}`;
     serverRole
   }) {
     const [tab, setTab] = useState('board');
-    const canPublish = PUBLISHERS.includes(serverRole);
+    const [tip, setTip] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [feed, setFeed] = useState(null);
+    const rootRef = useRef(null);
+    const w = useWidth(rootRef);
+    const cards = w < 880;
+    const readOnly = !PUBLISHERS.includes(serverRole);
     const Pricing = window.CDOS.Pricing;
+    const flash = useCallback(t => {
+      setToast(t);
+      clearTimeout(flash.t);
+      flash.t = setTimeout(() => setToast(null), 2400);
+    }, []);
+    useEffect(() => {
+      getJson('/api/rates/market').then(m => setFeed(m), e => console.warn('[rates] the market feed could not be read', e));
+      const esc = e => {
+        if (e.key === 'Escape') setTip(null);
+      };
+      window.addEventListener('keydown', esc);
+      return () => window.removeEventListener('keydown', esc);
+    }, []);
+    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates']];
+    const feedAgo = feed && feed.fetchedAt ? ago(feed.fetchedAt) : null;
     return /*#__PURE__*/React.createElement("div", {
-      className: "flex flex-col",
+      ref: rootRef,
+      "data-rates": "true",
       style: {
+        ...TOKENS,
+        position: 'relative',
+        lineHeight: 'normal',
         height: '100%',
-        background: CD.paper,
-        overflow: 'hidden'
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: 'rgba(251,250,247,0.96)'
       }
     }, /*#__PURE__*/React.createElement("div", {
-      className: "fld-bar fld-pinned"
-    }, [['board', 'Board', 'rateboard'], ['site', 'Website & window', 'globe'], ['pricing', 'Pricing & rates', 'percent']].map(([id, name, icon]) => /*#__PURE__*/React.createElement("button", {
-      key: id,
-      type: "button",
-      onClick: () => setTab(id),
-      className: 'fld-tab' + (tab === id ? ' on' : '')
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: icon,
-      s: 13,
-      c: tab === id ? '#fff' : CD.mute
-    }), " ", name))), !canPublish && /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 text-[12.5px] px-5 py-2.5",
+      style: css('flex:none;padding:' + (cards ? '16px 16px 0' : '22px 26px 0') + ';border-bottom:1px solid var(--line);background:#fbfaf7;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("h1", {
+      style: css('margin:0;font-size:clamp(28px, 3.4vw, 42px);font-weight:800;letter-spacing:-0.03em;line-height:1;')
+    }, "Today's rates"), /*#__PURE__*/React.createElement("p", {
+      style: css("margin:8px 0 0;font-family:var(--m);font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);")
+    }, "What it's worth \xB7 what you paid \xB7 what you charge")), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:8px;flex-wrap:wrap;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:9px;height:40px;max-width:100%;padding:0 13px;border-radius:11px;border:1px solid var(--line);background:#fff;text-align:left;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:8px;height:8px;border-radius:50%;background:' + (feed && feed.provider ? '#2EA36B' : '#9a938a') + ';' + (feed && feed.provider ? 'animation:rtLive 2s infinite;' : ''))
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('min-width:0;line-height:1.15;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:12.5px;white-space:nowrap;')
+    }, feed && feed.provider ? 'Live feed' : 'No market feed'), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-family:var(--m);font-size:9.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
+    }, feed && feed.provider ? feed.provider + ' · hourly' + (feedAgo ? ' · ' + feedAgo : '') : 'Rates hold at the last publish'))))), /*#__PURE__*/React.createElement("div", {
+      role: "tablist",
+      "aria-label": "Rates",
+      style: css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')
+    }, tabs.map(([id, label]) => {
+      const on = tab === id;
+      return /*#__PURE__*/React.createElement("button", {
+        key: id,
+        type: "button",
+        role: "tab",
+        "aria-selected": on,
+        onClick: () => {
+          setTab(id);
+          setTip(null);
+        },
+        style: css('flex:none;display:inline-flex;align-items:center;gap:9px;appearance:none;border:0;cursor:pointer;white-space:nowrap;font-family:var(--m);font-size:' + (cards ? '11px' : '12.5px') + ';letter-spacing:0.12em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;' + (on ? 'background:var(--primary);color:#fff;padding:' + (cards ? '11px 26px 11px 13px' : '13px 34px 13px 18px') + ';border-radius:5px 0 0 0;clip-path:polygon(0 0,calc(100% - 20px) 0,100% 100%,0 100%);' : 'background:transparent;color:var(--mute);padding:' + (cards ? '11px 13px' : '13px 16px') + ';'))
+      }, /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "15",
+        height: "15",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "2",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        style: {
+          flex: 'none'
+        }
+      }, /*#__PURE__*/React.createElement("path", {
+        d: TAB_ICON[id]
+      })), label);
+    }))), readOnly && /*#__PURE__*/React.createElement("div", {
+      style: css('flex:none;display:flex;align-items:center;gap:10px;padding:10px 24px;font-size:12.5px;font-weight:500;border-bottom:1px solid var(--line);background:rgba(23,20,15,0.04);color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
       style: {
-        background: 'var(--cd-chip)',
-        color: CD.mute
+        flex: 'none'
       }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "info",
-      s: 14,
-      c: CD.mute
-    }), " You can see today's rates. Changing them is for the owner and managers."), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto rates-scroll"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01"
+    })), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;min-width:0;')
+    }, "You can see today's rates. Changing them is for the owner and managers.")), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1;min-height:0;overflow-y:auto;')
+    }, /*#__PURE__*/React.createElement("div", {
+      key: 't-' + tab,
+      style: css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')
     }, tab === 'board' && /*#__PURE__*/React.createElement(Board, {
       settings: settings,
       serverRole: serverRole,
       me: me,
-      log: log
+      log: log,
+      w: w,
+      tip: tip,
+      onTip: setTip,
+      onToast: flash,
+      onOpenSite: () => setTab('site')
     }), tab === 'site' && /*#__PURE__*/React.createElement(window.CDOS.RatesSite, {
-      serverRole: serverRole
-    }), tab === 'pricing' && /*#__PURE__*/React.createElement(Pricing, {
+      serverRole: serverRole,
+      onToast: flash
+    }), tab === 'rules' && /*#__PURE__*/React.createElement(Pricing, {
       settings: settings,
       setSettings: setSettings,
       me: me,
       log: log
-    })));
+    }))), tip && TIPS[tip] && /*#__PURE__*/React.createElement("div", {
+      role: "dialog",
+      "aria-label": TIPS[tip][0],
+      style: css('position:absolute;right:' + (cards ? '12px' : '22px') + ';bottom:' + (cards ? '12px' : '22px') + ';z-index:55;width:min(360px, calc(100% - 24px));padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 26px 60px -24px rgba(23,20,15,0.5);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:9px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--ink);color:#fff;font-family:var(--m);font-size:11px;font-weight:700;')
+    }, "i"), /*#__PURE__*/React.createElement("b", {
+      style: css('flex:1;min-width:0;font-size:14.5px;')
+    }, TIPS[tip][0]), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setTip(null),
+      title: "Close",
+      "aria-label": "Close",
+      style: css('flex:none;appearance:none;border:0;background:rgba(23,20,15,0.06);width:26px;height:26px;border-radius:50%;display:grid;place-items:center;cursor:pointer;color:var(--mute);')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "12",
+      height: "12",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2.4",
+      strokeLinecap: "round"
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M6 6l12 12M18 6L6 18"
+    })))), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:13px;line-height:1.6;color:var(--ink);margin:10px 0 0;')
+    }, TIPS[tip][1]), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setTip(null),
+      style: css('flex:none;appearance:none;border:0;background:none;cursor:pointer;padding:0;font-family:var(--m);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;color:var(--primary);')
+    }, "Got it"))), toast && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      style: css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')
+    }, /*#__PURE__*/React.createElement("svg", {
+      viewBox: "0 0 24 24",
+      width: "14",
+      height: "14",
+      fill: "none",
+      stroke: "#5FD69B",
+      strokeWidth: "2.8",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: {
+        flex: 'none'
+      }
+    }, /*#__PURE__*/React.createElement("path", {
+      d: "M4 12.5l5 5L20 6.5"
+    })), toast));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     Rates

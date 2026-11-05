@@ -18,7 +18,7 @@ async function openTab(page: Page, staffId: string, privatePage = false): Promis
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("rates"));
-  await page.getByRole("button", { name: "Website & window" }).click();
+  await page.getByRole("tab", { name: "Website & window" }).click();
   await expect(page.getByRole("region", { name: "Rate page" })).toBeVisible({ timeout: 30_000 });
 }
 

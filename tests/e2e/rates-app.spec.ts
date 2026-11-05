@@ -13,7 +13,7 @@ async function openRates(page: Page, staffId: string): Promise<void> {
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible().catch(() => false)) await skip.click();
   await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("rates"));
-  await expect(page.locator(".rates-board")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-rates]")).toBeVisible({ timeout: 30_000 });
 }
 
 const board = (page: Page) => page.evaluate(async () => (await (await fetch("/api/rates")).json()).board);
@@ -21,23 +21,31 @@ const toggle = (page: Page, code: string) => page.getByRole("switch", { name: `$
 
 test("a manager takes a currency off the board and publishes it, and customers see the publish, not the draft", async ({ page }) => {
   await openRates(page, "r.haddad");
-  const tabs = page.locator(".fld-bar", { has: page.getByRole("button", { name: "Pricing & rates" }) }).locator(".fld-tab");
-  await expect(tabs).toHaveText(["Board", "Website & window", "Pricing & rates"]);
+  await expect(page.getByRole("tablist", { name: "Rates" }).getByRole("tab")).toHaveText(["Board", "Website & window", "Pricing & rates"]);
+  await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
+  /* Each row shows the currency's flag and name, as the design does. */
+  const usd = page.getByLabel("USD US Dollar");
+  await expect(usd).toBeVisible();
+  expect(await usd.locator('[aria-hidden="true"]').first().evaluate((el) => getComputedStyle(el).backgroundImage)).toContain("/assets/flags/us.svg");
   /* The board this test found, put back exactly at the end even if the
      test fails: later files price their tills off this seed board, and a
      publish from here carries today's market rates. */
   const found = await board(page);
   try {
-    const code = "GBP";
-    expect(found.rows[code]?.show).not.toBe(false);
+    /* What customers see now is the first six of the published board, in
+       its order, and the order depends on what published last (CI's board
+       is alphabetical). Take the first currency shown there. */
+    const code: string = (found.order ?? Object.keys(found.rows)).filter((c: string) => found.rows[c] && found.rows[c].show !== false)[0];
+    expect(code, "the published board shows at least one currency").toBeTruthy();
+    await expect(page.getByRole("region", { name: "What customers see now" })).toContainText(code);
     await toggle(page, code).click();
     await expect(page.getByText("Unpublished changes")).toBeVisible();
     await expect(page.getByText("Your changes aren't live yet.")).toBeVisible();
     const preview = page.getByRole("region", { name: "What customers see now" });
     await expect(preview).toContainText(code);
 
-    await page.getByRole("button", { name: "Publish" }).click();
-    await expect(page.getByRole("status")).toHaveText("Published. Your site and window screens show it now.");
+    await page.getByRole("button", { name: "Publish", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Published · your site and window updated");
     await expect(page.getByText("Live on your site and window")).toBeVisible();
     const after = await board(page);
     expect(after.publicationId).not.toBe(found.publicationId);
@@ -55,7 +63,7 @@ test("a manager takes a currency off the board and publishes it, and customers s
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Publish" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
   await expect(toggle(page, "USD")).toBeDisabled();
   const refused = await page.evaluate(async () => (await fetch("/api/rates/publish", {
     method: "POST", headers: { "content-type": "application/json" },
