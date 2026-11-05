@@ -95,6 +95,7 @@ async function fingerDrag(page: Page, from: number, to: number): Promise<void> {
 
 test("a manager drags a currency with a finger by its handle, on the table and on a phone", async ({ page }) => {
   await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
   const before = await order(page);
   expect(before.length).toBeGreaterThan(2);
   await fingerDrag(page, 0, 1);

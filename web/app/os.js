@@ -59406,10 +59406,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const dirty = !B.sameAsPublished(atPublishedMids, data.board, defPct);
     const marketMoved = !dirty && !B.sameAsPublished(rows, data.board, defPct);
     const pubOff = readOnly || !(dirty || marketMoved) || busy;
+
+    /* A row dropped on another takes that row's place: moving down it goes
+       after it, moving up it goes before it. So one row down is one row
+       down, by mouse, finger or keys. */
     const moveTo = (code, target) => setEdits(e => {
-      const order = rows.map(r => r.code).filter(c => c !== code);
+      const all = rows.map(r => r.code);
+      const down = all.indexOf(code) < all.indexOf(target);
+      const order = all.filter(c => c !== code);
       const at = order.indexOf(target);
-      order.splice(at < 0 ? order.length : at, 0, code);
+      order.splice(at < 0 ? order.length : at + (down ? 1 : 0), 0, code);
       return {
         ...e,
         order
@@ -59419,7 +59425,27 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const order = rows.map(r => r.code),
         i = order.indexOf(code),
         j = i + by;
-      if (i >= 0 && j >= 0 && j < order.length) moveTo(code, by < 0 ? order[j] : order[j + 1]);
+      if (i >= 0 && j >= 0 && j < order.length) moveTo(code, order[j]);
+    };
+    /* The browser's own drag and drop is mouse only. A finger or a pen
+       holds the handle and lets go over another row; the row under the
+       pointer then is where the currency goes. */
+    const fingerDrag = code => e => {
+      if (e.pointerType === 'mouse') return;
+      e.preventDefault();
+      const rowAt = ev => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const row = el && el.closest('[data-rate-row]');
+        return row ? row.getAttribute('data-rate-row') : null;
+      };
+      const done = ev => {
+        window.removeEventListener('pointerup', done);
+        window.removeEventListener('pointercancel', done);
+        const to = ev.type === 'pointerup' ? rowAt(ev) : null;
+        if (to && to !== code) moveTo(code, to);
+      };
+      window.addEventListener('pointerup', done);
+      window.addEventListener('pointercancel', done);
     };
     const toggle = r => setEdits(e => ({
       ...e,
@@ -59667,15 +59693,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           }
         }
       };
+      /* The dotted handle, on the table and on a phone's cards. */
+      const handle = /*#__PURE__*/React.createElement("span", {
+        title: dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined,
+        onPointerDown: dragProps.draggable ? fingerDrag(r.code) : undefined,
+        style: css('flex:none;color:var(--faint);font-size:14px;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
+      }, "\u22EE\u22EE");
       if (cards) return /*#__PURE__*/React.createElement("div", _extends({
-        key: r.code
+        key: r.code,
+        "data-rate-row": r.code
       }, dragProps, {
         tabIndex: dragProps.draggable ? 0 : undefined,
         "aria-label": `${r.code} ${name}`,
         style: css('padding:14px 16px;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
       }), /*#__PURE__*/React.createElement("div", {
         style: css('display:flex;align-items:center;gap:11px;')
-      }, /*#__PURE__*/React.createElement(Flag, {
+      }, dragProps.draggable && handle, /*#__PURE__*/React.createElement(Flag, {
         code: r.code
       }), /*#__PURE__*/React.createElement("span", {
         style: css('flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;')
@@ -59706,15 +59739,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')
       }, r.mid ? 'Market ' + fx(r.mid) + (r.pinned ? ' · pinned' : '') : 'No market rate'));
       return /*#__PURE__*/React.createElement("div", _extends({
-        key: r.code
+        key: r.code,
+        "data-rate-row": r.code
       }, dragProps, {
         tabIndex: dragProps.draggable ? 0 : undefined,
         "aria-label": `${r.code} ${name}`,
         style: css('display:grid;grid-template-columns:' + cols + ';min-width:0;align-items:center;gap:12px;padding:12px 16px;transition:background .15s ease;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))
-      }), /*#__PURE__*/React.createElement("span", {
-        title: dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined,
-        style: css('color:var(--faint);font-size:14px;letter-spacing:-2px;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
-      }, "\u22EE\u22EE"), /*#__PURE__*/React.createElement("span", {
+      }), handle, /*#__PURE__*/React.createElement("span", {
         style: css('display:flex;align-items:center;gap:11px;min-width:0;')
       }, /*#__PURE__*/React.createElement(Flag, {
         code: r.code
