@@ -77,6 +77,38 @@ test("a manager switches Auto-publish on and off, and the rail says the board fo
   await expect(auto).toHaveAttribute("aria-checked", "false");
 });
 
+/* The design orders the board by dragging a row's dotted handle. A mouse
+   uses the browser's drag and drop; a finger or a pen does not have one,
+   so the handle follows the pointer itself. Dropping a row on the one
+   below it moves it one place down. Nothing is published here. */
+const HANDLE = "Drag to reorder (or Alt and the arrow keys)";
+const order = (page: Page) => page.getByTitle(HANDLE).evaluateAll((els) => els.map((el) => (el.closest("[aria-label]")?.getAttribute("aria-label") ?? "").split(" ")[0]));
+async function fingerDrag(page: Page, from: number, to: number): Promise<void> {
+  const handle = page.getByTitle(HANDLE).nth(from);
+  const target = page.getByTitle(HANDLE).nth(to);
+  const a = (await handle.boundingBox())!, b = (await target.boundingBox())!;
+  const at = (box: { x: number; y: number; width: number; height: number }) => ({ clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 });
+  await handle.dispatchEvent("pointerdown", { pointerType: "touch", pointerId: 11, isPrimary: true, button: 0, ...at(a) });
+  await target.dispatchEvent("pointermove", { pointerType: "touch", pointerId: 11, isPrimary: true, ...at(b) });
+  await target.dispatchEvent("pointerup", { pointerType: "touch", pointerId: 11, isPrimary: true, button: 0, ...at(b) });
+}
+
+test("a manager drags a currency with a finger by its handle, on the table and on a phone", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  const before = await order(page);
+  expect(before.length).toBeGreaterThan(2);
+  await fingerDrag(page, 0, 1);
+  await expect.poll(() => order(page)).toEqual([before[1], before[0], ...before.slice(2)]);
+  await expect(page.getByText("Unpublished changes")).toBeVisible();
+
+  /* A phone shows cards; each card has the handle too. */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  const phone = await order(page);
+  await fingerDrag(page, 1, 2);
+  await expect.poll(() => order(page)).toEqual([phone[0], phone[2], phone[1], ...phone.slice(3)]);
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
