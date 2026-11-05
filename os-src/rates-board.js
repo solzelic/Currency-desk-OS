@@ -156,7 +156,9 @@
     return next.body.order.every(function (code) {
       var a = next.body.rows[code], b = published.rows[code];
       return !!b && Number(b.mid) === a.mid && (b.show !== false) === a.show
-        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread);
+        && (b.spread === undefined ? a.spread === undefined : Number(b.spread) === a.spread)
+        /* A pin is part of what is published: the market sync reads it. */
+        && (b.pinned === true) === (a.pinned === true);
     });
   }
 

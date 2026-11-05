@@ -286,7 +286,7 @@
     if (zone) o.timeZone = zone;
     return new Intl.DateTimeFormat("en-GB", o).format(new Date(ms));
   }
-  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 ? " am" : " pm"); }
+  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 || h === 24 ? " am" : " pm"); }
 
   /* Open or closed, only from the shop's own week (seven days, Sunday
      first, [opens, closes] in hours or null) in the shop's time zone. */

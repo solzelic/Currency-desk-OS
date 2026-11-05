@@ -90,7 +90,7 @@
   /* Six places at most, fewer for a large rate: what the desk shows. */
   function rate(n) { return n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(5) : n.toFixed(6); }
   function initials(name) { return name.split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase(); }
-  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 ? " am" : " pm"); }
+  function fmtT(v) { var h = Math.floor(v), m = Math.round((v - h) * 60), h12 = h % 12 || 12; return h12 + (m ? ":" + pad(m) : "") + (h < 12 || h === 24 ? " am" : " pm"); }
 
   /* The shop's clock, not the TV's: the shop's time zone when the shop
      sends one. */

@@ -16,7 +16,9 @@ export const SLUG_RULE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 /* A name as an address: lowercase letters and digits, joined by single
    hyphens, 3 to 40 long. */
 export function slugFrom(text: string): string {
-  const base = text.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+  /* NFKD splits "ü" into "u" and a combining mark; the marks go, so
+     "Zürich" is "zurich", not "zu-rich". */
+  const base = text.toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
   return base.length >= 3 ? base : `${base || "shop"}-fx`.replace(/^-/, "");
 }
 

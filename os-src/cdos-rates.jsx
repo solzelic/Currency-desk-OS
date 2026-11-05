@@ -143,7 +143,10 @@
       } catch (e) {
         setData(d => ({ ...d, loading: false, error: 'The board could not be loaded (' + e.message + '). Nothing has changed for customers.' }));
       }
-    }, []);
+      /* Again when the shop's home currency is known: the market is
+         divided into it, and a board read before the desk's pack arrived
+         would be priced in the wrong currency. */
+    }, [home]);
     useEffect(() => { load(); }, [load]);
 
     const rows = useMemo(() => {
@@ -182,8 +185,18 @@
       if (readOnly) return;
       const on = !data.autoPublish;
       setData(d => ({ ...d, autoPublish: on }));
-      const res = await fetch('/api/rates/auto-publish', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) });
-      if (!res.ok) { setData(d => ({ ...d, autoPublish: !on })); setNotice(res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`); return; }
+      let res = null;
+      try {
+        res = await fetch('/api/rates/auto-publish', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on }) });
+      } catch (e) {
+        console.warn('[rates] Auto-publish could not be saved', e);
+      }
+      /* Not saved: the switch goes back to what the server holds. */
+      if (!res || !res.ok) {
+        setData(d => ({ ...d, autoPublish: !on }));
+        setNotice(!res ? 'Auto-publish was not changed: the server could not be reached.' : res.status === 403 ? 'Only the owner and managers can change Auto-publish.' : `Auto-publish was not changed (the server answered ${res.status}).`);
+        return;
+      }
       log('Rates', `Auto-publish ${on ? 'on' : 'off'}`);
       if (onToast) onToast(on ? 'Auto-publish on · the board follows the market' : 'Auto-publish off');
     };
