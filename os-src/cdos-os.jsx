@@ -2078,9 +2078,27 @@
       // timestamped intent so a freshly-mounted Ledger also opens the modal
       setNewDealSignal({ n: Date.now() });
     };
-    const toggleLock = () => {
+    /* Lock rates is the branch's, kept by the server (PUT /api/rates/lock,
+       Rates v2.5): while it is on nobody publishes the board and the
+       market leaves it alone. This button and the Rates app's button are
+       the same lock. The desk still holds its prices at the last publish
+       while it is on, and tells the Rates app (a storage event) when it
+       changes here. */
+    const canLock = !!srvUser && ['branch_manager', 'administrator'].includes(srvUser.role);
+    const toggleLock = async () => {
       const next = !locked;
+      if (!canLock) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'Only the owner and managers can lock rates'); return; }
+      let res = null;
+      try {
+        res = await fetch('/api/rates/lock', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ locked: next }) });
+      } catch (e) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server could not be reached'); return; }
+      if (!res.ok) { log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server answered ' + res.status); return; }
+      holdRates(next);
+    };
+    const holdRates = (next, quiet) => {
+      const was = (() => { try { return localStorage.getItem('yorkfx_rates_locked') === '1'; } catch (e) { return locked; } })();
       try { localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0'); } catch (e) {}
+      if (was !== next) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: next ? '1' : '0' })); } catch (e) {} }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);
@@ -2090,8 +2108,15 @@
         try { localStorage.removeItem('cdos_locked_book'); } catch (e) {}
       }
       setLocked(next);
-      log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
+      if (!quiet) log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
     };
+    /* The lock as the server has it, once the desk knows who is signed in. */
+    useEffect(() => {
+      if (!srvUser) return;
+      fetch('/api/rates', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(b => {
+        if (b && b.locked !== undefined) holdRates(!!b.locked, true);
+      }).catch(e => console.warn('[desk] the rates lock could not be read', e));
+    }, [srvUser && srvUser.staffId]);
     // alerts → open the Ledger pre-filtered to the most urgent flag bucket
     const openLedgerFiltered = (view) => { setLedgerView({ view, n: Date.now() }); openApp('ledger'); };
     const jumpAlerts = () => {
@@ -2602,7 +2627,7 @@
             </div>
             <button className={'mb-op' + (day.closed ? ' mb-op-off' : '')} title={day.closed ? 'Day is closed — reopen to post' : 'New transaction'} onClick={quickNewDeal}><Ic n="plus" s={17} /></button>
             <button className="mb-op" title="Calculator" onClick={() => openApp('calc')}><Ic n="calcmono" s={17} /></button>
-            <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates — follow the live board' : 'Lock rates — hold at last pull'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
+            <button className={'mb-op' + (locked ? ' on' : '')} title={locked ? 'Unlock rates for this branch' : 'Lock rates for this branch'} onClick={toggleLock}><Ic n="lock" s={17} /></button>
             <button className="mb-op" title="Settings" onClick={() => openApp('settings')}><Ic n="gear" s={17} /></button>
             <span className="mb-op-div"></span>
             {/* Same clock as the Audit Trail, in the desk's timezone.

@@ -106,8 +106,10 @@ test("a manager drags a currency with a finger by its handle, on the table and o
   await expect.poll(() => order(page)).toEqual([before[1], before[0], ...before.slice(2)]);
   await expect(page.getByText("Unpublished changes")).toBeVisible();
 
-  /* A phone shows cards; each card has the handle too. */
+  /* A phone shows cards; each card has the handle too. The table's
+     column heads are gone once the cards are drawn. */
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("On board", { exact: true })).toBeHidden();
   await expect(page.getByTitle(HANDLE).first()).toBeVisible();
   const phone = await order(page);
   await fingerDrag(page, 1, 2);

@@ -443,7 +443,7 @@
             };
             /* The dotted handle, on the table and on a phone's cards. */
             const handle = (<span title={dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined} onPointerDown={dragProps.draggable ? fingerDrag(r.code) : undefined}
-              style={css('flex:none;color:var(--faint);font-size:14px;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')}>⋮⋮</span>);
+              style={css('flex:none;display:inline-grid;place-items:center;min-width:22px;min-height:32px;margin:-6px 0;color:var(--faint);font-size:14px;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')}>⋮⋮</span>);
             if (cards) return (<div key={r.code} data-rate-row={r.code} {...dragProps} tabIndex={dragProps.draggable ? 0 : undefined} aria-label={`${r.code} ${name}`}
               style={css('padding:14px 16px;' + (i ? 'border-top:1px solid var(--hair);' : '') + (r.show ? '' : 'opacity:0.55;'))}>
               <div style={css('display:flex;align-items:center;gap:11px;')}>
@@ -559,6 +559,8 @@
        PUT /api/rates/lock). */
     const [lock, setLock] = useState(null);
     const [locking, setLocking] = useState(false);
+    const lockRef = useRef(null);
+    lockRef.current = lock;
     const rootRef = useRef(null);
     const w = useWidth(rootRef);
     const cards = w < 880;
@@ -586,6 +588,23 @@
       } finally { setLocking(false); }
     };
     const isLocked = !!lock;
+    /* The desk's top bar has the same lock. It hears a change made here
+       (a storage event), and this hears one made there. */
+    useEffect(() => {
+      const on = isLocked ? '1' : '0';
+      let was = null;
+      try { was = localStorage.getItem('yorkfx_rates_locked'); localStorage.setItem('yorkfx_rates_locked', on); } catch (e) { return; }
+      if (was !== on) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: on })); } catch (e) {} }
+    }, [isLocked]);
+    useEffect(() => {
+      const heard = (e) => {
+        if (!e || e.key !== 'yorkfx_rates_locked') return;
+        const on = e.newValue === '1';
+        if (on !== !!lockRef.current) getJson('/api/rates').then(r => setLock(r.locked || null), err => console.warn('[rates] the lock could not be read', err));
+      };
+      window.addEventListener('storage', heard);
+      return () => window.removeEventListener('storage', heard);
+    }, []);
     const feedAgo = feed && feed.fetchedAt ? ago(feed.fetchedAt) : null;
 
     return (<div ref={rootRef} data-rates="true" style={{ ...TOKENS, position: 'relative', lineHeight: 'normal', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'rgba(251,250,247,0.96)' }}>

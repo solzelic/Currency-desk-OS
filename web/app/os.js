@@ -59997,7 +59997,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const handle = /*#__PURE__*/React.createElement("span", {
         title: dragProps.draggable ? 'Drag to reorder (or Alt and the arrow keys)' : undefined,
         onPointerDown: dragProps.draggable ? fingerDrag(r.code) : undefined,
-        style: css('flex:none;color:var(--faint);font-size:14px;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
+        style: css('flex:none;display:inline-grid;place-items:center;min-width:22px;min-height:32px;margin:-6px 0;color:var(--faint);font-size:14px;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:' + (dragProps.draggable ? 'grab' : 'default') + ';')
       }, "\u22EE\u22EE");
       if (cards) return /*#__PURE__*/React.createElement("div", _extends({
         key: r.code,
@@ -60261,6 +60261,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        PUT /api/rates/lock). */
     const [lock, setLock] = useState(null);
     const [locking, setLocking] = useState(false);
+    const lockRef = useRef(null);
+    lockRef.current = lock;
     const rootRef = useRef(null);
     const w = useWidth(rootRef);
     const cards = w < 880;
@@ -60308,6 +60310,35 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     };
     const isLocked = !!lock;
+    /* The desk's top bar has the same lock. It hears a change made here
+       (a storage event), and this hears one made there. */
+    useEffect(() => {
+      const on = isLocked ? '1' : '0';
+      let was = null;
+      try {
+        was = localStorage.getItem('yorkfx_rates_locked');
+        localStorage.setItem('yorkfx_rates_locked', on);
+      } catch (e) {
+        return;
+      }
+      if (was !== on) {
+        try {
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'yorkfx_rates_locked',
+            newValue: on
+          }));
+        } catch (e) {}
+      }
+    }, [isLocked]);
+    useEffect(() => {
+      const heard = e => {
+        if (!e || e.key !== 'yorkfx_rates_locked') return;
+        const on = e.newValue === '1';
+        if (on !== !!lockRef.current) getJson('/api/rates').then(r => setLock(r.locked || null), err => console.warn('[rates] the lock could not be read', err));
+      };
+      window.addEventListener('storage', heard);
+      return () => window.removeEventListener('storage', heard);
+    }, []);
     const feedAgo = feed && feed.fetchedAt ? ago(feed.fetchedAt) : null;
     return /*#__PURE__*/React.createElement("div", {
       ref: rootRef,
@@ -73456,11 +73487,60 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         n: Date.now()
       });
     };
-    const toggleLock = () => {
+    /* Lock rates is the branch's, kept by the server (PUT /api/rates/lock,
+       Rates v2.5): while it is on nobody publishes the board and the
+       market leaves it alone. This button and the Rates app's button are
+       the same lock. The desk still holds its prices at the last publish
+       while it is on, and tells the Rates app (a storage event) when it
+       changes here. */
+    const canLock = !!srvUser && ['branch_manager', 'administrator'].includes(srvUser.role);
+    const toggleLock = async () => {
       const next = !locked;
+      if (!canLock) {
+        log('Rates not ' + (next ? 'locked' : 'unlocked'), 'Only the owner and managers can lock rates');
+        return;
+      }
+      let res = null;
+      try {
+        res = await fetch('/api/rates/lock', {
+          method: 'PUT',
+          credentials: 'same-origin',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            locked: next
+          })
+        });
+      } catch (e) {
+        log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server could not be reached');
+        return;
+      }
+      if (!res.ok) {
+        log('Rates not ' + (next ? 'locked' : 'unlocked'), 'The server answered ' + res.status);
+        return;
+      }
+      holdRates(next);
+    };
+    const holdRates = (next, quiet) => {
+      const was = (() => {
+        try {
+          return localStorage.getItem('yorkfx_rates_locked') === '1';
+        } catch (e) {
+          return locked;
+        }
+      })();
       try {
         localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0');
       } catch (e) {}
+      if (was !== next) {
+        try {
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: 'yorkfx_rates_locked',
+            newValue: next ? '1' : '0'
+          }));
+        } catch (e) {}
+      }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);
@@ -73474,8 +73554,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         } catch (e) {}
       }
       setLocked(next);
-      log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
+      if (!quiet) log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
     };
+    /* The lock as the server has it, once the desk knows who is signed in. */
+    useEffect(() => {
+      if (!srvUser) return;
+      fetch('/api/rates', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(b => {
+        if (b && b.locked !== undefined) holdRates(!!b.locked, true);
+      }).catch(e => console.warn('[desk] the rates lock could not be read', e));
+    }, [srvUser && srvUser.staffId]);
     // alerts → open the Ledger pre-filtered to the most urgent flag bucket
     const openLedgerFiltered = view => {
       setLedgerView({
@@ -74744,7 +74833,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 17
     })), /*#__PURE__*/React.createElement("button", {
       className: 'mb-op' + (locked ? ' on' : ''),
-      title: locked ? 'Unlock rates — follow the live board' : 'Lock rates — hold at last pull',
+      title: locked ? 'Unlock rates for this branch' : 'Lock rates for this branch',
       onClick: toggleLock
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
