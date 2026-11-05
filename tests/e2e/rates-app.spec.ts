@@ -331,6 +331,32 @@ test("a manager records cash bought with what it cost, and Cost & stock lists it
   await expect(page.getByRole("region", { name: "Recent cash bought" })).toContainText("E2E Wholesaler");
 });
 
+/* The design's feed sheet: where the market column comes from, and the
+   three ways it can behave. On this desk the feed is the platform's own,
+   hourly; holding the rates is Lock rates, and typing them is pinning a
+   currency in Pricing & rates. */
+test("the feed button says where the market rates come from, and leads to Lock rates and pinned rates", async ({ page }) => {
+  await openRates(page, "r.haddad");
+  const open = () => page.getByRole("button", { name: /^(Live feed|No market feed)/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Where your market rates come from" });
+  await open();
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText("How the market column behaves")).toBeVisible();
+  await sheet.getByRole("button", { name: /^Type them myself/ }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Pricing & rates" })).toHaveAttribute("aria-selected", "true");
+
+  await open();
+  try {
+    const locked = page.waitForResponse((r) => r.url().endsWith("/api/rates/lock") && r.request().method() === "PUT");
+    await sheet.getByRole("button", { name: /^Hold today.s rates/ }).click();
+    expect((await locked).status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Locked", exact: true })).toBeVisible();
+  } finally {
+    await page.evaluate(() => fetch("/api/rates/lock", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ locked: false }) }));
+  }
+});
+
 test("a teller sees today's rates and cannot change or publish them", async ({ page }) => {
   await openRates(page, "m.costa");
   await expect(page.getByText("You can see today's rates. Changing them is for the owner and managers.")).toBeVisible();
