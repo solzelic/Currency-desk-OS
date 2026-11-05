@@ -414,6 +414,13 @@
 
   /* ===================== BROADCASTS ===================== */
   function Broadcasts({ tg, bcasts, contacts, onSend }) {
+    /* Rates v2.5: the shop's rate page, once it is live, can go in a text. */
+    const [pageLink, setPageLink] = useState(null);
+    useEffect(() => {
+      fetch('/api/rate-page', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null))
+        .then(p => setPageLink(p && p.live && p.slug ? location.origin + '/r/' + p.slug : null))
+        .catch(() => setPageLink(null));
+    }, []);
     const [body, setBody] = useState('');
     const [aud, setAud] = useState('all');
     const [whoId, setWhoId] = useState(null);
@@ -450,6 +457,7 @@
         </div>
         <div className="flex items-center gap-1.5 mb-2 flex-wrap"><span className="text-[10px]" style={{ color: CD.faint }}>Start from:</span>{starters.map(([l, t]) => <button key={l} onClick={() => setBody(t)} className="px-2 py-1 text-[10.5px]" style={dashBtn}>{l}</button>)}</div>
         <textarea value={body} onChange={e => setBody(e.target.value)} rows={3} placeholder={'e.g. ' + tg.desk + ': USD at 1.3890 this morning — best rate this month. 128 Yonge St, open 9–6.'} className="w-full outline-none p-2.5 text-[12.5px]" style={{ fontFamily: 'Space Mono, monospace', lineHeight: 1.5, background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 8, resize: 'vertical', color: CD.ink }} />
+        {pageLink && <button type="button" onClick={() => setBody(b => (b.trim() ? b.trim() + ' ' : '') + pageLink)} className="text-[11.5px] px-2.5 py-1 mt-1.5 font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, color: CD.ink, background: 'var(--cd-panel)' }}>Add your rate page link</button>}
         <div className="text-[10px] mt-1 mb-2" style={{ color: CD.faint }}>{aud === 'all' ? '“Reply STOP to opt out” is appended automatically. Sends wait out your quiet hours (' + tg.quietFrom + '–' + tg.quietTo + ').' : 'One-to-one service text from your desk number — their reply lands in Requests.'}</div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] flex-1" style={{ color: CD.mute }}>To <b style={{ color: CD.ink }}>{toLabel || 'pick a contact'}</b> · {segs} segment{segs > 1 ? 's' : ''} · ~${cost.toFixed(2)}</span>

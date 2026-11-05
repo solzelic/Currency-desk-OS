@@ -404,7 +404,7 @@
           </div>
         </div>
         <div role="tablist" aria-label="Rates" style={css('display:flex;align-items:flex-end;gap:2px;margin:16px ' + (cards ? '-16px' : '-26px') + ' 0;padding:0 ' + (cards ? '12px' : '26px') + ';overflow-x:auto;scrollbar-width:none;border-bottom:3px solid var(--primary);')}>
-          {tabs.map(([id, label]) => { const on = tab === id; return (<button key={id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(id); setTip(null); }}
+          {tabs.map(([id, label]) => { const on = tab === id; return (<button key={id} type="button" role="tab" aria-selected={on} data-tour={id === 'site' ? 'rate-page' : undefined} onClick={() => { setTab(id); setTip(null); }}
             style={css('flex:none;display:inline-flex;align-items:center;gap:9px;appearance:none;border:0;cursor:pointer;white-space:nowrap;font-family:var(--m);font-size:' + (cards ? '11px' : '12.5px') + ';letter-spacing:0.12em;text-transform:uppercase;font-weight:700;transition:background .2s ease,color .2s ease;'
               + (on ? 'background:var(--primary);color:#fff;padding:' + (cards ? '11px 26px 11px 13px' : '13px 34px 13px 18px') + ';border-radius:5px 0 0 0;clip-path:polygon(0 0,calc(100% - 20px) 0,100% 100%,0 100%);'
                 : 'background:transparent;color:var(--mute);padding:' + (cards ? '11px 13px' : '13px 16px') + ';'))}>

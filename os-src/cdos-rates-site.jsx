@@ -286,6 +286,17 @@
 
     /* One measured element for every view, so the width follows the tab. */
     const wrap = (el) => <div ref={rootRef}>{el}</div>;
+    /* The fee note follows the desk's Pricing (Default commission): when
+       the editor opens and the page says something else, staff who may
+       change rates bring it in step. */
+    const fee = settings && settings.defaultFee != null && settings.defaultFee !== '' ? Number(settings.defaultFee) : 0;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const wantFeeNote = fee > 0 && home ? 'A service fee of ' + fee.toFixed(2) + ' ' + home + ' may apply to each exchange.' : '';
+    useEffect(() => {
+      if (view !== 'web' || readOnly || !page || !page.content) return;
+      if ((page.content.feeNote || '') !== wantFeeNote) saveContent({ feeNote: wantFeeNote });
+    }, [view, readOnly, page, wantFeeNote, saveContent]);
+
     if (!page || !draft) return wrap(<div style={css('padding: 24px; font-size: 13px; color: var(--mute);')}>{err || 'Loading your website and screens…'}</div>);
 
     const pagePath = `/r/${page.slug}`;
@@ -413,7 +424,7 @@
                 {field('Compliance officer', reg.officer, v => edit('regulator', { ...reg, officer: v }), 'Full name', { locked: regLocked })}
               </div>
               <div style={css('display: flex; flex-direction: column; gap: 7px; margin-top: 14px;')}>
-                {['Your registered name and registration number, in the footer of every page', 'A note that rates are a guide and the rate on the receipt is final', 'Who to contact with a question or a complaint'].map(u => (<span key={u} style={css('display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')}><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#1D6B45" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={css('flex: none; margin-top: 3px;')}><path d="M4 12.5l5 5L20 6.5" /></svg>{u}</span>))}
+                {['Your registered name and registration number, in the footer of every page', 'A note that rates are a guide and the rate on the receipt is final', wantFeeNote ? 'Your service fee: “' + wantFeeNote + '”' : 'Any service fee you charge, taken from your pricing', 'Who to contact with a question or a complaint'].map(u => (<span key={u} style={css('display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')}><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#1D6B45" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={css('flex: none; margin-top: 3px;')}><path d="M4 12.5l5 5L20 6.5" /></svg>{u}</span>))}
               </div>
               <div style={css('font-size: 11.5px; line-height: 1.5; color: var(--faint); margin-top: 12px;')}>Written for {reg.name || 'your regulator'}’s rules. Have your compliance officer check the wording before you share the page.</div>
             </section>

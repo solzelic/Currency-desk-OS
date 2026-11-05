@@ -495,6 +495,7 @@ export type RatePageContent = {
   /* null or absent: the first six of the board, in board order. */
   codes?: string[] | null;
   regulator?: { name: string; number: string; officer: string };
+  feeNote?: string;
 };
 
 export type WindowScreenKind = "tv" | "portrait" | "tablet" | "strip";

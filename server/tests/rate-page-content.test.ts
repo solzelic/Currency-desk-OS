@@ -182,6 +182,14 @@ describe("what the public page is told", () => {
     });
   });
 
+  it("carries the shop's service fee note, set from its pricing, and drops it when it is cleared", async () => {
+    await as("r.haddad", "PATCH", "/api/rate-page/content", { feeNote: "A service fee of 5.00 CAD may apply to each exchange." });
+    expect((await pub("/api/public/rate-pages/yorkfx")).json().shop.feeNote).toBe("A service fee of 5.00 CAD may apply to each exchange.");
+    expect((await as("r.haddad", "PATCH", "/api/rate-page/content", { feeNote: "x".repeat(161) })).statusCode).toBe(400);
+    await as("r.haddad", "PATCH", "/api/rate-page/content", { feeNote: "" });
+    expect((await pub("/api/public/rate-pages/yorkfx")).json().shop).not.toHaveProperty("feeNote");
+  });
+
   it("leaves the regulator off until it has a name and a number", async () => {
     await as("j.masri", "PATCH", "/api/rate-page/content", { regulator: { name: "FINTRAC", number: "", officer: "" } });
     expect((await pub("/api/public/rate-pages/yorkfx")).json().shop).not.toHaveProperty("regulator");

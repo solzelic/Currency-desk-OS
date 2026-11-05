@@ -68,6 +68,9 @@ export const contentPatch = z.object({
   show: z.object({ converter: z.boolean(), hours: z.boolean(), compliance: z.boolean() }).partial().strict(),
   codes: codes.nullable(),
   regulator: z.object({ name: z.string().trim().max(60), number: z.string().trim().max(40), officer: z.string().trim().max(80) }).strict(),
+  /* The service fee line the page shows under the rates, set by the desk
+     from its Pricing (the default fee per exchange). Empty for none. */
+  feeNote: z.string().trim().max(160),
   profile: profileShape,
 }).partial().strict().refine((patch) => Object.keys(patch).length > 0, "Nothing to change.");
 export type ContentPatch = z.infer<typeof contentPatch>;
@@ -79,6 +82,7 @@ export type ResolvedContent = {
   show: { converter: boolean; hours: boolean; compliance: boolean };
   codes: string[] | null;
   regulator: { name: string; number: string; officer: string };
+  feeNote: string;
 };
 
 /* The regulator block starts as the one the shop opened with: its legal
@@ -100,6 +104,7 @@ export async function resolvedContent(db: Db, tenantId: string, shopName: string
     show: { converter: content.show?.converter ?? true, hours: content.show?.hours ?? true, compliance: content.show?.compliance ?? true },
     codes: content.codes ?? null,
     regulator: content.regulator ?? await openedWith(db, tenantId),
+    feeNote: content.feeNote ?? "",
   };
 }
 
