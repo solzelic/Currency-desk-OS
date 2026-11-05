@@ -186,5 +186,22 @@
     return fee;
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor };
+  /* Guardrails (Rates v2.5): the margin floor a currency is held to. Its
+     own floor (marginFloorByCcy) when the owner set one, else the shop's
+     (marginFloorPct), else 0.5%. Blank, not a number, or negative is not
+     a floor. */
+  function floorFor(settings, code) {
+    var s = settings || {};
+    function pct(v) {
+      if (v === null || v === undefined || v === "") return null;
+      var n = Number(v);
+      return isFinite(n) && n >= 0 ? n : null;
+    }
+    var own = s.marginFloorByCcy && typeof s.marginFloorByCcy === "object" ? pct(s.marginFloorByCcy[code]) : null;
+    if (own !== null) return own;
+    var shop = pct(s.marginFloorPct);
+    return shop !== null ? shop : 0.5;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor };
 });

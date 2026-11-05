@@ -145,7 +145,7 @@
     /* The guardrails, summarised; the Guardrails tab edits them. */
     const enforce = settings.marginEnforce || 'block';
     const guardSummary = 'Floor ' + floor.toFixed(1) + '%, target ' + target.toFixed(1) + '%' + (hasDeals ? ' · below the floor, ' + (enforce === 'warn' ? 'warn only' : 'a reason is required') + '.' : ' · checked on your board.');
-    const below = onBoard.filter(r => { const p = B.deskPair(r.mid, r.spreadPct, r.spreadPct); return (p.sell - r.mid) / r.mid * 100 < floor; }).map(r => r.code);
+    const below = onBoard.filter(r => { const p = B.deskPair(r.mid, r.spreadPct, r.spreadPct); return (p.sell - r.mid) / r.mid * 100 < B.floorFor(settings, r.code); }).map(r => r.code);
     const guardNote = below.length ? below.join(', ') + (below.length === 1 ? ' is' : ' are') + ' below your floor right now.' : 'Everything on your board is above your floor.';
 
     /* Spread by currency. */

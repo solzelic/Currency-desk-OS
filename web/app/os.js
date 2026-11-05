@@ -555,7 +555,24 @@
     return fee;
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor };
+  /* Guardrails (Rates v2.5): the margin floor a currency is held to. Its
+     own floor (marginFloorByCcy) when the owner set one, else the shop's
+     (marginFloorPct), else 0.5%. Blank, not a number, or negative is not
+     a floor. */
+  function floorFor(settings, code) {
+    var s = settings || {};
+    function pct(v) {
+      if (v === null || v === undefined || v === "") return null;
+      var n = Number(v);
+      return isFinite(n) && n >= 0 ? n : null;
+    }
+    var own = s.marginFloorByCcy && typeof s.marginFloorByCcy === "object" ? pct(s.marginFloorByCcy[code]) : null;
+    if (own !== null) return own;
+    var shop = pct(s.marginFloorPct);
+    return shop !== null ? shop : 0.5;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor };
 });
 
 
@@ -36956,7 +36973,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const profitCad = +(spreadCadLive + (isCheque ? chequeFee : feeN)).toFixed(2);
     const marginBasis = isExchange ? liveQuote ? liveQuote.from === home ? +liveQuote.inputAmount : liveQuote.to === home ? +liveQuote.outputAmount : +liveQuote.inputAmount * +liveQuote.marketMid : 0 : isSend ? pricing.midCadIn || 0 : inCadEquiv;
     const marginPct = marginBasis > 0 ? profitCad / marginBasis * 100 : 0;
-    const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    /* The deal currency's own floor when the owner set one (Guardrails,
+       floor by currency), else the shop's. */
+    const dealCcy = inCcy !== home ? inCcy : outCcy;
+    const mFloor = window.CDOS.ratesBoard && window.CDOS.ratesBoard.floorFor ? window.CDOS.ratesBoard.floorFor(settings, dealCcy) : settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mEnforce = settings && settings.marginEnforce || 'block';
     const belowFloor = amtN > 0 && (isSend || isExchange && liveQuote) && marginPct < mFloor;
@@ -59491,7 +59511,7 @@ ${snap}`;
     const guardSummary = 'Floor ' + floor.toFixed(1) + '%, target ' + target.toFixed(1) + '%' + (hasDeals ? ' · below the floor, ' + (enforce === 'warn' ? 'warn only' : 'a reason is required') + '.' : ' · checked on your board.');
     const below = onBoard.filter(r => {
       const p = B.deskPair(r.mid, r.spreadPct, r.spreadPct);
-      return (p.sell - r.mid) / r.mid * 100 < floor;
+      return (p.sell - r.mid) / r.mid * 100 < B.floorFor(settings, r.code);
     }).map(r => r.code);
     const guardNote = below.length ? below.join(', ') + (below.length === 1 ? ' is' : ' are') + ' below your floor right now.' : 'Everything on your board is above your floor.';
 
@@ -60282,6 +60302,359 @@ ${snap}`;
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     RatesPricing
+  });
+})();
+
+/* ---- os-src/cdos-rates-guard.jsx ---- */
+/* ============================================================
+   CurrencyDesk OS: Rates, the Guardrails tab (Rates v2.5)
+
+   A port of the design's Guardrails tab (handoff rates-v2.5,
+   "CurrencyDesk Rates v2.5", the isGuard section): the design's markup
+   and style strings, turned into React styles by the Rates app's css().
+
+   One floor, checked in three places: on the board (a currency selling
+   under its floor turns amber or red), on every deal (the new-deal screen
+   meters spread plus fee over the deal size), and afterwards (each
+   override stays on the deal with who, why and how far under, and is
+   listed here). The settings are the shop's: the target and the floor
+   (marginTargetPct, marginFloorPct), what happens below it
+   (marginEnforce, changed in Settings, Rates & fees), and each currency's
+   own floor (marginFloorByCcy, read by ratesBoard.floorFor wherever a
+   floor is checked).
+
+   The guardrails are the owner's (state/owner-settings.ts); everyone else
+   sees them. Where the design and the code differ the copy says what the
+   code does: on this desk the teller who posts a deal under the floor
+   gives the reason, and the overrides are listed here, not sent.
+   ============================================================ */
+(function () {
+  const {
+    useState,
+    useEffect,
+    useCallback
+  } = React;
+  const B = window.CDOS.ratesBoard;
+  const money = v => Number(v).toLocaleString('en-CA', {
+    maximumFractionDigits: 2
+  });
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  /* The desk's deal stamp, "2026-11-05 14:32:10", on the desk's clock. */
+  const stampMs = at => {
+    const t = Date.parse(String(at || '').replace(' ', 'T'));
+    return isFinite(t) ? t : NaN;
+  };
+  function RatesGuard({
+    settings,
+    setSettings,
+    serverRole,
+    me,
+    log,
+    deals,
+    locked
+  }) {
+    const ui = window.CDOS.ratesUi;
+    const {
+      css,
+      Flag,
+      getJson,
+      toneOf,
+      chip
+    } = ui;
+    const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
+    const role = serverRole || (me && me.role === 'Owner' ? 'administrator' : me && me.role === 'Manager' ? 'branch_manager' : 'teller');
+    const owns = role === 'administrator';
+    const readOnly = !owns || !!locked;
+    const hasDeals = (settings.billingPlan || 'premium') !== 'basic';
+    const floor = settings.marginFloorPct != null && isFinite(+settings.marginFloorPct) ? +settings.marginFloorPct : 0.5;
+    const target = settings.marginTargetPct != null && isFinite(+settings.marginTargetPct) ? +settings.marginTargetPct : 1.0;
+    const [data, setData] = useState({
+      loading: true,
+      board: null,
+      market: {}
+    });
+    const [raw, setRaw] = useState({});
+    const typed = (k, fallback) => raw[k] != null ? raw[k] : fallback;
+    const typing = (k, v) => setRaw(r => ({
+      ...r,
+      [k]: v
+    }));
+    const leave = k => setRaw(r => {
+      const n = {
+        ...r
+      };
+      delete n[k];
+      return n;
+    });
+    const load = useCallback(async () => {
+      try {
+        const [rates, feed] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/market')]);
+        setData({
+          loading: false,
+          board: rates.board,
+          market: B.homeMarket(feed.mids, home)
+        });
+      } catch (e) {
+        console.warn('[rates] the board could not be read for the guardrails', e);
+        setData(d => ({
+          ...d,
+          loading: false
+        }));
+      }
+    }, [home]);
+    useEffect(() => {
+      load();
+    }, [load]);
+    const set = (patch, note) => {
+      if (readOnly) return;
+      setSettings(s => ({
+        ...s,
+        ...patch
+      }));
+      if (note && log) log('Guardrails updated', note);
+    };
+    const setOwnFloor = (code, v) => {
+      if (readOnly) return;
+      setSettings(s => {
+        const o = {
+          ...(s.marginFloorByCcy || {})
+        };
+        if (v === null) delete o[code];else o[code] = v;
+        return {
+          ...s,
+          marginFloorByCcy: o
+        };
+      });
+    };
+    const rows = B.draftRows({
+      codes: window.CDOS.CCY || [],
+      home,
+      board: data.board,
+      market: data.market,
+      settings
+    }).filter(r => r.show && r.mid);
+
+    /* ---- the design's pieces ---- */
+    const card = 'padding:18px;border-radius:16px;background:#fff;border:1px solid var(--line);min-width:0;';
+    const cardHead = 'display:flex;align-items:center;gap:9px;font-family:var(--m);font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;color:var(--ink);';
+    const stepBtn = css('width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:18px;color:var(--ink);cursor:' + (readOnly ? 'not-allowed' : 'pointer') + ';opacity:' + (readOnly ? '0.5' : '1') + ';');
+    const where = [['1', 'On your board', 'Before you publish, a currency selling under its floor turns amber or red, so you see it first.', true], ['2', 'On every deal', hasDeals ? 'The new-deal screen meters spread plus fee over the deal size, live, while the teller types.' : 'Full System checks every deal before it posts.', hasDeals], ['3', 'Afterwards', hasDeals ? 'Every override stays on the deal with who, why and how far under. This week’s are listed below.' : 'Full System keeps every override for you.', hasDeals]];
+    const steppers = [['Healthy target', 'marginTargetPct', target], ['Minimum floor', 'marginFloorPct', floor]];
+    const stepTo = (key, v, label) => set({
+      [key]: Math.min(20, Math.max(0, Math.round(v * 10) / 10))
+    }, label.toLowerCase() + ' ' + v.toFixed(1) + '%');
+    const mScale = Math.max(3, target * 1.3, floor * 1.3);
+    const levelNote = hasDeals ? 'On a deal, margin is the spread plus any fee over the deal size. On your board it is what you sell at over the market. A currency’s own floor below overrides this.' : 'On this plan the desk doesn’t know what you paid, so the floor is measured against the market rate.';
+    const enforce = settings.marginEnforce || 'block';
+    const policyLine = enforce === 'warn' ? 'Warn only · the teller sees the warning and can still post · every deal under the floor shows here.' : 'A reason is required · the teller marks the override and says why before it posts · every one is listed below.';
+    const toSettings = () => {
+      if (window.CDOS.openSettingsTab) window.CDOS.openSettingsTab('rates');else if (window.CDOS.openApp) window.CDOS.openApp('settings');
+    };
+
+    /* Floor by currency: each on the board, what it sells at over the
+       market now, against its own floor or the shop's. */
+    const own = settings.marginFloorByCcy || {};
+    const floorRows = rows.map((r, i) => {
+      const p = B.deskPair(r.mid, r.spreadPct, r.spreadPct);
+      const pct = (p.sell - r.mid) / r.mid * 100;
+      const tone = toneOf(pct, B.floorFor(settings, r.code), target);
+      return {
+        r,
+        pct,
+        tone,
+        v: typed('fl-' + r.code, own[r.code] != null ? String(own[r.code]) : ''),
+        row: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 18px;border-top:1px solid var(--hair);')
+      };
+    });
+
+    /* Overrides this week, from the desk's own deals. */
+    const now = Date.now();
+    const overrides = (Array.isArray(deals) ? deals : []).filter(d => d && d.marginOverride && now - stampMs(d.marginOverride.at) <= WEEK_MS).sort((a, b) => stampMs(b.marginOverride.at) - stampMs(a.marginOverride.at)).map(d => {
+      const code = d.inCcy && d.inCcy !== home ? d.inCcy : d.outCcy;
+      const homeAmt = d.inCcy === home ? +d.inAmt : d.outCcy === home ? +d.outAmt : null;
+      return {
+        key: d.ref || d.id || d.marginOverride.at,
+        code,
+        m: d.marginOverride.pct,
+        why: d.marginOverride.reason || 'No reason given',
+        homeAmt,
+        amt: homeAmt != null && isFinite(homeAmt) ? home + ' ' + money(homeAmt) : d.inAmt != null ? money(d.inAmt) + ' ' + (d.inCcy || '') : '',
+        who: d.marginOverride.by || '',
+        when: d.marginOverride.at || ''
+      };
+    });
+    const underSum = overrides.reduce((a, o) => a + (o.homeAmt != null && isFinite(o.homeAmt) ? o.homeAmt : 0), 0);
+    const ovCount = overrides.length ? overrides.length + (underSum ? ' · ' + home + ' ' + money(underSum) + ' under the floor' : '') : 'None';
+    return /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;flex-direction:column;gap:14px;max-width:1000px;')
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+      style: css('margin:0;font-size:22px;font-weight:800;letter-spacing:-0.02em;')
+    }, "One floor, checked in three places"), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:13.5px;line-height:1.55;color:var(--mute);margin:6px 0 0;max-width:640px;')
+    }, "Guardrails stop a rate or a deal going out below what you can live with. You set the floor once; the desk checks it on your board, on every deal, and afterwards.")), !owns && /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:12.5px;font-weight:600;color:var(--ink);')
+    }, "Only the owner can change the guardrails."), /*#__PURE__*/React.createElement("div", {
+      style: css('display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:10px;')
+    }, where.map(w => /*#__PURE__*/React.createElement("div", {
+      key: w[0],
+      style: css('padding:15px 16px;border-radius:14px;background:#fff;border:1px solid var(--line);' + (w[3] ? '' : 'opacity:0.55;'))
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;font-family:var(--m);font-size:11.5px;font-weight:700;background:' + (w[3] ? 'var(--ink)' : 'rgba(23,20,15,0.1)') + ';color:' + (w[3] ? '#fff' : 'var(--mute)') + ';')
+    }, w[0]), /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:14.5px;margin-top:10px;')
+    }, w[1]), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:4px;')
+    }, w[2])))), /*#__PURE__*/React.createElement("div", {
+      style: css(card)
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, "The levels"), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;gap:16px 26px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;')
+    }, steppers.map(([label, key, value]) => /*#__PURE__*/React.createElement("div", {
+      key: key
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('font-family:var(--m);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mute);margin-bottom:7px;')
+    }, label), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:5px;')
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": 'Lower the ' + label.toLowerCase(),
+      disabled: readOnly,
+      onClick: () => stepTo(key, value - 0.1, label),
+      style: stepBtn
+    }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;justify-content:center;gap:2px;min-width:80px;height:38px;padding:0 9px;border-radius:10px;background:rgba(23,20,15,0.05);')
+    }, /*#__PURE__*/React.createElement("input", {
+      "aria-label": label,
+      value: typed(key, value.toFixed(1)),
+      inputMode: "decimal",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        typing(key, v);
+        const n = parseFloat(v);
+        if (!isNaN(n)) set({
+          [key]: Math.min(20, Math.max(0, n))
+        });
+      },
+      onBlur: () => leave(key),
+      style: css('width:46px;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:16px;font-weight:700;color:var(--ink);')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:14px;color:var(--mute);')
+    }, "%")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": 'Raise the ' + label.toLowerCase(),
+      disabled: readOnly,
+      onClick: () => stepTo(key, value + 0.1, label),
+      style: stepBtn
+    }, "+")))), /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('height:10px;border-radius:999px;overflow:hidden;display:flex;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('width:' + Math.min(100, floor / mScale * 100) + '%;background:var(--clay);opacity:0.75;')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('width:' + Math.max(0, Math.min(100, (target - floor) / mScale * 100)) + '%;background:#e0a106;opacity:0.75;')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1;background:var(--primary);')
+    })), /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;justify-content:space-between;margin-top:7px;font-family:var(--m);font-size:10.5px;')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--clay);')
+    }, "\u25CF below floor"), /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--amber);')
+    }, "\u25CF watch"), /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--primary);')
+    }, "\u25CF healthy")))), floor >= target && /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--amber);font-weight:600;margin:13px 0 0;')
+    }, "The floor is at or above the target, so nothing can be on target. Lower the floor or raise the target."), /*#__PURE__*/React.createElement("p", {
+      style: css('font-size:12.5px;line-height:1.5;color:var(--mute);margin:13px 0 0;')
+    }, levelNote)), hasDeals && /*#__PURE__*/React.createElement("div", {
+      style: css(card + ' display: flex; align-items: center; gap: 14px; flex-wrap: wrap;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('flex:1 1 260px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, "When a deal lands below the floor"), /*#__PURE__*/React.createElement("div", {
+      style: css('font-size:13px;line-height:1.5;color:var(--mute);margin-top:8px;')
+    }, policyLine)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: toSettings,
+      style: css('flex:none;display:inline-flex;align-items:center;height:38px;padding:0 15px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;')
+    }, "Change in Settings \u2192")), /*#__PURE__*/React.createElement("section", {
+      "aria-label": "Floor by currency",
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('padding:16px 18px 12px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead)
+    }, "Floor by currency"), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12.5px;line-height:1.5;color:var(--mute);margin-top:6px;')
+    }, 'Leave blank to use ' + floor.toFixed(1) + '%. Raise it where a currency is hard to restock; lower it where you always undercut.')), data.loading && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:14px 18px;font-size:13px;color:var(--mute);border-top:1px solid var(--hair);')
+    }, "Loading your board\u2026"), !data.loading && !floorRows.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:14px 18px;font-size:13px;color:var(--mute);border-top:1px solid var(--hair);')
+    }, "Nothing is on your board yet."), floorRows.map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.r.code,
+      "data-floor-row": x.r.code,
+      style: x.row
+    }, /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 140px;min-width:0;display:flex;align-items:center;gap:10px;')
+    }, /*#__PURE__*/React.createElement(Flag, {
+      code: x.r.code,
+      size: 26
+    }), /*#__PURE__*/React.createElement("b", {
+      style: css('font-size:14px;')
+    }, x.r.code)), /*#__PURE__*/React.createElement("span", {
+      "data-tone": x.tone,
+      style: chip(x.tone)
+    }, 'Now ' + x.pct.toFixed(2) + '%'), /*#__PURE__*/React.createElement("span", {
+      style: css('display:inline-flex;align-items:center;gap:4px;width:104px;height:38px;padding:0 11px;border-radius:10px;border:1px solid var(--line);background:#fff;box-sizing:border-box;')
+    }, /*#__PURE__*/React.createElement("input", {
+      "aria-label": x.r.code + ' floor',
+      value: x.v,
+      placeholder: floor.toFixed(1),
+      inputMode: "decimal",
+      disabled: readOnly,
+      onChange: e => {
+        const v = e.target.value.replace(/[^0-9.]/g, '');
+        typing('fl-' + x.r.code, v);
+        const n = parseFloat(v);
+        setOwnFloor(x.r.code, v === '' || isNaN(n) ? null : Math.min(20, Math.max(0, n)));
+      },
+      onBlur: () => leave('fl-' + x.r.code),
+      style: css('width:100%;min-width:0;border:0;outline:none;background:transparent;text-align:right;font-family:var(--m);font-size:14px;color:var(--ink);')
+    }), /*#__PURE__*/React.createElement("span", {
+      style: css('color:var(--faint);font-size:12px;')
+    }, "%"))))), hasDeals && /*#__PURE__*/React.createElement("section", {
+      "aria-label": "Overrides this week",
+      style: css('border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css('display:flex;align-items:center;gap:10px;padding:16px 18px 10px;')
+    }, /*#__PURE__*/React.createElement("div", {
+      style: css(cardHead + ' flex: 1;')
+    }, "Overrides this week"), /*#__PURE__*/React.createElement("span", {
+      style: css('font-family:var(--m);font-size:11px;color:var(--mute);')
+    }, ovCount)), !overrides.length && /*#__PURE__*/React.createElement("div", {
+      style: css('padding:12px 18px 16px;font-size:13px;color:var(--mute);border-top:1px solid var(--hair);')
+    }, "No deal went out under the floor this week."), overrides.map(o => /*#__PURE__*/React.createElement("div", {
+      key: o.key,
+      style: css('display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--hair);')
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...chip('red'),
+        flex: 'none'
+      }
+    }, o.code + ' · ' + o.m + '%'), /*#__PURE__*/React.createElement("span", {
+      style: css('flex:1 1 220px;min-width:0;')
+    }, /*#__PURE__*/React.createElement("b", {
+      style: css('display:block;font-size:13.5px;')
+    }, '“' + o.why + '”'), /*#__PURE__*/React.createElement("span", {
+      style: css('display:block;font-size:12px;color:var(--mute);margin-top:2px;')
+    }, [o.amt, o.who, o.when].filter(Boolean).join(' · ')))))));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    RatesGuard
   });
 })();
 
@@ -61146,7 +61519,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
       const cost = costOf(r.code);
       const pct = pair ? (pair.sell - (cost || r.mid)) / (cost || r.mid) * 100 : 0;
-      const keepChip = chip(toneOf(pct, floor, target));
+      const tone = toneOf(pct, B.floorFor(settings, r.code), target);
+      const keepChip = chip(tone);
       const keep = pair ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%' : '·';
       const name = FACE.currencyName(r.code);
       const dragProps = readOnly || ql ? {} : {
@@ -61211,6 +61585,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }, pair ? fx(pair.sell) : 'No rate')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
         style: css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')
       }, keepHead), /*#__PURE__*/React.createElement("span", {
+        "data-tone": tone,
         style: keepChip
       }, keep))), /*#__PURE__*/React.createElement("div", {
         style: css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')
@@ -61245,6 +61620,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           textAlign: 'right'
         }
       }, /*#__PURE__*/React.createElement("span", {
+        "data-tone": tone,
         style: keepChip
       }, keep)), /*#__PURE__*/React.createElement("span", {
         style: css('display:flex;justify-content:center;')
@@ -61405,7 +61781,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       row: selRow,
       home: home,
       defPct: defPct,
-      floor: floor,
+      floor: B.floorFor(settings, selRow.code),
       target: target,
       stock: stock,
       low: settings.vaultFloors ? Number(settings.vaultFloors[selRow.code]) : 0,
@@ -61421,14 +61797,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const TAB_ICON = {
     board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4',
     site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18',
-    rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4'
+    rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4',
+    guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4'
   };
   function Rates({
     settings,
     setSettings,
     me,
     log,
-    serverRole
+    serverRole,
+    deals
   }) {
     const [tab, setTab] = useState('board');
     const [tip, setTip] = useState(null);
@@ -61458,7 +61836,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       window.addEventListener('keydown', esc);
       return () => window.removeEventListener('keydown', esc);
     }, []);
-    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates']];
+    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']];
     const setLocked = async on => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -61678,7 +62056,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       serverRole: serverRole,
       onToast: flash,
       locked: isLocked,
-      w: w
+      w: w,
+      onGoGuard: () => setTab('guard')
+    }), tab === 'guard' && /*#__PURE__*/React.createElement(window.CDOS.RatesGuard, {
+      settings: settings,
+      setSettings: setSettings,
+      me: me,
+      log: log,
+      serverRole: serverRole,
+      deals: deals,
+      locked: isLocked
     }))), tip && TIPS[tip] && /*#__PURE__*/React.createElement("div", {
       role: "dialog",
       "aria-label": TIPS[tip][0],
@@ -75317,7 +75704,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             setSettings: setSettings,
             me: me,
             log: log,
-            serverRole: srvUser ? srvUser.role : null
+            serverRole: srvUser ? srvUser.role : null,
+            deals: rows
           });
         case 'telegraph':
           return /*#__PURE__*/React.createElement(Telegraph, {

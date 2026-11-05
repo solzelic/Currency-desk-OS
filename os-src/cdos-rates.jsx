@@ -445,7 +445,8 @@
             const pair = r.mid ? B.deskPair(r.mid, r.spreadPct, r.spreadPct) : null;
             const cost = costOf(r.code);
             const pct = pair ? (pair.sell - (cost || r.mid)) / (cost || r.mid) * 100 : 0;
-            const keepChip = chip(toneOf(pct, floor, target));
+            const tone = toneOf(pct, B.floorFor(settings, r.code), target);
+            const keepChip = chip(tone);
             const keep = pair ? (pct < 0 ? '−' : '') + Math.abs(pct).toFixed(2) + '%' : '·';
             const name = FACE.currencyName(r.code);
             const dragProps = readOnly || ql ? {} : {
@@ -470,7 +471,7 @@
               <div style={css('display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px;margin-top:12px;')}>
                 <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>We buy</span><span style={css('font-family:var(--m);font-size:15px;')}>{pair ? fx(pair.buy) : 'No rate'}</span></span>
                 <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>We sell</span><span style={css('font-family:var(--m);font-size:15px;font-weight:700;')}>{pair ? fx(pair.sell) : 'No rate'}</span></span>
-                <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>{keepHead}</span><span style={keepChip}>{keep}</span></span>
+                <span><span style={css('display:block;font-family:var(--m);font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);')}>{keepHead}</span><span data-tone={tone} style={keepChip}>{keep}</span></span>
               </div>
               <div style={css('font-family:var(--m);font-size:10.5px;color:var(--faint);margin-top:9px;')}>{r.mid ? 'Market ' + fx(r.mid) + (r.pinned ? ' · pinned' : '') : 'No market rate'}</div>
             </div>);
@@ -482,7 +483,7 @@
               {hasCost && <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;')}>{cost ? fx(cost) : '·'}</span>}
               <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;')}>{pair ? fx(pair.buy) : '·'}</span>
               <span style={css('text-align:right;font-family:var(--m);font-size:14.5px;font-weight:700;')}>{pair ? fx(pair.sell) : '·'}</span>
-              <span style={{ textAlign: 'right' }}><span style={keepChip}>{keep}</span></span>
+              <span style={{ textAlign: 'right' }}><span data-tone={tone} style={keepChip}>{keep}</span></span>
               <span style={css('display:flex;justify-content:center;')}><Switch on={r.show} off={readOnly} onClick={() => toggle(r)} name={`${r.code} on the board`} /></span>
               {more(r, name)}
             </div>);
@@ -555,16 +556,16 @@
       {/* Over the whole Rates window, as the design's drawer is: the tab
           body animates in, and an animated box would hold the panel
           inside it. */}
-      {selRow && boardRef.current && ReactDOM.createPortal(<CurrencyPanel row={selRow} home={home} defPct={defPct} floor={floor} target={target} stock={stock}
+      {selRow && boardRef.current && ReactDOM.createPortal(<CurrencyPanel row={selRow} home={home} defPct={defPct} floor={B.floorFor(settings, selRow.code)} target={target} stock={stock}
         low={settings.vaultFloors ? Number(settings.vaultFloors[selRow.code]) : 0} readOnly={readOnly} cards={cards}
         onClose={closePanel} onSpread={pct => setSpread(selRow.code, pct)} onToggle={() => toggle(selRow)} />, boardRef.current.closest('[data-rates]') || document.body)}
     </div>);
   }
 
   /* The design's folder tabs. */
-  const TAB_ICON = { board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4', site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18', rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4' };
+  const TAB_ICON = { board: 'M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4', site: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0M3 12h18M12 3c2.5 2.6 2.5 15 0 18M12 3c-2.5 2.6-2.5 15 0 18', rules: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4', guard: 'M12 3.2 4 6.4v5.1c0 4.6 3.3 8.5 8 9.3 4.7-.8 8-4.7 8-9.3V6.4zM9.2 12.2 11.3 14.4 15 10.4' };
 
-  function Rates({ settings, setSettings, me, log, serverRole }) {
+  function Rates({ settings, setSettings, me, log, serverRole, deals }) {
     const [tab, setTab] = useState('board');
     const [tip, setTip] = useState(null);
     const [toast, setToast] = useState(null);
@@ -587,7 +588,7 @@
       window.addEventListener('keydown', esc);
       return () => window.removeEventListener('keydown', esc);
     }, []);
-    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates']];
+    const tabs = [['board', 'Board'], ['site', 'Website & window'], ['rules', 'Pricing & rates'], ['guard', 'Guardrails']];
     const setLocked = async (on) => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -659,7 +660,8 @@
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
           {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
-          {tab === 'rules' && <window.CDOS.RatesPricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} onToast={flash} locked={isLocked} w={w} />}
+          {tab === 'rules' && <window.CDOS.RatesPricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} onToast={flash} locked={isLocked} w={w} onGoGuard={() => setTab('guard')} />}
+          {tab === 'guard' && <window.CDOS.RatesGuard settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} deals={deals} locked={isLocked} />}
         </div>
       </div>
       {tip && TIPS[tip] && <div role="dialog" aria-label={TIPS[tip][0]} style={css('position:absolute;right:' + (cards ? '12px' : '22px') + ';bottom:' + (cards ? '12px' : '22px') + ';z-index:55;width:min(360px, calc(100% - 24px));padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--line);box-shadow:0 26px 60px -24px rgba(23,20,15,0.5);animation:rtIn .26s cubic-bezier(.22,1,.36,1) both;')}>

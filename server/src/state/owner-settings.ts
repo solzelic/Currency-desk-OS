@@ -69,7 +69,7 @@ export const OWNER_ONLY_GROUPS = {
   /* Pricing: a manager may change these, a teller may not. */
   rates: [...PRICING_KEYS],
   /* The owner's alone (Rates v2.5: guardrails are owner-only). */
-  guardrails: ["marginTargetPct", "marginFloorPct", "marginEnforce"],
+  guardrails: ["marginTargetPct", "marginFloorPct", "marginEnforce", "marginFloorByCcy"],
   till: ["requireCountOnHandoff"],
 } as const;
 

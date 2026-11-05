@@ -662,7 +662,10 @@
     const profitCad = +(spreadCadLive + (isCheque ? chequeFee : feeN)).toFixed(2);
     const marginBasis = isExchange ? (liveQuote ? (liveQuote.from === home ? +liveQuote.inputAmount : liveQuote.to === home ? +liveQuote.outputAmount : +liveQuote.inputAmount * +liveQuote.marketMid) : 0) : (isSend ? (pricing.midCadIn || 0) : inCadEquiv);
     const marginPct = marginBasis > 0 ? (profitCad / marginBasis) * 100 : 0;
-    const mFloor = settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5;
+    /* The deal currency's own floor when the owner set one (Guardrails,
+       floor by currency), else the shop's. */
+    const dealCcy = inCcy !== home ? inCcy : outCcy;
+    const mFloor = window.CDOS.ratesBoard && window.CDOS.ratesBoard.floorFor ? window.CDOS.ratesBoard.floorFor(settings, dealCcy) : (settings && settings.marginFloorPct != null ? +settings.marginFloorPct : 0.5);
     const mTarget = settings && settings.marginTargetPct != null ? +settings.marginTargetPct : 1.0;
     const mEnforce = (settings && settings.marginEnforce) || 'block';
     const belowFloor = amtN > 0 && (isSend || (isExchange && liveQuote)) && marginPct < mFloor;
