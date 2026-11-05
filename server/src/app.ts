@@ -212,6 +212,20 @@ export async function buildApp(
   /* The one exception: /api/public/ answers hold published rates only,
      the same for every visitor, and a route there may say "public" itself.
      Anything else under /api/public/ (a 404, an error) is still no-store. */
+  /* Who may show our pages inside theirs (clickjacking). Only CurrencyDesk,
+     except a shop's public rate page, /r/<address>, which a shop may show
+     in its own website (Rates v2.5, Take it further) and which holds
+     published rates only. HTML only; a policy a route set itself (the
+     logo's sandbox) is kept. */
+  app.addHook("onSend", async (req, reply) => {
+    if (!String(reply.getHeader("content-type") ?? "").startsWith("text/html") || reply.hasHeader("content-security-policy")) return;
+    if (/^\/r\/[^/?#]+(?:[?#]|$)/.test(req.url)) {
+      reply.header("content-security-policy", "frame-ancestors *");
+    } else {
+      reply.header("content-security-policy", "frame-ancestors 'self'");
+      reply.header("x-frame-options", "SAMEORIGIN");
+    }
+  });
   app.addHook("onSend", async (req, reply) => {
     const publicCache = req.url.startsWith("/api/public/")
       && String(reply.getHeader("cache-control") ?? "").startsWith("public,");
