@@ -10,7 +10,7 @@
     CD, Ic, STAFF, ROLE_CAPS, ROLE_SCOPE, seedRows, seedClients, perCadLive, crossRate, TODAY, fmt,
     computeFlags, computeAlerts, publishedBook, applyBook, bookSig,
     Ledger, Clients, Dashboard, TillDrawer, Audit, SettingsView, Calc, ReceiptModal, Tagged,
-    Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Telegraph, SignIn, LockDesk, Handover
+    Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Rates, Telegraph, SignIn, LockDesk, Handover
   } = window.CDOS;
 
   /* How the public site hands off into the product. The marketing front door
@@ -34,7 +34,7 @@
   })();
 
   const APPMETA = {
-    rates:     { title: 'Rate Board',      icon: 'rateboard', w: 1060, h: 660 },
+    rates:     { title: 'Rates',           icon: 'rateboard', w: 1180, h: 720 },
     telegraph: { title: 'Texts',           icon: 'telegraphbubble', w: 1120, h: 700 },
     ledger:    { title: 'Ledger',          icon: 'ledgerbook', w: 1040, h: 600 },
     transfers: { title: 'Transfers',       icon: 'transferarrows', w: 1040, h: 660 },
@@ -2414,7 +2414,10 @@
 
     function renderApp(id) {
       switch (baseApp(id)) {
-        case 'rates': return <iframe src={(window.__resources && window.__resources.rateBoard) ? window.__resources.rateBoard + '#embed' : 'YorkFX/YorkFX Rate Board.html?embed=1'} title="Rate Board"></iframe>;
+        /* Rates v2.5: the desk's own Rates app replaces the York FX Rate
+           Board page that was framed here. The page itself stays until the
+           old apps are retired. */
+        case 'rates': return <Rates settings={settings} setSettings={setSettings} me={me} log={log} serverRole={srvUser ? srvUser.role : null} />;
         case 'telegraph': return <Telegraph settings={settings} me={me} log={log} openSettings={() => openSettingsTab('texts')} onStartTx={planAllows('ledger') ? ((tref) => { window.__cdosTqPrefill = tref; openApp('ledger'); setNewDealSignal({ n: Date.now() }); }) : null} />;
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />
