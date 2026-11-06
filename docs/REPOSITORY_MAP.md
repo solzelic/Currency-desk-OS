@@ -117,6 +117,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   performs the action (`server/src/routes/step-up.ts`). An application
   table: listed in `migrations.ts`, in `server/src/db/schema.ts`, and run
   on PGlite from `server/src/db/index.ts`.
+- Migration `071_boc_daily_rates` adds `boc_daily_rates` (CD-146): the Bank
+  of Canada's daily rate by date and currency, Canadian dollars per unit,
+  pulled by `server/src/rates/boc.ts` and read by
+  `server/src/ledger/boc-daily.ts`. A ledger table beside
+  `nbs_middle_rates`: listed in `migrations.ts` only, not run on PGlite.
 - Migration `033_serbia_pack` seeds `pack-rs-v1` and does not edit an
   older pack. It lets `jurisdiction_packs.aggregation_hours` be null
   (null means the deals are not added together), adds

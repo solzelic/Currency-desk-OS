@@ -103,6 +103,9 @@ export const migrations: readonly Migration[] = [
   ["069_maker_checker_guard", "src/db/migrations/069_maker_checker_guard.sql"],
   /* 070 is the PIN step-up token table (CD-140, PR 2). */
   ["070_step_up_tokens", "src/db/migrations/070_step_up_tokens.sql"],
+  /* 071 is the Bank of Canada daily rate, by date (CD-146). A ledger
+     table, so not run on PGlite, which has no ledger. */
+  ["071_boc_daily_rates", "src/db/migrations/071_boc_daily_rates.sql"],
 ] as const;
 
 type MigrationReader = {
