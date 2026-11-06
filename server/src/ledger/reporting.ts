@@ -712,17 +712,23 @@ export class LedgerReportingService {
         [actor.tenantId, actor.legalEntityId, actor.branchId],
       );
       /* The desk's own published board — the only price on this server
-         anybody stood behind. `units_per_cad` is what it says, so the home
-         value of one unit is its reciprocal, and ONLY while the home
-         currency is the Canadian dollar: a rate quoted against somebody
-         else's money is not a valuation. A London entity gets nulls here
-         and its screens say the market value is unknown, which is true.
-         Same reasoning as boardUnitCostHome in vault-control.ts. */
-      const rates = await client.query(
-        `SELECT DISTINCT ON (currency) currency,units_per_cad
-           FROM ledger_rates
+         anybody stood behind: the branch's latest row in rate_boards,
+         which is what a publish (POST /api/rates/publish) and the market
+         sync write. Each row's `mid` is already in the shop's own home
+         currency (rates/market.ts, midsInHome), so a London entity is
+         valued in pounds, and a currency the board gives no mid has no
+         market value, which its screens say.
+
+         This used to read ledger_rates, valued only while the home
+         currency was the Canadian dollar. Nothing but the demo seed
+         writes that table, so a shop that published every day showed no
+         market value at all. boardUnitCostHome in vault-control.ts still
+         reads it for a cost fallback; that is a cost path, left for the
+         CTO's review. */
+      const board = await client.query(
+        `SELECT board_rows FROM rate_boards
           WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
-          ORDER BY currency,workspace_id`,
+          ORDER BY published_at DESC LIMIT 1`,
         [actor.tenantId, actor.legalEntityId, actor.branchId],
       );
       await client.query("COMMIT");
@@ -747,13 +753,20 @@ export class LedgerReportingService {
       put("vault", vault.rows);
 
       const unitHome = new Map<string, Decimal>();
-      if (home === "CAD") {
-        for (const item of rates.rows) {
-          const perCad = new Decimal(item.units_per_cad);
-          if (perCad.gt(0)) {
-            unitHome.set(String(item.currency).trim(), new Decimal(1).div(perCad));
-          }
+      /* board_rows is the publish's JSON: { CODE: { mid, show, ... } }. */
+      const boardRows = (board.rows[0]?.board_rows ?? {}) as Record<string, { mid?: unknown } | null>;
+      for (const [code, row] of Object.entries(boardRows)) {
+        const raw = row?.mid;
+        if (typeof raw !== "number" && typeof raw !== "string") continue;
+        let mid: Decimal;
+        try {
+          mid = new Decimal(raw);
+        } catch {
+          /* A mid that is not a number values nothing: that currency
+             reads as unknown, never as a guess. */
+          continue;
         }
+        if (mid.isFinite() && mid.gt(0)) unitHome.set(code.trim().toUpperCase(), mid);
       }
 
       /* One box, valued. Done here rather than on the screen so the rule
