@@ -16,6 +16,7 @@ import { canWriteSetting, CHEQUE_FEE_SCHEDULE_KEY } from "../auth/settingsWrite.
 import { feeFigureProblem } from "../ledger/chequeFee.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
+import { readDeskSettings } from "../rates/guardrails.js";
 import { BODY_LIMIT_BYTES, MAX_STATE_BYTES, WARN_AT_BYTES, tooLarge } from "../state/contract.js";
 import { describe as describeState, summarise } from "../state/shape.js";
 import {
@@ -24,6 +25,7 @@ import {
   OWNER_ONLY_REFUSAL,
   ownerOnlyEdits,
   ownsSettings,
+  pricingChanges,
 } from "../state/owner-settings.js";
 import { scrubHealthNumbers } from "../clients/id-document-types.js";
 import { keepStrSnapshot, presentStrSnapshot } from "../state/str-snapshot.js";
@@ -529,6 +531,25 @@ export function registerTenantStateRoutes(app: FastifyInstance, db: Db) {
           before: feeRows(prev ? prev[CHEQUE_FEE_SCHEDULE_KEY] : null),
           after: feeRows(state[CHEQUE_FEE_SCHEDULE_KEY]),
         },
+      });
+    }
+    /* A pricing change that landed (CD-82): who, their role, and each
+       pricing key or guardrail that moved, before and after. The desk
+       saves cdos_settings as JSON text or as an object; both are read.
+       The refusals above keep a teller out; this is the record of what
+       a manager or the owner did. An echo writes nothing. */
+    const priced = pricingChanges(
+      readDeskSettings(asRecord(current?.state)?.cdos_settings),
+      readDeskSettings(state.cdos_settings),
+    );
+    if (priced) {
+      await audit(db, {
+        tenantId: who.tenantId,
+        legalEntityId: who.legalEntityId,
+        branchId: who.branchId,
+        actorId: who.id,
+        action: "settings.pricing_changed",
+        detail: { staffId: who.staffId, name: who.name, role: who.role, before: priced.before, after: priced.after },
       });
     }
     /* Say how close they are while there is still room to act. The client

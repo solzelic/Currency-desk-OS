@@ -113,8 +113,8 @@ describe("a pricing change is audited", () => {
     expect(res.statusCode, res.body).toBe(200);
     const written = await rows();
     expect(written).toHaveLength(1);
-    expect(written[0].actorId).toBe(`${DEMO.tenantId}:r.haddad`);
-    expect(written[0].detail).toEqual({
+    expect(written[0]?.actorId).toBe(`${DEMO.tenantId}:r.haddad`);
+    expect(written[0]?.detail).toEqual({
       staffId: "r.haddad", name: expect.any(String), role: "branch_manager",
       before: { defaultFee: 2, spreads: { USD: 1.2 } },
       after: { defaultFee: 9, spreads: { USD: 2.4 } },
@@ -126,16 +126,18 @@ describe("a pricing change is audited", () => {
     expect(res.statusCode, res.body).toBe(200);
     const written = await rows();
     expect(written).toHaveLength(1);
-    expect(written[0].detail).toMatchObject({
+    expect(written[0]?.detail).toMatchObject({
       role: "administrator",
       before: { marginFloorPct: 0.5, marginFloorByCcy: {} },
       after: { marginFloorPct: 0, marginFloorByCcy: { USD: 0.1 } },
     });
   });
 
-  it("writes nothing for an echo of the stored values, or for a save that was refused", async () => {
-    expect((await put("r.haddad", { cdos_settings: { ...start }, cdos_theme: "dark" })).statusCode).toBe(200);
+  it("writes nothing for a save that was refused, or for an echo of the stored values", async () => {
+    /* The refusal first: it writes nothing, so version 1 is still current
+       for the echo that follows. */
     expect((await put("m.costa", { cdos_settings: { ...start, defaultFee: 9 } })).statusCode).toBe(403);
+    expect((await put("r.haddad", { cdos_settings: { ...start }, cdos_theme: "dark" })).statusCode).toBe(200);
     expect(await rows()).toHaveLength(0);
   });
 
@@ -144,6 +146,6 @@ describe("a pricing change is audited", () => {
     expect(res.statusCode, res.body).toBe(200);
     const written = await rows();
     expect(written).toHaveLength(1);
-    expect(written[0].detail).toMatchObject({ before: { defaultSpread: 1.5 }, after: { defaultSpread: 0.9 } });
+    expect(written[0]?.detail).toMatchObject({ before: { defaultSpread: 1.5 }, after: { defaultSpread: 0.9 } });
   });
 });
