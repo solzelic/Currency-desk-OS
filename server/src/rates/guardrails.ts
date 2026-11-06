@@ -9,7 +9,10 @@
    applies this rule at post.
 
    floorFor is the browser's rule (os-src/rates-board.js), ported; the
-   test file runs both on the same cases. */
+   test file runs both on the same cases. The margin is Decimal, never
+   floating point (engineering standard §3): in floats a deal exactly at
+   its floor can read as just under it. */
+import Decimal from "decimal.js";
 
 export type Enforce = "block" | "warn";
 
@@ -52,16 +55,25 @@ export function enforceOf(settings: Record<string, unknown>): Enforce {
 /* A deal's margin as the new-deal screen meters it: what the desk keeps
    (the booked spread plus the fee) over the deal's size in the home
    currency, in percent. A cross deal is sized at the market mid of what
-   the customer pays. Null when there is nothing to measure. */
+   the customer pays. Null when there is nothing to measure. The amounts
+   are the quote's stored decimal strings. */
 export function dealMarginPct(deal: {
   home: string; from: string; to: string;
-  inputAmount: string | number; outputAmount: string | number; marketMid: string | number;
-  spread: string | number; fee: string | number;
-}): number | null {
-  const basis = deal.from === deal.home ? Number(deal.inputAmount)
-    : deal.to === deal.home ? Number(deal.outputAmount)
-      : Number(deal.inputAmount) * Number(deal.marketMid);
-  if (!Number.isFinite(basis) || basis <= 0) return null;
-  const kept = Number(deal.spread) + Number(deal.fee);
-  return Number.isFinite(kept) ? (kept / basis) * 100 : null;
+  inputAmount: Decimal.Value; outputAmount: Decimal.Value; marketMid: Decimal.Value;
+  spread: Decimal.Value; fee: Decimal.Value;
+}): Decimal | null {
+  let basis: Decimal, kept: Decimal;
+  try {
+    basis = deal.from === deal.home ? new Decimal(deal.inputAmount)
+      : deal.to === deal.home ? new Decimal(deal.outputAmount)
+        : new Decimal(deal.inputAmount).mul(deal.marketMid);
+    kept = new Decimal(deal.spread).add(deal.fee);
+  } catch {
+    /* Not a number: there is no margin to measure, so the floor is not
+       checked. The ledger still checks the amounts themselves when the
+       deal posts. */
+    return null;
+  }
+  if (!basis.isFinite() || basis.lte(0) || !kept.isFinite()) return null;
+  return kept.div(basis).mul(100);
 }

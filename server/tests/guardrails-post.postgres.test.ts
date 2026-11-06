@@ -176,7 +176,9 @@ postgres("guardrails when a deal posts", () => {
     expect(res.statusCode, res.body).toBe(201);
     const [logged] = await belowFloorAudits();
     expect(logged).toMatchObject({ currency: "USD", floor: 5, enforce: "block", reason: "Regular client, matched the bank next door", given: "at_post" });
-    expect(logged.marginPct).toBeLessThan(5);
+    /* As measured, a decimal string, never a float (standard §3). */
+    expect(logged.marginPct).toMatch(/^\d+(\.\d+)?$/);
+    expect(Number(logged.marginPct)).toBeLessThan(5);
   });
 
   it("counts a manager's rate override and its reason", async () => {

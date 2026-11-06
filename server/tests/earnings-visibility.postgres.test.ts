@@ -18,7 +18,7 @@ let pool: pg.Pool, app: FastifyInstance, handle: DbHandle;
 const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
 const SHOP = [
   "earningsHome", "realizedPnlHome", "costOfSaleHome", "spreadCad", "unrealizedPnlHome",
-  "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost", "marketMid", "fromMid", "toMid",
+  "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost", "avgCostHome", "marketMid", "fromMid", "toMid",
 ];
 
 async function cookie(staffId: string) {
@@ -165,8 +165,9 @@ postgres("tellers keep the customer fee and do not receive shop earnings", () =>
     const ownerUsd = ownerPosition.currencies.find((row: { currency: string }) => row.currency === "USD");
     expect(tellerUsd.quantity).toMatch(/^\d+\.\d{2}$/);
     expect(tellerUsd.till.quantity).toMatch(/^\d+\.\d{2}$/);
-    lacks(tellerPosition, ["unrealizedPnlHome", "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost"]);
+    lacks(tellerPosition, ["unrealizedPnlHome", "costBasisHome", "marketValueHome", "marketUnitHome", "avgCost", "avgCostHome"]);
     expect(ownerUsd.costBasisHome).toEqual(expect.any(String));
+    expect(ownerUsd.avgCostHome).toEqual(expect.any(String));
     expect(ownerUsd.marketValueHome).toEqual(expect.any(String));
     expect(ownerUsd.marketUnitHome).toEqual(expect.any(String));
     expect(ownerUsd.till.avgCost).toEqual(expect.any(String));

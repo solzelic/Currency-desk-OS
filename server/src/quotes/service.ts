@@ -679,6 +679,10 @@ export class QuoteService {
   private async belowFloor(
     client: pg.PoolClient,
     actor: LedgerActor,
+    /* `q` and `o` are rows of quotes and quote_overrides as pg returns
+       them (untyped, as everywhere in this service); only their columns
+       named below are read, and each goes through Decimal or a string
+       comparison before it is trusted. */
     value: { q: Record<string, any>; o?: Record<string, any>; outputAmount: string; spreadCad: string },
     reasonAtPost?: string,
   ) {
@@ -693,7 +697,7 @@ export class QuoteService {
     });
     const currency = q.from_currency !== home ? q.from_currency : q.to_currency;
     const floor = floorFor(settings, currency);
-    if (marginPct === null || marginPct >= floor) return null;
+    if (marginPct === null || marginPct.gte(floor)) return null;
     const enforce = enforceOf(settings);
     const atPost = reasonAtPost?.trim() || null;
     const overrideReason = value.o?.reason ? String(value.o.reason) : null;
@@ -701,7 +705,8 @@ export class QuoteService {
     if (enforce === "block" && !reason) {
       throw new LedgerError("MARGIN_BELOW_FLOOR", `This deal keeps ${marginPct.toFixed(2)}%, under the ${floor.toFixed(1)}% floor for ${currency}. Give a reason to post it.`);
     }
-    return { currency, marginPct: Number(marginPct.toFixed(4)), floor, enforce, reason, given: atPost ? "at_post" : overrideReason ? "rate_override" : null };
+    /* marginPct is logged as a decimal string, as it was measured. */
+    return { currency, marginPct: marginPct.toDecimalPlaces(4).toString(), floor, enforce, reason, given: atPost ? "at_post" : overrideReason ? "rate_override" : null };
   }
 
   async post(
@@ -807,6 +812,8 @@ export class QuoteService {
         await this.pool.query(
           "INSERT INTO audit_events (id,tenant_id,legal_entity_id,branch_id,actor_id,action,detail) VALUES ($1,$2,$3,$4,$5,'deal.margin_below_floor',$6)",
           [randomUUID(), actor.tenantId, actor.legalEntityId, actor.branchId, actor.userId,
+            /* The posted transaction's reference, when the ledger's answer
+               carries one; the audit row is still written without it. */
             JSON.stringify({ quoteId, transactionRef: (posted as { transactionRef?: string }).transactionRef ?? null, ...belowFloor })],
         );
       }
