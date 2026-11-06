@@ -54,6 +54,11 @@
     publish: ['Publishing', 'Nothing you change here reaches customers until you press Publish. Then your website and window screen update together, and the change is logged with your name. Auto-publish does it for you every time the market refreshes.'],
   };
 
+  /* A read that may fail without stopping the screen, which still says
+     what failed and why (engineering standard §5: never swallow an error). */
+  function orElse(what, fallback) {
+    return (e) => { console.warn('[rates] ' + what + ' could not be read', e); return fallback; };
+  }
   async function getJson(url) {
     const res = await fetch(url, { credentials: 'same-origin' });
     if (!res.ok) throw new Error(`${url} answered ${res.status}`);
@@ -313,16 +318,23 @@
        the design does for a Rates plan. */
     useEffect(() => {
       let live = true;
-      Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(() => null)]).then(([pos, cm]) => {
+      Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(orElse('the cost method', null))]).then(([pos, cm]) => {
         if (!live) return;
+        /* The server's figures, shown as they come: what one unit cost
+           (avgCostHome) and the basis are the ledger's, never worked out
+           here (the browser renders cash, it never computes it). */
         const byCode = {};
         (pos.currencies || []).forEach(c => {
-          const qty = Number(c.quantity), basis = c.costBasisHome == null ? null : Number(c.costBasisHome);
-          byCode[c.currency] = { qty, basis, cost: basis !== null && qty > 0 ? basis / qty : null,
+          byCode[c.currency] = { qty: Number(c.quantity), basis: c.costBasisHome == null ? null : Number(c.costBasisHome), cost: c.avgCostHome == null ? null : Number(c.avgCostHome),
             vault: c.vault ? Number(c.vault.quantity) : 0, till: c.till ? Number(c.till.quantity) : 0 };
         });
         setStock({ hasCost: 'costBasisHome' in pos, byCode, method: cm && cm.method === 'fifo' ? 'First in, first out' : 'Average' });
-      }).catch(() => { if (live) setStock(null); });
+      }).catch((e) => {
+        /* A Rates plan is refused the ledger, and that is expected; the
+           board then shows the margin over the market. */
+        if (!/answered 403/.test(String(e && e.message))) console.warn('[rates] the desk\'s cash could not be read', e);
+        if (live) setStock(null);
+      });
       return () => { live = false; };
     }, []);
     /* A desk that has recorded no cost yet shows the margin over the
@@ -672,7 +684,7 @@
       const on = isLocked ? '1' : '0';
       let was = null;
       try { was = localStorage.getItem('yorkfx_rates_locked'); localStorage.setItem('yorkfx_rates_locked', on); } catch (e) { return; }
-      if (was !== on) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: on })); } catch (e) {} }
+      if (was !== on) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: on })); } catch (e) { console.warn('[rates] the top bar was not told about the lock', e); } }
     }, [isLocked]);
     useEffect(() => {
       const heard = (e) => {
@@ -758,5 +770,5 @@
       style: css('appearance:none;border:0;cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off && cur !== o ? '0.6' : '1') + ';font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;transition:background .2s ease,color .2s ease,box-shadow .2s ease;background:' + (cur === o ? '#fff' : 'transparent') + ';color:' + (cur === o ? 'var(--ink)' : 'var(--mute)') + ';box-shadow:' + (cur === o ? '0 1px 3px rgba(23,20,15,0.14)' : 'none') + ';') }));
   }
   const pill = (copied) => css('appearance:none;display:inline-flex;align-items:center;height:32px;padding:0 13px;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;transition:all .2s ease;border:1px solid ' + (copied ? 'var(--primary)' : 'var(--line)') + ';background:' + (copied ? 'var(--primary)' : '#fff') + ';color:' + (copied ? '#fff' : 'var(--ink)') + ';');
-  window.CDOS = Object.assign(window.CDOS || {}, { Rates, ratesUi: { css, Flag, track, Switch, useWidth, seg, pill, fx, ago, getJson, chip, toneOf, publishRows, PUBLISHERS } });
+  window.CDOS = Object.assign(window.CDOS || {}, { Rates, ratesUi: { css, Flag, track, Switch, useWidth, seg, pill, fx, ago, getJson, orElse, chip, toneOf, publishRows, PUBLISHERS } });
 })();

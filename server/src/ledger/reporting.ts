@@ -831,6 +831,10 @@ export class LedgerReportingService {
           vault: value(entry.vault, isHome, unit),
           unpricedQuantity: money(unpriced),
           costBasisHome: basis === null ? null : money(basis),
+          /* What one unit cost, till and vault together, so a screen shows
+             it rather than dividing two figures itself. Null for the home
+             currency, for a holding with no basis, and for nothing held. */
+          avgCostHome: isHome || basis === null || quantity.lte(0) ? null : basis.div(quantity).toFixed(COST_PLACES),
           marketUnitHome: unit === null ? null : unit.toFixed(COST_PLACES),
           marketValueHome: marketValue === null ? null : money(marketValue),
           unrealizedPnlHome:
@@ -909,6 +913,19 @@ export class LedgerReportingService {
             ? money(
                 currencies.reduce(
                   (total, item) => total.add(item.costBasisHome!),
+                  new Decimal(0),
+                ),
+              )
+            : null,
+        /* What selling everything held at the market would make, from the
+           server: the market value less the basis, only when both are
+           known for every currency held (so the `!` below never meets a
+           null). */
+        unrealizedPnlHome:
+          knownValue.length === currencies.length && knownBasis.length === currencies.length && currencies.length
+            ? money(
+                currencies.reduce(
+                  (total, item) => total.add(item.marketValueHome!).minus(item.costBasisHome!),
                   new Decimal(0),
                 ),
               )

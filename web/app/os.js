@@ -59660,7 +59660,10 @@ ${snap}`;
     }, [load]);
     useEffect(() => {
       if (!hasDeals) return;
-      getJson('/api/ledger/cost-method').then(m => setMethod(m && m.method), () => setMethod(null));
+      getJson('/api/ledger/cost-method').then(m => setMethod(m && m.method), e => {
+        console.warn('[rates] the cost method could not be read', e);
+        setMethod(null);
+      });
     }, [hasDeals]);
     const set = (patch, note) => {
       if (readOnly) return;
@@ -60958,9 +60961,9 @@ ${snap}`;
      this till, and its cost basis. A Rates plan is refused (the ledger is
      not in it); a role that cannot read the shop's earnings gets the
      quantities without the cost.
-   - The market value is the quantity at the market feed's mid in the
-     shop's own currency (GET /api/rates/market), the same market the Board
-     prices from.
+   - The market value and what selling now would make are the server's
+     (the ledger values a holding at the rates the shop last published),
+     never worked out here: the browser renders cash, it never computes it.
    - Running low: Settings vaultFloors, the Vault's reorder points.
    - Recent cash bought: GET /api/ledger/vault/movements.
    - The cost method: GET /api/ledger/cost-method.
@@ -60996,17 +60999,22 @@ ${snap}`;
   });
   const MOVERS = ['supervisor', 'branch_manager', 'administrator'];
 
-  /* The desk's position as the Rates app reads it: per currency the
-     quantity, vault and this till, and the cost when the server gives it. */
+  /* The desk's position as the Rates app reads it, the server's figures as
+     they come (the browser renders cash, it never computes it): per
+     currency the quantity, vault and this till, what one unit cost
+     (avgCostHome), the basis, the market value and what selling it now
+     would make; and the same totals for everything held. Null where the
+     server does not know, or does not show this role. */
   function readPosition(pos) {
+    const n = v => v == null ? null : Number(v);
     const byCode = {};
     (pos.currencies || []).forEach(c => {
-      const qty = Number(c.quantity),
-        basis = c.costBasisHome == null ? null : Number(c.costBasisHome);
       byCode[c.currency] = {
-        qty,
-        basis,
-        cost: basis !== null && qty > 0 ? basis / qty : null,
+        qty: Number(c.quantity),
+        basis: n(c.costBasisHome),
+        cost: n(c.avgCostHome),
+        market: n(c.marketValueHome),
+        gain: n(c.unrealizedPnlHome),
         vault: c.vault ? Number(c.vault.quantity) : 0,
         till: c.till ? Number(c.till.quantity) : 0
       };
@@ -61014,7 +61022,12 @@ ${snap}`;
     return {
       hasCost: 'costBasisHome' in pos,
       byCode,
-      unpriced: pos.unpricedCurrencies || []
+      unpriced: pos.unpricedCurrencies || [],
+      totals: {
+        basis: n(pos.costBasisHome),
+        market: n(pos.marketValueHome),
+        gain: n(pos.unrealizedPnlHome)
+      }
     };
   }
 
@@ -61037,9 +61050,12 @@ ${snap}`;
     const [market, setMarket] = useState({});
     const [position, setPosition] = useState(null);
     useEffect(() => {
-      Promise.all([getJson('/api/rates/market').catch(() => ({
+      const {
+        orElse
+      } = window.CDOS.ratesUi;
+      Promise.all([getJson('/api/rates/market').catch(orElse('the market', {
         mids: null
-      })), getJson('/api/rates').catch(() => ({
+      })), getJson('/api/rates').catch(orElse('the board', {
         board: null
       }))]).then(([f, r]) => {
         const mids = {};
@@ -61054,7 +61070,10 @@ ${snap}`;
         });
         setMarket(mids);
       });
-      getJson('/api/ledger/position').then(p => setPosition(readPosition(p)), () => setPosition(null));
+      getJson('/api/ledger/position').then(p => setPosition(readPosition(p)), e => {
+        console.warn('[rates] the desk\'s cash could not be read for the preview', e);
+        setPosition(null);
+      });
     }, [home]);
     const codes = (window.CDOS.CCY || []).filter(c => c && c !== home);
     const [code, setCode] = useState(first && codes.includes(first) ? first : '');
@@ -61323,9 +61342,9 @@ ${snap}`;
     const load = useCallback(async () => {
       try {
         const [pos, feed, rates] = await Promise.all([getJson('/api/ledger/position'), getJson('/api/rates/market'), getJson('/api/rates')]);
-        const [moves, cm] = await Promise.all([getJson('/api/ledger/vault/movements?limit=40').catch(() => ({
+        const [moves, cm] = await Promise.all([getJson('/api/ledger/vault/movements?limit=40').catch(ui.orElse('recent cash bought', {
           movements: []
-        })), getJson('/api/ledger/cost-method').catch(() => null)]);
+        })), getJson('/api/ledger/cost-method').catch(ui.orElse('the cost method', null))]);
         setData({
           loading: false,
           error: null,
@@ -61422,26 +61441,19 @@ ${snap}`;
       settings
     });
     const onBoard = new Set(drafted.filter(r => r.show).map(r => r.code));
-    /* The market the Board shows: a pinned rate, the feed, else the last publish. */
-    const midOf = {};
-    drafted.forEach(r => {
-      if (r.mid) midOf[r.code] = r.mid;
-    });
     const floors = settings.vaultFloors || {};
     const codes = Object.keys(pos.byCode).filter(c => c !== home).sort((a, b) => (onBoard.has(b) ? 1 : 0) - (onBoard.has(a) ? 1 : 0) || a.localeCompare(b));
     const lines = codes.map(c => {
       const h = pos.byCode[c];
-      const mid = midOf[c] || data.market[c] || null;
       const atCost = pos.hasCost && h.basis !== null ? h.basis : null;
-      const atMkt = mid ? h.qty * mid : null;
-      const gain = atCost !== null && atMkt !== null ? atMkt - atCost : null;
+      const atMkt = h.market;
+      const gain = h.gain;
       const low = num(floors[c]);
       const status = h.qty <= 0 ? 'none' : low > 0 && h.qty < low ? 'low' : 'ok';
       const fill = low > 0 ? Math.min(100, h.qty / (low * 2) * 100) : h.qty > 0 ? 60 : 0;
       return {
         c,
         h,
-        mid,
         atCost,
         atMkt,
         gain,
@@ -61449,10 +61461,11 @@ ${snap}`;
         fill
       };
     });
-    const sum = k => lines.every(l => l[k] !== null) ? lines.reduce((a, l) => a + l[k], 0) : null;
-    const totCost = pos.hasCost ? sum('atCost') : null,
-      totMkt = sum('atMkt'),
-      totGain = totCost !== null && totMkt !== null ? totMkt - totCost : null;
+    /* The totals are the server's, over everything held (the home
+       currency included), only when it knows every row. */
+    const totCost = pos.hasCost ? pos.totals.basis : null,
+      totMkt = pos.totals.market,
+      totGain = pos.totals.gain;
     const lowList = lines.filter(l => l.status !== 'ok').map(l => l.c);
     const big = (v, tone) => css('font-family:var(--m);font-size:20px;font-weight:700;margin-top:5px;color:' + tone + ';');
     const stats = [{
@@ -61463,7 +61476,7 @@ ${snap}`;
     }, {
       label: 'At market',
       value: totMkt !== null ? home + ' ' + money(totMkt) : '·',
-      note: 'What it is worth right now',
+      note: totMkt !== null ? 'At the rates you last published' : 'Not known for every currency held',
       vStyle: big(0, 'var(--primary-deep)')
     }, {
       label: 'If sold at market',
@@ -61708,6 +61721,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const TIPS = {
     publish: ['Publishing', 'Nothing you change here reaches customers until you press Publish. Then your website and window screen update together, and the change is logged with your name. Auto-publish does it for you every time the market refreshes.']
   };
+
+  /* A read that may fail without stopping the screen, which still says
+     what failed and why (engineering standard §5: never swallow an error). */
+  function orElse(what, fallback) {
+    return e => {
+      console.warn('[rates] ' + what + ' could not be read', e);
+      return fallback;
+    };
+  }
   async function getJson(url) {
     const res = await fetch(url, {
       credentials: 'same-origin'
@@ -62256,16 +62278,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        the design does for a Rates plan. */
     useEffect(() => {
       let live = true;
-      Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(() => null)]).then(([pos, cm]) => {
+      Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(orElse('the cost method', null))]).then(([pos, cm]) => {
         if (!live) return;
+        /* The server's figures, shown as they come: what one unit cost
+           (avgCostHome) and the basis are the ledger's, never worked out
+           here (the browser renders cash, it never computes it). */
         const byCode = {};
         (pos.currencies || []).forEach(c => {
-          const qty = Number(c.quantity),
-            basis = c.costBasisHome == null ? null : Number(c.costBasisHome);
           byCode[c.currency] = {
-            qty,
-            basis,
-            cost: basis !== null && qty > 0 ? basis / qty : null,
+            qty: Number(c.quantity),
+            basis: c.costBasisHome == null ? null : Number(c.costBasisHome),
+            cost: c.avgCostHome == null ? null : Number(c.avgCostHome),
             vault: c.vault ? Number(c.vault.quantity) : 0,
             till: c.till ? Number(c.till.quantity) : 0
           };
@@ -62275,7 +62298,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           byCode,
           method: cm && cm.method === 'fifo' ? 'First in, first out' : 'Average'
         });
-      }).catch(() => {
+      }).catch(e => {
+        /* A Rates plan is refused the ledger, and that is expected; the
+           board then shows the margin over the market. */
+        if (!/answered 403/.test(String(e && e.message))) console.warn('[rates] the desk\'s cash could not be read', e);
         if (live) setStock(null);
       });
       return () => {
@@ -63005,7 +63031,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             key: 'yorkfx_rates_locked',
             newValue: on
           }));
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[rates] the top bar was not told about the lock', e);
+        }
       }
     }, [isLocked]);
     useEffect(() => {
@@ -63348,6 +63376,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       fx,
       ago,
       getJson,
+      orElse,
       chip,
       toneOf,
       publishRows,
@@ -76318,7 +76347,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             key: 'yorkfx_rates_locked',
             newValue: next ? '1' : '0'
           }));
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[desk] the Rates app was not told about the lock', e);
+        }
       }
       if (next) {
         const snap = publishedBook();

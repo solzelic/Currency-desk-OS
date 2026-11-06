@@ -2104,7 +2104,7 @@
     const holdRates = (next, quiet) => {
       const was = (() => { try { return localStorage.getItem('yorkfx_rates_locked') === '1'; } catch (e) { return locked; } })();
       try { localStorage.setItem('yorkfx_rates_locked', next ? '1' : '0'); } catch (e) {}
-      if (was !== next) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: next ? '1' : '0' })); } catch (e) {} }
+      if (was !== next) { try { window.dispatchEvent(new StorageEvent('storage', { key: 'yorkfx_rates_locked', newValue: next ? '1' : '0' })); } catch (e) { console.warn('[desk] the Rates app was not told about the lock', e); } }
       if (next) {
         const snap = publishedBook();
         setLockedBook(snap);

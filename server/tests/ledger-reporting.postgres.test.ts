@@ -638,12 +638,16 @@ postgres("the ledger answers for its own headline figures", () => {
     // 10,000 USD at the board's 1.40
     expect(usd.marketValueHome).toBe("14000.00");
     expect(usd.unrealizedPnlHome).toBe("0.00");
+    /* What one unit cost, till and vault together, from the server, so
+       the Rates screens show it and never work it out themselves. */
+    expect(usd.avgCostHome).toBe("1.400000000000");
 
     /* The home currency is the unit everything else is measured in. It
        never carries an average and never shows a gain against itself. */
     const cad = held.currencies.find((c: { currency: string }) => c.currency === "CAD");
     expect(cad.costBasisHome).toBe("25000.00");
     expect(cad.unrealizedPnlHome).toBeNull();
+    expect(cad.avgCostHome).toBeNull();
 
     /* Each box carries its own headline, because the Vault screen is
        asking about the safe and the Cash Drawer about the drawer. The
@@ -655,6 +659,9 @@ postgres("the ledger answers for its own headline figures", () => {
       unrealizedPnlHome: "-240.00",
     });
     expect(held.tillTotals.marketValueHome).toBe("30600.00");
+    /* The branch's whole "if sold now", from the server: market less basis,
+       only when both are known for everything held. */
+    expect(held.unrealizedPnlHome).toBe("0.00");
   });
 
   /* The Vault used to print "Unrealized P&L +$4,813.65" over currencies
@@ -670,12 +677,14 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(usd.till.avgCost).toBeNull();
     expect(usd.unpricedQuantity).toBe("4000.00");
     expect(usd.costBasisHome).toBeNull();
+    expect(usd.avgCostHome).toBeNull();
     // the market half IS known, and saying so is not the same as pricing it
     expect(usd.marketValueHome).toBe("5600.00");
     expect(usd.unrealizedPnlHome).toBeNull();
 
     // and a total that would have to guess at one of its rows is not offered
     expect(held.costBasisHome).toBeNull();
+    expect(held.unrealizedPnlHome).toBeNull();
     expect(held.unpricedCurrencies).toEqual(["USD"]);
     expect(held.marketValueHome).toBe("30600.00");
   });
