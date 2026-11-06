@@ -10615,7 +10615,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         color: CD.mute
       }
-    }, "Units of each currency to keep on hand. Blank = the built-in reorder band."), /*#__PURE__*/React.createElement("div", {
+    }, "Units of each currency to keep on hand. Blank = no floor, so nothing is flagged."), /*#__PURE__*/React.createElement("div", {
       className: "grid grid-cols-3 gap-2"
     }, (CCY || []).filter(c => c !== base).map(c => {
       const floors = settings.vaultFloors || {};
@@ -19346,54 +19346,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   const ORDER_CCYS = () => DEFAULT_FC();
   const floatCcysOf = settings => settings && Array.isArray(settings.floatCcys) && settings.floatCcys.length ? settings.floatCcys : DEFAULT_FC();
 
-  /* reorder bands — min (reorder point) / target / max in UNITS */
-  const BANDS = {
-    CAD: {
-      min: 120000,
-      target: 250000,
-      max: 400000
-    },
-    USD: {
-      min: 40000,
-      target: 90000,
-      max: 150000
-    },
-    EUR: {
-      min: 18000,
-      target: 35000,
-      max: 60000
-    },
-    GBP: {
-      min: 8000,
-      target: 16000,
-      max: 28000
-    },
-    INR: {
-      min: 2500000,
-      target: 4500000,
-      max: 7000000
-    },
-    PHP: {
-      min: 1200000,
-      target: 2000000,
-      max: 3200000
-    },
-    CNY: {
-      min: 120000,
-      target: 240000,
-      max: 400000
-    },
-    MXN: {
-      min: 200000,
-      target: 400000,
-      max: 650000
-    },
-    AED: {
-      min: 35000,
-      target: 70000,
-      max: 120000
-    }
-  };
+  /* reorder bands — min (reorder point) / target / max in UNITS.
+     The table that sat here was York FX's own levels (CAD 120,000, USD
+     40,000 and so on), and it was every shop's fallback: a desk that had
+     set no floor saw Low stock on every currency it held, 40,000 CAD
+     included (CD-133). The Rates app's Cost & stock never read it. A
+     floor nobody set is no floor, so there is no table any more: the
+     owner's Settings are the only reorder points, as below. */
 
   /* Shifts are accountability records — who had which float on the desk —
      and they are this screen's own, kept on the device.
@@ -19412,32 +19371,29 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   }
 
   /* floors: the owner's Settings → Vault floors override the built-in reorder bands.
-     CAD uses the base-currency reserve floor; others use per-currency floors. */
+     CAD uses the base-currency reserve floor; others use per-currency floors.
+     There are no built-in bands any more (see above): 0 is no floor. */
   const floorOf = (c, settings) => {
     if (settings) {
       if (c === homeCcy() && settings.vaultReserveCad != null && settings.vaultReserveCad !== '' && +settings.vaultReserveCad > 0) return +settings.vaultReserveCad;
       const f = settings.vaultFloors && settings.vaultFloors[c];
       if (f != null && f !== '' && +f > 0) return +f;
     }
-    return BANDS[c] ? BANDS[c].min : 0;
+    return 0;
   };
   function bandStatus(c, units, settings) {
-    const b = BANDS[c] || {};
     const min = floorOf(c, settings);
-    if (!min && !b.max) return {
+    /* No floor set: not healthy, not low, nothing to say. The pill says
+       so rather than calling it either. */
+    if (!min) return {
       tone: CD.mute,
-      label: 'no band',
-      level: 'ok'
+      label: 'no floor',
+      level: 'none'
     };
-    if (min && units < min) return {
+    if (units < min) return {
       tone: CD.flag,
       label: 'below reorder',
       level: 'low'
-    };
-    if (b.max && units > b.max) return {
-      tone: CD.amber,
-      label: 'over-stocked',
-      level: 'high'
     };
     return {
       tone: CD.green,
@@ -19487,6 +19443,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
   function StatusPill({
     level
   }) {
+    /* 'high' (Overstocked) is kept for a maximum, though nothing sets one
+       today; 'none' is a currency with no floor. */
     const cfg = level === 'low' ? {
       bg: CD.flagSoft,
       fg: CD.flag,
@@ -19495,6 +19453,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       bg: CD.amberSoft,
       fg: CD.amber,
       t: 'Overstocked'
+    } : level === 'none' ? {
+      bg: CD.panel,
+      fg: CD.mute,
+      t: 'No floor set'
     } : {
       bg: CD.greenSoft,
       fg: CD.green,
@@ -21473,12 +21435,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const lowList = !lowAlert || !ledgerRows ? [] : ledgerRows.map(r => {
       const units = Number(r.quantity);
       const min = floorOf(r.c, settings);
-      const b = BANDS[r.c] || {};
       if (!min || units >= min) return null;
       return {
         c: r.c,
         units,
-        need: Math.max((b.target || min * 2) - units, 0)
+        need: Math.max(min * 2 - units, 0) /* an order that brings it to twice the floor, the fallback the bands always had */
       };
     }).filter(Boolean);
     const pending = (receipts || []).filter(o => o.status === 'pending').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
