@@ -20,6 +20,8 @@ import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval.js";
 import { startRatesSync } from "./rates/sync-schedule.js";
+import { BOC_SYNC_MS, startBocSync } from "./rates/boc.js";
+import { ledgerPoolFor } from "./ledger/routes.js";
 import { siteDomainRefreshIntervalMs, startSiteDomainRefresh } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
 import { runStagingPinReset } from "./staging/pin-reset.js";
@@ -158,6 +160,13 @@ export async function listenServer(app: FastifyInstance, db: Db): Promise<void> 
   if (process.env.RATES_SYNC !== "off") {
     warnRatesSyncMinutes(process.env.RATES_SYNC_MINUTES);
     startRatesSync(db, DEMO.branchId, ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES));
+  }
+  /* The Bank of Canada's daily rate (CD-146), on the same switch: the
+     compliance rate for the dollar lines, pulled four times a day and
+     kept by date. Only a server with a ledger has the table. */
+  if (process.env.RATES_SYNC !== "off") {
+    const ledger = ledgerPoolFor(app);
+    if (ledger) startBocSync(ledger, BOC_SYNC_MS);
   }
 }
 
