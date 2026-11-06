@@ -704,6 +704,77 @@ postgres("the ledger answers for its own headline figures", () => {
     expect(held.unvaluedCurrencies).toEqual(["EUR"]);
   });
 
+  /* What the desk publishes is what its cash is worth: the Rates app's Cost
+     & stock says "At the rates you last published". Publishing writes
+     rate_boards and nothing else, so that is where the value comes from.
+     ledger_rates is only ever filled by the demo seed, and a shop that
+     published every day still showed no market value on staging. */
+  describe("values cash at the board the branch last published", () => {
+    async function publish(id: string, rows: Record<string, { mid?: number; show?: boolean }>, secondsAgo: number, branchId = DEMO.branchId) {
+      await pool.query(
+        `INSERT INTO rate_boards (id,tenant_id,legal_entity_id,branch_id,buy_margin,sell_margin,board_rows,published_by,published_at)
+         VALUES ($1,$2,$3,$4,0.02,0.03,$5,'r.haddad',now() - make_interval(secs => $6))`,
+        [id, DEMO.tenantId, DEMO.legalEntityId, branchId, JSON.stringify(rows), secondsAgo],
+      );
+    }
+
+    it("with no rate table at all, at the latest publish", async () => {
+      await tillHolds("CAD", 25000);
+      await tillHolds("USD", 4000, "1.340000000000");
+      await pool.query("DELETE FROM ledger_rates");
+      await publish("board-old", { USD: { mid: 1.2, show: true } }, 600);
+      await publish("board-new", { USD: { mid: 1.5, show: true } }, 0);
+
+      const held = await position();
+      const usd = held.currencies.find((c: { currency: string }) => c.currency === "USD");
+      expect(usd.marketUnitHome).toBe("1.500000000000");
+      expect(usd.marketValueHome).toBe("6000.00");
+      expect(usd.unrealizedPnlHome).toBe("640.00");
+      expect(held.marketValueHome).toBe("31000.00");
+      expect(held.unvaluedCurrencies).toEqual([]);
+    });
+
+    it("not at another branch's board, and not for a row with no mid", async () => {
+      await tillHolds("CAD", 25000);
+      await tillHolds("EUR", 1000, "1.500000000000");
+      await pool.query("DELETE FROM ledger_rates");
+      await pool.query("DELETE FROM rate_boards");
+      await pool.query(
+        "INSERT INTO branches (id,tenant_id,legal_entity_id,name) VALUES ('br-other',$1,$2,'Other') ON CONFLICT DO NOTHING",
+        [DEMO.tenantId, DEMO.legalEntityId],
+      );
+      await publish("board-other", { EUR: { mid: 1.6, show: true } }, 0, "br-other");
+      await publish("board-mine", { EUR: { show: false } }, 0);
+
+      const held = await position();
+      const eur = held.currencies.find((c: { currency: string }) => c.currency === "EUR");
+      expect(eur.marketUnitHome).toBeNull();
+      expect(eur.marketValueHome).toBeNull();
+      expect(held.unvaluedCurrencies).toEqual(["EUR"]);
+    });
+
+    it("in the shop's own home currency, not only in Canadian dollars", async () => {
+      /* Home is the shop's jurisdiction pack's money (resolvePack). */
+      await pool.query("UPDATE legal_entities SET home_currency='GBP', jurisdiction_pack_id='pack-gb-v1' WHERE id=$1", [DEMO.legalEntityId]);
+      try {
+        await tillHolds("GBP", 10000);
+        await tillHolds("USD", 2000, "0.780000000000");
+        await pool.query("DELETE FROM ledger_rates");
+        /* A London board's mids are pounds per unit (rates/market.ts midsInHome). */
+        await publish("board-gbp", { USD: { mid: 0.8, show: true } }, 0);
+
+        const held = await position();
+        expect(held.homeCurrency).toBe("GBP");
+        const usd = held.currencies.find((c: { currency: string }) => c.currency === "USD");
+        expect(usd.marketUnitHome).toBe("0.800000000000");
+        expect(usd.marketValueHome).toBe("1600.00");
+        expect(usd.unrealizedPnlHome).toBe("40.00");
+      } finally {
+        await pool.query("UPDATE legal_entities SET home_currency='CAD', jurisdiction_pack_id='pack-ca-v1' WHERE id=$1", [DEMO.legalEntityId]);
+      }
+    });
+  });
+
   it("distinguishes a box holding nothing from a box nobody declared", async () => {
     const untouched = await position();
     expect(untouched.tillTracked).toBe(false);
