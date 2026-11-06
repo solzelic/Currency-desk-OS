@@ -103,6 +103,10 @@ async function tillHolds(currency: string, amount: number, avgCost?: string) {
 }
 
 /** The desk's own published board, in units per Canadian dollar. */
+/* Fills the ledger's own rate table (ledger_rates, units per CAD), which
+   older ledger paths read. The position's market value no longer reads
+   it: that comes from the board in rate_boards, which reset() publishes
+   with USD at 1.40. Both say the same rates here. */
 async function publishBoard(rows: Record<string, number>) {
   for (const [currency, unitsPerCad] of Object.entries(rows)) {
     await pool.query(
