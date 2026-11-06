@@ -96,6 +96,8 @@ export const migrations: readonly Migration[] = [
   ["066_window_screen_last_seen", "src/db/migrations/066_window_screen_last_seen.sql"],
   /* 067 is Lock rates on a branch (Rates v2.5). */
   ["067_branch_rates_lock", "src/db/migrations/067_branch_rates_lock.sql"],
+  /* 068 is a rate page's custom domain request (Rates v2.5, Take it further). */
+  ["068_rate_page_domain_request", "src/db/migrations/068_rate_page_domain_request.sql"],
 ] as const;
 
 type MigrationReader = {

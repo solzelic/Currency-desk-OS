@@ -486,9 +486,17 @@ export const shopRatePages = pgTable("shop_rate_pages", {
   /* The shop's logo, a checked PNG data URL, and when it changed (064). */
   logo: text("logo"),
   logoAt: timestamp("logo_at", { withTimezone: true }),
+  /* A request to put the page on the shop's own domain, while the team
+     works it (068). Null is none. */
+  domainRequest: jsonb("domain_request").$type<DomainRequest | null>(),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* Rates v2.5, Take it further: the domain a shop asked the team to point
+   at its rate page, where it was bought, when, who asked, and the
+   reference of the message in the team's inbox. */
+export type DomainRequest = { domain: string; registrar: string; at: string; by: string; reference: string };
 
 /* A day's opening hours, [opens, closes] in hours (9.5 is 9:30), or null
    for closed. A week is seven of them, Sunday first. */

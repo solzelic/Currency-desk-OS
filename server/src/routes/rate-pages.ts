@@ -35,6 +35,8 @@ import type { OpeningDay } from "../db/schema.js";
 import { forgetPublicAnswers, publishedRates, remembered, screenSighted } from "../rates/public-board.js";
 import { contentPatch, ensureRatePage, hoursFromWeek, resolvedContent, validWeek } from "../rates/rate-page.js";
 import { checkLogo, LOGO_HEADERS, logoBytes } from "../rates/logo.js";
+import { domainShape } from "./tenant.js";
+import { makeReference } from "./enquiries.js";
 
 /* Lowercase letters, digits and inner hyphens, 3 to 40 long. The database
    holds the same rule, so a direct write cannot store a bad address. */
@@ -243,6 +245,8 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
       live: page.live,
       logo: page.logo && page.logoAt ? `/api/rate-page/logo?v=${page.logoAt.getTime()}` : null,
       content: await resolvedContent(db, tenantId, shop.name, page.content ?? {}),
+      /* Take it further: a custom domain the team is pointing, or null. */
+      domainRequest: page.domainRequest ?? null,
       profile: { ...profile, week: validWeek(config.week), hours: Array.isArray(config.hours) ? config.hours : [], updatedAt: config.updatedAt ?? null },
     };
   };
@@ -381,6 +385,72 @@ export function registerRatePageRoutes(app: FastifyInstance, db: Db) {
     }
     forgetPublicAnswers();
     return next;
+  });
+
+  /* Rates v2.5, Take it further: put the rate page on the shop's own
+     domain. A person on the team points it for now (the handoff: a manual
+     team task, to be replaced by custom hostnames later). The request goes
+     to the team's inbox, the admin console's messages (an enquiry of kind
+     "contact"), and the desk shows it until the owner cancels it. One at a
+     time, the owner's alone; both are audited. */
+  const domainRequestBody = z.object({
+    domain: domainShape,
+    registrar: z.enum(["GoDaddy", "Namecheap", "Squarespace", "Other"]),
+  }).strict();
+
+  app.post("/api/rate-page/domain-request", async (req, reply) => {
+    const who = await staff(req, reply, db, "site:publish");
+    if (!who) return;
+    const parsed = domainRequestBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
+    const page = await ensureRatePage(db, who.tenantId);
+    if (page.domainRequest) return reply.code(409).send({ error: "already_requested", detail: "A domain request is already with the team. Cancel it to send another." });
+    const domain = parsed.data.domain.toLowerCase().replace(/^www\./, "");
+    const shop = (await db.select({ name: schema.tenants.name, siteConfig: schema.tenants.siteConfig }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0]!;
+    const requester = (await db.select({ email: schema.staffUsers.email }).from(schema.staffUsers).where(eq(schema.staffUsers.id, who.id)).limit(1))[0];
+    /* Where the team writes back: the owner's email, else the shop's
+       published one. The shop's id rides along either way. */
+    const email = (requester?.email || shop.siteConfig?.email || "").trim().toLowerCase();
+    const reference = makeReference();
+    await db.insert(schema.enquiries).values({
+      id: randomUUID(),
+      reference,
+      kind: "contact",
+      email,
+      name: shop.name,
+      tenantId: who.tenantId,
+      details: {
+        topic: "Custom domain for the rate page",
+        domain,
+        registrar: parsed.data.registrar,
+        shop: shop.name,
+        tenantId: who.tenantId,
+        address: page.slug,
+        requestedBy: who.staffId,
+      },
+    });
+    const request = { domain, registrar: parsed.data.registrar, at: new Date().toISOString(), by: who.staffId, reference };
+    await db.update(schema.shopRatePages).set({ domainRequest: request, updatedBy: who.id, updatedAt: new Date() }).where(eq(schema.shopRatePages.tenantId, who.tenantId));
+    await audit(db, who, "rate_page.domain_requested", { domain, registrar: parsed.data.registrar, reference });
+    return reply.code(201).send({ domainRequest: request });
+  });
+
+  app.delete("/api/rate-page/domain-request", async (req, reply) => {
+    const who = await staff(req, reply, db, "site:publish");
+    if (!who) return;
+    const page = await ensureRatePage(db, who.tenantId);
+    const was = page.domainRequest;
+    if (!was) return { domainRequest: null };
+    await db.update(schema.shopRatePages).set({ domainRequest: null, updatedBy: who.id, updatedAt: new Date() }).where(eq(schema.shopRatePages.tenantId, who.tenantId));
+    /* The team's message stays, and says the shop withdrew it. */
+    const message = (await db.select({ id: schema.enquiries.id, notes: schema.enquiries.notes }).from(schema.enquiries)
+      .where(and(eq(schema.enquiries.reference, was.reference), eq(schema.enquiries.tenantId, who.tenantId))).limit(1))[0];
+    if (message) {
+      const line = `Cancelled by the shop on ${new Date().toISOString().slice(0, 10)} (${who.staffId}).`;
+      await db.update(schema.enquiries).set({ notes: message.notes ? `${line}\n${message.notes}` : line }).where(eq(schema.enquiries.id, message.id));
+    }
+    await audit(db, who, "rate_page.domain_request_cancelled", { domain: was.domain, reference: was.reference });
+    return { domainRequest: null };
   });
 
   app.get("/api/window-screens", async (req, reply) => {

@@ -22,7 +22,9 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { refreshSiteDomains, SITES, warnSiteDomainRefreshFailure } from "../sites.js";
 
-const domainShape = z
+/* A domain a shop owns, as typed: yorkfx.ca. Also Rates' custom domain
+   request (routes/rate-pages.ts). */
+export const domainShape = z
   .string()
   .min(3)
   .max(253)
