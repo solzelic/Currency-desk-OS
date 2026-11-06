@@ -17,7 +17,48 @@
   function setWorkspace(id) { activeWorkspaceId = id || null; }
   function getWorkspace() { return activeWorkspaceId; }
 
-  async function request(path, options) {
+  /* A READ ALREADY ON ITS WAY IS NOT ASKED FOR AGAIN.
+
+     Several screens read the same thing as they open, each for itself:
+     Reports asked GET /api/ledger/summary six times over for the same day,
+     and position and the till session three and four times, all at once.
+     From Israel each is a round trip of about 240 ms to staging, and on the
+     free plan's shared CPU every one slows the rest. So a GET for the same
+     till and the same address as one still in flight shares its answer.
+     Each caller gets its own copy, so one screen sorting a list cannot
+     change another's.
+
+     Only while it is in flight: an answered read is never reused, so every
+     screen still gets the book as it stands when it asks. And a write (any
+     method but GET) forgets everything in flight, when it starts and when
+     it ends, so no read asked after a change can be handed an answer from
+     before it. */
+  var inFlight = {};
+  function copyOf(body) {
+    return typeof structuredClone === "function" ? structuredClone(body) : JSON.parse(JSON.stringify(body));
+  }
+  function request(path, options) {
+    var method = String((options && options.method) || "GET").toUpperCase();
+    if (method !== "GET") {
+      inFlight = {};
+      var write = send(path, options);
+      var forget = function () { inFlight = {}; };
+      write.then(forget, forget);
+      return write;
+    }
+    var named = options && options.headers && options.headers["x-workspace-id"];
+    var key = (named || activeWorkspaceId || "") + " " + path;
+    var shared = inFlight[key];
+    if (!shared) {
+      shared = send(path, options);
+      inFlight[key] = shared;
+      var done = function () { if (inFlight[key] === shared) delete inFlight[key]; };
+      shared.then(done, done);
+    }
+    return shared.then(copyOf);
+  }
+
+  async function send(path, options) {
     var response;
     /* Object.assign is shallow: a caller passing its own headers used to REPLACE
        the default object wholesale, so merging the two here is what keeps
