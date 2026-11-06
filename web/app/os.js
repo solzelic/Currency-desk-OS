@@ -2113,12 +2113,26 @@
      the wall-clock date and no threshold, and reportingLimit() reports "—"
      until the pack is known. A dash for half a second beats a Canadian
      10,000 on a UAE desk forever. */
+  /* Everything a screen derives from the facts above, as one string. */
+  const deskFactsSeen = () => JSON.stringify([_pack, _reports, _currencies, _rulesNotice, _idLines, _thresholds, _businessDate, _branchZone]);
   function useDeskFacts() {
     const [version, setVersion] = React.useState(0);
+    /* The facts this screen first rendered with. */
+    const [rendered] = React.useState(deskFactsSeen);
     React.useEffect(() => {
       let live = true;
+      /* The version moves only when a fact changed. Every screen asks for
+         the facts again as it mounts, and the answer is nearly always the
+         one the desk already had; moving the version on it made Reports,
+         the Dashboard, the Cash Drawer and the Vault read their figures,
+         wait for the facts, then read the same figures again. */
+      let seen = rendered;
       const bump = () => {
-        if (live) setVersion(v => v + 1);
+        if (!live) return;
+        const now = deskFactsSeen();
+        if (now === seen) return;
+        seen = now;
+        setVersion(v => v + 1);
       };
       window.addEventListener('cdos-jurisdiction', bump);
       window.addEventListener('cdos-thresholds', bump);
