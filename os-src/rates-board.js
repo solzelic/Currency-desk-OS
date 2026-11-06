@@ -203,5 +203,19 @@
     return shop !== null ? shop : 0.5;
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor };
+  /* What the Board already read (the board, the market, the desk's
+     position, the cost method), for Cost & stock to show instead of asking
+     again. A read is { value, askedAt }. It is reused for a minute after it
+     was asked, and not once cash bought was recorded after it was asked
+     (recordedAt): that delivery changed the position. Anything else, or a
+     clock that went backwards, is null, and the tab asks the server. */
+  var READ_REUSE_MS = 60000;
+  function reusableRead(read, now, recordedAt) {
+    if (!read || read.value === null || read.value === undefined) return null;
+    var age = now - read.askedAt;
+    if (!(age >= 0 && age < READ_REUSE_MS)) return null;
+    return read.askedAt > recordedAt ? read.value : null;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor, READ_REUSE_MS: READ_REUSE_MS, reusableRead: reusableRead };
 });
