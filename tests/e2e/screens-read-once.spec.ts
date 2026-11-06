@@ -9,7 +9,9 @@
    240 ms each from Israel. Now the version moves only when a fact changed.
 
    This opens those screens and fails on a ledger read asked again after
-   the same read was already answered. */
+   the same read was already answered. The Cash Drawer is not in it: it
+   re-reads the day's figures on purpose when its till session arrives
+   (cdos-till.jsx), which a desk with an open till always does. */
 import type { Page, Request } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
 
@@ -27,7 +29,7 @@ function watch(page: Page) {
   return { again, reset: () => answered.clear() };
 }
 
-test("Reports, the Dashboard, the Cash Drawer and the Vault read each figure once as they open", async ({ page }) => {
+test("Reports, the Dashboard and the Vault read each figure once as they open", async ({ page }) => {
   test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
   await page.setViewportSize({ width: 1440, height: 900 });
   await signInAtDesk(page, "r.haddad");
@@ -36,7 +38,7 @@ test("Reports, the Dashboard, the Cash Drawer and the Vault read each figure onc
   await page.waitForTimeout(2_000);
   const seen = watch(page);
   const found: Record<string, string[]> = {};
-  for (const app of ["reports", "dashboard", "till", "vault"]) {
+  for (const app of ["reports", "dashboard", "vault"]) {
     seen.reset();
     const before = seen.again.length;
     await page.evaluate((id) => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp(id), app);
@@ -46,5 +48,5 @@ test("Reports, the Dashboard, the Cash Drawer and the Vault read each figure onc
     await page.locator(".win.show.active .win-close").first().click();
     await page.waitForTimeout(300);
   }
-  expect(found).toEqual({ reports: [], dashboard: [], till: [], vault: [] });
+  expect(found).toEqual({ reports: [], dashboard: [], vault: [] });
 });
