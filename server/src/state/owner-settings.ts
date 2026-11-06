@@ -244,3 +244,27 @@ export function keepOwnerFields(
   }
   return next;
 }
+
+/* What a pricing change is audited over (CD-82, GitHub #567): the
+   manager's pricing keys and the owner's guardrails. A teller is refused
+   above; this is the record of what a manager or the owner did. */
+export const AUDITED_PRICING_KEYS = [...PRICING_KEYS, ...OWNER_ONLY_GROUPS.guardrails] as const;
+
+/* Each audited key whose value moved between two copies of
+   cdos_settings (compared with stable(), above, so key order in an
+   object is not a change), with its value before and after. A key one side does
+   not have is left out of that side. Null when nothing moved, so an
+   echo of the stored values writes no row. */
+export function pricingChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): { before: Record<string, unknown>; after: Record<string, unknown> } | null {
+  const was: Record<string, unknown> = {};
+  const now: Record<string, unknown> = {};
+  for (const key of AUDITED_PRICING_KEYS) {
+    if (stable(before[key]) === stable(after[key])) continue;
+    if (key in before) was[key] = before[key];
+    if (key in after) now[key] = after[key];
+  }
+  return Object.keys(was).length || Object.keys(now).length ? { before: was, after: now } : null;
+}
