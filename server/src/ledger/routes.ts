@@ -386,7 +386,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     const status =
       error.code === "AUTHENTICATION_REQUIRED" || error.code === "WRONG_PIN" ? 401
         : error.code === "PIN_LOCKED" ? 429
-        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" || error.code === "HANDOVER_APPROVAL_REQUIRED" ? 403
+        : error.code === "AUTHORIZATION_DENIED" || error.code === "SCOPE_DENIED" || error.code === "HANDOVER_APPROVAL_REQUIRED" || error.code === "SELF_APPROVAL" ? 403
           : error.code === "CUSTOMER_NOT_FOUND" ||
               error.code === "TRANSACTION_NOT_FOUND" ||
               error.code === "LEGAL_ENTITY_NOT_FOUND" ||
