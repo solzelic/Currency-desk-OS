@@ -81,7 +81,7 @@ describe("migration 056 is registered after 055", () => {
     expect(ids.indexOf(ID)).toBe(ids.indexOf("055_structuring_ack") + 1);
     expect(ids.indexOf("057_handover_audit_fields")).toBe(ids.indexOf(ID) + 1);
     expect(ids.indexOf("058_handover_approver_and_variances")).toBe(ids.indexOf("057_handover_audit_fields") + 1);
-    expect(ids.at(-1)).toBe("068_rate_page_domain_request");
+    expect(ids.at(-1)).toBe("069_maker_checker_guard");
     const sql = await readFile(new URL(`../src/db/migrations/${ID}.sql`, import.meta.url), "utf8");
     expect(sql).toMatch(/ADD COLUMN is_test_shop boolean NOT NULL DEFAULT false/);
     expect(sql).not.toMatch(/if not exists/i);
