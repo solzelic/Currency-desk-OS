@@ -178,6 +178,11 @@ postgres("a desk with no country pack uses the baseline", () => {
           idempotencyKey: "packless-post",
           purpose: "Travel",
           sourceOfFunds: "Cash",
+          /* A 0.01 deal keeps nothing once the spread is rounded, so it is
+             under the margin floor (Rates v2.5 guardrails, checked at post).
+             This test is about identification, so the deal carries a reason
+             and reaches the compliance check. */
+          marginOverrideReason: "A one-cent test deal",
         },
       }),
     );
