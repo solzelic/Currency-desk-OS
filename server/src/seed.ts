@@ -136,3 +136,16 @@ if (process.argv[1] && process.argv[1].endsWith("seed.ts")) {
   console.log("seeded demo tenant (password: %s)", DEMO.password);
   await handle.close();
 }
+
+/* A test shop. Transfers are off for a real shop until transfer records
+   are kept on the server (CD-111, GitHub #599), and on for a test shop:
+   the staging demo and the staging door's shops (server/src/staging),
+   and the shops of a test harness (the seam server, the server tests),
+   which call this. Production never does: seed() leaves the flag alone. */
+export async function markTestShop(
+  db: Awaited<ReturnType<typeof createDb>>["db"],
+  tenantId: string = DEMO.tenantId,
+  on = true,
+): Promise<void> {
+  await db.update(schema.tenants).set({ isTestShop: on }).where(eq(schema.tenants.id, tenantId));
+}
