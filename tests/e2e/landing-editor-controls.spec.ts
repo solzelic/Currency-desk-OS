@@ -39,7 +39,9 @@ for (const [name, width] of [["desktop", 1280], ["phone", 390]] as const) {
 }
 
 test("the York FX storefront's photos carry none either", async ({ page }) => {
-  await page.goto("/YorkFX/YorkFX%20Homepage.html");
+  /* The Services page draws three photos with the storefront's own copy
+     of the element (YorkFX/image-slot.js); the homepage draws none. */
+  await page.goto("/YorkFX/YorkFX%20Services.html");
   await expect(page.locator("image-slot").first()).toBeAttached({ timeout: 20_000 });
   for (const slot of await slotButtons(page)) expect(slot.buttons, slot.id).toEqual([]);
 });
