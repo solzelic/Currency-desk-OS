@@ -35,7 +35,9 @@ function pairsOf(home: string, shape: Shape): string[] {
 function quoteDirectionExpression(source: string): string {
   const at = source.indexOf("Backend.createQuote({");
   if (at < 0) throw new Error("createQuote call missing");
-  const match = source.slice(at, at + 700).match(/direction:\s*([^,\n]+)/);
+  /* The expression ends at the next comma, line end or closing brace: the
+     shipped os.js is one line per file and drops the trailing comma. */
+  const match = source.slice(at, at + 700).match(/direction:\s*([^,\n}]+)/);
   const found = match && match[1];
   if (!found) throw new Error("direction expression missing");
   return found.trim();

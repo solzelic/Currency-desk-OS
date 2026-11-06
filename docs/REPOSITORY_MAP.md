@@ -50,6 +50,14 @@ say.
 `npm run build` runs all three build steps. After any source edit, rebuild and
 commit the generated output — CI diffs `web/` against a fresh build.
 
+The shipped `web/app/os.js` has no whitespace or comments: `scripts/build-os.mjs`
+runs each compiled script through terser (pinned exactly), whitespace and
+comments only, no renaming. Each script is one line under its
+`/* ---- path ---- */` marker. Two branches that change different `os-src`
+files still merge; two that change the same file conflict on its line in
+`os.js`, and the fix is `npm run build:os` after merging the sources. Read
+the code, and its comments, in `os-src/`.
+
 ## Route map
 
 | Route | Serves |

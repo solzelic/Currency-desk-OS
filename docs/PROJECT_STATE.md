@@ -38,7 +38,8 @@ layers — they are not blockers for proving this core loop.
 - **The ledger** — server-side Postgres, `server/src/ledger/` + migrations.
   Append-only; the single authoritative book.
 - **The OS** — buildless React in `os-src/` + shell `CurrencyDesk OS.html`,
-  compiled ahead of time to `web/app/` by `scripts/build-os.mjs`.
+  compiled ahead of time to `web/app/` by `scripts/build-os.mjs`, which
+  ships `os.js` without whitespace or comments (1.9 MB, was 3.1 MB).
   Production `/login` and `/app` serve that compiled shell
   (`/web/app/os.js`). `STATIC_INDEX` names the uncompiled shell as a
   fallback only; it does not override compiled output.

@@ -15,7 +15,10 @@ function text(path: string) {
 describe("teller sentences", () => {
   it("keeps the in-progress sentence", () => {
     for (const path of ["os-src/cdos-backend.js", "web/app/os.js"]) {
-      expect(text(path), path).toContain(`IDEMPOTENCY_IN_PROGRESS: "${inProgress}"`);
+      /* The shipped os.js has no space after the colon (whitespace is
+         stripped); the code and its sentence are the same. */
+      const exact = inProgress.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      expect(text(path), path).toMatch(new RegExp(`IDEMPOTENCY_IN_PROGRESS:\\s*"${exact}"`));
     }
   });
 
