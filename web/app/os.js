@@ -2717,7 +2717,14 @@
       c: CD.mute
     }), back, 'ghost')))), document.body);
   }
+
+  /* Transfers are off for a real shop until transfer records are kept on
+     the server (CD-111): the server refuses them, and the desk says this
+     where the app was and in Settings. The same sentence as the server's
+     TRANSFERS_OFF_MESSAGE (server/src/ledger/transfers-gate.ts). */
+  const TRANSFERS_OFF_NOTE = 'Transfers are off for this shop until transfer records are kept on the server.';
   window.CDOS = Object.assign(window.CDOS || {}, {
+    TRANSFERS_OFF_NOTE,
     CD,
     ICONS,
     Ic,
@@ -8457,6 +8464,7 @@ if (typeof module !== "undefined" && module.exports) {
     settings,
     setSettings,
     me,
+    transfersOn,
     serverRole,
     serverStaffId,
     log,
@@ -10748,7 +10756,20 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       icon: "globe",
       title: "Transfers",
       sub: "Cross-border money movement \u2014 the reporting line and desk defaults for the Transfers app."
-    }), /*#__PURE__*/React.createElement("div", {
+    }), transfersOn === false && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "flex items-start gap-2 mb-3 px-3 py-2.5",
+      style: {
+        background: 'var(--cd-chip)',
+        borderRadius: 10,
+        fontSize: 12.5,
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "globe",
+      s: 14,
+      c: CD.mute
+    }), /*#__PURE__*/React.createElement("span", null, window.CDOS.TRANSFERS_OFF_NOTE, " The settings below stay for when they are.")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1",
       style: {
         color: CD.faint,
@@ -47508,6 +47529,10 @@ ${(filing.map || []).map(blockHTML).join('')}
      desk actually created. Filings, aggregation and the header count read
      through here, so the sample never becomes a report. */
   const loadTransfers = () => {
+    /* Transfers are off for a real shop (CD-111): nothing the browser
+       still holds is a wire the desk can act on, so no cluster is built
+       from it. The entries themselves are left where they are. */
+    if (window.CDOS.transfersAvailable === false) return [];
     let all = [];
     try {
       all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
@@ -76757,6 +76782,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // (e.g. enterDesktop's deferred openApp) capture an initialized binding
     // rather than hitting the temporal dead zone.
     const activePlan = settings && settings.billingPlan || 'premium';
+    /* Transfers are off for a real shop (CD-111): the server says so at
+       sign-in (transfersAvailable) and refuses the routes. Until the
+       server has answered, the app stays, as it did before. */
+    const transfersOn = !srvUser || srvUser.transfersAvailable !== false;
+    useEffect(() => {
+      window.CDOS.transfersAvailable = transfersOn;
+    }, [transfersOn]);
     const planAllows = id => {
       if (id === 'settings' || id === 'store') return true;
       if (activePlan === 'premium') return true;
@@ -76940,7 +76972,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     })();
     orderedRef.current = orderedApps;
     // the dock only ever shows installed apps; removed ones live in the store now
-    const visibleApps = orderedApps.filter(id => (!hiddenApps.includes(id) || removingApps.includes(id)) && planAllows(id));
+    const visibleApps = orderedApps.filter(id => (!hiddenApps.includes(id) || removingApps.includes(id)) && planAllows(id) && (id !== 'transfers' || transfersOn));
 
     // ---- Store sections ----
     const mkApp = id => ({
@@ -77059,6 +77091,27 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             onTillChanged: syncTillFromServer
           });
         case 'transfers':
+          if (!transfersOn) return /*#__PURE__*/React.createElement("div", {
+            style: {
+              padding: 28,
+              maxWidth: 560
+            },
+            role: "status"
+          }, /*#__PURE__*/React.createElement("h2", {
+            style: {
+              margin: 0,
+              fontSize: 20,
+              fontWeight: 800,
+              color: CD.ink
+            }
+          }, "Transfers are off for this shop"), /*#__PURE__*/React.createElement("p", {
+            style: {
+              margin: '10px 0 0',
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: CD.mute
+            }
+          }, window.CDOS.TRANSFERS_OFF_NOTE, " Nothing already recorded on this computer has been removed."));
           return /*#__PURE__*/React.createElement(Transfers, {
             rows,
             setRows,
@@ -77225,6 +77278,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             settings,
             setSettings,
             me,
+            transfersOn,
             serverRole: srvUser && srvUser.role,
             serverStaffId: srvUser && srvUser.staffId,
             log,

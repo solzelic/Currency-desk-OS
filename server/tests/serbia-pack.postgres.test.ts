@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
+import { markTestShop } from "../src/seed.js";
 import {
   SERBIA_AIRSIDE_REQUIRED,
   SERBIA_RECEIPT_IDENTITY,
@@ -109,6 +110,10 @@ postgres("Serbia pack-rs-v1", () => {
        DO UPDATE SET available_amount = EXCLUDED.available_amount`,
       [`tnt-${desk.slug}`, `le-${desk.slug}`, `br-${desk.slug}-main`, `ws-${desk.slug}-till-01`],
     );
+    /* The desk sends transfers below; a sign-up shop is a real shop, and
+       a real shop cannot (CD-111). Marked as a test shop, as the staging
+       door marks the shops it makes. */
+    await markTestShop(handle.db, `tnt-${desk.slug}`);
   });
 
   async function appSafeSignup() {

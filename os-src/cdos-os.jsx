@@ -2347,6 +2347,11 @@
     // (e.g. enterDesktop's deferred openApp) capture an initialized binding
     // rather than hitting the temporal dead zone.
     const activePlan = (settings && settings.billingPlan) || 'premium';
+    /* Transfers are off for a real shop (CD-111): the server says so at
+       sign-in (transfersAvailable) and refuses the routes. Until the
+       server has answered, the app stays, as it did before. */
+    const transfersOn = !srvUser || srvUser.transfersAvailable !== false;
+    useEffect(() => { window.CDOS.transfersAvailable = transfersOn; }, [transfersOn]);
     const planAllows = (id) => {
       if (id === 'settings' || id === 'store') return true;
       if (activePlan === 'premium') return true;
@@ -2435,7 +2440,7 @@
     })();
     orderedRef.current = orderedApps;
     // the dock only ever shows installed apps; removed ones live in the store now
-    const visibleApps = orderedApps.filter(id => (!hiddenApps.includes(id) || removingApps.includes(id)) && planAllows(id));
+    const visibleApps = orderedApps.filter(id => (!hiddenApps.includes(id) || removingApps.includes(id)) && planAllows(id) && (id !== 'transfers' || transfersOn));
 
     // ---- Store sections ----
     const mkApp = (id) => ({ id, title: APPMETA[id].title, icon: APPMETA[id].icon, desc: (STORE_DESC && STORE_DESC[id]) || '' });
@@ -2453,7 +2458,10 @@
         case 'ledger': return id !== 'ledger'
           ? <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: (ledgerParams[id] || {}).client || null, setClient: () => {}, openLedgerForClient, openLedgerForRefs, openClientProfile, focusSignal: ((ledgerParams[id] || {}).focusRefs) ? { refs: ledgerParams[id].focusRefs, label: ledgerParams[id].focusLabel, n: id } : undefined, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />
           : <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
-        case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
+        case 'transfers': if (!transfersOn) return (<div style={{ padding: 28, maxWidth: 560 }} role="status">
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: CD.ink }}>Transfers are off for this shop</h2>
+          <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.6, color: CD.mute }}>{window.CDOS.TRANSFERS_OFF_NOTE} Nothing already recorded on this computer has been removed.</p>
+        </div>); return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig, serverBacked: !!srvUser, onTillChanged: syncTillFromServer, onRefreshCheques: refreshCheques }} />;
         case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
@@ -2462,7 +2470,7 @@
         case 'vault': return <Vault rows={rows} me={me} log={log} baseline={baseline} receipts={receipts} setReceipts={setReceipts} settings={settings} setSettings={setSettings} branches={branches} station={station} onMoveCash={setMoveCash} onOpenBranches={() => openApp('branches')} moves={branchMoves} onOrderReceived={creditVault} onIssueTill={issueToTill} serverBacked={!!srvUser} vaultTracked={vaultTracked} onOpenVaultPosition={openVaultPosition} cashVersion={cashVersion} />;
         case 'branches': return <Branches me={me} log={log} branches={branches} setBranches={setBranches} moves={branchMoves} setMoves={setBranchMoves} station={station} setStation={setStation} gate={tillGate} settings={settings} setSettings={setSettings} onOpenTill={() => openApp('till')} onMove={srvUser ? doOsMove : null} />;
         case 'audit': return <Audit audit={audit} settings={settings} />;
-        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, serverRole: srvUser && srvUser.role, serverStaffId: srvUser && srvUser.staffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin }} />;
+        case 'settings': return <SettingsView {...{ perms, setPerms, settings, setSettings, me, transfersOn, serverRole: srvUser && srvUser.role, serverStaffId: srvUser && srvUser.staffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump: settingsJump, rows, setRows, clients, setClients, onOpenLedger: () => openApp('ledger'), askPin, reqPin }} />;
         case 'calc': return <Calc settings={settings} />;
         case 'loan': return <LoanCalc />;
         case 'assistant': return <Assistant rows={rows} clients={clients} alerts={alerts} me={me} />;

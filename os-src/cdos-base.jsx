@@ -1388,7 +1388,13 @@
   }
 
 
+  /* Transfers are off for a real shop until transfer records are kept on
+     the server (CD-111): the server refuses them, and the desk says this
+     where the app was and in Settings. The same sentence as the server's
+     TRANSFERS_OFF_MESSAGE (server/src/ledger/transfers-gate.ts). */
+  const TRANSFERS_OFF_NOTE = 'Transfers are off for this shop until transfer records are kept on the server.';
   window.CDOS = Object.assign(window.CDOS || {}, {
+    TRANSFERS_OFF_NOTE,
     CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     COUNTER_CASH, counterCashIn, counterCashOut, dealHome, sumDealHome,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },
