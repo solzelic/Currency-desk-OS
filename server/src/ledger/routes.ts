@@ -10,6 +10,7 @@ import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/ses
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
+import { assertTransfersAvailable } from "./transfers-gate.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
   LedgerProvisioningService,
@@ -1509,10 +1510,20 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     });
   }
 
-  obligationPost("/api/ledger/remittances/send", remittanceSendBody, (actor, input) =>
-    obligations.remittanceSend(actor, input));
-  obligationPost("/api/ledger/remittances/receive", remittanceReceiveBody, (actor, input) =>
-    obligations.remittanceReceive(actor, input));
+  /* Transfers are off for a real shop (CD-111): refused here, before
+     the service reads the idempotency row or writes anything, so a
+     replay of the same key is refused the same way. A test shop is let
+     through. Settling or writing off an obligation below is not a
+     transfer and is not gated. */
+  const unlessTransfersOff = <T,>(post: (actor: LedgerActor, input: T) => Promise<unknown>) =>
+    async (actor: LedgerActor, input: T) => {
+      await assertTransfersAvailable(db, actor.tenantId);
+      return post(actor, input);
+    };
+  obligationPost("/api/ledger/remittances/send", remittanceSendBody, unlessTransfersOff((actor, input) =>
+    obligations.remittanceSend(actor, input)));
+  obligationPost("/api/ledger/remittances/receive", remittanceReceiveBody, unlessTransfersOff((actor, input) =>
+    obligations.remittanceReceive(actor, input)));
   obligationPost("/api/ledger/bill-payments", billPaymentBody, (actor, input) =>
     obligations.billPayment(actor, input));
   obligationPost("/api/ledger/money-orders", moneyOrderBody, (actor, input) =>

@@ -62,6 +62,16 @@ async function skipTour(page: Page) {
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
 }
 
+
+/* A shop made by sign-up is a real shop, and a real shop cannot send a
+   transfer (CD-111). These specs send one, so the shop is marked as a
+   test shop once it is signed in, as the staging door marks the shops it
+   makes. */
+async function markTestShop(page: Page): Promise<void> {
+  const me = (await page.evaluate(() => fetch("/api/auth/me").then((r) => r.json()))) as { user: { tenantId: string } };
+  await pool.query("UPDATE tenants SET is_test_shop = true WHERE id = $1", [me.user.tenantId]);
+}
+
 test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer line is more than £800", async ({ page }) => {
   test.setTimeout(180_000);
   await pool.query(
@@ -89,6 +99,7 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
   await page.goto("/app");
   await landOnDesktop(page);
   await skipTour(page);
+  await markTestShop(page);
 
   await expect.poll(async () => {
     const body = await page.evaluate(() => fetch("/api/ledger/jurisdiction").then((r) => r.json()));
@@ -106,6 +117,7 @@ test("a new GB desk opens on pack-gb-v2, an older desk opts in, and the transfer
   await page.reload();
   await landOnDesktop(page);
   await skipTour(page);
+  await markTestShop(page);
 
   await openComplianceSettings(page, /Large cash \/ reportable threshold/i);
   const adopt = page.getByTestId("adopt-uk-pack");

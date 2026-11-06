@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
+import { markTestShop } from "../src/seed.js";
 import { BASELINE_NOTICE } from "../src/ledger/jurisdiction.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -48,6 +49,10 @@ async function signup(slug: string, email: string, onboarding: Record<string, un
   expect(verified.statusCode, verified.body).toBe(201);
   const cookie = verified.cookies.find((item) => item.name === "cdos_session")?.value;
   if (!cookie) throw new Error("no session");
+  /* These desks send transfers; a sign-up shop is a real shop, and a real
+     shop cannot (CD-111). Marked as a test shop, as the staging door
+     marks the shops it makes. */
+  await markTestShop(handle.db, `tnt-${slug}`);
   return cookie;
 }
 

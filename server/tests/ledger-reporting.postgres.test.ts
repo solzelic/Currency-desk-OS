@@ -22,7 +22,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { isoMinorUnits } from "../src/ledger/currencies.js";
-import { DEMO, seed } from "../src/seed.js";
+import { DEMO, markTestShop, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -261,6 +261,8 @@ postgres("the ledger answers for its own headline figures", () => {
     pool = new pg.Pool({ connectionString: url });
     handle = await createDb();
     await seed(handle.db);
+    /* This desk sends transfers below; a test shop keeps them (CD-111). */
+    await markTestShop(handle.db);
     app = await buildApp(handle.db);
   });
 

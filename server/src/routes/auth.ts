@@ -34,6 +34,7 @@ import { stagingTestShop } from "../staging/pin-reset.js";
 import { audit } from "../audit.js";
 import { findStaffForLogin, isEmail } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
+import { transfersAvailable } from "../ledger/transfers-gate.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
@@ -238,6 +239,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: user.authorizedBranchIds,
         mustChangePassword: user.mustChangePassword,
         plan: await tenantPlan(db, user.tenantId),
+        transfersAvailable: await transfersAvailable(db, user.tenantId),
       },
     };
   });
@@ -253,6 +255,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     authorizedBranchIds: user.authorizedBranchIds,
     mustChangePassword: user.mustChangePassword,
     plan: await tenantPlan(db, user.tenantId),
+    transfersAvailable: await transfersAvailable(db, user.tenantId),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
@@ -689,6 +692,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: who.authorizedBranchIds,
         mustChangePassword: who.mustChangePassword,
         plan: await tenantPlan(db, who.tenantId),
+        /* Transfers are off for a real shop (CD-111); the desk hides the app. */
+        transfersAvailable: await transfersAvailable(db, who.tenantId),
       },
     };
   });
