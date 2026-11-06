@@ -75642,6 +75642,36 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       };
     }, []);
 
+    /* Rates' flags, before anyone opens Rates. Rates draws a flag for every
+       currency on the board and used to wait for all of them as it opened,
+       each time. Once the desk is up and the browser is idle, ask for the
+       flags of the desk's currencies and of the published board (the
+       converter keeps it in yorkfx_rates_v1). The server keeps a flag for a
+       day (server/src/app.ts), so Rates then finds them in the browser. */
+    useEffect(() => {
+      if (stage !== 'desktop' || !window.CurrencyFace) return;
+      const ask = () => {
+        let board = null;
+        try {
+          board = JSON.parse(localStorage.getItem('yorkfx_rates_v1') || 'null');
+        } catch (e) {
+          board = null;
+        }
+        const codes = new Set((window.CDOS.CCY || []).concat(board && board.rows ? Object.keys(board.rows) : []));
+        codes.forEach(code => {
+          const url = window.CurrencyFace.flagUrl(code);
+          if (url) new Image().src = url;
+        });
+      };
+      const idle = window.requestIdleCallback;
+      const id = idle ? idle(ask, {
+        timeout: 3000
+      }) : setTimeout(ask, 1500);
+      return () => {
+        if (idle) window.cancelIdleCallback(id);else clearTimeout(id);
+      };
+    }, [stage]);
+
     // react to the staff Rate Board republishing (storage events fire from the
     // embedded board iframe) and to an external lock toggle
     useEffect(() => {
