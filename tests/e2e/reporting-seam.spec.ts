@@ -281,9 +281,12 @@ test("a figure the ledger cannot answer is shown as absent", async ({ page }) =>
   if (totals.marketValueHome == null) {
     expect(screen).toContain("—");
   } else {
-    expect(screen).toContain(
-      Math.round(Number(totals.marketValueHome)).toLocaleString("en-CA"),
-    );
+    /* To the cent, as the screen writes it (onScreen, below). This
+       rounded to whole units, and only ever passed because the value was
+       null: the position valued cash from a rate table that publishing
+       never filled. It is the published board's value now, 1,363.99 and
+       the like, and "1,364" is not on the screen. */
+    expect(screen).toContain(onScreen(totals.marketValueHome));
   }
 
   /* The tile that was pure fiction. Where the ledger has no basis for
