@@ -878,3 +878,25 @@ export const enquiryReplies = pgTable(
   },
   (t) => [index("enquiry_replies_idx").on(t.enquiryId, t.createdAt)],
 );
+
+/* A PIN step-up token (CD-140, PR 2): minted by POST /api/staff/pin/verify
+   for one action on one target, stored as a hash, spent once by the route
+   that performs the action (server/src/routes/step-up.ts). Migration 070. */
+export const staffStepUpTokens = pgTable(
+  "staff_step_up_tokens",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    /* The PIN's owner (staff_users.id) and the session that asked. */
+    staffId: text("staff_id").notNull(),
+    issuedBy: text("issued_by").notNull(),
+    action: text("action").notNull(),
+    targetId: text("target_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    usedBy: text("used_by"),
+  },
+  (t) => [index("staff_step_up_tokens_staff_idx").on(t.staffId, t.createdAt)],
+);

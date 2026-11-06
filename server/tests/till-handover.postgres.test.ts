@@ -7,7 +7,7 @@ import pg from "pg";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { createDb, type DbHandle } from "../src/db/index.js";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { staffUsers } from "../src/db/schema.js";
 import { hasBackendPermission } from "../src/auth/permissions.js";
@@ -749,6 +749,35 @@ postgres("a second teller takes a held till by counting it", () => {
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
     const audit = await pool.query("SELECT reason FROM ledger_audit_events WHERE action='till.handover.self_approval_refused'");
     expect(audit.rows).toEqual([{ reason: `approver ${idOf("a.singh")} is the person holding the till` }]);
+  });
+
+  /* A token from POST /api/staff/pin/verify stands in for the approver's
+     PIN (CD-140, PR 2). While the approver sheet is off it is refused the
+     way a PIN is, before it is read, and it is not spent. */
+  it("an approver token is refused like a PIN while the sheet is off, and stays unused", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    /* j.masri is neither the taker nor the holder; given a PIN here, since
+       the harness sets one only where a test needs it. */
+    /* The PIN routes read the application database (handle.db), not the
+       ledger's copy of staff_users that the pool writes. */
+    await handle.db.update(staffUsers).set({ pinHash: await hashPin("2468") }).where(eq(staffUsers.id, idOf("j.masri")));
+    const minted = await app.inject({
+      method: "POST", url: "/api/staff/pin/verify", cookies: await login("j.masri"), headers,
+      payload: { pin: "2468", action: "till.handover.approve", target: "till-01" },
+    });
+    expect(minted.statusCode, minted.body).toBe(200);
+    const token = minted.json().token as string;
+    const refused = await app.inject({
+      method: "POST", url: "/api/ledger/till-sessions/handover", cookies: costa, headers,
+      payload: { idempotencyKey: "token-while-off", counts: { CAD: "24970.00", USD: "12000.00" }, approverStaffId: "j.masri", approverToken: token },
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json().code).toBe("HANDOVER_APPROVAL_REQUIRED");
+    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+    const unused = await handle.db.select().from(schema.staffStepUpTokens);
+    expect(unused.map((t) => t.usedAt)).toEqual([null]);
   });
 
   /* The table keeps the rule whatever the server checked. */

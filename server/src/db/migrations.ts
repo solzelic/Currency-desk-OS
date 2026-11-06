@@ -101,6 +101,8 @@ export const migrations: readonly Migration[] = [
   /* 069 is the maker-checker rule on a takeover's approver (CD-140). A
      ledger table, so not run on PGlite, which has no ledger. */
   ["069_maker_checker_guard", "src/db/migrations/069_maker_checker_guard.sql"],
+  /* 070 is the PIN step-up token table (CD-140, PR 2). */
+  ["070_step_up_tokens", "src/db/migrations/070_step_up_tokens.sql"],
 ] as const;
 
 type MigrationReader = {

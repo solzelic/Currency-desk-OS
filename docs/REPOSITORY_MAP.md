@@ -111,6 +111,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   it is listed in `migrations.ts` only and not run on PGlite, which has no
   ledger. The server's own check is `selfApproval` in
   `server/src/ledger/till-control.ts`.
+- Migration `070_step_up_tokens` adds `staff_step_up_tokens` (CD-140, PR 2):
+  a PIN step-up token, minted by `POST /api/staff/pin/verify` with an
+  action and a target, stored as a hash, spent once by the route that
+  performs the action (`server/src/routes/step-up.ts`). An application
+  table: listed in `migrations.ts`, in `server/src/db/schema.ts`, and run
+  on PGlite from `server/src/db/index.ts`.
 - Migration `033_serbia_pack` seeds `pack-rs-v1` and does not edit an
   older pack. It lets `jurisdiction_packs.aggregation_hours` be null
   (null means the deals are not added together), adds
