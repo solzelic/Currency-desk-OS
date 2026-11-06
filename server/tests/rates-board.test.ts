@@ -21,6 +21,8 @@ const board = () => require("../../os-src/rates-board.js") as {
   floorFor: (settings: { marginFloorPct?: unknown; marginFloorByCcy?: unknown } | null | undefined, code: string) => number;
   feeFor: (settings: { defaultFee?: unknown; feeTiers?: unknown } | null | undefined, homeAmount: number) => number | null;
   sameAsPublished: (rows: Row[], published: { rows: Record<string, { mid: number; spread?: number; show?: boolean }>; order?: string[] } | null, defaultSpreadPct: number) => boolean;
+  READ_REUSE_MS: number;
+  reusableRead: <T>(read: { value: T | null; askedAt: number } | null | undefined, now: number, recordedAt: number) => T | null;
 };
 
 describe("the desk's two lines", () => {
@@ -158,6 +160,33 @@ describe("the floor a currency is held to", () => {
     expect(board().floorFor(s, "TRY")).toBe(0.8);
     expect(board().floorFor({}, "USD")).toBe(0.5);
     expect(board().floorFor(null, "USD")).toBe(0.5);
+  });
+});
+
+/* Cost & stock shows what the Board already read (the board, the market,
+   the desk's position, the cost method) instead of asking again. Only a
+   read made in the last minute, and only one asked after the last Record
+   cash bought: that delivery changed the position, so it is read again. */
+describe("a read the Board made, for Cost & stock", () => {
+  const read = { value: { ok: true }, askedAt: 1_000_000 };
+  it("is reused for a minute", () => {
+    expect(board().READ_REUSE_MS).toBe(60_000);
+    expect(board().reusableRead(read, 1_000_000, 0)).toBe(read.value);
+    expect(board().reusableRead(read, 1_059_999, 0)).toBe(read.value);
+    expect(board().reusableRead(read, 1_060_000, 0)).toBeNull();
+  });
+  it("is not reused once cash bought was recorded after it was asked", () => {
+    expect(board().reusableRead(read, 1_000_500, 999_999)).toBe(read.value);
+    expect(board().reusableRead(read, 1_000_500, 1_000_000)).toBeNull();
+    expect(board().reusableRead(read, 1_000_500, 1_000_400)).toBeNull();
+  });
+  it("is nothing when the Board has not read it, or read nothing", () => {
+    expect(board().reusableRead(null, 1_000_000, 0)).toBeNull();
+    expect(board().reusableRead(undefined, 1_000_000, 0)).toBeNull();
+    expect(board().reusableRead({ value: null, askedAt: 1_000_000 }, 1_000_000, 0)).toBeNull();
+  });
+  it("is not reused from a clock that has gone backwards", () => {
+    expect(board().reusableRead(read, 999_000, 0)).toBeNull();
   });
 });
 
