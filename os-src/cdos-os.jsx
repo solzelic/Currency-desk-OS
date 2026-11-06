@@ -1679,6 +1679,9 @@
        reports it was refused. If there is no session, go back to the lock
        screen — one door, one sign-in. A network failure is not an answer and
        must not lock anyone out of a desk they are working at. */
+    /* The converter's first /api/rates answer, for the first lock read
+       after resume(). Null otherwise. */
+    const bootRatesRef = useRef(null);
     useEffect(() => {
       let alive = true;
       const relock = () => {
@@ -1686,9 +1689,15 @@
         setStagingOn(false);
         setStage(cur => (cur === 'lock' || cur === 'signup' || cur === 'verify' ? cur : 'lock'));
       };
-      const check = () => {
+      /* One question on the way in. resume() and check() both need who the
+         cookie names as the desk opens, and each used to ask for itself: two
+         round trips for one answer. At start they read the same answer
+         (asked below, a copy each, since a body can be read only once).
+         Coming back to the tab still asks again: check() with no answer. */
+      const askMe = () => fetch('/api/auth/me', { credentials: 'same-origin' });
+      const check = (asked) => {
         if (typeof fetch !== 'function') return;
-        fetch('/api/auth/me', { credentials: 'same-origin' })
+        (asked || askMe())
           .then(r => {
             if (r.status === 401) { relock(); return null; }
             if (!r.ok) return null;
@@ -1728,9 +1737,9 @@
          Only ever on the way IN. The relock check above still owns going the
          other way, so an expired session drops to the lock screen exactly as
          before, and a desk left open does not resume itself. */
-      const resume = () => {
+      const resume = (asked) => {
         if (typeof fetch !== 'function') return;
-        fetch('/api/auth/me', { credentials: 'same-origin' })
+        (asked || askMe())
           .then(r => (r.ok ? r.json() : null))
           .then(async (d) => {
             if (!alive || !d || !d.user) return;
@@ -1748,6 +1757,10 @@
             /* The plan is the owner's field. Copying it for anyone else is a settings write. */
             if (u.plan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: u.plan }));
             markPersistRole(rec.role);
+            /* This is who the cookie named as the page loaded, so the rate
+               converter's first /api/rates answer, asked with that same
+               cookie, is theirs too: the lock is read from it (below). */
+            bootRatesRef.current = window.yfxFirstAnswer ? window.yfxFirstAnswer('/api/rates') : null;
             srvUserRef.current = u; setSrvUser(u);
             setUser(rec.code || rec.name); setAuthRec(rec);
             await hydrateTenant();
@@ -1755,13 +1768,15 @@
           })
           .catch(() => {});
       };
-      resume();
+      /* The copy for each is made in one step, before either reads it. */
+      const answered = typeof fetch === 'function' ? askMe().then(r => ({ forResume: r.clone(), forCheck: r })) : null;
+      resume(answered && answered.then(a => a.forResume));
       const onFocus = () => { if (document.visibilityState === 'visible') check(); };
       const onMessage = (e) => {
         if (e.origin !== window.location.origin) return;
         if (e.data && e.data.type === 'cdos:session-expired') relock();
       };
-      check();
+      check(answered && answered.then(a => a.forCheck));
       document.addEventListener('visibilitychange', onFocus);
       window.addEventListener('message', onMessage);
       return () => {
@@ -2117,9 +2132,18 @@
       if (!quiet) log(next ? 'Rates locked' : 'Rates unlocked', next ? 'Held at last published pull' : 'Following the live board');
     };
     /* The lock as the server has it, once the desk knows who is signed in. */
+    /* On the way in the rate converter (yorkfx-converter.js) has already
+       read /api/rates with the cookie this page loaded with, and resume()
+       has found that same cookie signed in. The server puts `locked` in
+       the answer only for a signed-in request, so an answer with it is
+       this session's, and the lock is read from it instead of asking
+       again. Once: a later sign-in or switch asks the server. */
     useEffect(() => {
       if (!srvUser) return;
-      fetch('/api/rates', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(b => {
+      const first = bootRatesRef.current;
+      bootRatesRef.current = null;
+      const ask = () => fetch('/api/rates', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null));
+      (first ? first.then(b => (b && b.locked !== undefined ? b : ask())) : ask()).then(b => {
         if (b && b.locked !== undefined) holdRates(!!b.locked, true);
       }).catch(e => console.warn('[desk] the rates lock could not be read', e));
     }, [srvUser && srvUser.staffId]);
