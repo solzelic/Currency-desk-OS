@@ -142,6 +142,37 @@ test("a teller sees the page and screens, and cannot change them", async ({ page
   expect((await api(page, "POST", "/api/window-screens", { name: "x", kind: "tv", layout: "two", theme: "dark", currencies: [], showHours: true })).status).toBe(403);
 });
 
+/* The design's Take it further. Own domain: the owner sends it and where
+   it was bought; it goes to the team's inbox, the desk shows it as
+   requested, and the owner can cancel it. Embed: a code to paste into the
+   shop's own site that shows its live rate page. Fully custom: sales. */
+test("Take it further: the owner sends a custom domain to the team and cancels it; the embed code shows the rate page", async ({ page }) => {
+  await openTab(page, "j.masri");
+  const further = page.getByRole("region", { name: "Take it further" });
+  await expect(further).toBeVisible();
+  await expect(further.getByRole("link", { name: "Contact sales" })).toHaveAttribute("href", "/contact");
+
+  await further.getByRole("button", { name: /^Choose how to connect it/ }).click();
+  await further.getByRole("button", { name: /^Use my rate page as my website/ }).click();
+  await further.getByLabel("Your domain").fill("www.e2e-shop.ca");
+  await further.getByRole("button", { name: "Namecheap", exact: true }).click();
+  const sent = page.waitForResponse((r) => r.url().endsWith("/api/rate-page/domain-request") && r.request().method() === "POST");
+  await further.getByRole("button", { name: "Send to the team" }).click();
+  expect((await sent).status()).toBe(201);
+  await expect(further.getByText("Connecting e2e-shop.ca")).toBeVisible();
+  const cancelled = page.waitForResponse((r) => r.url().endsWith("/api/rate-page/domain-request") && r.request().method() === "DELETE");
+  await further.getByRole("button", { name: "Cancel request" }).click();
+  expect((await cancelled).status()).toBe(200);
+  await expect(further.getByLabel("Your domain")).toBeVisible();
+
+  await further.getByRole("button", { name: /^Use my rate page as my website/ }).click();
+  await further.getByRole("button", { name: /^Pull my rates into my current website/ }).click();
+  await further.getByRole("button", { name: "Wix", exact: true }).click();
+  const slug = (await api(page, "GET", "/api/rate-page")).body.slug as string;
+  await expect(further.getByLabel("Code to paste")).toContainText(`/r/${slug}`);
+  await expect(further.getByRole("button", { name: "Copy code" })).toBeVisible();
+});
+
 test("shots: Website & window, the editor and the screens page, at 1440 and 390", async ({ page }) => {
   test.skip(process.env.RATES_SHOTS !== "1", "set RATES_SHOTS=1 to write the PR shots");
   await openTab(page, "j.masri");

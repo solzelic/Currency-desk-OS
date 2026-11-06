@@ -142,6 +142,146 @@
     hours: p.hours || [], hoursWeek: p.week || null, siteConfigAt: p.updatedAt || null,
   });
 
+  /* The design's Take it further (under the two tiles). Three ways to put
+     the rate page on the shop's own web:
+     - Use it as the website: the owner sends the domain and where it was
+       bought (POST /api/rate-page/domain-request). A person on the team
+       points it for now, so the request lands in the team's inbox and the
+       desk shows it as requested until it is done or cancelled.
+     - No domain yet: how to get one.
+     - Pull the rates into the shop's current site: a code to paste that
+       shows the live rate page in a frame. The design's plugin and script
+       do not exist yet; a frame works on every site builder today, and the
+       server lets any site frame /r/ pages (and only those).
+     A full website from templates is coming; a fully custom one is sales. */
+  const REGISTRARS = ['GoDaddy', 'Namecheap', 'Squarespace', 'Other'];
+  const PLATFORMS = ['WordPress', 'Wix', 'Squarespace', 'Shopify', 'Other'];
+  const PASTE = {
+    WordPress: ['Edit the page where the rates should go.', 'Add a Custom HTML block.', 'Paste the code below into it and update the page.'],
+    Wix: ['In the Wix editor, add Embed code, then Embed HTML.', 'Paste the code below into it.', 'Publish your Wix site.'],
+    Squarespace: ['Edit a page and add a Code block.', 'Paste the code below into it.', 'Save the page.'],
+    Shopify: ['In Online Store, open Pages and edit a page.', 'Switch the editor to HTML (the <> button).', 'Paste the code below and save.'],
+    Other: ['Open the page of your site where the rates should go.', 'Paste the code below where they should appear.', 'Save and publish your site.'],
+  };
+  const DOMAIN_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+
+  function TakeItFurther({ page, owner, onPage, say }) {
+    const { css, seg, pill } = window.CDOS.ratesUi;
+    const [choice, setChoice] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [domain, setDomain] = useState('');
+    const [registrar, setRegistrar] = useState('GoDaddy');
+    const [plat, setPlat] = useState('WordPress');
+    const [busy, setBusy] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const pending = page.domainRequest || null;
+    const typed = domain.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    const domOk = DOMAIN_RE.test(typed);
+    const canSend = owner && domOk && !busy;
+    const OPTS = [
+      ['have', 'Use my rate page as my website', 'Point your own domain, like yourshop.com, at your rate page. We do the technical part.'],
+      ['none', 'I don’t have a domain yet', 'Buy one wherever you like, then come back and connect it.'],
+      ['plugin', 'Pull my rates into my current website', 'A code to paste. WordPress, Wix, Squarespace and more.'],
+    ];
+    const cur = OPTS.find(o => o[0] === choice);
+    const send = async () => {
+      if (!canSend) return;
+      setBusy(true);
+      try {
+        const r = await call('POST', '/api/rate-page/domain-request', { domain: typed, registrar });
+        if (r.ok) { onPage(p => ({ ...p, domainRequest: r.data.domainRequest })); setDomain(''); say('Sent to the team'); }
+        else say(r.status === 403 ? 'Only the owner can connect a domain.' : (r.data && r.data.detail) || 'The request was not sent (the server answered ' + r.status + ').');
+      } finally { setBusy(false); }
+    };
+    const cancel = async () => {
+      setBusy(true);
+      try {
+        const r = await call('DELETE', '/api/rate-page/domain-request');
+        if (r.ok) { onPage(p => ({ ...p, domainRequest: null })); say('Request cancelled'); }
+        else say('The request was not cancelled (the server answered ' + r.status + ').');
+      } finally { setBusy(false); }
+    };
+    /* The shop's name goes into an attribute of code pasted into another
+       site, so it is escaped there. The address is the server's checked slug. */
+    const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const code = '<iframe src="' + location.origin + '/r/' + encodeURIComponent(page.slug) + '" title="' + attr(((page.content && page.content.name) || 'Our') + ' exchange rates') + '" loading="lazy" style="width:100%;height:760px;border:0"></iframe>';
+    const copyCode = async () => {
+      try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1600); }
+      catch (e) { say('The code could not be copied. Select it and copy it.'); }
+    };
+    const step = (n, head, body) => (<div key={n} style={css('display: flex; align-items: flex-start; gap: 12px;')}><span style={css('flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; font-family: var(--m); font-size: 11.5px; font-weight: 700; background: var(--ink); color: #fff;')}>{n}</span><span style={css('min-width: 0;')}>{head && <b style={css('display: block; font-size: 14px;')}>{head}</b>}<span style={css('display: block; font-size: 12.5px; line-height: 1.5; color: var(--mute);' + (head ? ' margin-top: 2px;' : ''))}>{body}</span></span></div>);
+    const segRow = (opts, now, fn, label) => (<span role="group" aria-label={label} style={css('display: inline-flex; gap: 3px; padding: 3px; border-radius: 10px; background: rgba(23,20,15,0.06); flex-wrap: wrap;')}>{seg(opts, now, fn, false).map(o => <button key={o.label} type="button" aria-pressed={o.on} onClick={o.onPick} style={o.style}>{o.label}</button>)}</span>);
+    const when = pending ? new Date(pending.at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : '';
+
+    return (<section aria-label="Take it further" style={css('display: flex; flex-direction: column; gap: 10px;')}>
+      <div style={css('font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); font-weight: 700;')}>Take it further</div>
+      <div style={css('border-radius: 16px; background: #fff; border: 1px solid var(--line);')}>
+        <div style={css('padding: 16px 16px 0;')}>
+          <b style={css('display: block; font-size: 15px;')}>Connect your rate page to your website</b>
+          <span style={css('display: block; font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 3px;')}>Put the page we made for you on your own address, or pull your rates into the site you already have. Both are free.</span>
+        </div>
+        <div style={css('position: relative; padding: 14px 16px 16px;')}>
+          <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} style={css('width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(23,20,15,0.03); cursor: pointer; text-align: left;')}>
+            <span style={css('flex: 1; min-width: 0; text-align: left;')}><b style={css('display: block; font-size: 14px; color: var(--ink);')}>{cur ? cur[1] : 'Choose how to connect it'}</b><span style={css('display: block; font-size: 12px; color: var(--mute); margin-top: 2px;')}>{cur ? cur[2] : 'Use your own domain, or pull your rates into your current site'}</span></span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--mute)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}><path d="M6 9l6 6 6-6" /></svg>
+          </button>
+          {open && <div style={css('display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: #fff; box-shadow: 0 18px 40px -20px rgba(23,20,15,0.4);')}>
+            {OPTS.map(o => (<button key={o[0]} type="button" onClick={() => { setChoice(o[0]); setOpen(false); }} style={css('appearance: none; display: flex; align-items: flex-start; gap: 10px; padding: 10px 11px; border: 0; border-radius: 10px; cursor: pointer; text-align: left; background: ' + (choice === o[0] ? 'var(--green-soft)' : 'transparent') + ';')}>
+              <span style={css('flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: ' + (choice === o[0] ? 'var(--primary)' : 'rgba(23,20,15,0.2)') + ';')} /><span style={css('flex: 1; min-width: 0; text-align: left;')}><b style={css('display: block; font-size: 13.5px;')}>{o[1]}</b><span style={css('display: block; font-size: 12px; line-height: 1.45; color: var(--mute); margin-top: 2px;')}>{o[2]}</span></span></button>))}
+          </div>}
+        </div>
+        {choice && <div key={choice} style={css('padding: 16px; border-top: 1px solid var(--hair); animation: rtIn .26s cubic-bezier(.22,1,.36,1) both;')}>
+          {choice === 'have' && pending && <div style={css('display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;')}>
+            <span style={css('flex: 1 1 260px; min-width: 0;')}><span style={css('display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: var(--amber); background: var(--amber-soft); padding: 4px 10px; border-radius: 999px;')}><span style={css('width: 6px; height: 6px; border-radius: 50%; background: currentColor;')} />{'Requested · ' + when}</span>
+              <b style={css('display: block; font-size: 15px; margin-top: 9px;')}>{'Connecting ' + pending.domain}</b>
+              <span style={css('display: block; font-size: 13px; line-height: 1.5; color: var(--mute); margin-top: 3px;')}>{'Bought at ' + pending.registrar + '. The team points it at your rate page and tells you when it is live. Reference ' + pending.reference + '.'}</span></span>
+            {owner && <button type="button" onClick={cancel} disabled={busy} style={css('flex: none; appearance: none; height: 38px; padding: 0 15px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-size: 13px; font-weight: 700; cursor: pointer;')}>Cancel request</button>}
+          </div>}
+          {choice === 'have' && !pending && <>
+            <div style={css('display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;')}>
+              <label style={css('display: block;')}><span style={css('display: block; font-size: 13px; font-weight: 700; margin-bottom: 7px;')}>Your domain</span><input value={domain} onChange={e => setDomain(e.target.value)} placeholder="yourshop.com" disabled={!owner} style={css('width: 100%; height: 42px; padding: 0 13px; border-radius: 11px; border: 1px solid var(--line); background: #fff; outline: none; font-size: 15px; color: var(--ink); box-sizing: border-box;')} /></label>
+              <div><span style={css('display: block; font-size: 13px; font-weight: 700; margin-bottom: 7px;')}>Where did you buy it?</span>{segRow(REGISTRARS, registrar, setRegistrar, 'Where did you buy it?')}</div>
+            </div>
+            <div style={css('display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px;')}>
+              <button type="button" onClick={send} disabled={!canSend} style={css('flex: none; display: inline-flex; align-items: center; height: 40px; padding: 0 17px; border: 0; border-radius: 11px; font-size: 13px; font-weight: 700; cursor: ' + (canSend ? 'pointer' : 'not-allowed') + '; background: ' + (canSend ? 'var(--primary)' : 'rgba(23,20,15,0.1)') + '; color: ' + (canSend ? '#fff' : 'rgba(23,20,15,0.4)') + ';')}>Send to the team</button>
+              <span style={css('flex: 1 1 220px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')}>{owner ? 'We point your domain at your rate page and tell you when it’s live. No charge.' : 'Only the owner can connect a domain.'}</span>
+            </div>
+          </>}
+          {choice === 'none' && <>
+            <div style={css('display: flex; flex-direction: column; gap: 12px;')}>
+              {step('1', 'Buy a domain anywhere', 'Any registrar works: GoDaddy, Namecheap, Squarespace. Your shop name is usually the best choice.')}
+              {step('2', 'You only need the name', 'No hosting, email or website builder. Your rate page is the website.')}
+              {step('3', 'Come back and connect it', 'Choose “Use my rate page as my website” and type the name. We do the technical part and tell you when it’s live.')}
+            </div>
+            <div style={css('margin-top: 14px;')}><button type="button" onClick={() => setChoice('have')} style={css('appearance: none; height: 38px; padding: 0 15px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-size: 13px; font-weight: 700; cursor: pointer;')}>I’ve got one, connect it</button></div>
+          </>}
+          {choice === 'plugin' && <>
+            <div><span style={css('display: block; font-size: 13px; font-weight: 700; margin-bottom: 7px;')}>What is your site built on?</span>{segRow(PLATFORMS, plat, setPlat, 'What is your site built on?')}</div>
+            <div style={css('display: flex; flex-direction: column; gap: 11px; margin-top: 16px;')}>{(PASTE[plat] || PASTE.Other).map((t, i) => step(String(i + 1), null, t))}</div>
+            <pre aria-label="Code to paste" style={css('margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: #17140F; color: #F1EEE8; font-family: var(--m); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;')}>{code}</pre>
+            {!page.live && <div style={css('margin-top: 10px; padding: 10px 12px; border-radius: 11px; background: var(--amber-soft); color: var(--amber); font-size: 12.5px; font-weight: 600;')}>Your rate page is private. Until it is live, this shows that the page is not available.</div>}
+            <div style={css('display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px;')}>
+              <button type="button" onClick={copyCode} style={pill(copied)}>{copied ? 'Copied' : 'Copy code'}</button>
+              <span style={css('flex: 1 1 220px; font-size: 12.5px; line-height: 1.5; color: var(--mute);')}>Shows your live rate page and updates on its own. Free on every plan.</span>
+            </div>
+          </>}
+        </div>}
+        <div style={css('display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; padding: 16px; border-top: 1px solid var(--hair); background: rgba(23,20,15,0.02); border-radius: 0 0 16px 16px;')}>
+          <span style={css('flex: 1 1 300px; min-width: 0;')}>
+            <span style={css('display: inline-flex; align-items: center; gap: 6px; font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: var(--amber); background: var(--amber-soft); padding: 4px 10px; border-radius: 999px;')}><span style={css('width: 6px; height: 6px; border-radius: 50%; background: currentColor;')} />Coming soon</span>
+            <b style={css('display: block; font-size: 14.5px; margin-top: 9px;')}>Build a full website in a few clicks</b>
+            <span style={css('display: block; font-size: 12.5px; line-height: 1.55; color: var(--mute); margin-top: 3px;')}>Pick a template, add your pages and photos, and your live rates are built in. Same address, nothing to move.</span>
+          </span>
+          <span style={css('flex: 0 1 260px; min-width: 0; padding-left: 14px; border-left: 1px solid var(--line);')}>
+            <b style={css('display: block; font-size: 14px;')}>Want it fully custom?</b>
+            <span style={css('display: block; font-size: 12.5px; line-height: 1.5; color: var(--mute); margin-top: 2px;')}>Our team can design and build a site just for your shop.</span>
+            <a href="/contact" target="_blank" rel="noopener" style={css('display: inline-flex; align-items: center; height: 36px; margin-top: 10px; padding: 0 14px; border-radius: 10px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 700; text-decoration: none;')}>Contact sales</a>
+          </span>
+        </div>
+      </div>
+    </section>);
+  }
+
   function RatesSite({ serverRole, onToast, settings, setSettings }) {
     const ui = window.CDOS.ratesUi;
     const { css, Switch, useWidth, seg, pill } = ui;
@@ -346,6 +486,7 @@
             </div>
           </section>))}
         </div>
+        <TakeItFurther page={page} owner={owner} onPage={setPage} say={say} />
       </div>);
     }
 

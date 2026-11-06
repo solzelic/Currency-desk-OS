@@ -212,12 +212,27 @@ export async function buildApp(
   /* The one exception: /api/public/ answers hold published rates only,
      the same for every visitor, and a route there may say "public" itself.
      Anything else under /api/public/ (a 404, an error) is still no-store. */
+  /* Also who may show our pages inside theirs (clickjacking): only
+     CurrencyDesk, except a shop's public rate page, /r/<address>, which a
+     shop may show in its own website (Rates v2.5, Take it further) and
+     which holds published rates only. HTML only; a policy a route set
+     itself (the logo's sandbox) is kept. One hook for both: a second async
+     onSend hook delayed every answer enough that a handler which sends and
+     then resolves undefined (admin.ts) got sent twice. */
   app.addHook("onSend", async (req, reply) => {
     const publicCache = req.url.startsWith("/api/public/")
       && String(reply.getHeader("cache-control") ?? "").startsWith("public,");
     if (req.url.startsWith("/api/") && !publicCache) {
       reply.header("cache-control", "no-store, no-cache, must-revalidate");
       reply.header("pragma", "no-cache");
+    }
+    if (String(reply.getHeader("content-type") ?? "").startsWith("text/html") && !reply.hasHeader("content-security-policy")) {
+      if (/^\/r\/[^/?#]+(?:[?#]|$)/.test(req.url)) {
+        reply.header("content-security-policy", "frame-ancestors *");
+      } else {
+        reply.header("content-security-policy", "frame-ancestors 'self'");
+        reply.header("x-frame-options", "SAMEORIGIN");
+      }
     }
   });
   await refreshSiteDomains(db);
