@@ -78,7 +78,7 @@
     useEffect(() => { load(); }, [load]);
     useEffect(() => {
       if (!hasDeals) return;
-      getJson('/api/ledger/cost-method').then(m => setMethod(m && m.method), () => setMethod(null));
+      getJson('/api/ledger/cost-method').then(m => setMethod(m && m.method), (e) => { console.warn('[rates] the cost method could not be read', e); setMethod(null); });
     }, [hasDeals]);
 
     const set = (patch, note) => { if (readOnly) return; setSettings(s => ({ ...s, ...patch })); if (note && log) log('Pricing updated', note); };

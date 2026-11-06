@@ -28,6 +28,7 @@ const HIDDEN = new Set([
   "marketValueHome",
   "marketUnitHome",
   "avgCost",
+  "avgCostHome",
   "marketMid",
   "fromMid",
   "toMid",
