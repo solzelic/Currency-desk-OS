@@ -707,6 +707,13 @@ postgres("a second teller takes a held till by counting it", () => {
     ]);
   });
 
+  /* Maker and checker are two people (CD-140, GitHub #630). Until now
+     nothing checked that the approver differed from the person taking
+     over or the person holding the till: the approver sheet is off, so
+     every approval was refused as a mismatch, and the day it ships the
+     guard has to already be there. It is checked before the PIN is read
+     and before the sheet's own switch, so it stands either way, and the
+     refusal is on the record. */
   it("the incoming teller cannot approve their own takeover", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
@@ -716,19 +723,52 @@ postgres("a second teller takes a held till by counting it", () => {
     });
     expect(refused.statusCode, refused.body).toBe(403);
     expect(refused.json()).toEqual({
-      code: "HANDOVER_APPROVAL_REQUIRED",
-      message: "The count does not match. A supervisor must approve this takeover.",
+      code: "SELF_APPROVAL",
+      message: "The approver cannot be the person taking over or the person holding the till.",
     });
     expect(lockState(idOf("m.costa")).remaining).toBe(5);
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+    const audit = await pool.query(
+      "SELECT actor_id, approver_id, reason FROM ledger_audit_events WHERE action='till.handover.self_approval_refused'",
+    );
+    expect(audit.rows).toEqual([{ actor_id: idOf("m.costa"), approver_id: null, reason: `approver ${idOf("m.costa")} is the person taking over` }]);
+  });
+
+  it("the person holding the till cannot approve the takeover from themselves", async () => {
+    await openAs("a.singh");
+    const costa = await login("m.costa");
+    const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "holder-approves", {
+      approverStaffId: "A.Singh",
+      approverPin: "1357",
+    });
+    expect(refused.statusCode, refused.body).toBe(403);
+    expect(refused.json().code).toBe("SELF_APPROVAL");
+    expect(lockState(idOf("a.singh")).remaining).toBe(5);
+    const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
+    expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
+    const audit = await pool.query("SELECT reason FROM ledger_audit_events WHERE action='till.handover.self_approval_refused'");
+    expect(audit.rows).toEqual([{ reason: `approver ${idOf("a.singh")} is the person holding the till` }]);
+  });
+
+  /* The table keeps the rule whatever the server checked. */
+  it("the database refuses a handover row whose approver is its actor", async () => {
+    const row = (approver: string) => pool.query(
+      `INSERT INTO ledger_audit_events
+        (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,action,target_id,correlation_id,created_at,approver_id)
+       VALUES ($1,$2,$3,$4,$5,$6,'till.session.handover',$7,$8,clock_timestamp(),$9)`,
+      [`evt_${approver}_${Date.now()}`, DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, idOf("m.costa"), "till-01", `corr-${Date.now()}`, approver],
+    );
+    await expect(row(idOf("m.costa"))).rejects.toMatchObject({ code: "23514" });
+    await expect(row(idOf("r.haddad"))).resolves.toBeTruthy();
   });
 
   it("a wrong approver PIN leaves the lockout counter where it was", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
+    /* A third person approves: not the taker, not the holder (CD-140). */
     const refused = await handover(costa, { CAD: "24970.00", USD: "12000.00" }, "wrong-pin", {
-      approverStaffId: "a.singh",
+      approverStaffId: "r.haddad",
       approverPin: "0000",
     });
     expect(refused.statusCode, refused.body).toBe(403);
@@ -736,7 +776,7 @@ postgres("a second teller takes a held till by counting it", () => {
       code: "HANDOVER_APPROVAL_REQUIRED",
       message: "The count does not match. A supervisor must approve this takeover.",
     });
-    expect(lockState(idOf("a.singh")).remaining).toBe(5);
+    expect(lockState(idOf("r.haddad")).remaining).toBe(5);
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
   });
@@ -744,8 +784,9 @@ postgres("a second teller takes a held till by counting it", () => {
   it("a right approver PIN does not move the till", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
+    /* A third person approves: not the taker, not the holder (CD-140). */
     const taken = await handover(costa, { CAD: "24970.00", USD: "12010.00" }, "approved", {
-      approverStaffId: "a.singh",
+      approverStaffId: "r.haddad",
       approverPin: "1357",
     });
     expect(taken.statusCode, taken.body).toBe(403);
@@ -753,7 +794,7 @@ postgres("a second teller takes a held till by counting it", () => {
       code: "HANDOVER_APPROVAL_REQUIRED",
       message: "The count does not match. A supervisor must approve this takeover.",
     });
-    expect(lockState(idOf("a.singh")).remaining).toBe(5);
+    expect(lockState(idOf("r.haddad")).remaining).toBe(5);
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
     const audit = await pool.query(
@@ -811,14 +852,15 @@ postgres("a second teller takes a held till by counting it", () => {
   it("an approver and a PIN are refused before the PIN is checked", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
-    const before = lockState(idOf("a.singh")).remaining;
+    /* A third person approves: not the taker, not the holder (CD-140). */
+    const before = lockState(idOf("r.haddad")).remaining;
     const counts = { CAD: "24970.00", USD: "12000.00" };
     const wrong = await handover(costa, counts, "pin-wrong", {
-      approverStaffId: "a.singh",
+      approverStaffId: "r.haddad",
       approverPin: "0000",
     });
     const right = await handover(costa, counts, "pin-right", {
-      approverStaffId: "a.singh",
+      approverStaffId: "r.haddad",
       approverPin: "1357",
     });
     expect(wrong.statusCode, wrong.body).toBe(403);
@@ -828,7 +870,7 @@ postgres("a second teller takes a held till by counting it", () => {
       code: "HANDOVER_APPROVAL_REQUIRED",
       message: "The count does not match. A supervisor must approve this takeover.",
     });
-    expect(lockState(idOf("a.singh")).remaining).toBe(before);
+    expect(lockState(idOf("r.haddad")).remaining).toBe(before);
     const held = await pool.query("SELECT opened_by FROM ledger_till_sessions WHERE status='open'");
     expect(held.rows).toEqual([{ opened_by: idOf("a.singh") }]);
   });

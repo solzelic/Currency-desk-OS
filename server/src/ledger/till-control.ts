@@ -103,6 +103,23 @@ const HANDOVER_MISMATCH = "The count does not match. A supervisor must approve t
 /* The approver sheet is not in this release. A request that names an
    approver or a PIN is refused here, before the PIN is read. */
 const HANDOVER_APPROVAL_ENABLED: boolean = false;
+const SELF_APPROVAL = "The approver cannot be the person taking over or the person holding the till.";
+/* Maker and checker are two people (CD-140, GitHub #630). The approver a
+   takeover names is compared with who is taking over and with who holds
+   the till, both as the database has them, before the PIN is read and
+   before the approver sheet's own switch, so the rule stands whether or
+   not that sheet ships. Staff ids fold case the way sign-in does. Null
+   when the approver is somebody else. */
+export function selfApproval(
+  actor: { tenantId: string; userId: string },
+  openedBy: string,
+  approverStaffId: string,
+): "the person taking over" | "the person holding the till" | null {
+  const approverId = `${actor.tenantId}:${approverStaffId.trim().toLowerCase()}`;
+  if (approverId === actor.userId.toLowerCase()) return "the person taking over";
+  if (approverId === openedBy.toLowerCase()) return "the person holding the till";
+  return null;
+}
 const handoverRequestHash = (
   counts: Counts,
   approval?: { staffId: string; pin: string },
@@ -885,6 +902,31 @@ export class TillControlService {
         [session.session_id],
       );
       if (prior.rowCount && !hasBackendPermission(role, "till:handover:approve")) await refuse();
+      /* The self-approval refusal is on the record and committed on its
+         own, like a mismatch refusal. The two ids go in the reason, not
+         in approver_id: the table's own rule (migration 069) refuses an
+         approver who is the actor, and this row is the proof of one. */
+      const self = approval && approval.staffId !== "" ? selfApproval(actor, session.opened_by as string, approval.staffId) : null;
+      if (self) {
+        await client.query(
+          `INSERT INTO ledger_audit_events
+            (event_id,tenant_id,legal_entity_id,branch_id,workspace_id,actor_id,
+             action,target_id,reason,correlation_id,created_at,prior_session_id)
+           VALUES ($1,$2,$3,$4,$5,$6,'till.handover.self_approval_refused',$7,$8,$9,clock_timestamp(),$10)`,
+          [
+            randomUUID(),
+            ...scope(actor).slice(0, 4),
+            actor.userId,
+            actor.tillId,
+            `approver ${actor.tenantId}:${approval!.staffId.trim().toLowerCase()} is ${self}`,
+            randomUUID(),
+            session.session_id,
+          ],
+        );
+        await client.query("COMMIT");
+        settled = true;
+        throw new LedgerError("SELF_APPROVAL", SELF_APPROVAL);
+      }
       if (approval && !HANDOVER_APPROVAL_ENABLED) await refuse();
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
       const board = await client.query(

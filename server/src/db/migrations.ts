@@ -98,6 +98,9 @@ export const migrations: readonly Migration[] = [
   ["067_branch_rates_lock", "src/db/migrations/067_branch_rates_lock.sql"],
   /* 068 is a rate page's custom domain request (Rates v2.5, Take it further). */
   ["068_rate_page_domain_request", "src/db/migrations/068_rate_page_domain_request.sql"],
+  /* 069 is the maker-checker rule on a takeover's approver (CD-140). A
+     ledger table, so not run on PGlite, which has no ledger. */
+  ["069_maker_checker_guard", "src/db/migrations/069_maker_checker_guard.sql"],
 ] as const;
 
 type MigrationReader = {

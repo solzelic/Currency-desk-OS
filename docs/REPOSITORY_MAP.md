@@ -104,6 +104,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `069_maker_checker_guard` adds `CHECK (approver_id IS NULL OR
+  approver_id <> actor_id)` on `ledger_audit_events` (CD-140): a till
+  takeover's approver is never its actor, whatever the server checked.
+  `NOT VALID` then `VALIDATE`, so it takes no long lock. A ledger table, so
+  it is listed in `migrations.ts` only and not run on PGlite, which has no
+  ledger. The server's own check is `selfApproval` in
+  `server/src/ledger/till-control.ts`.
 - Migration `033_serbia_pack` seeds `pack-rs-v1` and does not edit an
   older pack. It lets `jurisdiction_packs.aggregation_hours` be null
   (null means the deals are not added together), adds
