@@ -50,9 +50,17 @@ describe("a deal's margin", () => {
   /* The screen's: what the desk keeps (the booked spread plus the fee),
      over the deal's size in the home currency. */
   it("is spread plus fee over the home side of the deal", () => {
-    expect(dealMarginPct({ home: "CAD", from: "CAD", to: "USD", inputAmount: "1000", outputAmount: "700", marketMid: "1.4", spread: "20", fee: "5" })).toBeCloseTo(2.5, 10);
-    expect(dealMarginPct({ home: "CAD", from: "USD", to: "CAD", inputAmount: "500", outputAmount: "686", marketMid: "1.4", spread: "14", fee: "0" })).toBeCloseTo(14 / 686 * 100, 10);
-    expect(dealMarginPct({ home: "CAD", from: "USD", to: "EUR", inputAmount: "100", outputAmount: "90", marketMid: "1.4", spread: "2.8", fee: "0" })).toBeCloseTo(2, 10);
+    expect(dealMarginPct({ home: "CAD", from: "CAD", to: "USD", inputAmount: "1000", outputAmount: "700", marketMid: "1.4", spread: "20", fee: "5" })!.toString()).toBe("2.5");
+    expect(dealMarginPct({ home: "CAD", from: "USD", to: "CAD", inputAmount: "500", outputAmount: "686", marketMid: "1.4", spread: "14", fee: "0" })!.toNumber()).toBeCloseTo(14 / 686 * 100, 10);
+    expect(dealMarginPct({ home: "CAD", from: "USD", to: "EUR", inputAmount: "100", outputAmount: "90", marketMid: "1.4", spread: "2.8", fee: "0" })!.toString()).toBe("2");
+  });
+  /* Money is never floating point (engineering standard §3). In floats
+     0.57 kept on 114 is 0.49999999999999994%, under a 0.5% floor it is
+     exactly at. */
+  it("is exact: a deal at its floor is not under it", () => {
+    const at = dealMarginPct({ home: "CAD", from: "CAD", to: "USD", inputAmount: "114", outputAmount: "80", marketMid: "1.4", spread: "0.57", fee: "0" })!;
+    expect(at.toString()).toBe("0.5");
+    expect(at.lt(floorFor({ marginFloorPct: 0.5 }, "USD"))).toBe(false);
   });
   it("has no margin to measure on an empty deal", () => {
     expect(dealMarginPct({ home: "CAD", from: "CAD", to: "USD", inputAmount: "0", outputAmount: "0", marketMid: "1.4", spread: "0", fee: "0" })).toBeNull();
