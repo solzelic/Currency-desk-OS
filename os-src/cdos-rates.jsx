@@ -340,6 +340,10 @@
     /* A desk that has recorded no cost yet shows the margin over the
        market, not a column of blanks. */
     const hasCost = !!(stock && stock.hasCost && Object.keys(stock.byCode).some(c => stock.byCode[c].cost));
+    /* The cost columns show once some cost is known (hasCost). Record cash
+       bought is offered whenever this person may see costs at all
+       (stock.hasCost), because recording a purchase is how a cost becomes
+       known: gated on hasCost, a desk with no known cost never saw it. */
     const costOf = code => (hasCost && stock.byCode[code] && stock.byCode[code].cost) || null;
 
     /* A currency's own spread, or null for the default (Settings, spreads:
@@ -624,7 +628,7 @@
       {selRow && boardRef.current && ReactDOM.createPortal(<CurrencyPanel row={selRow} home={home} defPct={defPct} floor={B.floorFor(settings, selRow.code)} target={target} stock={stock}
         low={settings.vaultFloors ? Number(settings.vaultFloors[selRow.code]) : 0} readOnly={readOnly} cards={cards}
         onClose={closePanel} onSpread={pct => setSpread(selRow.code, pct)} onToggle={() => toggle(selRow)}
-        onRecord={hasCost && onRecordCash && ['supervisor', 'branch_manager', 'administrator'].includes(serverRole) ? () => onRecordCash(selRow.code) : null} />, boardRef.current.closest('[data-rates]') || document.body)}
+        onRecord={stock && stock.hasCost && onRecordCash && ['supervisor', 'branch_manager', 'administrator'].includes(serverRole) ? () => onRecordCash(selRow.code) : null} />, boardRef.current.closest('[data-rates]') || document.body)}
     </div>);
   }
 
