@@ -57,6 +57,9 @@
   // on SVG blobs is inconsistent). GIF is excluded because the canvas
   // re-encode keeps only the first frame, so an animated GIF would silently
   // go still — better to reject than surprise.
+  // The editor controls, put into .ctl only for a host that can write.
+  const CTL_BUTTONS = '<button data-act="replace" title="Replace image">Replace</button>' +
+    '  <button data-act="clear" title="Remove image">Remove</button>';
   const ACCEPT = ['image/png', 'image/jpeg', 'image/webp', 'image/avif'];
 
   // ── Shared sidecar store ────────────────────────────────────────────────
@@ -253,8 +256,10 @@
         '  <div class="handle" data-c="nw"></div><div class="handle" data-c="ne"></div>' +
         '  <div class="handle" data-c="sw"></div><div class="handle" data-c="se"></div>' +
         '</div>' +
-        '<div class="ctl"><button data-act="replace" title="Replace image">Replace</button>' +
-        '  <button data-act="clear" title="Remove image">Remove</button></div>' +
+        // Empty here: the Replace and Remove buttons are put in by _render
+        // only while the host can write (CD-135), so a visitor's page
+        // carries no editor control at all, hidden or not.
+        '<div class="ctl"></div>' +
         '<input type="file" accept="' + ACCEPT.join(',') + '" hidden>';
       this._frame = root.querySelector('.frame');
       this._ring = root.querySelector('.ring');
@@ -601,6 +606,12 @@
       const editable = !!(window.omelette && window.omelette.writeFile);
       this.toggleAttribute('data-editable', editable);
       this._sub.style.display = editable ? '' : 'none';
+      // The buttons exist only while the host can write. Built here rather
+      // than in the template because the host may inject writeFile after
+      // the first render; a visitor's page, which never has it, never has
+      // them (CD-135, GitHub #625). A browser that drops the shadow styles
+      // then has nothing to show.
+      this._ctl.innerHTML = editable ? CTL_BUTTONS : '';
 
       // Content. The sidecar is also writable by the agent's write_file
       // tool, so its value isn't guaranteed canvas-originated — only accept
