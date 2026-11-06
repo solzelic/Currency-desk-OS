@@ -47,7 +47,8 @@ beforeAll(async () => {
   handle = await createDb();
   await seed(handle.db);
   app = await buildApp(handle.db);
-  for (const [who, pin] of [["r.haddad", "4829"], ["m.costa", "7316"]]) {
+  const pins: Array<[string, string]> = [["r.haddad", "4829"], ["m.costa", "7316"]];
+  for (const [who, pin] of pins) {
     cookies[who] = await signIn(who);
     const set = await app.inject({ method: "POST", url: "/api/staff/pin", cookies: cookies[who], payload: { pin } });
     expect(set.statusCode, set.body).toBe(200);

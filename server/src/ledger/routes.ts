@@ -9,6 +9,7 @@ import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
 import { tenantPlan } from "../routes/tenant.js";
+import { consumeStepUp } from "../routes/step-up.js";
 import { LedgerError, LedgerService, type LedgerActor } from "./service.js";
 import { ensureLedgerPrincipal } from "./principal.js";
 import {
@@ -119,6 +120,9 @@ const countBody = z.object({
 const handoverBody = countBody.extend({
   approverStaffId: z.string().trim().min(1).max(120).optional(),
   approverPin: z.string().regex(/^\d{4}$/).optional(),
+  /* A step-up token from POST /api/staff/pin/verify stands in for the
+     approver's PIN (CD-140, PR 2). */
+  approverToken: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 }).strict();
 const closeTillBody = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -706,8 +710,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
-      const approval = parsed.data.approverStaffId || parsed.data.approverPin
-        ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "" }
+      const approval = parsed.data.approverStaffId || parsed.data.approverPin || parsed.data.approverToken
+        ? { staffId: parsed.data.approverStaffId ?? "", pin: parsed.data.approverPin ?? "", token: parsed.data.approverToken }
         : undefined;
       return actor
         ? reply.code(201).send(await tillControl.handover(
@@ -715,6 +719,12 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
             parsed.data.idempotencyKey,
             parsed.data.counts,
             approval,
+            /* The token table is the application database's, which may not
+               be the ledger's, so the service is handed the spender. It
+               spends only after its own checks, once per takeover. */
+            (approverStaffId, token) => consumeStepUp(db, {
+              token, action: "till.handover.approve", target: actor.tillId, tenantId: actor.tenantId, byStaffId: actor.userId,
+            }).then((spent) => spent.ok && spent.staffId === `${actor.tenantId}:${approverStaffId.trim().toLowerCase()}` ? spent.staffId : null),
           ))
         : undefined;
     } catch (error) {

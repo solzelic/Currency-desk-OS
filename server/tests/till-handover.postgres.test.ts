@@ -757,15 +757,20 @@ postgres("a second teller takes a held till by counting it", () => {
   it("an approver token is refused like a PIN while the sheet is off, and stays unused", async () => {
     await openAs("a.singh");
     const costa = await login("m.costa");
+    /* j.masri is neither the taker nor the holder; given a PIN here, since
+       the harness sets one only where a test needs it. */
+    /* The PIN routes read the application database (handle.db), not the
+       ledger's copy of staff_users that the pool writes. */
+    await handle.db.update(staffUsers).set({ pinHash: await hashPin("2468") }).where(eq(staffUsers.id, idOf("j.masri")));
     const minted = await app.inject({
-      method: "POST", url: "/api/staff/pin/verify", cookies: await login("r.haddad"), headers,
-      payload: { pin: "1357", action: "till.handover.approve", target: "till-01" },
+      method: "POST", url: "/api/staff/pin/verify", cookies: await login("j.masri"), headers,
+      payload: { pin: "2468", action: "till.handover.approve", target: "till-01" },
     });
     expect(minted.statusCode, minted.body).toBe(200);
     const token = minted.json().token as string;
     const refused = await app.inject({
       method: "POST", url: "/api/ledger/till-sessions/handover", cookies: costa, headers,
-      payload: { idempotencyKey: "token-while-off", counts: { CAD: "24970.00", USD: "12000.00" }, approverStaffId: "r.haddad", approverToken: token },
+      payload: { idempotencyKey: "token-while-off", counts: { CAD: "24970.00", USD: "12000.00" }, approverStaffId: "j.masri", approverToken: token },
     });
     expect(refused.statusCode, refused.body).toBe(403);
     expect(refused.json().code).toBe("HANDOVER_APPROVAL_REQUIRED");

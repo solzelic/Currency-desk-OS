@@ -37,9 +37,19 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { canManage } from "./staff.js";
+import { mintStepUp, STEP_UP_ACTIONS } from "./step-up.js";
 
 const PIN = z.string().regex(/^\d{4}$/, "pin: four digits");
-const verifyBody = z.object({ staffId: z.string().min(1).max(120).optional(), pin: PIN });
+const verifyBody = z.object({
+  staffId: z.string().min(1).max(120).optional(),
+  pin: PIN,
+  /* A step-up (CD-140, PR 2): with these, the right PIN mints a token
+     bound to this action and target, which the route that performs the
+     action spends (step-up.ts). Without them the answer is { ok } as
+     before. */
+  action: z.enum(STEP_UP_ACTIONS).optional(),
+  target: z.string().trim().min(1).max(200).optional(),
+}).refine((body) => !body.action || !!body.target, { message: "An action needs a target." });
 const setBody = z.object({ pin: PIN, currentPin: PIN.optional(), staffId: z.string().min(1).max(120).optional() });
 const resetBody = z.object({ password: z.string().min(1).max(512), pin: PIN });
 
@@ -164,6 +174,27 @@ export function registerPinRoutes(app: FastifyInstance, db: Db): void {
     }
     if (await verifyPassword(parsed.data.pin, target.pinHash)) {
       clearPinAttempts(target.id);
+      const stepUpTarget = parsed.data.target;
+      if (parsed.data.action && stepUpTarget) {
+        /* A step-up token (CD-140, PR 2). A default or weak PIN (the
+           staging 0000) and a PIN somebody else issued prove nothing
+           about who is at the keypad: the ordinary gate opens as before,
+           but no token is minted on them. */
+        if (isWeakPin(parsed.data.pin)) {
+          return reply.code(403).send({ error: "default_pin", detail: "A default PIN cannot approve. Set your own PIN first." });
+        }
+        if (target.pinMustChange) {
+          return reply.code(403).send({ error: "pin_must_change", detail: "Change this PIN before it can approve." });
+        }
+        const minted = await mintStepUp(db, {
+          tenantId: target.tenantId, staffId: target.id, issuedBy: who.id, action: parsed.data.action, target: stepUpTarget,
+        });
+        await audit(db, {
+          tenantId: target.tenantId, legalEntityId: target.legalEntityId, branchId: target.branchId,
+          actorId: who.id, action: "pin.step_up", detail: { of: target.staffId, action: parsed.data.action, target: stepUpTarget },
+        });
+        return { ok: true, mustChange: false, token: minted.token, expiresAt: minted.expiresAt.toISOString() };
+      }
       // the gate opens either way; the desk uses this to ask them to pick
       // their own afterwards rather than interrupting a customer mid-deal
       return { ok: true, mustChange: target.pinMustChange };

@@ -751,6 +751,10 @@ export async function createDb(): Promise<DbHandle> {
   await client.exec(
     await readFile(new URL("./migrations/068_rate_page_domain_request.sql", import.meta.url), "utf8"),
   );
+  /* The PIN step-up token table (CD-140, PR 2), for the same reason. */
+  await client.exec(
+    await readFile(new URL("./migrations/070_step_up_tokens.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
 }

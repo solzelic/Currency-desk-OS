@@ -120,12 +120,19 @@ export function selfApproval(
   if (approverId === openedBy.toLowerCase()) return "the person holding the till";
   return null;
 }
+/* Who approves a takeover: their staff id with their PIN, or with a
+   step-up token minted on that PIN (CD-140, PR 2). */
+type HandoverApproval = { staffId: string; pin: string; token?: string };
+/* Spends the approver's token for this till; the route hands this in
+   because the token table is the application database's. Answers the
+   approver's user id, or null when the token is no good. */
+type ApproverCheck = (approverStaffId: string, token: string) => Promise<string | null>;
 const handoverRequestHash = (
   counts: Counts,
-  approval?: { staffId: string; pin: string },
+  approval?: HandoverApproval,
 ) => createHash("sha256").update(JSON.stringify({
   counts: Object.keys(counts).sort().map((currency) => [currency, counts[currency]]),
-  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "")),
+  approverPresent: Boolean(approval && (approval.staffId !== "" || approval.pin !== "" || !!approval.token)),
 })).digest("hex");
 const sessionJson = (row: Record<string, unknown>, zone = "America/Toronto") => ({
   sessionId: row.session_id,
@@ -795,16 +802,18 @@ export class TillControlService {
     actor: LedgerActor,
     idempotencyKey: string,
     counts: Counts,
-    approval?: { staffId: string; pin: string },
+    approval?: HandoverApproval,
+    verifyApprover?: ApproverCheck,
   ) {
-    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts, approval));
+    return withSerializationRetry(() => this.handoverOnce(actor, idempotencyKey, counts, approval, verifyApprover));
   }
 
   private async handoverOnce(
     actor: LedgerActor,
     idempotencyKey: string,
     counts: Counts,
-    approval?: { staffId: string; pin: string },
+    approval?: HandoverApproval,
+    verifyApprover?: ApproverCheck,
   ): Promise<Awaited<ReturnType<TillControlService["current"]>>> {
     const client = await this.pool.connect();
     const hash = handoverRequestHash(counts, approval);
@@ -928,6 +937,14 @@ export class TillControlService {
         throw new LedgerError("SELF_APPROVAL", SELF_APPROVAL);
       }
       if (approval && !HANDOVER_APPROVAL_ENABLED) await refuse();
+      /* With the sheet on, a token stands in for the approver's PIN
+         (CD-140, PR 2): spent here, once, after the self-approval check
+         and the sheet's own switch, and only for this till. A token that
+         is no good is the same refusal as a wrong PIN. */
+      if (approval?.token && verifyApprover) {
+        const approver = await verifyApprover(approval.staffId, approval.token);
+        if (!approver) await refuse();
+      }
       const home = (await resolvePack(client, actor.legalEntityId)).homeCurrency.trim().toUpperCase();
       const board = await client.query(
         `SELECT board_rows FROM rate_boards
