@@ -287,7 +287,7 @@
     </div>);
   }
 
-  function Board({ settings, setSettings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite, locked, onLock, onRecordCash }) {
+  function Board({ settings, setSettings, serverRole, me, log, w, onTip, tip, onToast, onOpenSite, locked, onLock, onRecordCash, onRead }) {
     const canPublish = PUBLISHERS.includes(serverRole);
     /* Locked rates take no changes until a manager unlocks them (the
        server refuses a publish meanwhile). */
@@ -318,7 +318,10 @@
        the design does for a Rates plan. */
     useEffect(() => {
       let live = true;
+      const askedAt = Date.now();
       Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(orElse('the cost method', null))]).then(([pos, cm]) => {
+        /* Cost & stock shows these too (onRead, in Rates below). */
+        if (onRead) { onRead('position', pos, askedAt); onRead('costMethod', cm, askedAt); }
         if (!live) return;
         /* The server's figures, shown as they come: what one unit cost
            (avgCostHome) and the basis are the ledger's, never worked out
@@ -354,8 +357,10 @@
 
     const load = useCallback(async () => {
       try {
+        const askedAt = Date.now();
         const [rates, history, feed, screens] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market'),
           getJson('/api/window-screens').catch(e => { console.warn('[rates] window screens could not be read', e); return { screens: [] }; })]);
+        if (onRead) { onRead('rates', rates, askedAt); onRead('feed', feed, askedAt); }
         if (onLock && rates.locked !== undefined) onLock(rates.locked);
         setData({ loading: false, error: null, board: rates.board, autoPublish: rates.autoPublish === true, history: history.publications || [], market: B.homeMarket(feed.mids, home), screens: screens.screens || [] });
       } catch (e) {
@@ -665,6 +670,14 @@
     const [buying, setBuying] = useState(null);
     const [feedOpen, setFeedOpen] = useState(false);
     const [stockVersion, setStockVersion] = useState(0);
+    /* What the Board read (the board, the market, the position, the cost
+       method), for Cost & stock to show instead of asking again: for a
+       minute, and not from before the last cash bought was recorded
+       (ratesBoard.reusableRead). */
+    const boardReads = useRef({});
+    const recordedAt = useRef(0);
+    const noteRead = useCallback((name, value, askedAt) => { boardReads.current[name] = { value, askedAt }; }, []);
+    const boardRead = useCallback((name) => B.reusableRead(boardReads.current[name], Date.now(), recordedAt.current), []);
     const setLocked = async (on) => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -735,8 +748,8 @@
       </div>}
       <div style={css('flex:1;min-height:0;overflow-y:auto;')}>
         <div key={'t-' + tab} style={css('padding:' + (cards ? '14px 12px 90px' : '20px 26px 90px') + ';animation:rtIn .3s cubic-bezier(.22,1,.36,1) both;')}>
-          {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onRecordCash={hasDeals ? (code) => setBuying({ code }) : null} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} />}
-          {tab === 'stock' && <window.CDOS.RatesStock settings={settings} serverRole={serverRole} me={me} hasDeals={hasDeals} owns={owns} w={w} version={stockVersion} onRecord={(code) => setBuying({ code })} />}
+          {tab === 'board' && <Board settings={settings} setSettings={setSettings} locked={isLocked} onRecordCash={hasDeals ? (code) => setBuying({ code }) : null} onLock={l => setLock(l || null)} serverRole={serverRole} me={me} log={log} w={w} tip={tip} onTip={setTip} onToast={flash} onOpenSite={() => setTab('site')} onRead={noteRead} />}
+          {tab === 'stock' && <window.CDOS.RatesStock settings={settings} serverRole={serverRole} me={me} hasDeals={hasDeals} owns={owns} w={w} version={stockVersion} boardRead={boardRead} onRecord={(code) => setBuying({ code })} />}
           {tab === 'site' && <window.CDOS.RatesSite serverRole={serverRole} onToast={flash} settings={settings} setSettings={setSettings} />}
           {tab === 'rules' && <window.CDOS.RatesPricing settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} onToast={flash} locked={isLocked} w={w} onGoGuard={() => setTab('guard')} />}
           {tab === 'guard' && <window.CDOS.RatesGuard settings={settings} setSettings={setSettings} me={me} log={log} serverRole={serverRole} deals={deals} locked={isLocked} />}
@@ -756,7 +769,7 @@
       </div>}
       {feedOpen && <FeedSheet feed={feed} locked={isLocked} canLock={!readOnly} cards={cards} onClose={() => setFeedOpen(false)}
         onLock={() => { setFeedOpen(false); setLocked(true); }} onPins={() => { setFeedOpen(false); setTab('rules'); }} />}
-      {buying && <window.CDOS.RatesRecordCash code={buying.code} onClose={() => setBuying(null)} onDone={(msg) => { setBuying(null); setStockVersion(v => v + 1); flash(msg); }} />}
+      {buying && <window.CDOS.RatesRecordCash code={buying.code} onClose={() => setBuying(null)} onDone={(msg) => { recordedAt.current = Date.now(); setBuying(null); setStockVersion(v => v + 1); flash(msg); }} />}
       {toast && <div role="status" style={css('position:absolute;left:50%;bottom:26px;z-index:60;transform:translateX(-50%);max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:12px;background:#17140F;color:#fff;font-size:13px;font-weight:600;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5);animation:rtIn 0.25s ease both;')}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#5FD69B" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><path d="M4 12.5l5 5L20 6.5" /></svg>{toast}</div>}
     </div>);
