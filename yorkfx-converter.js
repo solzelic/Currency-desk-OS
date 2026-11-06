@@ -208,10 +208,23 @@ var RATE_CONFIG = null;      // last published config, if any
     return ['/api/site/rates', '/api/rates'];
   }
 
+  /* The desk reads /api/rates as it starts too, for the rates lock
+     (os-src/cdos-os.jsx). This page's first answer from each address is
+     kept so the desk can take it, once, instead of asking again: one round
+     trip fewer on every start. Taken or not, nothing else changes here. */
+  var firstAnswers = {};
+  window.yfxFirstAnswer = function (url) {
+    var answer = firstAnswers[url] || null;
+    firstAnswers[url] = null;
+    return answer;
+  };
+
   function fetchBoard(urls, i) {
     if (i >= urls.length) return Promise.resolve();
-    return fetch(urls[i], { credentials: 'same-origin' })
-      .then(function (r) { return r.ok ? r.json() : null; })
+    var asked = fetch(urls[i], { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; });
+    if (!(urls[i] in firstAnswers)) firstAnswers[urls[i]] = asked.catch(function () { return null; });
+    return asked
       .then(function (d) {
         if (!d || !d.board) return fetchBoard(urls, i + 1);
         applyBoard(d.board);
