@@ -156,6 +156,29 @@ test("a manager opens a currency's panel, gives it its own spread, and takes it 
   await expect(panel).toBeHidden();
 });
 
+/* Recording cash bought is how a desk's cost becomes known, so the panel
+   offers it to anyone who may see costs, even when no currency has a
+   known cost yet. On staging the demo vault was opened without a cost,
+   and the button never appeared. The position is answered here as such a
+   desk's: cost fields present, every one unknown. */
+test("the panel offers Record cash bought even before any cost is known", async ({ page }) => {
+  test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
+  await page.route("**/api/ledger/position", (route) => route.fulfill({
+    json: {
+      homeCurrency: "CAD", costBasisHome: null, marketValueHome: null, unrealizedPnlHome: null,
+      unvaluedCurrencies: [], unpricedCurrencies: ["USD"],
+      currencies: [{ currency: "USD", quantity: "20000.00", costBasisHome: null, avgCostHome: null, marketValueHome: null, unpricedQuantity: "20000.00", vault: { quantity: "20000.00" }, till: null }],
+    },
+  }));
+  await openRates(page, "r.haddad");
+  await expect(page.getByTitle(HANDLE).first()).toBeVisible();
+  await page.getByRole("button", { name: "Open USD", exact: true }).click();
+  const panel = page.getByRole("dialog", { name: /^USD / });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Record cash bought" })).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
 test("a teller opens a currency's panel and cannot change it", async ({ page }) => {
   await openRates(page, "m.costa");
   await page.getByRole("button", { name: "Open USD", exact: true }).click();
