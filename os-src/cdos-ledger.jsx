@@ -1463,7 +1463,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
   /* =====================================================================
      LEDGER — immutable record list
   ===================================================================== */
-  function Ledger({ rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged, subs, beneficiaries }) {
+  function Ledger({ transfersOn, rows, setRows, clients, setClients, settings, me, perms, log, setReceipt, client, setClient, newSignal, onNewConsumed, openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal, focusSignal, rateVersion, dayClosed, onOpenDayClose, cheques, setCheques, chequeSchedule, onOpenCheques, onOpenCompliance, registerNav, winId, onFileLCTR, serverBacked, onTillChanged, subs, beneficiaries }) {
     const can = (k) => me.role === 'Owner' ? true : !!perms.Teller[k];
     /* The desk's own trading day and its own reporting line, both from the
        server. `deskFacts` changes when either arrives, which is what makes
@@ -1622,7 +1622,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
       const feesKnown = src.every(x => x.fee != null);
       return { n: src.length, vol: volume.total, unvalued: volume.unvalued, fees: feesKnown ? src.reduce((s, x) => s + (+x.fee || 0), 0) : null, rpt, openRpt, str: str.size, tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length };
     }, [rows, client, flags, range]);
-    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0), [rows, clients, settings, beneficiaries, subs]);
+    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}, transfersOn).length : 0), [rows, clients, settings, beneficiaries, subs, transfersOn]);
 
     // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {

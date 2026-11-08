@@ -16,11 +16,11 @@
   /* Demonstration wires (t1–t4) live in the same store as a transfer the
      desk actually created. Filings, aggregation and the header count read
      through here, so the sample never becomes a report. */
-  const loadTransfers = () => {
+  const loadTransfers = (transfersOn = window.CDOS.transfersAvailable) => {
     /* Transfers are off for a real shop (CD-111): nothing the browser
        still holds is a wire the desk can act on, so no cluster is built
        from it. The entries themselves are left where they are. */
-    if (window.CDOS.transfersAvailable === false) return [];
+    if (transfersOn === false) return [];
     let all = [];
     try { all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || []; } catch (e) { return []; }
     const book = window.CDOS._transfers && window.CDOS._transfers.bookTransfers;
@@ -198,10 +198,10 @@
      the menu-bar badge all read it. A filed filing is not due. A
      structuring watch is a separate count. */
   function reportRefFor(kind, id) { return `${kind}-${(TODAY || '').slice(0, 4)}-${refHash(id)}`; }
-  function computeReportables(rows, clients, settings, beneficiaries, subs) {
+  function computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn) {
     const regime = getRegime(settings);
     const flags = computeFlags(rows, clients, settings);
-    const transfers = loadTransfers();
+    const transfers = loadTransfers(transfersOn);
     const xr = (ccy) => window.CDOS.crossRate('CAD', ccy) || 1;
     const out = [];
     // single cash transactions at/over threshold (filed individually)
@@ -276,9 +276,9 @@
   }
   /* Due: not yet submitted. A prepared filing with no loaded deal is
      still due. A submitted filing is not, flag or none. */
-  function openReportables(rows, clients, settings, beneficiaries, subs) {
+  function openReportables(rows, clients, settings, beneficiaries, subs, transfersOn) {
     const regime = getRegime(settings);
-    const out = computeReportables(rows, clients, settings, beneficiaries, subs)
+    const out = computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn)
       .filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
     return appendStored(out, subs, regime, 'prepared');
   }
@@ -320,9 +320,9 @@
   }
 
   /* ===================== AGGREGATION (24h rule) ===================== */
-  function Aggregation({ rows, settings, subs, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
+  function Aggregation({ rows, settings, subs, transfersOn, fileReport, beneficiaries, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers }) {
     const regime = getRegime(settings);
-    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(transfersOn), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries, transfersOn]);
     const strayLeftOut = useMemo(() => {
       const all = C.lctrLeftOut ? C.lctrLeftOut(rows, regime, settings) : [];
       const seen = {};
@@ -511,22 +511,22 @@
 
   /* ===================== SUBMISSIONS (worksheet → sealed filing) ===================== */
   function refHash(id) { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; } return h.toString(36).toUpperCase().padStart(5, '0').slice(-5); }
-  function Submissions({ rows, clients, settings, me, log, subs, beneficiaries, openWorksheet, mkReport, store, openFilingCopy }) {
+  function Submissions({ rows, clients, settings, transfersOn, me, log, subs, beneficiaries, openWorksheet, mkReport, store, openFilingCopy }) {
     const regime = getRegime(settings);
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const ctx = useMemo(() => ({ settings, clients, rows, regime }), [settings, clients, rows]);
 
     const reportables = useMemo(() => {
-      const out = computeReportables(rows, clients, settings, beneficiaries, subs);
+      const out = computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn);
       /* A filed copy whose deals are not loaded still belongs under
          Filed records. Prepared copies are due, and they come from
          openReportables, the same list as the header. */
       appendStored(out, subs, regime, 'submitted');
       return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    }, [rows, clients, settings, beneficiaries, subs]);
+    }, [rows, clients, settings, beneficiaries, subs, transfersOn]);
 
-    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs)
-      .slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs]);
+    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs, transfersOn)
+      .slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs, transfersOn]);
     const filedAll = reportables.filter(r => subs[r.id] && subs[r.id].status === 'submitted');
     // Filed records stay on this page for 30 days, then archive to Compliance ▸ History (where they live permanently).
     const ageDays = (s) => { try { const d = window.CDOS.dDiff(((s && s.submittedAt) || '').slice(0, 10), TODAY); return isNaN(d) ? 0 : d; } catch (e) { return 0; } };
@@ -738,7 +738,7 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
+  function Compliance({ rows, setRows, transfersOn, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
     const [tab, setTab] = useState(initialTab || 'screening');
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
@@ -747,6 +747,11 @@
     const subs = subsProp || subsLocal;
     const setSubs = setSubsProp || setSubsLocal;
     const [worksheet, setWorksheet] = useState(null);
+    // A delayed click must see the current capability, not the render that
+    // opened the form. Keep the form mounted so typed work is not discarded.
+    const worksheetNow = useRef(null);
+    worksheetNow.current = { worksheet, transfersOn };
+    const transfersBlockedNote = 'Transfers are off for this shop. This unfinished worksheet is kept here, but cannot be filed.';
     const lastFileSig = useRef(0);
     useEffect(() => { if (!setSubsProp) { try { localStorage.setItem(SUBKEY, JSON.stringify(subs)); } catch (e) {} } }, [subs, setSubsProp]);
     const regime = getRegime(settings);
@@ -754,7 +759,14 @@
 
     const refHash2 = (id) => { let h = 0; const s = String(id); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36).toUpperCase().padStart(5, '0').slice(-5); };
     // open the filing worksheet for a report (from Aggregation or Submissions)
-    const openWorksheet = (r) => { const reportRef = r.reportRef || `${r.kind}-${(TODAY || '').slice(0, 4)}-${refHash2(r.id)}`; setWorksheet({ ...r, reportRef }); setTab('submissions'); };
+    const openWorksheet = (r) => {
+      const reportRef = r.reportRef || `${r.kind}-${(TODAY || '').slice(0, 4)}-${refHash2(r.id)}`;
+      const saved = subs[r.id];
+      // Existing prepared/filed records still belong to the desk. Only a
+      // new worksheet derived from currently available transfers is gated.
+      const requiresTransfers = r.kind === regime.wireCode && !(saved && (saved.status === 'prepared' || saved.status === 'submitted'));
+      setWorksheet({ ...r, reportRef, requiresTransfers }); setTab('submissions');
+    };
     // external request (from the Ledger's File-LCTR buttons) to open the worksheet
     useEffect(() => { if (fileSignal && fileSignal.n && fileSignal.n !== lastFileSig.current) { lastFileSig.current = fileSignal.n; const rep = fileSignal.report; const sub = subs[rep.id]; openWorksheet({ ...rep, prompts: (sub && sub.prompts) || {}, ticks: (sub && sub.ticks) || {} }); } }, [fileSignal]);
 
@@ -801,6 +813,12 @@
        defect, not the fallback. */
     const onSeal = async ({ map, prompts, ticks, fwrReceipt }) => {
       const r = worksheet;
+      if (!r || worksheetNow.current.worksheet !== r) {
+        throw new Error('This worksheet is no longer open. Reopen it before filing.');
+      }
+      if (r.requiresTransfers && worksheetNow.current.transfersOn !== true) {
+        throw new Error(transfersBlockedNote);
+      }
       const kindLabel = window.CDOS.LCTR.kindLabelOf(r.kind, regime);
       /* What this report corrects, printed on the sealed copy itself. An
          examiner holding two reports about the same person on the same day
@@ -862,8 +880,8 @@
     /* No list, so the Screening tile is words and the tab has no badge.
        A number here, including zero, used to read as a hit count. */
     const philippines = regime.id === 'pack-ph-v1';
-    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries]);
-    const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
+    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(transfersOn), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries, transfersOn]);
+    const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs, transfersOn).length, [rows, clients, settings, beneficiaries, subs, transfersOn]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
@@ -896,14 +914,14 @@
       </div>
       <div className="flex-1 overflow-auto">
         {tab === 'screening' && <Screening clients={clients} setClients={setClients} beneficiaries={beneficiaries} me={me} settings={settings} onOpenSettings={onOpenSettings} />}
-        {tab === 'aggregation' && <Aggregation rows={rows} settings={settings} subs={subs} fileReport={openWorksheet} beneficiaries={beneficiaries} onOpenTransaction={onOpenTransaction} onOpenClient={onOpenClient} onOpenRefs={onOpenRefs} onOpenTransfers={onOpenTransfers} />}
-        {tab === 'submissions' && <Submissions rows={rows} clients={clients} settings={settings} me={me} log={log} subs={subs} beneficiaries={beneficiaries} openWorksheet={openWorksheet} store={store} openFilingCopy={openFilingCopy} />}
+        {tab === 'aggregation' && <Aggregation transfersOn={transfersOn} rows={rows} settings={settings} subs={subs} fileReport={openWorksheet} beneficiaries={beneficiaries} onOpenTransaction={onOpenTransaction} onOpenClient={onOpenClient} onOpenRefs={onOpenRefs} onOpenTransfers={onOpenTransfers} />}
+        {tab === 'submissions' && <Submissions transfersOn={transfersOn} rows={rows} clients={clients} settings={settings} me={me} log={log} subs={subs} beneficiaries={beneficiaries} openWorksheet={openWorksheet} store={store} openFilingCopy={openFilingCopy} />}
         {tab === 'structuring' && <StructuringWatch rows={rows} setRows={setRows} clients={clients} settings={settings} me={me} log={log} subs={subs} fileReport={openWorksheet} onOpenRefs={onOpenRefs} onOpenClient={onOpenClient} />}
         {tab === 'reports' && (window.CDOS.Reports ? <window.CDOS.Reports rows={rows} clients={clients} settings={settings} me={me} baseline={baseline} receipts={receipts} day={day} station={station} branches={branches} /> : null)}
         {tab === 'history' && (window.CDOS.ReportHistory ? <window.CDOS.ReportHistory /> : null)}
         {tab === 'regime' && <Regime settings={settings} me={me} onOpenSettings={onOpenSettings} />}
       </div>
-      {worksheet && <window.CDOS.LCTR.Worksheet report={worksheet} ctx={ctx} onFile={onSeal} onClose={() => setWorksheet(null)} />}
+      {worksheet && <window.CDOS.LCTR.Worksheet report={worksheet} ctx={ctx} onFile={onSeal} onClose={() => setWorksheet(null)} filingBlocked={worksheet.requiresTransfers && transfersOn !== true ? transfersBlockedNote : ''} />}
     </div>);
   }
 

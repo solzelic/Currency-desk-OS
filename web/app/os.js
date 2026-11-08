@@ -14195,6 +14195,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
      docs/ABSENT_FIGURES.md.
      ============================================================ */
   function Dashboard({
+    transfersOn,
     rows,
     clients,
     settings,
@@ -14310,7 +14311,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     const fxTotal = fxValued ? fxRows.reduce((s, p) => s + p.home, 0) : null;
     const sensitivity = fxTotal == null ? null : Math.abs(fxTotal) * 0.01;
     const maxPos = Math.max(1, ...(held || []).map(p => Math.abs(p.home || 0)));
-    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0, [rows, clients, settings, beneficiaries, subs]);
+    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}, transfersOn).length : 0, [rows, clients, settings, beneficiaries, subs, transfersOn]);
     const D = useMemo(() => {
       /* These read the transaction rows the ledger sent, which is what
          `rows` now is — the demo seed is gone. Grouping records the server
@@ -34064,6 +34065,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
      LEDGER — immutable record list
   ===================================================================== */
   function Ledger({
+    transfersOn,
     rows,
     setRows,
     clients,
@@ -34365,7 +34367,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         tagged: (client ? rows.filter(r => r.customer === client) : rows).filter(r => r.tagged).length
       };
     }, [rows, client, flags, range]);
-    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0, [rows, clients, settings, beneficiaries, subs]);
+    const dueN = useMemo(() => window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}, transfersOn).length : 0, [rows, clients, settings, beneficiaries, subs, transfersOn]);
 
     // live summary of exactly what's on screen (in the desk's own money)
     const result = useMemo(() => {
@@ -46618,7 +46620,8 @@ var CDOS_CHEQUE_FEE = (function () {
     report,
     ctx,
     onFile,
-    onClose
+    onClose,
+    filingBlocked
   }) {
     const blocks = useMemo(() => buildMap(report, ctx), [report, ctx]);
     const comps = useMemo(() => companions(report, ctx), [report, ctx]);
@@ -46787,7 +46790,7 @@ var CDOS_CHEQUE_FEE = (function () {
        correction is filed as a new linked report, never as a replacement),
        and both of them mean the worksheet stays open with the words on it. */
     const doFile = async () => {
-      if (!receipt.trim() || sealing) return;
+      if (filingBlocked || !receipt.trim() || sealing) return;
       setSealing(true);
       setSealError('');
       try {
@@ -47323,7 +47326,13 @@ var CDOS_CHEQUE_FEE = (function () {
         borderTop: `1px solid ${CD.line}`,
         background: 'var(--cd-panel)'
       }
-    }, !filing ? /*#__PURE__*/React.createElement("div", {
+    }, filingBlocked && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      className: "mb-2 text-[11.5px]",
+      style: {
+        color: CD.flag
+      }
+    }, filingBlocked), !filing ? /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-3"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] flex-1",
@@ -47332,12 +47341,12 @@ var CDOS_CHEQUE_FEE = (function () {
       }
     }, reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed in. Seal the filed copy once submitted.`), /*#__PURE__*/React.createElement("button", {
       onClick: () => setFiling(true),
-      disabled: reqLeft > 0,
+      disabled: !!filingBlocked || reqLeft > 0,
       className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none",
       style: {
-        background: reqLeft > 0 ? 'var(--cd-disabled)' : CD.ink,
+        background: filingBlocked || reqLeft > 0 ? 'var(--cd-disabled)' : CD.ink,
         borderRadius: 9,
-        cursor: reqLeft > 0 ? 'not-allowed' : 'pointer'
+        cursor: filingBlocked || reqLeft > 0 ? 'not-allowed' : 'pointer'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: "lock",
@@ -47386,12 +47395,12 @@ var CDOS_CHEQUE_FEE = (function () {
       }
     }, "Back"), /*#__PURE__*/React.createElement("button", {
       onClick: doFile,
-      disabled: !receipt.trim() || sealing,
+      disabled: !!filingBlocked || !receipt.trim() || sealing,
       className: "px-4 py-2 text-sm font-semibold text-white flex-none",
       style: {
-        background: receipt.trim() && !sealing ? CD.green : 'var(--cd-disabled)',
+        background: !filingBlocked && receipt.trim() && !sealing ? CD.green : 'var(--cd-disabled)',
         borderRadius: 8,
-        cursor: receipt.trim() && !sealing ? 'pointer' : 'not-allowed'
+        cursor: !filingBlocked && receipt.trim() && !sealing ? 'pointer' : 'not-allowed'
       }
     }, sealing ? 'Sealing…' : 'Seal filed copy')))))));
   }
@@ -47528,11 +47537,11 @@ ${(filing.map || []).map(blockHTML).join('')}
   /* Demonstration wires (t1–t4) live in the same store as a transfer the
      desk actually created. Filings, aggregation and the header count read
      through here, so the sample never becomes a report. */
-  const loadTransfers = () => {
+  const loadTransfers = (transfersOn = window.CDOS.transfersAvailable) => {
     /* Transfers are off for a real shop (CD-111): nothing the browser
        still holds is a wire the desk can act on, so no cluster is built
        from it. The entries themselves are left where they are. */
-    if (window.CDOS.transfersAvailable === false) return [];
+    if (transfersOn === false) return [];
     let all = [];
     try {
       all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || [];
@@ -47754,10 +47763,10 @@ ${(filing.map || []).map(blockHTML).join('')}
   function reportRefFor(kind, id) {
     return `${kind}-${(TODAY || '').slice(0, 4)}-${refHash(id)}`;
   }
-  function computeReportables(rows, clients, settings, beneficiaries, subs) {
+  function computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn) {
     const regime = getRegime(settings);
     const flags = computeFlags(rows, clients, settings);
-    const transfers = loadTransfers();
+    const transfers = loadTransfers(transfersOn);
     const xr = ccy => window.CDOS.crossRate('CAD', ccy) || 1;
     const out = [];
     // single cash transactions at/over threshold (filed individually)
@@ -47907,9 +47916,9 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
   /* Due: not yet submitted. A prepared filing with no loaded deal is
      still due. A submitted filing is not, flag or none. */
-  function openReportables(rows, clients, settings, beneficiaries, subs) {
+  function openReportables(rows, clients, settings, beneficiaries, subs, transfersOn) {
     const regime = getRegime(settings);
-    const out = computeReportables(rows, clients, settings, beneficiaries, subs).filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
+    const out = computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn).filter(o => !(subs && subs[o.id] && subs[o.id].status === 'submitted'));
     return appendStored(out, subs, regime, 'prepared');
   }
   /* "4 of these 6 were filed under FWR-AGG-RC-0001 · 2 still need filing" —
@@ -47980,6 +47989,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     rows,
     settings,
     subs,
+    transfersOn,
     fileReport,
     beneficiaries,
     onOpenTransaction,
@@ -47988,7 +47998,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     onOpenTransfers
   }) {
     const regime = getRegime(settings);
-    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries]);
+    const clusters = useMemo(() => [...aggClusters(rows, regime, settings), ...aggClustersEFT(loadTransfers(transfersOn), bookBeneficiaries(beneficiaries), regime, settings)].sort((a, b) => b.total - a.total), [rows, settings, beneficiaries, transfersOn]);
     const strayLeftOut = useMemo(() => {
       const all = C.lctrLeftOut ? C.lctrLeftOut(rows, regime, settings) : [];
       const seen = {};
@@ -48778,6 +48788,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     rows,
     clients,
     settings,
+    transfersOn,
     me,
     log,
     subs,
@@ -48796,14 +48807,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       regime
     }), [settings, clients, rows]);
     const reportables = useMemo(() => {
-      const out = computeReportables(rows, clients, settings, beneficiaries, subs);
+      const out = computeReportables(rows, clients, settings, beneficiaries, subs, transfersOn);
       /* A filed copy whose deals are not loaded still belongs under
          Filed records. Prepared copies are due, and they come from
          openReportables, the same list as the header. */
       appendStored(out, subs, regime, 'submitted');
       return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    }, [rows, clients, settings, beneficiaries, subs]);
-    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs]);
+    }, [rows, clients, settings, beneficiaries, subs, transfersOn]);
+    const drafts = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs, transfersOn).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')), [rows, clients, settings, beneficiaries, subs, transfersOn]);
     const filedAll = reportables.filter(r => subs[r.id] && subs[r.id].status === 'submitted');
     // Filed records stay on this page for 30 days, then archive to Compliance ▸ History (where they live permanently).
     const ageDays = s => {
@@ -49506,6 +49517,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   function Compliance({
     rows,
     setRows,
+    transfersOn,
     clients,
     setClients,
     beneficiaries,
@@ -49536,6 +49548,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     const subs = subsProp || subsLocal;
     const setSubs = setSubsProp || setSubsLocal;
     const [worksheet, setWorksheet] = useState(null);
+    // A delayed click must see the current capability, not the render that
+    // opened the form. Keep the form mounted so typed work is not discarded.
+    const worksheetNow = useRef(null);
+    worksheetNow.current = {
+      worksheet,
+      transfersOn
+    };
+    const transfersBlockedNote = 'Transfers are off for this shop. This unfinished worksheet is kept here, but cannot be filed.';
     const lastFileSig = useRef(0);
     useEffect(() => {
       if (!setSubsProp) {
@@ -49560,9 +49580,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     // open the filing worksheet for a report (from Aggregation or Submissions)
     const openWorksheet = r => {
       const reportRef = r.reportRef || `${r.kind}-${(TODAY || '').slice(0, 4)}-${refHash2(r.id)}`;
+      const saved = subs[r.id];
+      // Existing prepared/filed records still belong to the desk. Only a
+      // new worksheet derived from currently available transfers is gated.
+      const requiresTransfers = r.kind === regime.wireCode && !(saved && (saved.status === 'prepared' || saved.status === 'submitted'));
       setWorksheet({
         ...r,
-        reportRef
+        reportRef,
+        requiresTransfers
       });
       setTab('submissions');
     };
@@ -49635,6 +49660,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       fwrReceipt
     }) => {
       const r = worksheet;
+      if (!r || worksheetNow.current.worksheet !== r) {
+        throw new Error('This worksheet is no longer open. Reopen it before filing.');
+      }
+      if (r.requiresTransfers && worksheetNow.current.transfersOn !== true) {
+        throw new Error(transfersBlockedNote);
+      }
       const kindLabel = window.CDOS.LCTR.kindLabelOf(r.kind, regime);
       /* What this report corrects, printed on the sealed copy itself. An
          examiner holding two reports about the same person on the same day
@@ -49744,8 +49775,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     /* No list, so the Screening tile is words and the tab has no badge.
        A number here, including zero, used to read as a hit count. */
     const philippines = regime.id === 'pack-ph-v1';
-    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries]);
-    const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
+    const aggN = useMemo(() => aggClusters(rows, regime, settings).length + aggClustersEFT(loadTransfers(transfersOn), bookBeneficiaries(beneficiaries), regime, settings).length, [rows, settings, beneficiaries, transfersOn]);
+    const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs, transfersOn).length, [rows, clients, settings, beneficiaries, subs, transfersOn]);
     const strN = useMemo(() => {
       const flags = computeFlags(rows, clients, settings);
       const s = new Set();
@@ -49880,6 +49911,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       settings: settings,
       onOpenSettings: onOpenSettings
     }), tab === 'aggregation' && /*#__PURE__*/React.createElement(Aggregation, {
+      transfersOn: transfersOn,
       rows: rows,
       settings: settings,
       subs: subs,
@@ -49890,6 +49922,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       onOpenRefs: onOpenRefs,
       onOpenTransfers: onOpenTransfers
     }), tab === 'submissions' && /*#__PURE__*/React.createElement(Submissions, {
+      transfersOn: transfersOn,
       rows: rows,
       clients: clients,
       settings: settings,
@@ -49929,7 +49962,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       report: worksheet,
       ctx: ctx,
       onFile: onSeal,
-      onClose: () => setWorksheet(null)
+      onClose: () => setWorksheet(null),
+      filingBlocked: worksheet.requiresTransfers && transfersOn !== true ? transfersBlockedNote : ''
     }));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
@@ -75605,10 +75639,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           const role = SRV2OS[u.role] || 'Cashier';
           const name = u.name || u.id;
           const cur = meRef.current;
-          if (cur && cur.name === name && cur.role === role) return;
+          // Refresh server capabilities even when the visible name/role is unchanged.
           srvUserRef.current = u;
           setSrvUser(u);
           setUser(u.id);
+          if (cur && cur.name === name && cur.role === role) return;
           setMe({
             name,
             role
@@ -75788,10 +75823,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [subs, rows, settings]);
     // Open reportable OBLIGATIONS not yet sealed — the identical canonical list the
     // Compliance ▸ Filings page shows, so the badge and that page can never disagree.
+    // Only explicit server permission enables Transfers. Pass that render
+    // input to every report count, not the post-render global cache.
+    const transfersOn = !!srvUser && srvUser.transfersAvailable === true;
     const openObligations = useMemo(() => {
       const fn = window.CDOS.openReportables;
-      return fn ? fn(rows, clients, settings, beneficiaries, subs) : [];
-    }, [rows, clients, settings, beneficiaries, subs]);
+      return fn ? fn(rows, clients, settings, beneficiaries, subs, transfersOn) : [];
+    }, [rows, clients, settings, beneficiaries, subs, transfersOn]);
     // computeAlerts still supplies the (row-based) structuring + KYC tallies; the
     // reportable count comes from the obligation list above.
     const alerts = useMemo(() => ({
@@ -76782,10 +76820,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     // (e.g. enterDesktop's deferred openApp) capture an initialized binding
     // rather than hitting the temporal dead zone.
     const activePlan = settings && settings.billingPlan || 'premium';
-    /* Transfers are off for a real shop (CD-111): the server says so at
-       sign-in (transfersAvailable) and refuses the routes. Until the
-       server has answered, the app stays, as it did before. */
-    const transfersOn = !srvUser || srvUser.transfersAvailable !== false;
+    /* Compatibility for standalone helpers; desk components receive the
+       capability directly so a refresh cannot retain stale EFT actions. */
     useEffect(() => {
       window.CDOS.transfersAvailable = transfersOn;
     }, [transfersOn]);
@@ -77014,6 +77050,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           });
         case 'ledger':
           return id !== 'ledger' ? /*#__PURE__*/React.createElement(Ledger, {
+            transfersOn,
             rows,
             setRows,
             clients,
@@ -77052,6 +77089,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             serverBacked: !!srvUser,
             onTillChanged: syncTillFromServer
           }) : /*#__PURE__*/React.createElement(Ledger, {
+            transfersOn,
             rows,
             setRows,
             clients,
@@ -77146,6 +77184,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           });
         case 'compliance':
           return /*#__PURE__*/React.createElement(Compliance, {
+            transfersOn,
             rows,
             setRows,
             clients,
@@ -77186,6 +77225,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           });
         case 'dashboard':
           return /*#__PURE__*/React.createElement(Dashboard, {
+            transfersOn: transfersOn,
             serverBacked: !!srvUser,
             cashVersion: cashVersion,
             rows: rows,

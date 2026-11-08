@@ -24,6 +24,7 @@ import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from ".
 import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
 import { isStagingFreshShop, STAGING_OWNER_DOMAIN } from "./staging-fresh-shop.js";
 import { tenantPlan } from "./tenant.js";
+import { transfersAvailable } from "../ledger/transfers-gate.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -265,7 +266,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     // resolved by tenantPlan (trial → premium-level access during the trial)
     const plan = await tenantPlan(db, tenantId);
     return reply.code(201).send({
-      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: stagingTestShop, plan },
+      user: { id: email, name: p.ownerName, role: "administrator", tenantId, legalEntityId, branchId, authorizedBranchIds: [branchId], mustChangePassword: stagingTestShop, plan, transfersAvailable: await transfersAvailable(db, tenantId) },
       tenant: { id: tenantId, name: p.businessName, slug: p.slug, plan, setup: p.onboarding ?? null },
     });
   });

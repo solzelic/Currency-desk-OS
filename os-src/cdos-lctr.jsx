@@ -374,7 +374,7 @@
   /* ====================================================================
      FACE 1 — FILING WORKSHEET
   ==================================================================== */
-  function Worksheet({ report, ctx, onFile, onClose }) {
+  function Worksheet({ report, ctx, onFile, onClose, filingBlocked }) {
     const blocks = useMemo(() => buildMap(report, ctx), [report, ctx]);
     const comps = useMemo(() => companions(report, ctx), [report, ctx]);
     const { regime } = ctx;
@@ -448,7 +448,7 @@
        correction is filed as a new linked report, never as a replacement),
        and both of them mean the worksheet stays open with the words on it. */
     const doFile = async () => {
-      if (!receipt.trim() || sealing) return;
+      if (filingBlocked || !receipt.trim() || sealing) return;
       setSealing(true); setSealError('');
       try {
         await onFile({ map: resolve(), prompts: vals, ticks, fwrReceipt: receipt.trim() });
@@ -584,10 +584,11 @@
 
         {/* footer — mark filed */}
         <div className="flex-none px-5 py-3.5" style={{ borderTop: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
+          {filingBlocked && <div role="status" className="mb-2 text-[11.5px]" style={{ color: CD.flag }}>{filingBlocked}</div>}
           {!filing ? (
             <div className="flex items-center gap-3">
               <div className="text-[11.5px] flex-1" style={{ color: reqLeft ? CD.flag : CD.mute }}>{reqLeft ? `${reqLeft} required field${reqLeft === 1 ? '' : 's'} still blank` : `All required fields complete · ${ticked}/${allKeys.length} keyed in. Seal the filed copy once submitted.`}</div>
-              <button onClick={() => setFiling(true)} disabled={reqLeft > 0} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: (reqLeft > 0) ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: (reqLeft > 0) ? 'not-allowed' : 'pointer' }}><Ic n="lock" s={15} c="var(--cd-on-ink)" /> Mark filed & seal</button>
+              <button onClick={() => setFiling(true)} disabled={!!filingBlocked || reqLeft > 0} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white flex-none" style={{ background: (filingBlocked || reqLeft > 0) ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: (filingBlocked || reqLeft > 0) ? 'not-allowed' : 'pointer' }}><Ic n="lock" s={15} c="var(--cd-on-ink)" /> Mark filed & seal</button>
             </div>
           ) : (
             <div>
@@ -599,7 +600,7 @@
                 <div className="flex-none text-[11.5px] font-medium" style={{ color: CD.ink }}>{portalOf(report.kind) ? portalOf(report.kind) + ' acknowledgement #' : 'Acknowledgement #'}</div>
                 <input value={receipt} onChange={e => setReceipt(e.target.value)} autoFocus placeholder={portalOf(report.kind) ? `Paste the ${portalOf(report.kind)} receipt number…` : 'Paste the receipt number the regulator gave you…'} className="flex-1 text-[13px] px-2.5 py-2 outline-none" style={{ border: `1px solid ${CD.ink}`, borderRadius: 8, fontFamily: 'Space Mono, monospace' }} onKeyDown={e => { if (e.key === 'Enter') doFile(); }} />
                 <button onClick={() => setFiling(false)} className="px-3 py-2 text-[12px] font-medium flex-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.mute }}>Back</button>
-                <button onClick={doFile} disabled={!receipt.trim() || sealing} className="px-4 py-2 text-sm font-semibold text-white flex-none" style={{ background: (receipt.trim() && !sealing) ? CD.green : 'var(--cd-disabled)', borderRadius: 8, cursor: (receipt.trim() && !sealing) ? 'pointer' : 'not-allowed' }}>{sealing ? 'Sealing…' : 'Seal filed copy'}</button>
+                <button onClick={doFile} disabled={!!filingBlocked || !receipt.trim() || sealing} className="px-4 py-2 text-sm font-semibold text-white flex-none" style={{ background: (!filingBlocked && receipt.trim() && !sealing) ? CD.green : 'var(--cd-disabled)', borderRadius: 8, cursor: (!filingBlocked && receipt.trim() && !sealing) ? 'pointer' : 'not-allowed' }}>{sealing ? 'Sealing…' : 'Seal filed copy'}</button>
               </div>
             </div>
           )}

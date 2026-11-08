@@ -10,7 +10,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Page } from "@playwright/test";
-import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop, codeFor, logSize } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL: the transfer routes live on the ledger");
 
@@ -28,6 +28,135 @@ async function tenantOf(page: Page): Promise<string> {
   const me = (await page.evaluate(() => fetch("/api/auth/me").then((r) => r.json()))) as { user: { tenantId: string } };
   return me.user.tenantId;
 }
+
+test("direct signup enters a real desk with Transfers off, without a reload", async ({ page }) => {
+  const stamp = Date.now();
+  const email = `owner-${stamp}@transfer-signup.example`;
+  const slug = `transfer${stamp}`;
+  // hasLedger above ensures this is the disposable seam database.
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    await pool.query(
+      "INSERT INTO enquiries (id, reference, kind, email, name, status) VALUES ($1, $2, 'early_access', $3, $4, 'invited')",
+      [`enq-transfer-${stamp}`, `CD-T${String(stamp).slice(-6)}`, email, "Transfer Owner"],
+    );
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.goto("/app?signup=1");
+    await page.getByRole("button", { name: /Canada.*FINTRAC/ }).click();
+    const next = page.getByRole("button", { name: "Continue →", exact: true });
+    await next.click();
+    await page.getByPlaceholder("Maple Currency Exchange").fill("Transfer Signup");
+    await next.click();
+    await page.getByPlaceholder("Dana Kim").fill("Transfer Owner");
+    await page.getByPlaceholder("you@business.com").fill(email);
+    await page.getByPlaceholder("at least 8 characters", { exact: true }).fill("transfer-signup-2026");
+    await page.getByPlaceholder("maplefx", { exact: true }).fill(slug);
+    await next.click();
+    await next.click();
+    await next.click();
+    const before = logSize();
+    await page.getByRole("button", { name: "Create my desk →", exact: true }).click();
+    await page.getByPlaceholder("000000").fill(await codeFor(email, before));
+    const response = page.waitForResponse((r) => r.url().endsWith("/api/signup/verify") && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Verify & open my desk →", exact: true }).click();
+    expect((await (await response).json()).user.transfersAvailable).toBe(false);
+    await page.getByRole("button", { name: "Enter CurrencyDesk →", exact: true }).click();
+    await landOnDesktop(page);
+    await expect(page.locator("#appbar .app-btn[data-app='ledger']")).toBeVisible();
+    await expect(page.locator("#appbar .app-btn[data-app='transfers']")).toHaveCount(0);
+    await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("transfers"));
+    await expect(page.getByRole("status").filter({ hasText: NOTE }).first()).toBeVisible();
+  } finally {
+    await pool.end();
+  }
+});
+
+test("same-user focus refresh updates transfer availability in both directions", async ({ page }) => {
+  await signInAtDesk(page, "j.masri");
+  const tenantId = await tenantOf(page);
+  // hasLedger above ensures this is the disposable seam database.
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  try {
+    for (const on of [false, true]) {
+      await pool.query("UPDATE tenants SET is_test_shop = $1 WHERE id = $2", [on, tenantId]);
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await expect(page.locator("#appbar .app-btn[data-app='transfers']")).toHaveCount(on ? 1 : 0);
+    }
+  } finally {
+    await pool.query("UPDATE tenants SET is_test_shop = true WHERE id = $1", [tenantId]);
+    await pool.end();
+  }
+});
+
+test("already-open Compliance follows capability refresh without losing stored transfers", async ({ page }) => {
+  await signInAtDesk(page, "j.masri");
+  const tenantId = await tenantOf(page);
+  const pool = new Pool({ connectionString: process.env.SEAM_DATABASE_URL! });
+  const saved = await page.evaluate(() => {
+    const key = "cdos_transfers_v1";
+    const before = localStorage.getItem(key);
+    const cdos = (window as unknown as { CDOS: { TODAY: string; openApp: (id: string) => void } }).CDOS;
+    const stored = JSON.stringify([1, 2].map(n => ({
+      id: `capability-${n}`, ref: `TR-CAPABILITY-${n}`, date: cdos.TODAY, time: `10:0${n}`,
+      direction: "send", payAmt: 6000, ccy: "CAD", status: "sent",
+      senderName: "Capability Refresh Person", partner: "Synthetic Partner",
+    })));
+    localStorage.setItem(key, stored);
+    cdos.openApp("compliance");
+    return { before, stored };
+  });
+  const compliance = page.locator('.win-body[data-screen-label="Compliance"]');
+  const refresh = async (on: boolean) => {
+    await pool.query("UPDATE tenants SET is_test_shop = $1 WHERE id = $2", [on, tenantId]);
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.locator("#appbar .app-btn[data-app='transfers']")).toHaveCount(on ? 1 : 0);
+  };
+  try {
+    for (const tab of ["Aggregation", "Filings"]) {
+      await refresh(true);
+      await compliance.locator(".fld-tab").filter({ hasText: new RegExp(tab, "i") }).click();
+      const actions = tab === "Aggregation"
+        ? compliance.getByRole("button", { name: /File EFTR/ })
+        : compliance.locator("div.flex.items-center.gap-3").filter({ hasText: "Capability Refresh Person" }).getByRole("button", { name: "Open worksheet" });
+      await expect(actions).toHaveCount(1);
+      const reports = compliance.getByRole("button", { name: /Reports to file/ }).locator(".font-bold");
+      const enabledCount = Number(await reports.textContent());
+      for (const on of [false, true, false]) {
+        await refresh(on);
+        await expect(actions).toHaveCount(on ? 1 : 0);
+        await expect(reports).toHaveText(String(enabledCount - (on ? 0 : 1)));
+        expect(await page.evaluate(() => localStorage.getItem("cdos_transfers_v1"))).toBe(saved.stored);
+      }
+    }
+    // Keep a fully typed, not-yet-filed worksheet open across revocation.
+    await refresh(true);
+    await compliance.locator(".fld-tab").filter({ hasText: /aggregation/i }).click();
+    await compliance.getByRole("button", { name: /File EFTR/ }).click();
+    const worksheet = page.locator(".fixed.inset-0").filter({ hasText: "FILING WORKSHEET" });
+    for (const input of await worksheet.locator("input, textarea").all()) await input.fill("Synthetic field");
+    await worksheet.getByRole("button", { name: "Mark filed & seal" }).click();
+    const receipt = worksheet.getByPlaceholder(/receipt number/);
+    await receipt.fill("SYNTHETIC-CAPABILITY-RECEIPT");
+    const seal = worksheet.getByRole("button", { name: "Seal filed copy" });
+    await expect(seal).toBeEnabled();
+    await refresh(false);
+    await expect(worksheet.getByRole("status")).toContainText("This unfinished worksheet is kept here, but cannot be filed.");
+    await expect(seal).toBeDisabled();
+    await expect(receipt).toHaveValue("SYNTHETIC-CAPABILITY-RECEIPT");
+    await refresh(true);
+    await expect(worksheet.getByRole("status")).toHaveCount(0);
+    await expect(seal).toBeEnabled();
+    await expect(receipt).toHaveValue("SYNTHETIC-CAPABILITY-RECEIPT");
+  } finally {
+    await pool.query("UPDATE tenants SET is_test_shop = true WHERE id = $1", [tenantId]);
+    await pool.end();
+    await page.evaluate(before => {
+      if (before === null) localStorage.removeItem("cdos_transfers_v1");
+      else localStorage.setItem("cdos_transfers_v1", before);
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, saved.before);
+  }
+});
 
 test("a real shop has no Transfers app, is told why, and the server refuses the transfer", async ({ page }) => {
   await signInAtDesk(page, "j.masri");

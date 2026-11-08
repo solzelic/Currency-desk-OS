@@ -233,6 +233,7 @@ describe("fresh-shop creation", () => {
       const tenantId = `tnt-${opened.slug}`;
       expect(verified.json().user.tenantId).toBe(tenantId);
       expect(verified.json().user.mustChangePassword).toBe(true);
+      expect(verified.json().user.transfersAvailable).toBe(true);
 
       const tenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)))[0];
       expect(tenant).toMatchObject({ siteSlug: opened.slug, plan: "trial", isTestShop: true });
@@ -283,6 +284,7 @@ describe("fresh-shop creation", () => {
       });
       expect(signedIn.statusCode).toBe(200);
       expect(signedIn.json().user).toMatchObject({ tenantId, mustChangePassword: true });
+      expect(signedIn.json().user.transfersAvailable).toBe(true);
 
       const second = await app.inject({
         method: "POST",
@@ -314,6 +316,7 @@ describe("fresh-shop creation", () => {
         payload: { email: parked.email, code: parked.code, isTestShop: true, is_test_shop: true, testShop: true },
       });
       expect(liveVerify.statusCode).toBe(201);
+      expect(liveVerify.json().user.transfersAvailable).toBe(false);
       const parkedTenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, `tnt-${parked.slug}`)))[0];
       expect(parkedTenant).toMatchObject({ isTestShop: false, plan: "trial" });
       const parkedOwner = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, parked.email)))[0];
