@@ -130,6 +130,11 @@ half-finished setup in a second browser.
 (`/api/signup/verify` and `/api/onboarding/:ref/launch`), so they cannot
 build different things.
 
+The direct-signup response includes the server-derived `transfersAvailable`
+capability, just like sign-in and `/api/auth/me`. A real shop enters with
+Transfers off immediately; only a test shop receives `true`. The browser
+does not enable Transfers when that capability is absent.
+
 - The desk address is never asked for. It comes from the workspace they
   picked on their application, falling back to the shop name, and
   `freeSlug` finds a free one rather than refusing at screen 15.

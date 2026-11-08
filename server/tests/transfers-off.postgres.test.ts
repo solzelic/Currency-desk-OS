@@ -5,17 +5,18 @@
    Transfers (EFT) live only in each browser's local storage today, so
    a real shop must not be able to send or receive one: a wire with no
    server record is a wire nobody can report. The server refuses both
-   remittance routes with 422 TRANSFERS_NOT_AVAILABLE before anything
-   is read or written, for every role, and a replay of the same key is
-   refused the same way. A test shop (the staging demo, a sign-up on
+   remittance routes with 422 TRANSFERS_NOT_AVAILABLE before financial
+   or idempotency writes, for every role. Each refused attempt is audited,
+   including a replay of the same key. A test shop (the staging demo, a sign-up on
    the staging door, this harness) keeps them. Settling an obligation a
    test shop already made is not a transfer, and still works once the
    shop is real again. Hiding the menu alone does not pass.
    ============================================================ */
 import pg from "pg";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { createDb, type DbHandle } from "../src/db/index.js";
+import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, markTestShop, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 
@@ -34,6 +35,7 @@ async function cookie(staffId = "r.haddad") {
    till, one verified customer, a rate for the dollar. Every shop is a
    real shop unless something marks it, and reset() makes sure of it. */
 async function reset() {
+  await handle.db.delete(schema.auditEvents).where(eq(schema.auditEvents.action, "transfer.refused_real_shop"));
   await pool.query(
     "TRUNCATE ledger_cheque_events,ledger_cheques,ledger_vault_balances,ledger_vault_movements,ledger_cost_lot_consumption,ledger_cost_lots,ledger_cost_events,quote_events,quote_overrides,quotes,ledger_operational_cash_movements,ledger_till_counts,ledger_till_count_batches,ledger_till_sessions,ledger_audit_events,ledger_reversal_entries,ledger_reversals,ledger_till_movements,ledger_journal_entries,ledger_transactions,ledger_idempotency,ledger_till_balances,ledger_rates,ledger_customers,ledger_principals,ledger_obligations,rate_boards,market_rates CASCADE",
   );
@@ -96,6 +98,7 @@ async function stored() {
   return { transactions: await count("ledger_transactions"), obligations: await count("ledger_obligations"), idempotency: await count("ledger_idempotency") };
 }
 const NOTHING = { transactions: 0, obligations: 0, idempotency: 0 };
+const refusals = () => handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "transfer.refused_real_shop"));
 
 postgres("transfers are off for a real shop", () => {
   beforeAll(async () => {
@@ -118,12 +121,17 @@ postgres("transfers are off for a real shop", () => {
   });
   beforeEach(reset);
 
-  it("refuses a send with 422 TRANSFERS_NOT_AVAILABLE, and stores nothing", async () => {
+  it("refuses a send with 422, records the audit, and stores no financial rows", async () => {
     const res = await send("send-real-1");
     expect(res.statusCode, res.body).toBe(422);
     expect(res.json().code).toBe("TRANSFERS_NOT_AVAILABLE");
     expect(res.json().message).toMatch(/transfer/i);
     expect(await stored()).toEqual(NOTHING);
+    expect(await refusals()).toMatchObject([{
+      tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId,
+      actorId: `${DEMO.tenantId}:r.haddad`,
+      detail: { route: "/api/ledger/remittances/send", idempotencyKey: "send-real-1" },
+    }]);
   });
 
   it("refuses a receive the same way", async () => {
@@ -131,12 +139,17 @@ postgres("transfers are off for a real shop", () => {
     expect(res.statusCode, res.body).toBe(422);
     expect(res.json().code).toBe("TRANSFERS_NOT_AVAILABLE");
     expect(await stored()).toEqual(NOTHING);
+    expect(await refusals()).toMatchObject([{
+      tenantId: DEMO.tenantId, actorId: `${DEMO.tenantId}:r.haddad`,
+      detail: { route: "/api/ledger/remittances/receive", idempotencyKey: "receive-real-1" },
+    }]);
   });
 
   it.each(["j.masri", "r.haddad", "m.costa"])("refuses %s too: no role is let through", async (staffId) => {
     const res = await send(`send-${staffId}`, staffId);
     expect(res.statusCode, res.body).toBe(422);
     expect(res.json().code).toBe("TRANSFERS_NOT_AVAILABLE");
+    expect(await refusals()).toMatchObject([{ actorId: `${DEMO.tenantId}:${staffId}` }]);
   });
 
   it("refuses a replay of the same key, and still stores nothing", async () => {
@@ -145,6 +158,7 @@ postgres("transfers are off for a real shop", () => {
     expect(again.statusCode, again.body).toBe(422);
     expect(again.json().code).toBe("TRANSFERS_NOT_AVAILABLE");
     expect(await stored()).toEqual(NOTHING);
+    expect(await refusals()).toHaveLength(2);
   });
 
   it("lets a test shop send and receive, as today", async () => {
@@ -154,6 +168,7 @@ postgres("transfers are off for a real shop", () => {
     const got = await receive("receive-test-1");
     expect(got.statusCode, got.body).toBe(201);
     expect((await stored()).transactions).toBe(2);
+    expect(await refusals()).toHaveLength(0);
   });
 
   it("still settles an obligation a test shop made, after the shop is real again", async () => {

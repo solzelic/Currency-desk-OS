@@ -161,7 +161,7 @@
      in the boxes. Where the book has no answer the tile says so; see
      docs/ABSENT_FIGURES.md.
      ============================================================ */
-  function Dashboard({ rows, clients, settings, me, onOpenLedger, onOpenClient, openFiltered, onOpenApp, serverBacked, cashVersion, subs, beneficiaries }) {
+  function Dashboard({ transfersOn, rows, clients, settings, me, onOpenLedger, onOpenClient, openFiltered, onOpenApp, serverBacked, cashVersion, subs, beneficiaries }) {
     const [posMode, setPosMode] = useState('value');
     const [range, setRange] = useState('30d');
     // the trading day and the jurisdiction pack, from the server
@@ -237,7 +237,7 @@
     const sensitivity = fxTotal == null ? null : Math.abs(fxTotal) * 0.01;
     const maxPos = Math.max(1, ...((held || []).map(p => Math.abs(p.home || 0))));
 
-    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}).length : 0), [rows, clients, settings, beneficiaries, subs]);
+    const dueN = useMemo(() => (window.CDOS.openReportables ? window.CDOS.openReportables(rows, clients, settings, beneficiaries || [], subs || {}, transfersOn).length : 0), [rows, clients, settings, beneficiaries, subs, transfersOn]);
     const D = useMemo(() => {
       /* These read the transaction rows the ledger sent, which is what
          `rows` now is — the demo seed is gone. Grouping records the server

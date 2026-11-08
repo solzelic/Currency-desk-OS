@@ -5,6 +5,7 @@ import pg from "pg";
 import { z } from "zod";
 import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { audit } from "../audit.js";
 import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE, setSessionWorkspace } from "../auth/sessions.js";
 import { resolveWorkspaceForUser } from "../auth/workspace-scope.js";
@@ -1510,19 +1511,36 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     });
   }
 
-  /* Transfers are off for a real shop (CD-111): refused here, before
-     the service reads the idempotency row or writes anything, so a
-     replay of the same key is refused the same way. A test shop is let
-     through. Settling or writing off an obligation below is not a
-     transfer and is not gated. */
-  const unlessTransfersOff = <T,>(post: (actor: LedgerActor, input: T) => Promise<unknown>) =>
+  /* Transfers are off for a real shop (CD-111): refused and audited
+     before the posting service reads idempotency or writes money. Each
+     refused retry gets its own audit event, not a financial replay.
+     Settling or writing off an obligation below is not gated. */
+  const unlessTransfersOff = <T extends { idempotencyKey: string }>(
+    direction: "send" | "receive",
+    post: (actor: LedgerActor, input: T) => Promise<unknown>,
+  ) =>
     async (actor: LedgerActor, input: T) => {
-      await assertTransfersAvailable(db, actor.tenantId);
+      try {
+        await assertTransfersAvailable(db, actor.tenantId);
+      } catch (error) {
+        if (error instanceof LedgerError && error.code === "TRANSFERS_NOT_AVAILABLE") {
+          // Scope is authenticated; only the schema-bounded retry key is
+          // caller supplied. Never copy customer, beneficiary or money fields.
+          // An audit failure propagates and can never reach the posting call.
+          await audit(db, {
+            tenantId: actor.tenantId, legalEntityId: actor.legalEntityId,
+            branchId: actor.branchId, actorId: actor.userId,
+            action: "transfer.refused_real_shop",
+            detail: { route: `/api/ledger/remittances/${direction}`, idempotencyKey: input.idempotencyKey },
+          });
+        }
+        throw error;
+      }
       return post(actor, input);
     };
-  obligationPost("/api/ledger/remittances/send", remittanceSendBody, unlessTransfersOff((actor, input) =>
+  obligationPost("/api/ledger/remittances/send", remittanceSendBody, unlessTransfersOff("send", (actor, input) =>
     obligations.remittanceSend(actor, input)));
-  obligationPost("/api/ledger/remittances/receive", remittanceReceiveBody, unlessTransfersOff((actor, input) =>
+  obligationPost("/api/ledger/remittances/receive", remittanceReceiveBody, unlessTransfersOff("receive", (actor, input) =>
     obligations.remittanceReceive(actor, input)));
   obligationPost("/api/ledger/bill-payments", billPaymentBody, (actor, input) =>
     obligations.billPayment(actor, input));
