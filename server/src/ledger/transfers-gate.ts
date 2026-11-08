@@ -4,8 +4,9 @@
    wire with no server record is a wire nobody can report, so until
    transfer records are kept on the server (#597) a real shop cannot
    send or receive one. The server says so with 422
-   TRANSFERS_NOT_AVAILABLE before anything is read or written; hiding
-   the Transfers app alone would not do.
+   TRANSFERS_NOT_AVAILABLE before the posting service reads idempotency
+   or writes money. The route records the refusal in the application
+   audit trail; hiding the Transfers app alone would not do.
 
    A test shop keeps them: the staging demo and the staging door's shops
    (server/src/staging), and the shops of a test harness (markTestShop
