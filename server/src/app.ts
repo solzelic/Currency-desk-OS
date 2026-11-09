@@ -15,6 +15,7 @@ import path from "node:path";
 import type { Writable } from "node:stream";
 import type { Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerPasswordChangeGate } from "./auth/password-change-gate.js";
 import { stagingDoorOpen } from "./auth/staging-runtime.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
 import { registerStagingFreshShopRoutes } from "./routes/staging-fresh-shop.js";
@@ -236,6 +237,12 @@ export async function buildApp(
     }
   });
   await refreshSiteDomains(db);
+
+  /* Before every route. A must-change-password cookie is refused here,
+     not inside each handler, so a new protected route cannot forget it.
+     See auth/password-change-gate.ts. Registered after the cookie plugin
+     so the session cookie is already parsed. */
+  registerPasswordChangeGate(app, db);
 
   /* Render healthCheckPath. The process is up. No database read:
      this probe runs often and must not keep the database awake.
