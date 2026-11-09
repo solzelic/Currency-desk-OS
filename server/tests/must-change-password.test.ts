@@ -68,10 +68,77 @@ describe("must-change-password is enforced on the server", () => {
     expect(switched.statusCode).toBe(403);
     expect(switched.json()).toEqual(REFUSAL);
     expect(switched.cookies.find((c) => c.name === "cdos_session")).toBeUndefined();
+  });
 
-    const odd = await app.inject({ method: "GET", url: "/api/public/../staff", cookies: owner });
-    expect(odd.statusCode).not.toBe(200);
-    expect(odd.json().error).not.toBeUndefined();
+  /* light-my-request builds req.url with the WHATWG URL parser before the
+     hook runs. Measured, not assumed: dot segments, %2e%2e, and a
+     backslash are already /api/staff or /api/tenant. An encoded slash
+     (%2f), an encoded backslash (%5c), a dot glued to an encoded slash,
+     and a double slash are left as written. Fastify does not collapse
+     duplicate slashes, so those are not the staff route. */
+  it("keeps a folded or encoded path off the protected handler", async () => {
+    const owner = cookieOf(await login("j.masri"));
+
+    const folded = [
+      "/api/public/../staff",
+      "/api/public/%2e%2e/staff",
+      "/api/public/%2E%2E/staff",
+      "/api/public\\..\\staff",
+      "/api\\staff",
+      "/%2e%2e/api/staff",
+      "/api/./staff",
+      "/api/staff/%2e%2e/tenant",
+    ];
+    for (const url of folded) {
+      const gated = await app.inject({ method: "GET", url, cookies: owner });
+      expect(gated.statusCode, url).toBe(403);
+      expect(gated.json(), url).toEqual(REFUSAL);
+      expect(gated.json(), url).not.toHaveProperty("staff");
+      /* No cookie: the parser landed on the real route, and that
+         handler's own check answers. The 403 above is the gate. */
+      const open = await app.inject({ method: "GET", url });
+      expect(open.statusCode, url).toBe(401);
+      expect(open.json(), url).toEqual({ error: "unauthenticated" });
+    }
+
+    const raw = [
+      "/api/public/%2f../staff",
+      "/api/public/%2f%2e%2e/staff",
+      "/api/staff%2f../tenant",
+      "/api/%2fstaff",
+      "/api/public/%5c../staff",
+      "/api//staff",
+      "/api/public/%2e%2e%2fstaff",
+    ];
+    for (const url of raw) {
+      const gated = await app.inject({ method: "GET", url, cookies: owner });
+      expect(gated.statusCode, url).toBe(403);
+      expect(gated.json(), url).toEqual(REFUSAL);
+      expect(gated.json(), url).not.toHaveProperty("staff");
+      /* No cookie: the router 404s and names this path. There is no
+         staff handler on it. The 403 above is the gate, not that 404. */
+      const open = await app.inject({ method: "GET", url });
+      expect(open.statusCode, url).toBe(404);
+      expect(open.json(), url).toEqual({
+        message: `Route GET:${url} not found`,
+        error: "Not Found",
+        statusCode: 404,
+      });
+    }
+
+    /* One URL decode leaves %252e as %2e inside /api/public/. The gate
+       does not claim it, and the router does not turn it into /api/staff. */
+    const doubled = "/api/public/%252e%252e/staff";
+    for (const cookies of [owner, undefined]) {
+      const res = await app.inject({ method: "GET", url: doubled, cookies });
+      expect(res.statusCode, doubled).toBe(404);
+      expect(res.json(), doubled).toEqual({
+        message: `Route GET:${doubled} not found`,
+        error: "Not Found",
+        statusCode: 404,
+      });
+      expect(res.json(), doubled).not.toHaveProperty("staff");
+    }
   });
 
   it("still answers routes that do not use this session", async () => {
