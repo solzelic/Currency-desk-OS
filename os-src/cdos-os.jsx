@@ -2347,10 +2347,10 @@
     // (e.g. enterDesktop's deferred openApp) capture an initialized binding
     // rather than hitting the temporal dead zone.
     const activePlan = (settings && settings.billingPlan) || 'premium';
-    /* Transfers are off for a real shop (CD-111): the server says so at
-       sign-in (transfersAvailable) and refuses the routes. Until the
-       server has answered, the app stays, as it did before. */
-    const transfersOn = !srvUser || srvUser.transfersAvailable !== false;
+    /* Transfers are off unless the server explicitly allows this shop
+       (CD-111). Missing or malformed capability data never enables the UI;
+       the server remains authoritative and also refuses the routes. */
+    const transfersOn = srvUser?.transfersAvailable === true;
     useEffect(() => { window.CDOS.transfersAvailable = transfersOn; }, [transfersOn]);
     const planAllows = (id) => {
       if (id === 'settings' || id === 'store') return true;

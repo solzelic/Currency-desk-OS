@@ -24,6 +24,48 @@ const { Pool } = requireFromServer("pg") as {
 
 const NOTE = "Transfers are off for this shop until transfer records are kept on the server.";
 
+for (const capability of [
+  { name: "missing", value: undefined, enabled: false },
+  { name: "null", value: null, enabled: false },
+  { name: "false", value: false, enabled: false },
+  { name: "string true", value: "true", enabled: false },
+  { name: "number one", value: 1, enabled: false },
+  { name: "explicit true", value: true, enabled: true },
+]) {
+  test(`Transfers capability: ${capability.name}`, async ({ page }) => {
+    // Retain real authentication and tenant data; vary only the capability
+    // in the successful server session response consumed on reload.
+    await signInAtDesk(page, "j.masri");
+    let capabilityResponses = 0;
+    await page.route("**/api/auth/me", async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      const body = await response.json();
+      expect(body.user).toBeTruthy();
+      if (capability.value === undefined) delete body.user.transfersAvailable;
+      else body.user.transfersAvailable = capability.value;
+      capabilityResponses++;
+      await route.fulfill({ response, json: body });
+    });
+    await page.reload();
+    await expect(page.locator("#appbar .app-btn[data-app='ledger']")).toBeVisible({ timeout: 20_000 });
+    expect(capabilityResponses).toBeGreaterThan(0);
+    await expect(page.locator("#appbar .app-btn[data-app='transfers']")).toHaveCount(capability.enabled ? 1 : 0);
+    if (!capability.enabled) {
+      await page.evaluate(() => (window as unknown as { CDOS: { openApp: (id: string) => void } }).CDOS.openApp("transfers"));
+      await expect(page.getByRole("status").filter({ hasText: NOTE }).first()).toBeVisible();
+      await page.evaluate(() => (window as unknown as { CDOS: { openSettingsTab: (tab: string) => void } }).CDOS.openSettingsTab("transfers"));
+      await expect(page.locator(".win", { hasText: "Cross-border reporting threshold" }).getByText(NOTE)).toBeVisible();
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    const skip = page.locator(".cdos-tour-skip");
+    if (await skip.isVisible()) await skip.click();
+    await page.locator('#phonebar [data-phone-app="more"]').click();
+    await expect(page.locator("#phone-more")).toBeVisible();
+    await expect(page.locator('#phone-more [data-phone-app="transfers"]')).toHaveCount(capability.enabled ? 1 : 0);
+  });
+}
+
 async function tenantOf(page: Page): Promise<string> {
   const me = (await page.evaluate(() => fetch("/api/auth/me").then((r) => r.json()))) as { user: { tenantId: string } };
   return me.user.tenantId;
