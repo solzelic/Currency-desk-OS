@@ -10,7 +10,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Page } from "@playwright/test";
-import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { test, expect, hasLedger, signInAtDesk, landOnDesktop } from "./fixtures";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL: the transfer routes live on the ledger");
 
@@ -48,6 +48,7 @@ for (const capability of [
       await route.fulfill({ response, json: body });
     });
     await page.reload();
+    await landOnDesktop(page);
     await expect(page.locator("#appbar .app-btn[data-app='ledger']")).toBeVisible({ timeout: 20_000 });
     expect(capabilityResponses).toBeGreaterThan(0);
     await expect(page.locator("#appbar .app-btn[data-app='transfers']")).toHaveCount(capability.enabled ? 1 : 0);
