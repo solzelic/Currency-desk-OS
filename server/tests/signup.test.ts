@@ -35,7 +35,7 @@ const codeFromLog = (): string => {
   if (!m) throw new Error("no code in log: " + JSON.stringify(logged));
   return m[1]!;
 };
-const cookieOf = (res: { cookies: { name: string; value: string }[] }) => {
+const cookieOf = (res: { cookies: { name: string; value: string }[] }): Record<string, string> => {
   const c = res.cookies.find((x) => x.name === "cdos_session");
   return c ? { cdos_session: c.value } : {};
 };
@@ -69,7 +69,12 @@ describe("signup", () => {
     expect(body.tenant).toMatchObject({ slug: "maplefx", name: "Maple FX" });
     expect(body.tenant.plan).toBe(body.user.plan); // consistent entitlement
     expect(body.user).toMatchObject({ id: "dana@maplefx.ca", role: "administrator", tenantId: "tnt-maplefx" });
+    // The desk uses this response immediately, before /auth/me or a reload.
+    expect(body.user.transfersAvailable).toBe(false);
     expect(cookieOf(ok).cdos_session).toBeTruthy();
+    const me = await app.inject({ method: "GET", url: "/api/auth/me", cookies: cookieOf(ok) });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.transfersAvailable).toBe(body.user.transfersAvailable);
 
     // the tenant, owner, and audit exist; the pending row is gone
     expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-maplefx"))).length).toBe(1);
@@ -95,6 +100,7 @@ describe("signup", () => {
     const login = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: "dana@maplefx.ca", code: codeFromLog() }, cookies: proofCookie(start) });
     expect(login.statusCode).toBe(200);
     expect(login.json().user).toMatchObject({ id: "dana@maplefx.ca", tenantId: "tnt-maplefx", role: "administrator" });
+    expect(login.json().user.transfersAvailable).toBe(false);
   });
 
   it("carries the guided-onboarding config onto the new tenant", async () => {

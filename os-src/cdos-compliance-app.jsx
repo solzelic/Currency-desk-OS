@@ -17,6 +17,10 @@
      desk actually created. Filings, aggregation and the header count read
      through here, so the sample never becomes a report. */
   const loadTransfers = () => {
+    /* Transfers are off for a real shop (CD-111): nothing the browser
+       still holds is a wire the desk can act on, so no cluster is built
+       from it. The entries themselves are left where they are. */
+    if (window.CDOS.transfersAvailable === false) return [];
     let all = [];
     try { all = JSON.parse(localStorage.getItem('cdos_transfers_v1') || '[]') || []; } catch (e) { return []; }
     const book = window.CDOS._transfers && window.CDOS._transfers.bookTransfers;

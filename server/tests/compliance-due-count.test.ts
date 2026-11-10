@@ -308,6 +308,14 @@ function expectDue(subs: Record<string, unknown>, n: string) {
 }
 
 describe("the shell alerts equal the header", () => {
+  it("keeps Transfers off before a server capability is known", () => {
+    // This scaffold boots the real shell with its initial null server user.
+    const { html } = shell({}, [], ["compliance", "transfers"]);
+    expect(html).toContain('data-app="ledger"');
+    expect(html).not.toContain('data-app="transfers"');
+    expect(html).toContain("Transfers are off for this shop");
+    expect(html).toContain("Nothing already recorded on this computer has been removed.");
+  });
   it("counts nothing due", () => expectDue({}, "0"));
   it("counts a prepared filing on every surface", () => expectDue(PREPARED, "1"));
   it("counts a sealed filing as zero", () => expectDue(SEALED, "0"));

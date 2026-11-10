@@ -978,7 +978,7 @@
     </div>);
   }
 
-  function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, serverStaffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin }) {
+  function SettingsView({ perms, setPerms, settings, setSettings, me, transfersOn, serverRole, serverStaffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin }) {
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -1752,6 +1752,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
         {tab === 'transfers' && (<div>
           <SectionTitle icon="globe" title="Transfers" sub="Cross-border money movement — the reporting line and desk defaults for the Transfers app." />
+          {/* Transfers are off for a real shop (CD-111); the server refuses them. */}
+          {transfersOn === false && <div role="status" className="flex items-start gap-2 mb-3 px-3 py-2.5" style={{ background: 'var(--cd-chip)', borderRadius: 10, fontSize: 12.5, color: CD.ink }}>
+            <Ic n="globe" s={14} c={CD.mute} /><span>{window.CDOS.TRANSFERS_OFF_NOTE} The settings below stay for when they are.</span>
+          </div>}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Regulatory reporting</div>
           <Row title="Cross-border reporting threshold" desc={`International transfers at or above this are flagged in the pipeline and listed in the EFT report. Follows your jurisdiction (${(window.CDOS.getRegime ? window.CDOS.getRegime(settings).authority : '') || 'your regulator'}).`}><Money k="threshold" /></Row>
           <div className="flex items-start gap-2 mt-3 px-3 py-2.5" style={{ background: 'var(--cd-chip)', borderRadius: 10 }}>

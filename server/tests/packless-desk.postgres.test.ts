@@ -11,7 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { LedgerService, type LedgerActor } from "../src/ledger/service.js";
-import { DEMO, seed } from "../src/seed.js";
+import { DEMO, markTestShop, seed } from "../src/seed.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -136,6 +136,8 @@ postgres("a desk with no country pack uses the baseline", () => {
     pool = new pg.Pool({ connectionString: url });
     handle = await createDb();
     await seed(handle.db);
+    /* This desk sends transfers below; a test shop keeps them (CD-111). */
+    await markTestShop(handle.db);
     await pool.query("DELETE FROM tenant_state WHERE tenant_id=$1", [DEMO.tenantId]);
     app = await buildApp(handle.db);
     service = new LedgerService(pool);

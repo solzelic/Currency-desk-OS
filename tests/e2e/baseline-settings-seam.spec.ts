@@ -55,6 +55,16 @@ async function openComplianceSettings(page: Page) {
   await rendered(page, /Large cash \/ reportable threshold/i);
 }
 
+
+/* A shop made by sign-up is a real shop, and a real shop has no
+   Transfers (CD-111). This spec reads the Transfers app's rules, so the
+   shop is marked as a test shop once it is signed in, as the staging
+   door marks the shops it makes. */
+async function markTestShop(page: Page): Promise<void> {
+  const me = (await page.evaluate(() => fetch("/api/auth/me").then((r) => r.json()))) as { user: { tenantId: string } };
+  await pool.query("UPDATE tenants SET is_test_shop = true WHERE id = $1", [me.user.tenantId]);
+}
+
 test("a baseline desk's Settings names the international rules and the converted amounts", async ({ page }) => {
   const prior = await pool.query(`SELECT id, fetched_at FROM market_rates`);
   await pool.query(
@@ -90,6 +100,7 @@ test("a baseline desk's Settings names the international rules and the converted
     await expect(page.getByText(SHOP).first()).toBeVisible();
     const skip = page.locator(".cdos-tour-skip");
     if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await markTestShop(page);
 
     await openComplianceSettings(page);
     const panel = page.getByTestId("compliance-jurisdiction");
@@ -129,6 +140,7 @@ test("a baseline desk's Settings names the international rules and the converted
     await page.reload();
     await landOnDesktop(page);
     if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await markTestShop(page);
     await openComplianceSettings(page);
     await expect(page.getByTestId("compliance-jurisdiction").getByText(
       "Stricter than the international baseline. Your line is £5,000.00. The baseline is £8,000.00, which is 10,000 USD at today's market rate.",
@@ -147,6 +159,7 @@ test("a baseline desk's Settings names the international rules and the converted
     await page.reload();
     await landOnDesktop(page);
     if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await markTestShop(page);
     await openComplianceSettings(page);
     const looserPanel = page.getByTestId("compliance-jurisdiction");
     /* The same sentence is the posture note and the "not compliant" banner.
@@ -223,6 +236,7 @@ test("a baseline desk's Settings names the international rules and the converted
     await page.reload();
     await landOnDesktop(page);
     if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+    await markTestShop(page);
     await openComplianceSettings(page);
     const again = page.getByTestId("compliance-jurisdiction");
     await expect(again.getByText("Identification is required on every deal.")).toBeVisible();

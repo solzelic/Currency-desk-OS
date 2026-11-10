@@ -75,6 +75,16 @@ function remit(key: string, customerId: string, amount: string, purpose: string,
   };
 }
 
+
+/* A shop made by sign-up is a real shop, and a real shop cannot send a
+   transfer (CD-111). These specs send one, so the shop is marked as a
+   test shop once it is signed in, as the staging door marks the shops it
+   makes. */
+async function markTestShop(page: Page): Promise<void> {
+  const me = (await page.evaluate(() => fetch("/api/auth/me").then((r) => r.json()))) as { user: { tenantId: string } };
+  await pool.query("UPDATE tenants SET is_test_shop = true WHERE id = $1", [me.user.tenantId]);
+}
+
 test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site does not call 55,000 a cash report", async ({ page }) => {
   test.setTimeout(180_000);
 
@@ -125,6 +135,7 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
   await landOnDesktop(page);
   const skip = page.locator(".cdos-tour-skip");
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+  await markTestShop(page);
 
   await expect.poll(async () => {
     const answer = await page.evaluate(() =>
@@ -142,6 +153,7 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
   await page.reload();
   await landOnDesktop(page);
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+  await markTestShop(page);
 
   await openComplianceSettings(page);
   await expect(page.getByTestId("adopt-ae-pack")).toBeVisible();
@@ -313,6 +325,7 @@ test("a new UAE desk opens on pack-ae-v2, an older desk opts in, and the site do
   await page.reload();
   await landOnDesktop(page);
   if (await skip.isVisible({ timeout: 3_000 }).catch(() => false)) await skip.click();
+  await markTestShop(page);
   await expect.poll(() => page.evaluate(() => {
     const t = window.CDOS.deskThresholds && window.CDOS.deskThresholds();
     return !!(t && t.transferDueDiligence && t.transferDueDiligence.everyDeal);

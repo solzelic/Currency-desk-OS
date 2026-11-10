@@ -148,9 +148,10 @@ describe("PIN writers", () => {
     expect(named(/insert\s+into\s+db_environment/i)).toEqual(["staging/cli.ts"]);
     expect(named(/db_environment/).filter((p) => p.startsWith("routes/") || p === "app.ts")).toEqual([]);
     expect(named(/seeded_by\s*=/i)).toEqual(["staging/pin-reset.ts"]);
-    /* is_test_shop: provisioning from the two staging fresh-shop doors, and the reset marking the seed shop. */
+    /* is_test_shop: provisioning from the two staging fresh-shop doors, the reset marking the seed shop,
+       and markTestShop in seed.ts, which only a test harness calls (CD-111: a test shop keeps Transfers). */
     expect(named(/isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|isTestShop\s*=(?!=)|is_test_shop\s*=\s*true/)).toEqual(
-      ["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
+      ["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts", "seed.ts", "staging/pin-reset.ts"]);
   });
 });
 
