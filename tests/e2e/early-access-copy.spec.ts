@@ -17,7 +17,10 @@ for (const width of [1280, 390]) {
     await expect(legal).not.toContainText('never sell');
     await expect(legal.getByRole('link', { name: 'Terms', exact: true })).toHaveAttribute('href', '/legal#terms');
     await expect(legal.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/legal#privacy');
-    const bar = page.locator('[style*="cdBar 9s"]');
+    // CSSOM serializes shorthand timing before its name; do not depend on
+    // the source order of the animation declaration in the rendered style.
+    const bar = page.locator('[aria-hidden="true"][style*="cdBar"]');
+    await expect(bar).toHaveCSS('animation-name', 'cdBar');
     await expect(bar).toHaveCSS('animation-duration', '9s');
     expect(await bar.evaluate(el => getComputedStyle(el).backgroundImage)).not.toContain('194, 69, 45');
     const forward = page.getByRole('button', { name: 'Apply for early access' });
