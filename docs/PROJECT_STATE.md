@@ -1,5 +1,15 @@
 # PROJECT_STATE — what is true now
 
+- **Early Access copy, existing application only (CD-177/178).** The email
+  screen says we will hold a Canadian shop's place. The legal line is 13px
+  and #6B6459, keeps Terms, Privacy Policy and No card required, and omits
+  the unsigned data-sale claim. The nine-second top bar uses green and
+  amber only. The address step uses the approved shop-address sentence.
+  This remains the existing eight-step application, not the four-step v2
+  flow described by CD-177/178/182/183. That v2 source and its approved
+  Light PDF were unavailable for this change: open-signup copy, suggestion
+  chips and the two v2 waitlist endings remain unimplemented here.
+
 This document describes the present. It is not a changelog (git history and
 PRs are the changelog) and not a roadmap essay. Every PR either updates it or
 explicitly records that it was reviewed and needed no change — CI enforces
