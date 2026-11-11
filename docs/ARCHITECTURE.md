@@ -166,6 +166,16 @@ resolution, never to data access. **Any new endpoint that takes a tenant id
 in the body or query is wrong by default** and needs a comment justifying why
 it is the exception.
 
+**A temporary password is not a desk session.** `must_change_password` is
+enforced in `server/src/auth/password-change-gate.ts`, a hook on every `/api`
+request, not in the sign-in screen and not as a line each handler remembers.
+While the flag is set the cookie can change that password and sign out. It
+cannot open the rest of the API (403 `password_change_required`). Sign-in
+doors and routes that never read the session stay open, because the browser
+sends the cookie with those calls and refusing them traps the person without
+hiding anything. A successful change clears the flag and that same cookie
+works again.
+
 **Hold as little as possible.** Every field we store is a field we can lose.
 Before adding one, ask what breaks if we do not have it. Photographed ID is
 the sharpest case: we need to know it was *sighted and verified*, which is not
