@@ -1715,7 +1715,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <CostMethodRow />
           <div className="mt-4">
             <div className="text-sm font-medium mb-1" style={{ color: CD.ink }}>Per-currency low-stock floor</div>
-            <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Units of each currency to keep on hand. Blank = the built-in reorder band.</div>
+            <div className="text-[11px] mb-2" style={{ color: CD.mute }}>Units of each currency to keep on hand. Blank = no floor, so nothing is flagged.</div>
             <div className="grid grid-cols-3 gap-2">
               {(CCY || []).filter(c => c !== base).map(c => { const floors = settings.vaultFloors || {}; return (
                 <div key={c} className="flex items-center gap-2 px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, background: CD.panel }}>
