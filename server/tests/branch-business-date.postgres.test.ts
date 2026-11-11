@@ -193,12 +193,31 @@ postgres("a till session takes the branch's civil day", () => {
     }
     const opener = await login(openerId, password);
     const headers = { "x-workspace-id": workspaceId };
+    const openingPayload = { balances: { CAD: "25000.00", USD: "4000.00" } };
+    /* Both hires still have the temporary password. The first post is
+       refused. They pick their own, and the same cookie then posts. */
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/ledger/opening-balances",
+      cookies: opener,
+      headers,
+      payload: openingPayload,
+    });
+    expect(blocked.statusCode, blocked.body).toBe(403);
+    expect(blocked.json().error).toBe("password_change_required");
+    const changed = await app.inject({
+      method: "POST",
+      url: "/api/auth/change-password",
+      cookies: opener,
+      payload: { currentPassword: password, newPassword: "branch-day-own-1" },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
     expect((await app.inject({
       method: "POST",
       url: "/api/ledger/opening-balances",
       cookies: opener,
       headers,
-      payload: { balances: { CAD: "25000.00", USD: "4000.00" } },
+      payload: openingPayload,
     })).statusCode).toBe(201);
     const opened = await app.inject({
       method: "POST",
@@ -249,12 +268,29 @@ postgres("a till session takes the branch's civil day", () => {
       ]),
     );
     const closer = await login(closerId, password);
+    const handPayload = { idempotencyKey: `branch-day-hand-${input.tag}`, counts };
+    const held = await app.inject({
+      method: "POST",
+      url: "/api/ledger/till-sessions/handover",
+      cookies: closer,
+      headers,
+      payload: handPayload,
+    });
+    expect(held.statusCode, held.body).toBe(403);
+    expect(held.json().error).toBe("password_change_required");
+    const closerChanged = await app.inject({
+      method: "POST",
+      url: "/api/auth/change-password",
+      cookies: closer,
+      payload: { currentPassword: password, newPassword: "branch-day-own-1" },
+    });
+    expect(closerChanged.statusCode, closerChanged.body).toBe(200);
     const handed = await app.inject({
       method: "POST",
       url: "/api/ledger/till-sessions/handover",
       cookies: closer,
       headers,
-      payload: { idempotencyKey: `branch-day-hand-${input.tag}`, counts },
+      payload: handPayload,
     });
     expect(handed.statusCode, handed.body).toBe(201);
     expect(handed.json().session.businessDate).toBe(input.day);

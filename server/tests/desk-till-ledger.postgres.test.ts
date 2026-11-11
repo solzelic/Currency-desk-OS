@@ -158,10 +158,25 @@ postgres("a new till can take a customer", () => {
 
     const teller = await login("t.mensah", temp);
     const scoped = { "x-workspace-id": workspaceId };
+    const openingPayload = { balances: { CAD: "8000.00", USD: "4000.00" } };
+
+    /* The hire is a temporary password. The desk stays shut until they
+       replace it. This is the refusal, then the change, then the shift. */
+    const blocked = await app.inject({
+      method: "POST", url: "/api/ledger/opening-balances", cookies: teller, headers: scoped,
+      payload: openingPayload,
+    });
+    expect(blocked.statusCode, blocked.body).toBe(403);
+    expect(blocked.json().error).toBe("password_change_required");
+    const changed = await app.inject({
+      method: "POST", url: "/api/auth/change-password", cookies: teller,
+      payload: { currentPassword: temp, newPassword: "mensah-own-pass-1" },
+    });
+    expect(changed.statusCode, changed.body).toBe(200);
 
     expect((await app.inject({
       method: "POST", url: "/api/ledger/opening-balances", cookies: teller, headers: scoped,
-      payload: { balances: { CAD: "8000.00", USD: "4000.00" } },
+      payload: openingPayload,
     })).statusCode).toBe(201);
     expect((await app.inject({ method: "POST", url: "/api/ledger/till-sessions/open", cookies: teller, headers: scoped })).statusCode).toBe(201);
 
