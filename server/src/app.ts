@@ -10,7 +10,8 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, type Stats } from "node:fs";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import type { Db } from "./db/index.js";
@@ -145,6 +146,41 @@ const isPublicAsset = (pathname: string, compiled: { os: boolean; admin: boolean
        pages. The flag images are under /assets/. */
     file === "/shared/currency-face.js"
   );
+};
+
+/* A file asked for with its own version is the same bytes forever.
+
+   The built shells (scripts/build-os.mjs) name each file they load with
+   `?v=` and the first 12 hex characters of that file's sha256. Such a
+   request is answered as cacheable for a year and immutable, so a repeat
+   visit does not ask about it again. Before this every visit asked about
+   all seven of the desk's files, about 240 ms each from Israel to staging,
+   and the answer was "not modified".
+
+   The version is checked against the file on disk, not trusted. A tab
+   opened before a deploy asks for the old version and gets today's file,
+   which must not be kept for a year under the old name, so that answer
+   keeps the ordinary `public, max-age=0`. So does a file asked for with
+   no version: the storefront loads the same converter and stylesheet.
+
+   Hashed once per file, size and modified time. The files do not change
+   under a running process; a rebuild during development changes both. */
+const CACHED_FOR_A_YEAR = "public, max-age=31536000, immutable";
+const versions = new Map<string, string>();
+const contentVersion = (file: string, stat: Stats): string => {
+  const key = `${file}:${stat.size}:${stat.mtimeMs}`;
+  let version = versions.get(key);
+  if (version === undefined) {
+    version = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 12);
+    versions.set(key, version);
+  }
+  return version;
+};
+const askedVersion = (url: string): string | null => {
+  const query = url.indexOf("?");
+  if (query === -1) return null;
+  const v = new URLSearchParams(url.slice(query + 1)).get("v");
+  return v !== null && /^[0-9a-f]{12}$/.test(v) ? v : null;
 };
 
 /* Is this request a page, or something a page asked for?
@@ -353,6 +389,14 @@ export async function buildApp(
     const mobileFile = process.env.SITE_MOBILE_INDEX ?? "web/mobile.html";
     const hasMobile = hasSite && existsSync(path.join(staticDir, mobileFile));
 
+    /* The compiled shells are asked for on every visit, so a deploy shows
+       at once. The files they name carry their versions and are kept for a
+       year (contentVersion above). */
+    const compiledShellFiles = new Set([
+      path.join(staticDir, "web/app/index.html"),
+      path.join(staticDir, "web/app/admin.html"),
+    ]);
+
     await registerSiteRoutes(app, staticDir);
     await app.register(fastifyStatic, {
       root: staticDir,
@@ -361,6 +405,16 @@ export async function buildApp(
       // Hosted storefront routes pass their own dedicated root to sendFile;
       // this guard applies only to requests served from the repository root.
       allowedPath: (pathname, root) => root !== staticDir || isPublicAsset(pathname, compiledShells),
+      setHeaders: (reply, file, stat) => {
+        if (compiledShellFiles.has(file)) {
+          reply.header("cache-control", "no-cache");
+          return;
+        }
+        const asked = askedVersion(reply.request.url);
+        if (asked !== null && asked === contentVersion(file, stat)) {
+          reply.header("cache-control", CACHED_FOR_A_YEAR);
+        }
+      },
     });
     app.get("/", (req, reply) => {
       if (!hasMobile) return reply.sendFile(rootFile);

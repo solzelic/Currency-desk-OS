@@ -44,6 +44,7 @@ say.
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
 | `CurrencyDesk OS.html` + `os-src/` + `shared/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
+| `yorkfx.css`, `yorkfx-converter.js`, `web/vendor/` (the versions the shells name) | `npm run build:os` | `web/app/index.html`, `web/app/admin.html` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
 
@@ -72,6 +73,8 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
 
 The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `admin.html`, and `/os-src/` so a deploy that skipped `npm run build:os` can boot the hand-written shells. When `web/app/index.html` is in `STATIC_DIR`, a direct fetch of `/CurrencyDesk OS.html` or of anything under `/os-src/` except `/os-src/york-os.css` is a 404, including a browser navigation. It is not answered with the marketing page. When `web/app/admin.html` is present, `/admin.html` is a 404 the same way. `/shared/id-document-types.js`, `/shared/counter-cash.js`, `/shared/rolling-24h.js`, and `/shared/lctr-reversal.js` are on the list for the uncompiled shell and are a 404 with `os-src/` once the compiled OS shell is present. `/shared/currency-face.js` is served in every case, for the desk and the public pages. Nothing else under `shared/` is served. The compiled desk links `/os-src/york-os.css`, so that stylesheet stays public either way. `/assets/`, `/YorkFX/`, `/web/`, `/yorkfx.css`, and `/yorkfx-converter.js` are unchanged. The two shells are gated separately: a half-built `web/app` hides only the file whose compiled replacement is on disk. When `NODE_ENV` is `production`, a missing `web/app/index.html` logs that the uncompiled shell and `os-src` are public, and a missing `web/app/admin.html` logs that the uncompiled admin shell is public. The admin warning does not mention `os-src`. The same boot logs nothing when `NODE_ENV` is unset or `test`. The fallback itself stays, so a skipped build does not take the desk down.
+
+Caching of the desk and the panel: the compiled shells (`web/app/index.html`, `web/app/admin.html`) are `no-cache`, asked for on every visit, so a deploy shows at once. `scripts/build-os.mjs` names each file they load from our own origin with `?v=` and the first 12 hex characters of that file's sha256. A file asked for with its own version is `public, max-age=31536000, immutable` (`setHeaders` in `server/src/app.ts`), so a repeat visit does not ask about it again. A version that is not the file's own (a tab opened before a deploy) or no version (the storefront's `/sites/yorkfx.css`) keeps `public, max-age=0`. A change to `yorkfx.css`, `yorkfx-converter.js`, `os-src/york-os.css` or `web/vendor/` changes a version the shells name, so it needs `npm run build:os` too; CI's stale check says so.
 
 ## Databases
 

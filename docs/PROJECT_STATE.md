@@ -42,6 +42,9 @@ layers — they are not blockers for proving this core loop.
   Production `/login` and `/app` serve that compiled shell
   (`/web/app/os.js`). `STATIC_INDEX` names the uncompiled shell as a
   fallback only; it does not override compiled output.
+  The compiled shells are `no-cache`; each file they load is named with
+  its content version and served as cacheable for a year, so a repeat
+  visit asks only for the page (`docs/REPOSITORY_MAP.md`, caching).
 - **Admin panel** — `admin.html`, compiled to `web/app/admin.*`.
 - **Marketing site** — generated into `web/` from `design/site/*.dc.html`.
 - **Onboarding** — `web/onboarding.html`, generated from
