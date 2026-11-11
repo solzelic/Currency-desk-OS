@@ -97,3 +97,55 @@ describe("pricing settings and roles", () => {
     expect(res.statusCode, res.body).toBe(200);
   });
 });
+
+/* The change itself is on the record (CD-82, GitHub #567). A save that
+   moves a pricing key or a guardrail writes one settings.pricing_changed
+   audit row: who, their role, and each key that moved, before and after.
+   An echo of the stored values writes none, and a refused save writes
+   none (the refusal has its own row). The desk saves cdos_settings as
+   JSON text, and the row reads that too. */
+describe("a pricing change is audited", () => {
+  const rows = async () => handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.pricing_changed"));
+  beforeEach(async () => { await handle.db.delete(schema.auditEvents).where(eq(schema.auditEvents.action, "settings.pricing_changed")); });
+
+  it("names the manager, their role, and only the keys that moved, before and after", async () => {
+    const res = await put("r.haddad", { cdos_settings: { ...start, defaultFee: 9, spreads: { USD: 2.4 } } });
+    expect(res.statusCode, res.body).toBe(200);
+    const written = await rows();
+    expect(written).toHaveLength(1);
+    expect(written[0]?.actorId).toBe(`${DEMO.tenantId}:r.haddad`);
+    expect(written[0]?.detail).toEqual({
+      staffId: "r.haddad", name: expect.any(String), role: "branch_manager",
+      before: { defaultFee: 2, spreads: { USD: 1.2 } },
+      after: { defaultFee: 9, spreads: { USD: 2.4 } },
+    });
+  });
+
+  it("names the owner who moves a guardrail", async () => {
+    const res = await put("j.masri", { cdos_settings: { ...start, marginFloorPct: 0, marginFloorByCcy: { USD: 0.1 } } });
+    expect(res.statusCode, res.body).toBe(200);
+    const written = await rows();
+    expect(written).toHaveLength(1);
+    expect(written[0]?.detail).toMatchObject({
+      role: "administrator",
+      before: { marginFloorPct: 0.5, marginFloorByCcy: {} },
+      after: { marginFloorPct: 0, marginFloorByCcy: { USD: 0.1 } },
+    });
+  });
+
+  it("writes nothing for a save that was refused, or for an echo of the stored values", async () => {
+    /* The refusal first: it writes nothing, so version 1 is still current
+       for the echo that follows. */
+    expect((await put("m.costa", { cdos_settings: { ...start, defaultFee: 9 } })).statusCode).toBe(403);
+    expect((await put("r.haddad", { cdos_settings: { ...start }, cdos_theme: "dark" })).statusCode).toBe(200);
+    expect(await rows()).toHaveLength(0);
+  });
+
+  it("reads the settings the desk saves as JSON text", async () => {
+    const res = await put("j.masri", { cdos_settings: JSON.stringify({ ...start, defaultSpread: 0.9 }) });
+    expect(res.statusCode, res.body).toBe(200);
+    const written = await rows();
+    expect(written).toHaveLength(1);
+    expect(written[0]?.detail).toMatchObject({ before: { defaultSpread: 1.5 }, after: { defaultSpread: 0.9 } });
+  });
+});
