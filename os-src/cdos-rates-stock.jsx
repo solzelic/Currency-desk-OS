@@ -170,7 +170,7 @@
   }
 
   /* ---- the Cost & stock tab ---- */
-  function RatesStock({ settings, serverRole, me, hasDeals, owns, onRecord, version, w }) {
+  function RatesStock({ settings, serverRole, me, hasDeals, owns, onRecord, version, w, boardRead }) {
     const ui = window.CDOS.ratesUi;
     const { css, Flag, fx, getJson, chip } = ui;
     const home = window.CDOS.deskHomeCcy ? window.CDOS.deskHomeCcy() : '';
@@ -178,17 +178,25 @@
     const [data, setData] = useState({ loading: true, error: null, position: null, market: {}, board: null, moves: [], method: null });
 
     const load = useCallback(async () => {
+      /* What the Board read a moment ago is shown as it is, not asked for
+         again (boardRead, from the Rates window: a minute old at most, and
+         never from before the last cash bought was recorded). Cash bought
+         lately is always asked: the Board does not read it. */
+      const reuse = (name, url) => {
+        const had = boardRead ? boardRead(name) : null;
+        return had ? Promise.resolve(had) : getJson(url);
+      };
       try {
-        const [pos, feed, rates] = await Promise.all([getJson('/api/ledger/position'), getJson('/api/rates/market'), getJson('/api/rates')]);
+        const [pos, feed, rates] = await Promise.all([reuse('position', '/api/ledger/position'), reuse('feed', '/api/rates/market'), reuse('rates', '/api/rates')]);
         const [moves, cm] = await Promise.all([
           getJson('/api/ledger/vault/movements?limit=40').catch(ui.orElse('recent cash bought', { movements: [] })),
-          getJson('/api/ledger/cost-method').catch(ui.orElse('the cost method', null)),
+          reuse('costMethod', '/api/ledger/cost-method').catch(ui.orElse('the cost method', null)),
         ]);
         setData({ loading: false, error: null, position: readPosition(pos), market: B.homeMarket(feed.mids, home), board: rates.board, moves: moves.movements || [], method: cm && cm.method });
       } catch (e) {
         setData(d => ({ ...d, loading: false, error: e.message }));
       }
-    }, [home]);
+    }, [home, boardRead]);
     useEffect(() => { if (hasDeals) load(); }, [load, hasDeals, version]);
 
     if (!hasDeals) {

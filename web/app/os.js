@@ -572,7 +572,21 @@
     return shop !== null ? shop : 0.5;
   }
 
-  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor };
+  /* What the Board already read (the board, the market, the desk's
+     position, the cost method), for Cost & stock to show instead of asking
+     again. A read is { value, askedAt }. It is reused for a minute after it
+     was asked, and not once cash bought was recorded after it was asked
+     (recordedAt): that delivery changed the position. Anything else, or a
+     clock that went backwards, is null, and the tab asks the server. */
+  var READ_REUSE_MS = 60000;
+  function reusableRead(read, now, recordedAt) {
+    if (!read || read.value === null || read.value === undefined) return null;
+    var age = now - read.askedAt;
+    if (!(age >= 0 && age < READ_REUSE_MS)) return null;
+    return read.askedAt > recordedAt ? read.value : null;
+  }
+
+  return { DEFAULT_SPREAD_PCT: DEFAULT_SPREAD_PCT, deskPair: deskPair, homeMarket: homeMarket, draftRows: draftRows, publishBody: publishBody, sameAsPublished: sameAsPublished, feeFor: feeFor, floorFor: floorFor, READ_REUSE_MS: READ_REUSE_MS, reusableRead: reusableRead };
 });
 
 
@@ -61304,7 +61318,8 @@ ${snap}`;
     owns,
     onRecord,
     version,
-    w
+    w,
+    boardRead
   }) {
     const ui = window.CDOS.ratesUi;
     const {
@@ -61326,11 +61341,19 @@ ${snap}`;
       method: null
     });
     const load = useCallback(async () => {
+      /* What the Board read a moment ago is shown as it is, not asked for
+         again (boardRead, from the Rates window: a minute old at most, and
+         never from before the last cash bought was recorded). Cash bought
+         lately is always asked: the Board does not read it. */
+      const reuse = (name, url) => {
+        const had = boardRead ? boardRead(name) : null;
+        return had ? Promise.resolve(had) : getJson(url);
+      };
       try {
-        const [pos, feed, rates] = await Promise.all([getJson('/api/ledger/position'), getJson('/api/rates/market'), getJson('/api/rates')]);
+        const [pos, feed, rates] = await Promise.all([reuse('position', '/api/ledger/position'), reuse('feed', '/api/rates/market'), reuse('rates', '/api/rates')]);
         const [moves, cm] = await Promise.all([getJson('/api/ledger/vault/movements?limit=40').catch(ui.orElse('recent cash bought', {
           movements: []
-        })), getJson('/api/ledger/cost-method').catch(ui.orElse('the cost method', null))]);
+        })), reuse('costMethod', '/api/ledger/cost-method').catch(ui.orElse('the cost method', null))]);
         setData({
           loading: false,
           error: null,
@@ -61347,7 +61370,7 @@ ${snap}`;
           error: e.message
         }));
       }
-    }, [home]);
+    }, [home, boardRead]);
     useEffect(() => {
       if (hasDeals) load();
     }, [load, hasDeals, version]);
@@ -62220,7 +62243,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onOpenSite,
     locked,
     onLock,
-    onRecordCash
+    onRecordCash,
+    onRead
   }) {
     const canPublish = PUBLISHERS.includes(serverRole);
     /* Locked rates take no changes until a manager unlocks them (the
@@ -62264,7 +62288,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        the design does for a Rates plan. */
     useEffect(() => {
       let live = true;
+      const askedAt = Date.now();
       Promise.all([getJson('/api/ledger/position'), getJson('/api/ledger/cost-method').catch(orElse('the cost method', null))]).then(([pos, cm]) => {
+        /* Cost & stock shows these too (onRead, in Rates below). */
+        if (onRead) {
+          onRead('position', pos, askedAt);
+          onRead('costMethod', cm, askedAt);
+        }
         if (!live) return;
         /* The server's figures, shown as they come: what one unit cost
            (avgCostHome) and the basis are the ledger's, never worked out
@@ -62321,12 +62351,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, []);
     const load = useCallback(async () => {
       try {
+        const askedAt = Date.now();
         const [rates, history, feed, screens] = await Promise.all([getJson('/api/rates'), getJson('/api/rates/history'), getJson('/api/rates/market'), getJson('/api/window-screens').catch(e => {
           console.warn('[rates] window screens could not be read', e);
           return {
             screens: []
           };
         })]);
+        if (onRead) {
+          onRead('rates', rates, askedAt);
+          onRead('feed', feed, askedAt);
+        }
         if (onLock && rates.locked !== undefined) onLock(rates.locked);
         setData({
           loading: false,
@@ -62973,6 +63008,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [buying, setBuying] = useState(null);
     const [feedOpen, setFeedOpen] = useState(false);
     const [stockVersion, setStockVersion] = useState(0);
+    /* What the Board read (the board, the market, the position, the cost
+       method), for Cost & stock to show instead of asking again: for a
+       minute, and not from before the last cash bought was recorded
+       (ratesBoard.reusableRead). */
+    const boardReads = useRef({});
+    const recordedAt = useRef(0);
+    const noteRead = useCallback((name, value, askedAt) => {
+      boardReads.current[name] = {
+        value,
+        askedAt
+      };
+    }, []);
+    const boardRead = useCallback(name => B.reusableRead(boardReads.current[name], Date.now(), recordedAt.current), []);
     const setLocked = async on => {
       if (readOnly || locking) return;
       setLocking(true);
@@ -63220,7 +63268,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       tip: tip,
       onTip: setTip,
       onToast: flash,
-      onOpenSite: () => setTab('site')
+      onOpenSite: () => setTab('site'),
+      onRead: noteRead
     }), tab === 'stock' && /*#__PURE__*/React.createElement(window.CDOS.RatesStock, {
       settings: settings,
       serverRole: serverRole,
@@ -63229,6 +63278,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       owns: owns,
       w: w,
       version: stockVersion,
+      boardRead: boardRead,
       onRecord: code => setBuying({
         code
       })
@@ -63311,6 +63361,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       code: buying.code,
       onClose: () => setBuying(null),
       onDone: msg => {
+        recordedAt.current = Date.now();
         setBuying(null);
         setStockVersion(v => v + 1);
         flash(msg);
