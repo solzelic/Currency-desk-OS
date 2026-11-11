@@ -219,7 +219,16 @@ export async function buildApp(
      itself (the logo's sandbox) is kept. One hook for both: a second async
      onSend hook delayed every answer enough that a handler which sends and
      then resolves undefined (admin.ts) got sent twice. */
+  /* A currency's flag (assets/flags, one small SVG each) is kept for a
+     day. Rates draws one for every currency on the board, and with
+     `max-age=0` the browser fetched them all again each time Rates opened.
+     A flag almost never changes: a changed one shows by the next day, and
+     a new currency's flag is a new file. The desk also fetches the board's
+     flags once it is idle (os-src/cdos-os.jsx), so Rates finds them here. */
   app.addHook("onSend", async (req, reply) => {
+    if (reply.statusCode < 400 && /^\/assets\/flags\/[a-z0-9-]+\.svg(?:[?#]|$)/.test(req.url)) {
+      reply.header("cache-control", "public, max-age=86400");
+    }
     const publicCache = req.url.startsWith("/api/public/")
       && String(reply.getHeader("cache-control") ?? "").startsWith("public,");
     if (req.url.startsWith("/api/") && !publicCache) {
