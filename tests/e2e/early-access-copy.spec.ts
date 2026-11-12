@@ -3,6 +3,58 @@ import { test, expect, rendered } from './fixtures';
 // Only walk the existing application screens this copy change owns. No
 // enquiry is submitted and no provisioning, waitlist or v2 flow is simulated.
 for (const width of [1280, 390]) {
+  test(`Early Access owner copy preserves phone and call-time requirements at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const settleCard = () => page.locator('div[style*="cdCardIn"]').evaluate(async element => {
+      await Promise.all(element.getAnimations().map(animation => animation.finished));
+    });
+    const errors: string[] = [];
+    const writes: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => {
+      if (request.method() === 'POST') writes.push(request.url());
+    });
+    await page.goto('/signup');
+    await rendered(page, 'Run the whole exchange');
+    await page.getByRole('button', { name: 'Apply for early access' }).click();
+    await page.getByPlaceholder('you@yourexchange.com').fill('owner@example.invalid');
+    await page.getByRole('button', { name: 'Apply for early access' }).click();
+    await page.getByRole('button', { name: "I don't have a website yet" }).click();
+    await page.getByLabel('What the shop is called').fill('Example test shop');
+    await page.getByRole('button', { name: 'Reserve it' }).click();
+    await page.getByRole('button', { name: /Under \$500K/ }).click();
+    const next = page.getByRole('button', { name: 'Continue', exact: true });
+    await next.click();
+    await page.getByRole('button', { name: /^Spreadsheets & manual logs/ }).click();
+    await next.click();
+    await page.getByRole('button', { name: /As soon as possible/ }).click();
+    await next.click();
+    const mobile = page.getByRole('heading', { name: "What's your mobile number?", exact: true });
+    await expect(mobile).toBeVisible();
+    await expect(page.getByText('If we approve you, we call. The call is mostly us listening, and we follow up once the desk is in your hands.', { exact: true })).toBeVisible();
+    await settleCard();
+    await page.screenshot({ path: testInfo.outputPath(`mobile-${width}.png`), fullPage: true });
+    await next.click();
+    await expect(mobile).toBeVisible();
+    const phone = page.getByPlaceholder('416 555 0148');
+    await phone.fill('4165550148');
+    await next.click();
+    await expect(mobile).toBeVisible(); // A phone alone still needs a call-time choice.
+    await page.getByRole('button', { name: 'Mornings', exact: true }).click();
+    await next.click();
+    const name = page.getByText('Your name goes on your Founding Operator card.', { exact: true });
+    await expect(name).toBeVisible();
+    await settleCard();
+    await page.screenshot({ path: testInfo.outputPath(`name-${width}.png`), fullPage: true });
+    const back = page.locator('button').filter({ has: page.locator('path[d="M19 12H5M11 6l-6 6 6 6"]') });
+    await back.click();
+    await expect(phone).toHaveValue('4165550148');
+    await next.click();
+    await expect(name).toBeVisible(); // Call-time selection also survived Back.
+    expect(writes).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   test(`Early Access shop copy preserves option selection at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const settleCard = () => page.locator('div[style*="cdCardIn"]').evaluate(async element => {
