@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test, expect, rendered } from './fixtures';
 
 // Only walk the existing application screens this copy change owns. No
@@ -153,3 +154,46 @@ for (const width of [1280, 390]) {
     expect(errors).toEqual([]);
   });
 }
+
+// Isolated browser canvas smoke: execute the shipped callback with synthetic
+// state. This does not exercise signup, server acceptance or the reveal.
+test('Early Access certificate draws and exports a PNG without unsigned claims', async ({ page }, testInfo) => {
+  const html = readFileSync('web/early-access.html', 'utf8');
+  const body = html.match(/download = async \(\) => \{([\s\S]*?)\n  \};\n  share =/)?.[1];
+  expect(body).toBeTruthy();
+  const writes: string[] = [];
+  page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+  await page.setContent('<!doctype html><title>Isolated certificate smoke</title>');
+  const result = await page.evaluate(async callback => {
+    const text: string[] = [], messages: string[] = [];
+    let png = '', filename = '', clicks = 0;
+    const originalText = CanvasRenderingContext2D.prototype.fillText;
+    const originalClick = HTMLAnchorElement.prototype.click;
+    CanvasRenderingContext2D.prototype.fillText = function(value, x, y, maxWidth?) {
+      text.push(value);
+      if (maxWidth === undefined) originalText.call(this, value, x, y);
+      else originalText.call(this, value, x, y, maxWidth);
+    };
+    HTMLAnchorElement.prototype.click = function() { png = this.href; filename = this.download; clicks++; };
+    try {
+      const download = new Function('return async function () {' + callback + '\n}')();
+      await download.call({ state: { name: 'Example Operator', memberCount: 42 },
+        _workspaceFull: () => 'example.invalid', _joinDate: () => 'Nov 12, 2026',
+        _jurName: () => 'Canada', flashToast: (message: string) => messages.push(message) });
+      const image = new Image(); image.src = png; await image.decode();
+      return { text, messages, png, filename, clicks, width: image.naturalWidth, height: image.naturalHeight };
+    } finally {
+      CanvasRenderingContext2D.prototype.fillText = originalText;
+      HTMLAnchorElement.prototype.click = originalClick;
+    }
+  }, body!);
+  expect(result.text.join('\n')).not.toMatch(/certifies that|first one hundred|to run their counter|O F\s+1 0 0|held for life/i);
+  for (const field of ['Example Operator', 'Nº 0042', 'example.invalid', 'Nov 12, 2026', 'Canada']) expect(result.text).toContain(field);
+  expect(result.width).toBe(1240); expect(result.height).toBe(1754);
+  expect(result.png).toMatch(/^data:image\/png;base64,/);
+  expect(result.filename).toBe('CurrencyDesk-Founding-Operator-0042.png');
+  expect(result.clicks).toBe(1);
+  expect(result.messages).toEqual(['Certificate Nº 0042 downloaded.']);
+  expect(writes).toEqual([]);
+  await testInfo.attach('synthetic-certificate.png', { body: Buffer.from(result.png.split(',')[1], 'base64'), contentType: 'image/png' });
+});

@@ -502,13 +502,8 @@ class Component extends DCLogic {
       x.fillStyle = '#A9791C'; x.font = '600 22px "IBM Plex Mono", monospace';
       x.fillText('C E R T I F I C A T E   O F   E A R L Y   A C C E S S', cx, 372);
 
-      x.fillStyle = '#5C554C'; x.font = '28px "Schibsted Grotesk", sans-serif';
-      x.fillText('This certifies that', cx, 470);
       x.fillStyle = '#17140F'; x.font = 'italic 96px "Instrument Serif", serif';
       x.fillText(name, cx, 580);
-      x.fillStyle = '#5C554C'; x.font = '28px "Schibsted Grotesk", sans-serif';
-      x.fillText('is among the first one hundred operators', cx, 648);
-      x.fillText('to run their counter on CurrencyDesk.', cx, 692);
 
       const sy = 900, R = 132;
       const g = x.createRadialGradient(cx - 40, sy - 46, 12, cx, sy, R);
@@ -519,8 +514,6 @@ class Component extends DCLogic {
       x.setLineDash([5, 8]); x.lineWidth = 2; x.strokeStyle = 'rgba(246,235,208,0.68)'; x.stroke(); x.setLineDash([]);
       x.fillStyle = '#F6EBD0'; x.font = 'italic 74px "Instrument Serif", serif';
       x.fillText(no, cx, sy + 12);
-      x.font = '600 17px "IBM Plex Mono", monospace'; x.fillStyle = 'rgba(246,235,208,0.86)';
-      x.fillText('O F   1 0 0', cx, sy + 56);
 
       x.fillStyle = '#5C554C'; x.font = '600 20px "IBM Plex Mono", monospace';
       x.fillText('P L A C E   I N   L I N E', cx, sy + 190);
@@ -538,8 +531,6 @@ class Component extends DCLogic {
         x.fillText(val, px, by + 40);
       });
 
-      x.fillStyle = '#17140F'; x.font = 'italic 46px "Instrument Serif", serif';
-      x.fillText('Founding rate, held for life.', cx, 1552);
       x.fillStyle = '#9A938A'; x.font = '600 17px "IBM Plex Mono", monospace';
       x.fillText('C U R R E N C Y D E S K O S . C O M   ·   O N   T H E   R E C O R D', cx, 1622);
 

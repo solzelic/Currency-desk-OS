@@ -71,3 +71,54 @@ for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-
     if (file.startsWith('web/')) assert.match(html, /runningOn: s\.stack/);
   });
 }
+
+// Exercise the actual certificate callback without a browser or outbound writes.
+for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-access.html']) {
+  const html = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+  const body = html.match(/download = async \(\) => \{([\s\S]*?)\n  \};\n  share =/)?.[1];
+  assert.ok(body, 'certificate callback exists');
+  const download = new Function('document', 'return async function () {' + body + '\n}');
+  async function record(failExport = false) {
+    const drawn = [], messages = [], exports = [];
+    let clicks = 0;
+    const context = new Proxy({}, {
+      get: (_, key) => key === 'fillText' ? (...args) => drawn.push(args)
+        : key === 'measureText' ? () => ({ width: 20 })
+        : key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {},
+      set: () => true
+    });
+    const canvas = { getContext: () => context, toDataURL: type => {
+      exports.push(type);
+      if (failExport) throw new Error('synthetic export failure');
+      return 'data:image/png;base64,synthetic';
+    } };
+    const anchor = { click: () => { clicks++; } };
+    const document = { fonts: { ready: Promise.resolve() }, createElement: tag => {
+      assert.ok(['canvas', 'a'].includes(tag));
+      return tag === 'canvas' ? canvas : anchor;
+    } };
+    await download(document).call({ state: { name: ' Example Operator ', memberCount: 42 },
+      _workspaceFull: () => 'example.invalid', _joinDate: () => 'Nov 12, 2026',
+      _jurName: () => 'Canada', flashToast: message => messages.push(message) });
+    return { drawn, messages, exports, clicks, anchor, canvas };
+  }
+  test(`${file}: certificate omits unsigned clauses and keeps fields and PNG export`, async () => {
+    const r = await record();
+    assert.doesNotMatch(r.drawn.map(x => x[0]).join('\n'), /certifies that|first one hundred|to run their counter|O F\s+1 0 0|held for life/i);
+    for (const text of ['Example Operator', 'Nº 0042', 'example.invalid', 'Nov 12, 2026', 'Canada', 'P L A C E   I N   L I N E']) {
+      assert.ok(r.drawn.some(x => x[0] === text), text);
+    }
+    assert.deepEqual(r.drawn.find(x => x[0] === 'Example Operator'), ['Example Operator', 620, 580]);
+    assert.deepEqual(r.drawn.find(x => x[0] === 'Nº 0042'), ['Nº 0042', 620, 912]);
+    assert.equal(r.canvas.width, 1240); assert.equal(r.canvas.height, 1754);
+    assert.deepEqual(r.exports, ['image/png']); assert.equal(r.clicks, 1);
+    assert.equal(r.anchor.download, 'CurrencyDesk-Founding-Operator-0042.png');
+    assert.equal(r.anchor.href, 'data:image/png;base64,synthetic');
+    assert.deepEqual(r.messages, ['Certificate Nº 0042 downloaded.']);
+  });
+  test(`${file}: certificate export failure never reports success or clicks download`, async () => {
+    const r = await record(true);
+    assert.equal(r.clicks, 0);
+    assert.deepEqual(r.messages, ['Could not build the certificate. Try again.']);
+  });
+}
