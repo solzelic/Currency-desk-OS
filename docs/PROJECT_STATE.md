@@ -1,5 +1,12 @@
 # PROJECT_STATE — what is true now
 
+- **Early Access owner copy (partial CD-180).** The existing application
+  asks "What's your mobile number?" and says "Your name goes on your
+  Founding Operator card." Its conditional-call helper, call-time choice,
+  validation and data handling are unchanged. This does not implement the
+  v2 SAM-call/decline controls or accent changes, which remain outside this
+  source-only copy slice.
+
 - **Early Access shop-question copy (partial CD-179).** The existing
   application asks "About how much do you exchange a month?" with the hint
   "A ballpark in Canadian dollars." Two compliance choices display "MSB

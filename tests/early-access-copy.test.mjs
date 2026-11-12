@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 // Check the source and the page served at /signup. These are the applicable
-// CD-177/178/179 changes on the existing eight-step application, not a v2 flow.
+// CD-177/178/179/180 changes on the existing eight-step application, not a v2 flow.
 for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-access.html']) {
   const html = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   test(`${file}: holds a place without an unsigned data claim`, () => {
@@ -34,6 +34,16 @@ for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-
     assert.ok(html.includes('>A ballpark in Canadian dollars.</p>'));
     assert.ok(!html.includes('How much do you move a month?'));
     assert.ok(!html.includes('Ballpark is perfect. It shapes how we build your desk from day one.'));
+  });
+  test(`${file}: name and mobile copy is plain without changing call expectations`, () => {
+    assert.ok(html.includes('>Your name goes on your Founding Operator card.</p>'));
+    assert.ok(html.includes(">What's your mobile number?</h2>"));
+    assert.ok(!html.includes('Last thing. Your name goes on your Founding Operator card.'));
+    assert.ok(!html.includes('Where do we call you?'));
+    assert.ok(html.includes('If we approve you, we call. The call is mostly us listening, and we follow up once the desk is in your hands.'));
+    assert.match(html, /case 6: return this\.phoneOk\(s\.phone\) && !!s\.callWindow;/);
+    assert.match(html, /case 7: return s\.name\.trim\(\)\.length > 1 && !!s\.role && !!s\.employees;/);
+    if (file.startsWith('web/')) assert.match(html, /bestTime: s\.callWindow/);
   });
   test(`${file}: plain compliance labels preserve all saved values and selection`, () => {
     const section = html.match(/    const stacks = [\s\S]*?(?=    const timelineData =)/)?.[0];
