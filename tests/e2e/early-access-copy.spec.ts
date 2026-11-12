@@ -5,6 +5,9 @@ import { test, expect, rendered } from './fixtures';
 for (const width of [1280, 390]) {
   test(`Early Access shop copy preserves option selection at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
+    const settleCard = () => page.locator('div[style*="cdCardIn"]').evaluate(async element => {
+      await Promise.all(element.getAnimations().map(animation => animation.finished));
+    });
     const errors: string[] = [];
     const writes: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -22,6 +25,7 @@ for (const width of [1280, 390]) {
     const volume = page.getByRole('heading', { name: 'About how much do you exchange a month?' });
     await expect(volume).toBeVisible();
     await expect(page.getByText('A ballpark in Canadian dollars.', { exact: true })).toBeVisible();
+    await settleCard();
     await page.screenshot({ path: testInfo.outputPath(`volume-${width}.png`), fullPage: true });
     await page.getByRole('button', { name: /Under \$500K/ }).click();
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -31,9 +35,12 @@ for (const width of [1280, 390]) {
     await expect(apps).toBeVisible();
     await expect(page.getByText('Legacy MSB software', { exact: true })).toHaveCount(0);
     await expect(page.getByText('A patchwork of apps', { exact: true })).toHaveCount(0);
+    await settleCard();
     for (const option of [software, apps]) {
-      const box = await option.boundingBox();
-      expect(box?.height).toBeGreaterThanOrEqual(44);
+      // The entrance starts at scale(.985), briefly rendering a 44px row
+      // at 43.34px. Assert its settled hit area, not that animation frame.
+      await expect.poll(async () => (await option.boundingBox())?.height ?? 0)
+        .toBeGreaterThanOrEqual(44);
       await option.click();
       await expect(option.getByText('✓', { exact: true })).toHaveCSS('opacity', '1');
     }
