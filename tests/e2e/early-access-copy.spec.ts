@@ -3,6 +3,51 @@ import { test, expect, rendered } from './fixtures';
 // Only walk the existing application screens this copy change owns. No
 // enquiry is submitted and no provisioning, waitlist or v2 flow is simulated.
 for (const width of [1280, 390]) {
+  test(`Early Access shop copy preserves option selection at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const errors: string[] = [];
+    const writes: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('request', request => {
+      if (request.method() === 'POST') writes.push(request.url());
+    });
+    await page.goto('/signup');
+    await rendered(page, 'Run the whole exchange');
+    await page.getByRole('button', { name: 'Apply for early access' }).click();
+    await page.getByPlaceholder('you@yourexchange.com').fill('owner@example.invalid');
+    await page.getByRole('button', { name: 'Apply for early access' }).click();
+    await page.getByRole('button', { name: "I don't have a website yet" }).click();
+    await page.getByLabel('What the shop is called').fill('Example test shop');
+    await page.getByRole('button', { name: 'Reserve it' }).click();
+    const volume = page.getByRole('heading', { name: 'About how much do you exchange a month?' });
+    await expect(volume).toBeVisible();
+    await expect(page.getByText('A ballpark in Canadian dollars.', { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`volume-${width}.png`), fullPage: true });
+    await page.getByRole('button', { name: /Under \$500K/ }).click();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    const software = page.getByRole('button', { name: /^MSB software we use/ });
+    const apps = page.getByRole('button', { name: /^A mix of apps/ });
+    await expect(software).toBeVisible();
+    await expect(apps).toBeVisible();
+    await expect(page.getByText('Legacy MSB software', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('A patchwork of apps', { exact: true })).toHaveCount(0);
+    for (const option of [software, apps]) {
+      const box = await option.boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+      await option.click();
+      await expect(option.getByText('✓', { exact: true })).toHaveCSS('opacity', '1');
+    }
+    await expect(software.getByText('✓', { exact: true })).toHaveCSS('opacity', '0');
+    await page.screenshot({ path: testInfo.outputPath(`compliance-${width}.png`), fullPage: true });
+    const back = page.locator('button').filter({ has: page.locator('path[d="M19 12H5M11 6l-6 6 6 6"]') });
+    await back.click();
+    await expect(volume).toBeVisible();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(apps.getByText('✓', { exact: true })).toHaveCSS('opacity', '1');
+    expect(writes).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
   test(`Early Access copy and back/forward navigation at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const errors: string[] = [];
