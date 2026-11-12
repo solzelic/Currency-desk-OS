@@ -1,5 +1,12 @@
 # PROJECT_STATE — what is true now
 
+- **Early Access certificate claims (partial CD-181).** The downloadable
+  certificate omits the unsigned first-hundred assertion, its OF 100 seal
+  qualifier and the lifetime-rate sentence. Names, member numbers, other
+  certificate fields, reveal and PNG download behavior are unchanged.
+  This does not change site-wide pricing copy or implement the missing
+  four-step v2 flow, identity format or call controls.
+
 - **Early Access owner copy (partial CD-180).** The existing application
   asks "What's your mobile number?" and says "Your name goes on your
   Founding Operator card." Its conditional-call helper, call-time choice,
