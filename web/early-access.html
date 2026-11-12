@@ -202,8 +202,8 @@ window.sendEnquiry = function (kind, email, name, details) {
         <sc-if value="{{ s3 }}">
         <div style="animation: cdCardIn 0.55s cubic-bezier(0.2,0.8,0.2,1) both;">
           <div style="width: 46px; height: 46px; border-radius: 13px; background: rgba(29,107,69,0.1); display: grid; place-items: center;"><svg sc-camel-view-box="0 0 24 24" width="24" height="24" fill="none" stroke="#1D6B45" stroke-width="1.8"><path d="M3 3v18h18"></path><path d="M7 14l4-4 3 3 5-6"></path></svg></div>
-          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">How much do you move a month?</h2>
-          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">Ballpark is perfect. It shapes how we build your desk from day one.</p>
+          <h2 style="font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 34px; line-height: 1.05; margin: 22px 0 0;">About how much do you exchange a month?</h2>
+          <p style="font-size: 14px; line-height: 1.5; color: #6B6459; margin: 10px 0 0;">A ballpark in Canadian dollars.</p>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px;">
             <sc-for list="{{ volumeOpts }}" as="opt" hint-placeholder-count="4">
               <button type="button" sc-camel-on-click="{{ opt.onClick }}" style="{{ opt.style }}"><span style="font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">{{ opt.label }}</span><span style="{{ opt.subStyle }}">{{ opt.sub }}</span></button>
@@ -722,8 +722,13 @@ class Component extends DCLogic {
       label: e, onClick: this.pick('employees', e), style: segFlexStyle(s.employees === e)
     }));
     const stacks = ['Spreadsheets & manual logs', 'Legacy MSB software', 'A patchwork of apps', 'Outsourced to a firm', 'Nothing formal yet'];
+    // Display copy can change without changing the existing enquiry values.
+    const stackLabels = {
+      'Legacy MSB software': 'MSB software we use',
+      'A patchwork of apps': 'A mix of apps'
+    };
     const stackOpts = stacks.map((v) => ({
-      label: v, onClick: this.pick('stack', v), style: this.rowStyle(s.stack === v, '#C2452D'),
+      label: stackLabels[v] || v, onClick: this.pick('stack', v), style: this.rowStyle(s.stack === v, '#C2452D'),
       tick: { opacity: s.stack === v ? 1 : 0, color: '#FCFAF5', fontWeight: 700, transition: 'opacity 0.15s ease' }
     }));
     const timelineData = [

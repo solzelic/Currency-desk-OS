@@ -1,5 +1,13 @@
 # PROJECT_STATE — what is true now
 
+- **Early Access shop-question copy (partial CD-179).** The existing
+  application asks "About how much do you exchange a month?" with the hint
+  "A ballpark in Canadian dollars." Two compliance choices display "MSB
+  software we use" and "A mix of apps" while retaining their original
+  enquiry values and selection behavior. This is not the four-step v2
+  redesign: its optional MSB field, FINTRAC folds, website choice and
+  accent changes still require the actual source and approved design.
+
 - **Early Access copy, existing application only (CD-177/178).** The email
   screen says we will hold a Canadian shop's place. The legal line is 13px
   and #6B6459, keeps Terms, Privacy Policy and No card required, and omits
