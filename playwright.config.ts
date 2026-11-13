@@ -72,6 +72,9 @@ export default defineConfig({
          not set this. */
       NODE_ENV: "development",
       CD_TEST_RESET: "1",
+      /* Exercise the production default inside every test. The shared
+         fixture clears earlier tests' history, not this test's limit. */
+      SIGNUP_IP_MAX: "8",
     },
   },
 

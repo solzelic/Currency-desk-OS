@@ -44,7 +44,19 @@ function installedVersion(pkg: string): string {
   return JSON.parse(readFileSync(path.join(ROOT, "node_modules", pkg, "package.json"), "utf8")).version;
 }
 
-export const test = base.extend<{ page: Page }>({
+export const test = base.extend<{ page: Page; resetSignup: void }>({
+  resetSignup: [async ({ request }, use) => {
+    /* All browser tests share one server. Reset only the abuse history,
+       leaving the real limit active throughout this test. The endpoint
+       exists only on the explicitly opted-in, local Postgres seam server. */
+    if (hasLedger) {
+      const response = await request.post("/api/test/reset-signup");
+      if (!response.ok()) {
+        throw new Error(`signup reset failed: ${response.status()} ${await response.text()}`);
+      }
+    }
+    await use(undefined);
+  }, { auto: true }],
   page: async ({ page }, use) => {
     await page.route("**unpkg.com/**", (route) => {
       const url = route.request().url();
