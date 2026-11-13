@@ -58,6 +58,8 @@ const SITE_PAGES = {
   // leads to. Applying is not the same as opening a desk: an accepted
   // operator creates theirs from the OS's own wizard, at /app?signup=1.
   "/signup": "web/early-access.html",
+  // Early Access v2.1, previewed here until /signup switches over to it
+  "/early-access": "web/early-access-v2.html",
   // where the invite email lands: type your code, walk the setup
   "/onboarding": "web/onboarding.html",
 } as const satisfies Record<string, string>;

@@ -216,6 +216,13 @@ const PAGES = {
       "    const pager = [0, 1, 2, 3, 4, 5, 6].map((i) => ({",
       "    const pager = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({",
     ]] },
+  /* Early Access v2.1 (CD-177 to CD-183), ported from Sol's prototype with the
+     real server wired in (the notes are at the top of the source). Previewed at
+     /early-access, kept out of search, until /signup switches over to it. */
+  "CurrencyDesk Early Access v2": { out: "early-access-v2.html", route: "/early-access", anchor: "/early-access", noindex: true,
+    title: "Early access | CurrencyDesk",
+    description: "Reserve your desk on CurrencyDesk. Early access is open to money services businesses in Canada.",
+  },
   // the way back in — always the live route, never a page. A designed sign-in
   // should restyle the OS's real one, not sit in front of it doing nothing.
   "CurrencyDesk Sign In":      { route: "/login", product: true },

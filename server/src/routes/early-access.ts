@@ -1,7 +1,12 @@
 /* ============================================================
    How many of the founding cohort are gone.
 
-     GET /api/site/early-access → { claimed, cap, remaining, full }
+     GET /api/site/early-access → { claimed, cap, remaining, full, mode, samCall }
+
+   `mode` and `samCall` are the Early Access v2.1 page's two switches,
+   read at load: OPEN_SIGNUP=1 turns the page into open sign-up, and
+   SAM_CALL=0 takes the SAM call off it. Unset, it is early access with
+   the call on.
 
    The number on the marketing site used to be the literal 64 the design
    was drawn with, so it said the same thing forever. It is counted here
@@ -36,6 +41,9 @@ const cap = (): number => {
 };
 
 const PLATFORM_TENANT = "tnt-platform";
+
+/* A switch in the environment: on for 1, true, yes or on. */
+const switchOn = (raw: string | undefined): boolean => /^(1|true|yes|on)$/i.test(String(raw ?? "").trim());
 const CACHE_MS = 15_000;
 let cached: { at: number; claimed: number } | null = null;
 
@@ -71,7 +79,11 @@ export function registerEarlyAccessRoutes(app: FastifyInstance, db: Db): void {
     // reads past the cohort, however many apply
     const claimed = Math.min(cached.claimed, total);
     reply.header("cache-control", "public, max-age=15");
-    return { claimed, cap: total, remaining: Math.max(0, total - claimed), full: claimed >= total };
+    return {
+      claimed, cap: total, remaining: Math.max(0, total - claimed), full: claimed >= total,
+      mode: switchOn(process.env.OPEN_SIGNUP) ? "open" : "early_access",
+      samCall: process.env.SAM_CALL == null || process.env.SAM_CALL.trim() === "" || switchOn(process.env.SAM_CALL),
+    };
   });
 }
 

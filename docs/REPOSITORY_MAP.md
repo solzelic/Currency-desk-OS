@@ -56,6 +56,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | --- | --- |
 | `/` (`/d`, `/m`) | marketing site — desktop / phone design by user agent |
 | `/signup` | Early Access application (`web/early-access.html`) |
+| `/early-access` | Early Access v2.1 (`web/early-access-v2.html`, built from `design/site/CurrencyDesk Early Access v2.dc.html`, a port of Sol's prototype with the server wired in; notes at the top of the source). Kept out of search until `/signup` switches over. Reads its two switches from `GET /api/site/early-access` (`mode` from `OPEN_SIGNUP`, `samCall` from `SAM_CALL`). |
 | `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
 | `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path) |
