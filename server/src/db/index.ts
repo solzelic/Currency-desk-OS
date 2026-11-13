@@ -170,6 +170,21 @@ CREATE TABLE IF NOT EXISTS enquiry_contact_consents (
   consented_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS enquiry_contact_consents_idx ON enquiry_contact_consents(enquiry_id, consented_at);
+-- The SAM call's consent, kept as evidence and only ever inserted (073).
+CREATE TABLE IF NOT EXISTS enquiry_call_consents (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  event text NOT NULL CHECK (event IN ('consent', 'stop')),
+  phone text NOT NULL,
+  consent_text text,
+  ip_address text,
+  ip_country text,
+  user_agent text,
+  at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_call_consents_idx ON enquiry_call_consents (enquiry_id, at);
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_at timestamptz;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_zone text;
 CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   id text PRIMARY KEY,
   enquiry_id text NOT NULL REFERENCES enquiries(id),

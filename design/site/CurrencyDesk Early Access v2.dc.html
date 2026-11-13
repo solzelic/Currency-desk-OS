@@ -1302,8 +1302,16 @@ class Component extends DCLogic {
   samBook = (at) => {
     this._tone('step');
     clearTimeout(this._samBookT);
+    const before = { samMode: this.state.samPrev === 'set' && this.state.samAt ? 'set' : 'count', samAt: this.state.samAt };
     this.setState({ samMode: 'set', samAt: at, samJust: true });
     this._samBookT = setTimeout(() => this.setState({ samJust: false }), 1600); /* "Booked" holds a beat, then shrinks to one line */
+    /* POST /api/enquiries/:reference/sam keeps it, moved into calling hours in their zone if it was not */
+    const issued = this.state.issued;
+    if (!issued || !issued.reference) return;
+    fetch('/api/enquiries/' + encodeURIComponent(issued.reference) + '/sam', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at: new Date(at).toISOString() }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then((d) => { const kept = Date.parse(d && d.at); if (kept && this.state.samAt === at) this.setState({ samAt: kept }); })
+      .catch(() => { if (this.state.samAt === at) { this.setState(before); this.flashToast('We could not book that time. Try again.'); } });
   };
   _samChoices() {
     const now = Date.now(), tm = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();

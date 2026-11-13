@@ -102,6 +102,7 @@ export const migrations: readonly Migration[] = [
      waitlist decision, the invite code and the place in line. 069 to 071
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
+  ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
 ] as const;
 
 type MigrationReader = {

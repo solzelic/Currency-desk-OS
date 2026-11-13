@@ -628,6 +628,10 @@ export const enquiries = pgTable(
        its place in line for its own country. */
     inviteCode: text("invite_code"),
     placeInLine: integer("place_in_line"),
+    /* When the applicant asked SAM to call, in UTC, and the zone its
+       calling hours were read in (enquiries/sam.ts, 073). */
+    samCallAt: timestamp("sam_call_at", { withTimezone: true }),
+    samCallZone: text("sam_call_zone"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -664,6 +668,25 @@ export const enquiryContactConsents = pgTable(
     consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("enquiry_contact_consents_idx").on(t.enquiryId, t.consentedAt)],
+);
+
+/* Consent to the SAM call, kept as evidence (Early Access v2.1, 073).
+   Only ever inserted: a stop is another row, and the latest row is the
+   answer (enquiries/sam.ts). */
+export const enquiryCallConsents = pgTable(
+  "enquiry_call_consents",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    event: text("event").$type<"consent" | "stop">().notNull(),
+    phone: text("phone").notNull(),
+    consentText: text("consent_text"),
+    ipAddress: text("ip_address"),
+    ipCountry: text("ip_country"),
+    userAgent: text("user_agent"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_call_consents_idx").on(t.enquiryId, t.at)],
 );
 
 /* One immutable snapshot per research attempt. A re-run adds a row; it never

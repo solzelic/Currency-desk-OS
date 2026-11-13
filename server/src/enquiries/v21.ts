@@ -17,6 +17,7 @@ import { z } from "zod";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import { randomCharacters, type RandomBytes, secureBytes } from "./cd-id.js";
+import { SAM_CONSENT_TEXT } from "./sam.js";
 
 export const V21_FORM = "early-access-v2.1";
 
@@ -72,6 +73,10 @@ export const v21Details = z
   })
   .refine((d) => !d.samConsent || digits(d.samConsent.phone) === digits(d.phone), {
     message: "The call consent must be for the number given",
+  })
+  /* consent to the sentence the page shows, word for word, or none */
+  .refine((d) => !d.samConsent || d.samConsent.text === SAM_CONSENT_TEXT, {
+    message: "The call consent must be the sentence the page shows",
   });
 export type V21Details = z.infer<typeof v21Details>;
 

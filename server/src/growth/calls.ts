@@ -117,6 +117,14 @@ export async function placeOutboundCall(input: {
   if (enquiry.doNotContact) {
     throw new CallRefused("do_not_contact", "This applicant asked not to be contacted.");
   }
+  /* The SAM call's consent (Early Access v2.1): the latest word wins, and
+     a stop means no call, whatever came before it. */
+  const callConsent = (await input.db.select().from(schema.enquiryCallConsents)
+    .where(eq(schema.enquiryCallConsents.enquiryId, enquiry.id))
+    .orderBy(desc(schema.enquiryCallConsents.at)).limit(1))[0];
+  if (callConsent?.event === "stop") {
+    throw new CallRefused("call_stopped", "This applicant asked SAM not to call.");
+  }
 
   const consent = (await input.db.select().from(schema.enquiryContactConsents)
     .where(eq(schema.enquiryContactConsents.enquiryId, enquiry.id))

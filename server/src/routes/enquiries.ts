@@ -73,6 +73,13 @@ const validTimezone = (value: string | undefined): string | null => {
   }
 };
 
+/* Cloudflare's country for the client's address, when it sent one: two
+   letters, or nothing (XX and T1 are Cloudflare's "unknown" and "Tor"). */
+const ipCountryOf = (raw: unknown): string | null => {
+  const v = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  return /^[A-Z]{2}$/.test(v) && v !== "XX" ? v : null;
+};
+
 const THROTTLE_MS = 60 * 1000;
 const THROTTLE_MAX = 3;
 
@@ -272,6 +279,20 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
           timezone: validTimezone(contactContext?.timezone),
           timezoneSource: validTimezone(contactContext?.timezone) ? "browser" : null,
         });
+        /* The SAM call's own consent, as evidence (enquiries/sam.ts): the
+           number it is for, the sentence agreed to, and where it came from. */
+        if (v21?.samConsent) {
+          await tx.insert(schema.enquiryCallConsents).values({
+            id: randomUUID(),
+            enquiryId,
+            event: "consent",
+            phone: String(kept.phone ?? ""),
+            consentText: v21.samConsent.text,
+            ipAddress: address,
+            ipCountry: ipCountryOf(req.headers["cf-ipcountry"]),
+            userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 500) : null,
+          });
+        }
         /* Provider calls do not belong in a public form request. The lead,
            consent evidence and durable job commit together; a worker can
            retry later without making the applicant wait or submit twice. */
