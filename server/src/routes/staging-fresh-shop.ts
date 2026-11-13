@@ -19,8 +19,6 @@ import type { Db } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { hashCode, makeCode } from "../email.js";
 import { slugTaken } from "../onboarding/provision.js";
-import { makeReference } from "./enquiries.js";
-import { STAGING_DOOR_REASON } from "./early-access.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -29,8 +27,27 @@ export const STAGING_OWNER_DOMAIN = "@staging.invalid";
 
 const recent = new Map<string, number[]>();
 
+/* The Early Access v2.1 start (U5b). The button hands out a one-time
+   ticket bound to a staging identity, and the page applies with it. A
+   ticket lives half an hour, opens one application, and only on the
+   staging door. In memory: a restart drops them, and the button makes
+   another. */
+const TICKET_TTL_MS = 30 * 60 * 1000;
+const tickets = new Map<string, { email: string; slug: string; expires: number }>();
+
+/** The staging identity behind a ticket, once: the door must be open, the
+    ticket real and unexpired. Anything else is null. */
+export function takeStagingTicket(ticket: string, headers: StagingDoorHeaders): { email: string; slug: string } | null {
+  if (!stagingDoorOpen(headers)) return null;
+  const held = tickets.get(ticket);
+  if (!held) return null;
+  tickets.delete(ticket);
+  return held.expires > Date.now() ? { email: held.email, slug: held.slug } : null;
+}
+
 export function resetFreshShopThrottle(): void {
   recent.clear();
+  tickets.clear();
 }
 
 export function isStagingFreshShop(
@@ -127,9 +144,12 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
     return reply.code(201).send({ ok: true, email, slug, code, password });
   });
 
-  /* The sign-in button. An invited application, already past the
-     website, the admin click, and the invite email. The page is
-     /onboarding/CD-... The body is ignored. */
+  /* The sign-in button. It starts the whole journey at the Early Access
+     v2.1 page: a one-time ticket and a staging identity, and the page's
+     address to open with them. The page applies (routes/enquiries.ts
+     reads the ticket), the application is accepted at once, and "Start
+     building your desk" opens /onboarding/CD-... Nothing is emailed. The
+     body is ignored. */
   app.post("/api/staging/fresh-onboarding", async (req, reply) => {
     if (!stagingDoorOpen(req.headers as StagingDoorHeaders)) {
       return reply.code(404).send({ error: "not_found" });
@@ -151,32 +171,13 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
       email = next.email;
       break;
     }
-    let reference = "";
-    for (let attempt = 0; attempt < 5 && slug; attempt++) {
-      const next = makeReference();
-      const used = await db
-        .select({ id: schema.enquiries.id })
-        .from(schema.enquiries)
-        .where(eq(schema.enquiries.reference, next))
-        .limit(1);
-      if (used.length > 0) continue;
-      reference = next;
-      break;
-    }
-    if (!slug || !email || !reference) return reply.code(503).send({ error: "unavailable" });
+    if (!slug || !email) return reply.code(503).send({ error: "unavailable" });
 
-    await db.insert(schema.enquiries).values({
-      id: randomUUID(),
-      reference,
-      kind: "early_access",
-      email,
-      status: "invited",
-      charterNo: null,
-      isDemo: false,
-      doNotContact: true,
-      doNotContactReason: STAGING_DOOR_REASON,
-      details: { stagingFresh: true, slug },
-    });
-    return reply.code(201).send({ ok: true, reference, email });
+    const ticket = randomBytes(16).toString("hex");
+    const now = Date.now();
+    for (const [key, held] of tickets) if (held.expires <= now) tickets.delete(key);
+    tickets.set(ticket, { email, slug, expires: now + TICKET_TTL_MS });
+    const start = `/early-access?door=${ticket}&email=${encodeURIComponent(email)}`;
+    return reply.code(201).send({ ok: true, start, email });
   });
 }

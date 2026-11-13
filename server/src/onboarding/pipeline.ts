@@ -220,7 +220,7 @@ export async function moveTo(
   /* `mail` replaces the stage's own letter for this one move. The
      application route passes the waitlist letter as a v2.1 application
      lands on hold; a hold by hand passes nothing and stays silent. */
-  opts: { origin?: string; actorId?: string | null; resend?: boolean; mail?: Mail } = {},
+  opts: { origin?: string; actorId?: string | null; resend?: boolean; mail?: Mail; quiet?: boolean } = {},
 ): Promise<Moved | Refused> {
   const from = (row.status ?? "new") as Stage;
 
@@ -256,7 +256,8 @@ export async function moveTo(
      and send again. */
   let email: EmailStatus | null = null;
   const compose = opts.mail ? () => opts.mail! : ON_ARRIVAL[to];
-  if (compose && !row.isDemo) {
+  /* `quiet`: the staging door's own applications are never emailed. */
+  if (compose && !row.isDemo && !opts.quiet) {
     const origin = (opts.origin ?? process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
     const mail = compose(row, origin);
     email = await sendEmail(row.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);

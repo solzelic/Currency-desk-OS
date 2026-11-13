@@ -1051,7 +1051,7 @@ class Component extends DCLogic {
     fetch('/api/enquiries', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind: open ? 'signup' : 'early_access', form: 'early-access-v2.1', email: s.email.trim(), name: s.name.trim() || undefined, details, contactContext: { timezone } }),
+      body: JSON.stringify({ kind: open ? 'signup' : 'early_access', form: 'early-access-v2.1', email: s.email.trim(), name: s.name.trim() || undefined, details, contactContext: { timezone }, ...(this._door ? { stagingDoor: this._door } : {}) }),
     })
       .then((r) => r.json().catch(() => ({})).then((body) => ({ status: r.status, body })))
       .then(({ status, body }) => {
@@ -1364,6 +1364,16 @@ class Component extends DCLogic {
       try { if (getComputedStyle(el).overflowY === 'hidden') { el.scrollTop = 0; el.scrollLeft = 0; } } catch (x) {}
     };
     document.addEventListener('scroll', this._unclip, true);
+    /* Staging's "Start a fresh shop" opens this page with a one-time ticket and a staging
+       email (routes/staging-fresh-shop.ts). The application carries the ticket, and the server
+       honours it on the staging door only: the whole journey runs as a staging test shop. */
+    try {
+      const q = new URLSearchParams(window.location.search), door = q.get('door') || '', em = q.get('email') || '';
+      if (/^[0-9a-f]{32}$/.test(door)) {
+        this._door = door;
+        if (/^owner\+[0-9a-f]+@staging\.invalid$/.test(em)) this.setState({ email: em });
+      }
+    } catch (e) {}
     /* the two switches, from the server */
     fetch('/api/site/early-access', { headers: { accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))

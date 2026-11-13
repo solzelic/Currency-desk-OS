@@ -112,6 +112,10 @@ describe("fresh shop button", () => {
     expect(page).not.toContain("data-fresh-card");
     const helper = readFileSync(join(root, "os-src/staging-fresh-shop.js"), "utf8");
     expect(helper).toContain("/early-access");
+    /* and the page it opens reads the ticket and applies with it */
+    const early = readFileSync(join(root, "web/early-access-v2.html"), "utf8");
+    expect(early).toContain("q.get('door')");
+    expect(early).toContain("stagingDoor: this._door");
     expect(helper).not.toMatch(/localStorage|sessionStorage|location\.|console\./);
     expect(writes.join("\n")).toBe("");
     expect(locationStub.href).not.toContain("password");

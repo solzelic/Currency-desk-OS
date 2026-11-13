@@ -68031,9 +68031,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 
 /* ---- os-src/staging-fresh-shop.js ---- */
 /* Staging "Start a fresh shop" on the sign-in page.
-   Absent unless the door is open. The button opens the existing
-   desk setup at /onboarding/CD-... Nothing here is written to
-   storage, the address bar, or the log. */
+   Absent unless the door is open. The button opens the Early Access
+   v2.1 page with a one-time staging ticket, and the whole journey
+   runs from there: apply, You're in, then the desk setup at
+   /onboarding/CD-... Nothing here is written to storage or the log. */
 (function (root, factory) {
   var api = factory();
   if (typeof module === "object" && module && module.exports) module.exports = api;
@@ -68044,7 +68045,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     cdos.freshShopEntry = api.freshShopEntry;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  var REF = /^CD-[2-9A-HJ-NP-Z]{6,12}$/;
+  var START = /^\/early-access\?door=[0-9a-f]{32}&email=[A-Za-z0-9%._+-]+$/;
 
   function freshShopButton(enabled) {
     return enabled === true ? [{ label: "Start a fresh shop" }] : [];
@@ -68056,13 +68057,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     return "Something went wrong. Try again.";
   }
 
-  /* The same address the invite link uses. A password or a code
-     is not a reference, so those bodies do not open a page. */
+  /* The Early Access page on this site, with the ticket the server
+     handed out. Anything else, a password or a code included, opens
+     nothing. */
   function freshShopEntry(body) {
-    var ref = body && typeof body.reference === "string" ? body.reference.trim().toUpperCase() : "";
-    if (!REF.test(ref)) return null;
+    var start = body && typeof body.start === "string" ? body.start.trim() : "";
+    if (!START.test(start)) return null;
     if (body.password || body.code) return null;
-    return "/onboarding/" + ref;
+    return start;
   }
 
   return {

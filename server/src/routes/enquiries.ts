@@ -36,7 +36,9 @@ import { issueCdId } from "../enquiries/cd-id.js";
 import { normalizeMsb } from "../enquiries/msb.js";
 import { answersOf, issueInviteCode, nextPlaceInLine, V21_FORM, v21Details, waitlistFor, type WaitlistReason } from "../enquiries/v21.js";
 import { moveTo, waitlistMail, type Stage } from "../onboarding/pipeline.js";
-import { forgetClaimedCount } from "./early-access.js";
+import { forgetClaimedCount, STAGING_DOOR_REASON } from "./early-access.js";
+import { takeStagingTicket } from "./staging-fresh-shop.js";
+import type { StagingDoorHeaders } from "../auth/staging-runtime.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
    very different questions and both will keep changing in design; what
@@ -57,6 +59,9 @@ const enquiryBody = z.object({
   /* Browser-observed submission context is evidence about consent, not an
      answer the applicant typed, so it never enters `details`. */
   contactContext: z.object({ timezone: z.string().trim().max(100).optional() }).optional(),
+  /* The staging door's ticket, from "Start a fresh shop" (U5b). Honoured
+     on the staging door only; see takeStagingTicket. */
+  stagingDoor: z.string().regex(/^[0-9a-f]{32}$/).optional(),
 });
 
 export const EARLY_ACCESS_FORM_VERSION = "early-access-2026-08-06";
@@ -152,7 +157,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     }
-    const { kind, form, email, name, contactContext } = parsed.data;
+    const { kind, form, name, contactContext } = parsed.data;
 
     /* The answers, by the form that sent them. Only the v2.1 page may post
        an open sign-up, and only with the v2.1 answers. */
@@ -173,6 +178,19 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       if (!flat.success) return reply.code(400).send({ error: "invalid_request", detail: flat.error.issues[0]?.message });
       details = flat.data;
     }
+
+    /* The staging door's own application (U5b): the v2.1 page opened from
+       "Start a fresh shop" applies with the ticket it was handed. On the
+       staging door, once, it applies as the ticket's staging identity: no
+       founding number, nothing emailed, not counted, and a test shop at
+       launch. A ticket that is not one is refused, never quietly taken as
+       a real shop's application. */
+    let staging: { email: string; slug: string } | null = null;
+    if (parsed.data.stagingDoor !== undefined) {
+      staging = isV21 ? takeStagingTicket(parsed.data.stagingDoor, req.headers as StagingDoorHeaders) : null;
+      if (!staging) return reply.code(400).send({ error: "staging_ticket", detail: "This staging start has expired. Start a fresh shop again." });
+    }
+    const email = staging ? staging.email : parsed.data.email;
 
     const now = Date.now();
     const hits = (recent.get(email) ?? []).filter((t) => now - t < THROTTLE_MS);
@@ -212,7 +230,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     let charterNo: number | null = null;
     /* A waitlisted shop is not a founding operator yet, and an open sign-up
        has no cohort: neither takes a place. */
-    if (kind === "early_access" && !waitlistReason) {
+    if (kind === "early_access" && !waitlistReason && !staging) {
       const mine = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, email)))
         .filter((e) => e.kind === "early_access" && e.charterNo != null);
       if (mine.length) {
@@ -232,6 +250,8 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     /* stagingFresh is not an answer. The staging door writes its own row.
        A public post cannot use this key to leave the founding count. */
     delete kept.stagingFresh;
+    /* except the staging door's, written here from the ticket */
+    if (staging) { kept.stagingFresh = true; kept.slug = staging.slug; }
     const tel = normalizePhone(kept.phone);
     if (tel) {
       kept.phone = tel.phone;
@@ -258,6 +278,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
         name: name ?? null,
         details: kept,
         charterNo,
+        ...(staging ? { doNotContact: true, doNotContactReason: STAGING_DOOR_REASON } : {}),
         cdId,
         waitlistReason,
         inviteCode,
@@ -296,7 +317,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       }
       /* Every application is received and researched, whatever its call
          choice; only the consent above depends on it. */
-      if (kind !== "contact") {
+      if (kind !== "contact" && !staging) {
         /* Provider calls do not belong in a public form request. The lead,
            consent evidence and durable job commit together; a worker can
            retry later without making the applicant wait or submit twice. */
@@ -333,7 +354,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     if (kind !== "contact" && row) {
       const to: Stage = !v21 ? "reviewing" : waitlistReason ? "hold" : kind === "signup" ? "reviewing" : "invited";
       const mail = to === "hold" ? waitlistMail(row) ?? undefined : undefined;
-      await moveTo(db, row, to, "system", { mail }).catch(() => null);
+      await moveTo(db, row, to, "system", { mail, quiet: !!staging }).catch(() => null);
     }
 
     // Tell the operators. Best-effort: the enquiry is already saved, so a
@@ -342,7 +363,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (to.length) {
+    if (to.length && !staging) {
       const lines = [
         `${LABELS[kind]} — ${reference}`,
         "",
