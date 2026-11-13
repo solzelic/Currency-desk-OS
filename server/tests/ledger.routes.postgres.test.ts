@@ -601,8 +601,8 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
     const before = await financialState(pool);
     expect(before.ledger_till_balances).not.toHaveLength(0);
     const refused = await app.inject({ method: "POST", url: "/api/ledger/exchanges", cookies, payload: request });
-    // Keep checking rollback and the whole-yen control if HTTP status is wrong.
-    expect.soft(refused.statusCode, refused.body).toBe(422);
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().code).toBe("INVALID_REQUEST");
     expect(refused.json().message).toBe("Amount is not a whole number of JPY. JPY has no minor unit.");
     expect(await financialState(pool)).toEqual(before);
 

@@ -304,7 +304,7 @@ postgres("quote service against real PostgreSQL", () => {
       feeCad: "0.00", direction: "customer_sell_foreign",
     };
 
-    it("returns 422 without financial writes when quote creation receives JPY 1500.7", async () => {
+    it("returns 400 without financial writes when quote creation receives JPY 1500.7", async () => {
       const cookies = await cookie();
       const before = await financialState(pool);
       expect(before.ledger_till_balances).not.toHaveLength(0);
@@ -312,9 +312,8 @@ postgres("quote service against real PostgreSQL", () => {
         method: "POST", url: "/api/quotes", cookies,
         payload: { ...sellYen, inputAmount: "1500.7" },
       });
-      // Soft only so the no-write and viable-fixture checks still run on a
-      // wrong HTTP status. A mismatch remains a failing acceptance test.
-      expect.soft(refused.statusCode, refused.body).toBe(422);
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json().code).toBe("INVALID_REQUEST");
       expect(refused.json().message).toBe(
         "Amount is not a whole number of JPY. JPY has no minor unit.",
       );
@@ -334,7 +333,7 @@ postgres("quote service against real PostgreSQL", () => {
       { direction: "customer_sell_foreign", column: "input_amount", field: "Amount", request: sellYen },
       { direction: "customer_buy_foreign", column: "output_amount", field: "Payout",
         request: { ...body, to: "JPY", inputAmount: "15.46", feeCad: "0.00" } },
-    ])("returns 422 without financial writes for frozen $direction JPY 1500.7", async ({ column, field, request }) => {
+    ])("returns 400 without financial writes for frozen $direction JPY 1500.7", async ({ column, field, request }) => {
       const cookies = await cookie();
       const created = await app.inject({ method: "POST", url: "/api/quotes", cookies, payload: request });
       expect(created.statusCode, created.body).toBe(201);
@@ -357,7 +356,8 @@ postgres("quote service against real PostgreSQL", () => {
         method: "POST", url: `/api/quotes/${invalidId}/post`, cookies,
         payload: postBody(`fractional-${column}`),
       });
-      expect.soft(refused.statusCode, refused.body).toBe(422);
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json().code).toBe("INVALID_REQUEST");
       expect(refused.json().message).toBe(
         `${field} is not a whole number of JPY. JPY has no minor unit.`,
       );
