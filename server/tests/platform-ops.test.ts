@@ -101,8 +101,11 @@ describe("what we say to people", () => {
     expect(quiet).toContain("declined");
   });
 
-  it("marks the arrival email automatic and the invitation not", () => {
+  /* Both go on their own now: A1 when an application from the old page
+     arrives, and the invitation the moment a v2.1 application is accepted
+     at once (Sol, 13 Nov). An operator approving still sends it too. */
+  it("marks the arrival email and the invitation automatic", () => {
     expect(DISPATCHES.find((d) => d.id === "review")!.automatic).toBe(true);
-    expect(DISPATCHES.find((d) => d.id === "invite")!.automatic).toBe(false);
+    expect(DISPATCHES.find((d) => d.id === "invite")!.automatic).toBe(true);
   });
 });
