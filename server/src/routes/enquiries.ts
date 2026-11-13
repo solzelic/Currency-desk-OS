@@ -14,6 +14,15 @@
    throttle. Nothing here creates a tenant or an account — an application
    is an application. The desk itself is created later, from the OS's own
    new-desk wizard, once the operator is invited.
+
+   Early Access v2.1 (CD-179 to CD-183) posts `form: "early-access-v2.1"`
+   with every answer typed (enquiries/v21.ts), and may post kind "signup"
+   when the site runs open sign-up. The server decides the waitlist, mints
+   the CurrencyDesk ID for an accepted application (enquiries/cd-id.ts),
+   and gives a waitlisted shop outside Canada its place in line and an
+   invite code. The reply carries them:
+     → 201 { ok, reference, charterNo, cdId, invite?: { code }, place? }
+   The old page's flat answers keep working until /signup switches over.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -22,6 +31,10 @@ import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { contactReceivedEmail, replyToAddress, sendEmail } from "../email.js";
+import { clientIp } from "../auth/client-ip.js";
+import { issueCdId } from "../enquiries/cd-id.js";
+import { normalizeMsb } from "../enquiries/msb.js";
+import { answersOf, issueInviteCode, nextPlaceInLine, V21_FORM, v21Details, waitlistFor, type WaitlistReason } from "../enquiries/v21.js";
 import { moveTo } from "../onboarding/pipeline.js";
 import { forgetClaimedCount } from "./early-access.js";
 
@@ -33,17 +46,22 @@ const detailShape = z.record(
   z.union([z.string().max(2000), z.number(), z.boolean(), z.null()]),
 );
 
+/* The envelope. `details` is read in a second step, by the form that sent
+   it: the v2.1 shape (strict, typed, nested consent) or the old flat one. */
 const enquiryBody = z.object({
-  kind: z.enum(["early_access", "contact"]),
+  kind: z.enum(["early_access", "signup", "contact"]),
+  form: z.literal(V21_FORM).optional(),
   email: z.string().trim().toLowerCase().email().max(160),
   name: z.string().trim().max(120).optional(),
-  details: detailShape.optional(),
+  details: z.unknown().optional(),
   /* Browser-observed submission context is evidence about consent, not an
      answer the applicant typed, so it never enters `details`. */
   contactContext: z.object({ timezone: z.string().trim().max(100).optional() }).optional(),
 });
 
 export const EARLY_ACCESS_FORM_VERSION = "early-access-2026-08-06";
+/* The consent evidence written for a v2.1 application names its form. */
+export const V21_FORM_VERSION = "early-access-v2.1-2026-11-13";
 
 const validTimezone = (value: string | undefined): string | null => {
   if (!value) return null;
@@ -58,6 +76,29 @@ const validTimezone = (value: string | undefined): string | null => {
 const THROTTLE_MS = 60 * 1000;
 const THROTTLE_MAX = 3;
 
+/* Per client address as well as per email: one address cannot post a
+   stream of applications under made-up emails. Twenty an hour unless
+   ENQUIRY_IP_MAX says otherwise; the browser suite, which posts every
+   application from one address, sets it in playwright.config.ts. Render
+   does not. */
+const ENQUIRY_IP_MAX_DEFAULT = 20;
+const IP_WINDOW_MS = 60 * 60 * 1000;
+export function enquiryIpMax(): number {
+  const raw = process.env.ENQUIRY_IP_MAX;
+  if (raw == null || raw.trim() === "") return ENQUIRY_IP_MAX_DEFAULT;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : ENQUIRY_IP_MAX_DEFAULT;
+}
+// one bucket per sender and one per client address, swept lazily — this
+// endpoint is low-traffic and the maps only hold keys seen recently
+const recent = new Map<string, number[]>();
+const byAddress = new Map<string, number[]>();
+/* For tests, which reuse one server. */
+export function resetEnquiryThrottle(): void {
+  recent.clear();
+  byAddress.clear();
+}
+
 /* Human-quotable, hard to guess, and unique in practice: CD- plus six
    characters from an alphabet with no 0/O/1/I to misread over the phone. */
 const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -69,6 +110,7 @@ export function makeReference(): string {
 
 const LABELS: Record<string, string> = {
   early_access: "Early access application",
+  signup: "Open sign-up",
   contact: "Contact form",
 };
 
@@ -98,26 +140,54 @@ export function normalizePhone(raw: unknown): { phone: string; ok: boolean } | n
 }
 
 export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
-  // one bucket per sender, swept lazily — this endpoint is low-traffic and
-  // the map only ever holds addresses seen in the last minute
-  const recent = new Map<string, number[]>();
-
   app.post("/api/enquiries", async (req, reply) => {
     const parsed = enquiryBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues[0]?.message });
     }
-    const { kind, email, name, details, contactContext } = parsed.data;
+    const { kind, form, email, name, contactContext } = parsed.data;
+
+    /* The answers, by the form that sent them. Only the v2.1 page may post
+       an open sign-up, and only with the v2.1 answers. */
+    const isV21 = form === V21_FORM;
+    if (!isV21 && kind === "signup") return reply.code(400).send({ error: "invalid_request", detail: "kind" });
+    if (isV21 && kind === "contact") return reply.code(400).send({ error: "invalid_request", detail: "kind" });
+    let details: Record<string, unknown> | undefined;
+    let v21: ReturnType<typeof v21Details.parse> | null = null;
+    if (isV21) {
+      const typed = v21Details.safeParse(parsed.data.details);
+      if (!typed.success) return reply.code(400).send({ error: "invalid_request", detail: typed.error.issues[0]?.message });
+      const msb = normalizeMsb(typed.data.msbNumber);
+      if (!msb.ok) return reply.code(400).send({ error: "invalid_msb", detail: "An MSB number is M followed by 8 digits." });
+      v21 = { ...typed.data, msbNumber: msb.value };
+      details = answersOf(v21);
+    } else if (parsed.data.details !== undefined) {
+      const flat = detailShape.safeParse(parsed.data.details);
+      if (!flat.success) return reply.code(400).send({ error: "invalid_request", detail: flat.error.issues[0]?.message });
+      details = flat.data;
+    }
 
     const now = Date.now();
     const hits = (recent.get(email) ?? []).filter((t) => now - t < THROTTLE_MS);
     if (hits.length >= THROTTLE_MAX) {
       return reply.code(429).send({ error: "too_many", detail: "Give it a minute, then try again." });
     }
+    const address = clientIp(req);
+    const fromAddress = (byAddress.get(address) ?? []).filter((t) => now - t < IP_WINDOW_MS);
+    if (fromAddress.length >= enquiryIpMax()) {
+      return reply.code(429).send({ error: "too_many", detail: "Give it a minute, then try again." });
+    }
     recent.set(email, [...hits, now]);
+    byAddress.set(address, [...fromAddress, now]);
     for (const [key, times] of recent) {
       if (!times.some((t) => now - t < THROTTLE_MS)) recent.delete(key);
     }
+    for (const [key, times] of byAddress) {
+      if (!times.some((t) => now - t < IP_WINDOW_MS)) byAddress.delete(key);
+    }
+
+    /* v2.1: the server's own waitlist decision, never the page's. */
+    const waitlistReason: WaitlistReason | null = v21 ? waitlistFor(v21) : null;
 
     const reference = makeReference();
     /* An applicant's place in the founding cohort, which they keep — it is
@@ -133,7 +203,9 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
        And an address that applies twice keeps the number it was already
        given rather than taking a second place in line. */
     let charterNo: number | null = null;
-    if (kind === "early_access") {
+    /* A waitlisted shop is not a founding operator yet, and an open sign-up
+       has no cohort: neither takes a place. */
+    if (kind === "early_access" && !waitlistReason) {
       const mine = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, email)))
         .filter((e) => e.kind === "early_access" && e.charterNo != null);
       if (mine.length) {
@@ -159,6 +231,14 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
       if (!tel.ok) kept.phoneUnparsed = String((details ?? {}).phone ?? "");
     }
 
+    /* v2.1: what the server hands back. An accepted application gets its
+       CurrencyDesk ID; a shop outside Canada gets its place in line for its
+       country and a code to give another shop. */
+    const cdId = v21 && !waitlistReason ? await issueCdId(db, v21.shopName) : null;
+    const outside = v21 && waitlistReason === "outside-canada" ? v21 : null;
+    const inviteCode = outside ? await issueInviteCode(db, outside.shopName) : null;
+    const placeInLine = outside ? await nextPlaceInLine(db, outside.country ?? "") : null;
+
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
     const enquiryId = randomUUID();
@@ -171,13 +251,19 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
         name: name ?? null,
         details: kept,
         charterNo,
+        cdId,
+        waitlistReason,
+        inviteCode,
+        placeInLine,
       }).returning();
-      if (kind === "early_access") {
+      if (kind !== "contact") {
         await tx.insert(schema.enquiryContactConsents).values({
           id: randomUUID(),
           enquiryId,
-          formVersion: EARLY_ACCESS_FORM_VERSION,
-          ipAddress: req.ip,
+          formVersion: v21 ? V21_FORM_VERSION : EARLY_ACCESS_FORM_VERSION,
+          /* The applicant's address, through Cloudflare and Render's proxy,
+             not the proxy's own (auth/client-ip.ts). */
+          ipAddress: address,
           userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 500) : null,
           timezone: validTimezone(contactContext?.timezone),
           timezoneSource: validTimezone(contactContext?.timezone) ? "browser" : null,
@@ -209,7 +295,7 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
        one whether a person, this route, or a reviewer agent caused it. Best
        effort: the row is saved, and a mail outage must never cost us the
        application. */
-    if (kind === "early_access" && row) {
+    if (kind !== "contact" && row) {
       await moveTo(db, row, "reviewing", "system").catch(() => null);
     }
 
@@ -224,7 +310,9 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
         `${LABELS[kind]} — ${reference}`,
         "",
         `From:  ${name ? `${name} <${email}>` : email}`,
-        ...Object.entries(details ?? {})
+        ...(cdId ? [`CurrencyDesk ID:  ${cdId}`] : []),
+        ...(waitlistReason ? [`Waitlist:  ${waitlistReason}${placeInLine ? ` (place ${placeInLine})` : ""}`] : []),
+        ...Object.entries(kept)
           .filter(([, v]) => v !== null && v !== "")
           .map(([k, v]) => `${k}:  ${String(v)}`),
       ];
@@ -265,6 +353,11 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     }
 
     // charterNo is the number printed on their card; null for a message
-    return reply.code(201).send({ ok: true, reference, charterNo });
+    if (!v21) return reply.code(201).send({ ok: true, reference, charterNo });
+    return reply.code(201).send({
+      ok: true, reference, charterNo, cdId,
+      ...(inviteCode ? { invite: { code: inviteCode } } : {}),
+      ...(placeInLine ? { place: placeInLine } : {}),
+    });
   });
 }

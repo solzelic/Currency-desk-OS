@@ -104,6 +104,11 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `072_enquiry_v2_1` adds `enquiries.cd_id` (unique), `waitlist_reason`
+  (checked: `outside-canada` or `not-fintrac-registered`), `invite_code`
+  (unique) and `place_in_line` for Early Access v2.1 (CD-179 to CD-183). The
+  same columns are in the boot DDL and `schema.ts`. 069 to 071 are held by
+  open PRs on main.
 - Migration `033_serbia_pack` seeds `pack-rs-v1` and does not edit an
   older pack. It lets `jurisdiction_packs.aggregation_hours` be null
   (null means the deals are not added together), adds

@@ -618,6 +618,16 @@ export const enquiries = pgTable(
     doNotContactAt: timestamp("do_not_contact_at", { withTimezone: true }),
     doNotContactBy: text("do_not_contact_by"),
     doNotContactReason: text("do_not_contact_reason"),
+    /* Early Access v2.1 (migration 072). The CurrencyDesk ID minted when
+       the application was accepted (enquiries/cd-id.ts), unique and never
+       reused; null when waitlisted, for a contact message, and before v2.1. */
+    cdId: text("cd_id"),
+    /* The server's waitlist decision; null when accepted. */
+    waitlistReason: text("waitlist_reason").$type<"outside-canada" | "not-fintrac-registered">(),
+    /* A waitlisted shop outside Canada: its code to give another shop, and
+       its place in line for its own country. */
+    inviteCode: text("invite_code"),
+    placeInLine: integer("place_in_line"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -627,7 +637,9 @@ export const enquiries = pgTable(
     index("enquiries_email_idx").on(t.email),
   ],
 );
-export type EnquiryKind = "early_access" | "contact";
+/* "signup" is Early Access v2.1 in open sign-up mode (OPEN_SIGNUP): an
+   application with no founding-cohort place. */
+export type EnquiryKind = "early_access" | "signup" | "contact";
 /* reviewing → invited → accepted, with hold and declined as the two other
    ways out of review. "accepted" is not set by hand: it is what a completed
    signup means. "new" is only for rows that arrived before applications

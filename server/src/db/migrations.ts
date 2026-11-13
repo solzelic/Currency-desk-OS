@@ -98,6 +98,10 @@ export const migrations: readonly Migration[] = [
   ["067_branch_rates_lock", "src/db/migrations/067_branch_rates_lock.sql"],
   /* 068 is a rate page's custom domain request (Rates v2.5, Take it further). */
   ["068_rate_page_domain_request", "src/db/migrations/068_rate_page_domain_request.sql"],
+  /* 072 is Early Access v2.1 on the application: the CurrencyDesk ID, the
+     waitlist decision, the invite code and the place in line. 069 to 071
+     are held by open PRs on main (#673 to #675). */
+  ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
 ] as const;
 
 type MigrationReader = {

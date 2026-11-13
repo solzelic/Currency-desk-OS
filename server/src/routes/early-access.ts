@@ -49,7 +49,9 @@ export function isStagingDoorEnquiry(row: { doNotContact?: boolean | null; doNot
 export async function claimedCount(db: Db): Promise<number> {
   const applications = (await db.select().from(schema.enquiries)).filter(
     // never the walkthrough: practising must not tell the site a place has gone
-    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo && !isStagingDoorEnquiry(e),
+    // and never a waitlisted shop (Early Access v2.1): it is not a founding
+    // operator until it is let in
+    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo && !isStagingDoorEnquiry(e) && !e.waitlistReason,
   );
   const spokenFor = new Set(applications.map((a) => a.tenantId).filter(Boolean) as string[]);
   const desks = (await db.select().from(schema.tenants)).filter(

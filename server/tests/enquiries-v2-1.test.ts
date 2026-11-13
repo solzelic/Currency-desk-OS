@@ -20,7 +20,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
 import { CD_ID_ALPHABET, cdIdLetters, mintCdId, normalizeCdIdInput } from "../src/enquiries/cd-id.js";
 import { normalizeMsb } from "../src/enquiries/msb.js";
-import { resetEnquiryThrottle } from "../src/routes/enquiries.js";
+import { enquiryIpMax, resetEnquiryThrottle } from "../src/routes/enquiries.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -151,6 +151,13 @@ describe("POST /api/enquiries, v2.1", () => {
     expect((await rowOf(body.reference)).waitlistReason).toBe("not-fintrac-registered");
   });
 
+  it("a waitlisted shop takes no place in the founding count", async () => {
+    const before = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json().claimed;
+    await send(v21("notyet2@example.com", { fintracRegistered: "Not yet", msbNumber: null }));
+    const after = (await app.inject({ method: "GET", url: "/api/site/early-access" })).json().claimed;
+    expect(after).toBe(before);
+  });
+
   it("a shop outside Canada is held with its place in line for its country and an invite code", async () => {
     const outside = (email: string, shopName: string, country: string) =>
       send(v21(email, { jurisdiction: "outside-canada", province: null, country, fintracRegistered: null, msbNumber: null, shopName, waitlist: false }));
@@ -191,7 +198,8 @@ describe("POST /api/enquiries, v2.1", () => {
   });
 
   it("slows down one address that applies too often, and not another", async () => {
-    for (let i = 0; i < 10; i++) expect((await send(v21(`burst${i}@example.com`), "198.51.100.30")).statusCode).toBe(201);
+    expect(enquiryIpMax()).toBe(20);
+    for (let i = 0; i < enquiryIpMax(); i++) expect((await send(v21(`burst${i}@example.com`), "198.51.100.30")).statusCode).toBe(201);
     expect((await send(v21("burst-over@example.com"), "198.51.100.30")).statusCode).toBe(429);
     expect((await send(v21("other-ip@example.com"), "198.51.100.31")).statusCode).toBe(201);
   });

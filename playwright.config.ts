@@ -72,6 +72,10 @@ export default defineConfig({
          not set this. */
       NODE_ENV: "development",
       CD_TEST_RESET: "1",
+      /* Every spec posts its applications from this one address. The
+         server allows twenty an hour from one address unless this says
+         otherwise (routes/enquiries.ts); Render leaves it unset. */
+      ENQUIRY_IP_MAX: "1000",
     },
   },
 

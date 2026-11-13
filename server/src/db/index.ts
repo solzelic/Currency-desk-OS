@@ -149,6 +149,14 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact_reason text;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
+-- Early Access v2.1 (migration 072): the ID, the waitlist decision, the
+-- invite code and the place in line, on the application.
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS cd_id text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS waitlist_reason text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS invite_code text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS place_in_line integer;
+CREATE UNIQUE INDEX IF NOT EXISTS enquiries_cd_id_idx ON enquiries (cd_id) WHERE cd_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS enquiries_invite_code_idx ON enquiries (invite_code) WHERE invite_code IS NOT NULL;
 -- Consent evidence is operational metadata, not an answer the applicant
 -- typed. Keeping it beside rather than inside details preserves provenance.
 CREATE TABLE IF NOT EXISTS enquiry_contact_consents (
