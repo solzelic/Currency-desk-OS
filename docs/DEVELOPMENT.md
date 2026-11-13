@@ -72,3 +72,33 @@ deliberately leave ledger state behind (an append-only book is the point).
   `/api/auth/login` in-page when driving it with a non-email id.
 - There is no outbound access to production from a sandbox — verify
   against localhost.
+
+## Staging delivery and live promotion
+
+The two Render services are separate: `currencydesk-staging` is the test
+application and `currencydesk` is live. Production follows `release`.
+Updating `release` is a production deployment and requires explicit promotion
+approval. A successful staging test is not that approval.
+
+For work authorized only for staging, publish tested commits to `staging`.
+Browser, Server, Civil dates and Governance run on pushes to that branch as
+well as `main`, and on pull requests. Keep the exact commit with each result;
+a green run on an older candidate is not evidence for a later one.
+
+Hosting transition checked on 13 November 2026: Render's staging service
+still follows `main`. Before the dedicated branch can deploy, change only
+`currencydesk-staging`'s Branch setting to `staging`. Keep the live service
+on `release`. Do not push to `main` to work around this pending setting.
+
+Before testing the hosted candidate, verify that its `DATABASE_URL` and any
+`LEDGER_DATABASE_URL` resolve to a staging database, that `STAGING` is `1`
+only on the staging service, and that provider credentials are appropriate
+for test data. Compare connection targets without putting passwords in
+logs or tickets. Separate service names alone do not establish database
+isolation. Record an inaccessible setting as unverified.
+
+After a staging deploy, confirm Render's deployed SHA and the staging
+`/api/health/deep` result, then exercise the affected flow with synthetic
+records. Production promotion uses that same verified commit on `release`
+only after the owner's explicit approval. Verify the production deploy's
+commit separately and retain the previous deployed commit for recovery.
