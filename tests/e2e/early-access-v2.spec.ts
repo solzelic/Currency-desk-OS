@@ -72,6 +72,22 @@ const clipped = (page: Page) => page.evaluate(() =>
 test.describe("Early Access v2.1", () => {
   test.use({ viewport: { width: 1440, height: 860 } });
 
+  /* Staging's Start a fresh shop opens the website with a ticket; the way
+     into the application takes it along (the server honours it only on the
+     staging door, which this server is not, so nothing is submitted here). */
+  test("the website with a staging ticket leads into the application with it", async ({ page }) => {
+    const door = "ab".repeat(16), email = "owner+ab12@staging.invalid";
+    await page.goto(`/?door=${door}&email=${encodeURIComponent(email)}`);
+    await page.locator("a[data-nav-cta]").click();
+    await expect(page).toHaveURL(new RegExp(`/early-access\\?door=${door}&email=owner%2Bab12%40staging\\.invalid$`));
+    await expect(page.getByPlaceholder("you@yourexchange.com")).toHaveValue(email);
+
+    /* without a ticket the website's links are left alone */
+    await page.goto("/");
+    await page.locator("a[data-nav-cta]").click();
+    await expect(page).toHaveURL(/\/signup$/);
+  });
+
   test("a registered Canadian shop is accepted with the ID the server issued, and setup opens", async ({ page }) => {
     const email = `ea-${unique()}@yorkcurrency.example`;
     await stepOneAndTwo(page, email, `York Exchange ${unique()}`);

@@ -87,7 +87,8 @@ describe("fresh onboarding", () => {
       const door = opened.json() as { ok: boolean; start: string; email: string; reference?: string; password?: string; code?: string };
       expect(door.ok).toBe(true);
       expect(door.email).toMatch(/^owner\+[0-9a-f]+@staging\.invalid$/);
-      expect(door.start).toMatch(/^\/early-access\?door=[0-9a-f]{32}&email=owner%2B[0-9a-f]+%40staging\.invalid$/);
+      /* the website first, as a new shop sees it (Sol, 14 Nov), with the ticket */
+      expect(door.start).toMatch(/^\/\?door=[0-9a-f]{32}&email=owner%2B[0-9a-f]+%40staging\.invalid$/);
       expect(door.reference).toBeUndefined(); // nothing is applied for them: they apply on the page
       expect(door.password).toBeUndefined();
       expect(door.code).toBeUndefined();
