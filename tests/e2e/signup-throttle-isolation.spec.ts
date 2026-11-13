@@ -6,8 +6,8 @@ import type { APIRequestContext } from "@playwright/test";
 test.describe.configure({ mode: "serial" });
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL and the isolated seam server");
 
-function attempt(request: APIRequestContext, n: number) {
-  return request.post("/api/signup", {
+function attempt(request: APIRequestContext, n: number, url = "/api/signup") {
+  return request.post(url, {
     data: {
       businessName: "Throttle isolation",
       ownerName: "Test Owner",
@@ -35,4 +35,15 @@ test("the next test has its own allowance on the same running server", async ({ 
   const response = await attempt(request, 9);
   expect(response.status(), await response.text()).toBe(403);
   expect((await response.json()).error).toBe("not_invited");
+});
+
+test.describe("a spec with its own server address", () => {
+  test.use({ baseURL: "http://separate-server.invalid" });
+
+  test("setup still resets the shared server", async ({ request }, testInfo) => {
+    const url = new URL("/api/signup", testInfo.config.webServer!.url!).href;
+    const response = await attempt(request, 10, url);
+    expect(response.status(), await response.text()).toBe(403);
+    expect((await response.json()).error).toBe("not_invited");
+  });
 });

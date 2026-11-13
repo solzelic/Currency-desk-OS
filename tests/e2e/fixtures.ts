@@ -45,12 +45,16 @@ function installedVersion(pkg: string): string {
 }
 
 export const test = base.extend<{ page: Page; resetSignup: void }>({
-  resetSignup: [async ({ request }, use) => {
+  resetSignup: [async ({ request }, use, testInfo) => {
     /* All browser tests share one server. Reset only the abuse history,
        leaving the real limit active throughout this test. The endpoint
        exists only on the explicitly opted-in, local Postgres seam server. */
     if (hasLedger) {
-      const response = await request.post("/api/test/reset-signup");
+      /* A spec may override baseURL for its own isolated server. The
+         history belongs to the shared server configured by Playwright. */
+      const sharedServer = testInfo.config.webServer?.url;
+      if (!sharedServer) throw new Error("signup reset needs the shared webServer URL");
+      const response = await request.post(new URL("/api/test/reset-signup", sharedServer).href);
       if (!response.ok()) {
         throw new Error(`signup reset failed: ${response.status()} ${await response.text()}`);
       }

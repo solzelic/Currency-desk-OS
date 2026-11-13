@@ -221,6 +221,8 @@ is not load-bearing.
 The shared fixture clears signup-throttle history before each test through
 `/api/test/reset-signup`, registered only by the seam entry under the same
 local-only guard as the desk reset. It does not reset any financial state.
+The reset targets the configured shared web server even when a spec overrides
+its own `baseURL` for an isolated server.
 Playwright uses the production-default eight-attempt budget within each test;
 CI no longer raises that budget for the full run.
 `.github/workflows/civil-dates.yml` runs the sign-off day, the ID expiry,
