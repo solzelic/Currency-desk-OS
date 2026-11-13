@@ -69,6 +69,22 @@ async function whoRunsIt(page: Page) {
 const clipped = (page: Page) => page.evaluate(() =>
   [...document.querySelectorAll("body *")].filter((el) => (el.scrollTop || el.scrollLeft) && getComputedStyle(el).overflowY === "hidden").length);
 
+/* The clipboard, under the test's control: it copies only while
+   window.__clipOK is true, and refuses otherwise, as a browser does when
+   it is not allowed to. */
+async function controlledClipboard(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __clipOK: boolean; __copied: string[] };
+    w.__clipOK = false;
+    w.__copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: (text: string) => (w.__clipOK ? (w.__copied.push(text), Promise.resolve()) : Promise.reject(new Error("not allowed"))) },
+    });
+  });
+}
+const clipboardWorks = (page: Page, ok: boolean) => page.evaluate((v) => { (window as unknown as { __clipOK: boolean }).__clipOK = v; }, ok);
+
 test.describe("Early Access v2.1", () => {
   test.use({ viewport: { width: 1440, height: 860 } });
 
@@ -82,13 +98,22 @@ test.describe("Early Access v2.1", () => {
     await expect(page).toHaveURL(new RegExp(`/early-access\\?door=${door}&email=owner%2Bab12%40staging\\.invalid$`));
     await expect(page.getByPlaceholder("you@yourexchange.com")).toHaveValue(email);
 
-    /* without a ticket the website's links are left alone */
+    /* going back to the homepage keeps the staging start, for this tab */
+    await page.goto("/");
+    await page.locator("a[data-nav-cta]").click();
+    await expect(page).toHaveURL(new RegExp(`/early-access\\?door=${door}`));
+  });
+
+  test("every way into the application is v2.1, with no ticket at all", async ({ page }) => {
     await page.goto("/");
     await page.locator("a[data-nav-cta]").click();
     await expect(page).toHaveURL(/\/signup$/);
+    await expect(page.getByText("Step 1 of 4")).toBeVisible();
+    await expect(page.getByText("Step 1 of 8")).toHaveCount(0);
   });
 
   test("a registered Canadian shop is accepted with the ID the server issued, and setup opens", async ({ page }) => {
+    await controlledClipboard(page);
     const email = `ea-${unique()}@yorkcurrency.example`;
     await stepOneAndTwo(page, email, `York Exchange ${unique()}`);
 
@@ -115,6 +140,15 @@ test.describe("Early Access v2.1", () => {
     await expect(page.getByText(body.cdId).first()).toBeVisible();
     const open = page.getByRole("link", { name: /Start building your desk/ });
     await expect(open).toHaveAttribute("href", `/onboarding/${body.reference}`);
+
+    /* Copy says copied only when the copy happened (superseded PR #682's rule) */
+    await page.getByRole("button", { name: "Copy" }).click();
+    await expect(page.getByText(`We could not copy it. Your ID is ${body.cdId}. It is in your email too.`)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy" })).toBeVisible();
+    await clipboardWorks(page, true);
+    await page.getByRole("button", { name: "Copy" }).click();
+    await expect(page.getByText(`${body.cdId} copied. You will need it on the next page.`)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Copied/ })).toBeVisible();
 
     /* Call later: the time tapped is booked with the server, inside calling hours */
     await page.getByRole("button", { name: "Call later" }).click();
@@ -146,6 +180,7 @@ test.describe("Early Access v2.1", () => {
   });
 
   test("a shop outside Canada is told its place, with the code the server issued", async ({ page }) => {
+    await controlledClipboard(page);
     await stepOneAndTwo(page, `ea-${unique()}@abroad.example`, `Cambio Sur ${unique()}`);
     await aboutTheShop(page,
       async () => {
@@ -164,5 +199,15 @@ test.describe("Early Access v2.1", () => {
     await expect(page.getByText("Your place is held.")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(body.invite.code)).toBeVisible();
     await expect(page.getByText(`Nº ${body.place}`, { exact: true })).toBeVisible({ timeout: 10_000 });
+
+    /* Share says the link was copied only when it was */
+    const share = page.getByRole("button", { name: /Share my invite link/ });
+    await share.click();
+    await expect(page.getByText(`We could not copy the link. Your code is ${body.invite.code}.`)).toBeVisible();
+    await expect(share).toBeVisible();
+    await clipboardWorks(page, true);
+    await share.click();
+    await expect(page.getByRole("button", { name: /Link copied/ })).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1))).toContain(body.invite.code);
   });
 });
