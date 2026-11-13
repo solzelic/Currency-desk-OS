@@ -173,6 +173,14 @@ export interface A2 {
   cohortNo?: number | null;
   place?: string | null;
   issuedOn?: Date;
+  /* The applicant's CurrencyDesk ID, minted by the server when a v2.1
+     application is accepted (enquiries/cd-id.ts). With one, this is the
+     v2.1 letter: the ID is the plate and no line says how long anything
+     takes. Without one it is the letter it has always been. */
+  cdId?: string | null;
+  /* False when they chose "No call, thanks" on the application. The
+     letter then promises no phone call. */
+  call?: boolean;
 }
 
 const ISSUED = (d: Date) =>
@@ -183,23 +191,36 @@ export function youreIn(o: A2): { subject: string; text: string; html: string } 
   const first = firstName(o.name);
   const shop = String(o.shopName ?? "").trim();
   const issued = ISSUED(o.issuedOn ?? new Date());
-  const subject = "Your CurrencyDesk reference is inside";
+  /* The ID, when this is the v2.1 letter. Labelled as theirs, never as a
+     sign-in: nothing signs in with it until the sign-up build binds it to
+     the owner, and the header above explains why that word stays out. */
+  const id = String(o.cdId ?? "").trim() || null;
+  const call = o.call !== false;
+  const subject = id ? "Your CurrencyDesk ID is inside" : "Your CurrencyDesk reference is inside";
   const preheader = "Three months, the whole system, no card.";
 
   const head = first ? `You're in, ${first}.` : "You're in.";
   const sub = shop ? `We looked at ${shop} and we'd like you on the desk.` : "We looked at your shop and we'd like you on the desk.";
   const cohort = o.cohortNo ? `Nº ${String(o.cohortNo).padStart(3, "0")} of 100` : "Founding cohort";
   const holder = [String(o.name ?? "").trim().toUpperCase(), String(o.place ?? "").trim().toUpperCase()].filter(Boolean).join(" · ");
+  const keepIt = id
+    ? `Keep it. It's yours, not the shop's: each person on the desk gets their own. Quote it whenever you write to us. Your setup reference is ${o.reference}.`
+    : "Hold on to it. It opens your setup, and it is what to quote whenever you write to us.";
+  const things = call ? "Three things worth knowing" : "Two things worth knowing";
 
   const text =
     `${head}\n\n${sub}\n\n` +
-    `YOUR REFERENCE — OPENS YOUR SETUP\n${o.reference}\n${cohort} · issued ${issued}\n\n` +
-    `Hold on to it. It opens your setup, and it is what to quote whenever you write to us.\n\n` +
-    `SET UP YOUR DESK\n${o.setupUrl}\nTakes about ten minutes.\n\n` +
-    `THREE THINGS WORTH KNOWING\n\n` +
+    (id
+      ? `YOUR CURRENCYDESK ID\n${id}\n${cohort} · issued ${issued}\n\n`
+      : `YOUR REFERENCE — OPENS YOUR SETUP\n${o.reference}\n${cohort} · issued ${issued}\n\n`) +
+    `${keepIt}\n\n` +
+    `SET UP YOUR DESK\n${o.setupUrl}\n${id ? "" : "Takes about ten minutes.\n"}\n` +
+    `${things.toUpperCase()}\n\n` +
     `Three months, free, all of it.\nNot a trial tier — the whole system, every application. Nothing is charged, and we'll tell you before anything ever is.\n\n` +
     `We're going to ask you a lot.\nThat's the trade. You're one of the first hundred desks, and what we want back is your opinion — what's slow, what's wrong, what you'd never use. We'd rather hear it early and rudely than politely in six months.\n\n` +
-    `A phone call in a week.\nA proper follow-up, once you've had the desk in your hands a few days — and a person, not SAM. Not a sales call. Nothing to book; we'll use this number.\n\n` +
+    (!call ? ""
+      : id ? `A phone call, later on.\nA proper follow-up once you've had the desk in your hands for a while, from a person, not SAM. Not a sales call. Nothing to book: we'll use this number.\n\n`
+      : `A phone call in a week.\nA proper follow-up, once you've had the desk in your hands a few days — and a person, not SAM. Not a sales call. Nothing to book; we'll use this number.\n\n`) +
     `One thing free doesn't cover: client verification is run by a third-party provider and billed per file. Prices vary by provider and region, and the desk always shows you the cost before it runs one.\n\n` +
     `— SAM\nSmart Automated Machine · CurrencyDesk\nSAM writes and calls. A person reads every reply.\n\n` +
     `Your founding rate is held for the life of the account. Reply to this email and a person reads it.`;
@@ -215,14 +236,15 @@ export function youreIn(o: A2): { subject: string; text: string; html: string } 
     `<div style="font-family:${MONO};font-size:8.5px;letter-spacing:0.18em;text-transform:uppercase;color:#b7f0d0;font-weight:600;margin-top:18px">Founding Operator</div>` +
     (shop ? `<div style="font-family:${SERIF};font-size:27px;line-height:1.06;letter-spacing:-0.012em;color:#ffffff;margin-top:5px">${esc(shop)}</div>` : "") +
     /* The plate. Labelled for what it is: the thing that opens their
-       setup, not a sign-in they do not have yet. */
+       setup, not a sign-in they do not have yet; or, in the v2.1 letter,
+       their own ID, and still not a sign-in. */
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" bgcolor="${DEEP}" style="margin-top:16px;border-collapse:separate;border-radius:7px;background-color:${DEEP}"><tr>` +
     `<td style="padding:12px 17px 13px">` +
     split(
-      `<span style="font-family:${MONO};font-size:7px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:600">Your reference</span>`,
-      `<span style="font-family:${MONO};font-size:7px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.4);font-weight:600">Opens your setup</span>`,
+      `<span style="font-family:${MONO};font-size:7px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.5);font-weight:600">${id ? "Your CurrencyDesk ID" : "Your reference"}</span>`,
+      `<span style="font-family:${MONO};font-size:7px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.4);font-weight:600">${id ? "Yours, not the shop&rsquo;s" : "Opens your setup"}</span>`,
     ) +
-    `<div style="font-family:${SANS};font-size:27px;font-weight:800;letter-spacing:0.09em;color:#ffffff;margin-top:6px">${esc(o.reference)}</div>` +
+    `<div style="font-family:${SANS};font-size:27px;font-weight:800;letter-spacing:0.09em;color:#ffffff;margin-top:6px">${esc(id ?? o.reference)}</div>` +
     `</td></tr></table>` +
     rule("rgba(255,255,255,0.14)", 18) +
     split(
@@ -244,22 +266,27 @@ export function youreIn(o: A2): { subject: string; text: string; html: string } 
     `</div>` +
     `<div style="padding:24px 34px 0">${card}</div>` +
     `<div style="padding:26px 34px 34px">` +
-    `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:0">Hold on to that reference. It opens your setup, and it is what to quote whenever you write to us.</p>` +
+    `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:0">${id
+      ? `Keep that ID. It&rsquo;s yours, not the shop&rsquo;s: each person on the desk gets their own. Quote it whenever you write to us. Your setup reference is <span style="font-family:${MONO};color:${INK}">${esc(o.reference)}</span>.`
+      : "Hold on to that reference. It opens your setup, and it is what to quote whenever you write to us."}</p>` +
     /* The button. bgcolor on the cell as well as the style, because Word
        ignores the one and honours the other. */
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:separate;margin-top:26px"><tr>` +
     `<td align="center" bgcolor="${BRASS}" style="border-radius:13px;background-color:${BRASS}">` +
     `<a href="${esc(o.setupUrl)}" style="display:block;padding:20px 30px;font-family:${MONO};font-size:13.5px;letter-spacing:0.16em;text-transform:uppercase;font-weight:700;color:#ffffff;text-decoration:none;text-align:center">Set up your desk &rarr;</a>` +
     `</td></tr></table>` +
-    `<div style="font-family:${MONO};font-size:10.5px;color:${FAINT};margin-top:11px;text-align:center">Takes about ten minutes</div>` +
+    (id ? "" : `<div style="font-family:${MONO};font-size:10.5px;color:${FAINT};margin-top:11px;text-align:center">Takes about ten minutes</div>`) +
     `<div style="margin:28px 0 0;padding-top:24px;border-top:1px solid ${HAIR}">` +
-    `<div style="font-family:${MONO};font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:${BRASS};font-weight:600">Three things worth knowing</div>` +
+    `<div style="font-family:${MONO};font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:${BRASS};font-weight:600">${things}</div>` +
     point("Three months, free, all of it.",
       "Not a trial tier &mdash; the whole system, every application. Nothing is charged, and we&rsquo;ll tell you before anything ever is.") +
     point("We&rsquo;re going to ask you a lot.",
       "That&rsquo;s the trade. You&rsquo;re one of the first hundred desks, and what we want back is your opinion &mdash; what&rsquo;s slow, what&rsquo;s wrong, what you&rsquo;d never use. We&rsquo;d rather hear it early and rudely than politely in six months.") +
-    point("A phone call in a week.",
-      "A proper follow-up, once you&rsquo;ve had the desk in your hands a few days &mdash; and a person, not SAM. Not a sales call. We want to hear what&rsquo;s slow and what&rsquo;s wrong. Nothing to book; we&rsquo;ll use this number.") +
+    (!call ? ""
+      : id ? point("A phone call, later on.",
+        "A proper follow-up once you&rsquo;ve had the desk in your hands for a while, from a person, not SAM. Not a sales call. We want to hear what&rsquo;s slow and what&rsquo;s wrong. Nothing to book: we&rsquo;ll use this number.")
+      : point("A phone call in a week.",
+        "A proper follow-up, once you&rsquo;ve had the desk in your hands a few days &mdash; and a person, not SAM. Not a sales call. We want to hear what&rsquo;s slow and what&rsquo;s wrong. Nothing to book; we&rsquo;ll use this number.")) +
     `</div>` +
     `<p style="font-family:${SANS};font-size:13.5px;line-height:1.6;color:${MUTE};margin:20px 0 0">One thing free doesn&rsquo;t cover: client verification is run by a third-party provider and billed per file. Prices vary by provider and region, and the desk always shows you the cost before it runs one.</p>` +
     signoff +
@@ -271,6 +298,157 @@ export function youreIn(o: A2): { subject: string; text: string; html: string } 
   };
 }
 
+
+/* ============================================================
+   The two waitlist letters (Early Access v2.1, CD-182, CD-183).
+
+   The page ends on one of two screens when an application cannot come in
+   yet, and each says "we emailed you". These are those emails, sent once
+   as the application lands on hold. Drafted from the page's own words for
+   Sol to approve; neither is in design/emails yet.
+
+   The rules they keep, which the rest of this file keeps too:
+     · nothing that is not true today. The page offers rewards for passing
+       the invite code on (five places, two months free). No checkout
+       takes the code and no place moves yet, so the letter gives the code
+       and promises nothing for it.
+     · no claim about how long anything takes, ours or FINTRAC's.
+     · no em or en dash, the site's rule for v2.1 copy, so they sign off
+       as plain "SAM".
+   What FINTRAC asks for is FINTRAC's list, in plain words, read from its
+   registration page on 13 Nov 2026. Compliance checks it before it ships.
+   ============================================================ */
+
+/* Where an MSB in Canada starts its registration. FINTRAC's own page. */
+export const FINTRAC_REGISTER_URL = "https://fintrac-canafe.canada.ca/msb-esm/register-inscrire/reg-ins-eng";
+
+const signoffPlain =
+  `<p style="font-family:${SERIF};font-style:italic;font-size:19px;color:${INK};margin:24px 0 0">SAM</p>` +
+  `<div style="font-family:${MONO};font-size:10px;line-height:1.6;color:${FAINT};margin-top:5px">` +
+  `Smart Automated Machine &middot; CurrencyDesk<br>SAM writes and calls. A person reads every reply.</div>`;
+const SIGNOFF_TEXT = "SAM\nSmart Automated Machine · CurrencyDesk\nSAM writes and calls. A person reads every reply.";
+const WAITLIST_FOOTER = "You applied at currencydeskos.com. Reply to this email and a person reads it.";
+
+/* A labelled panel on the soft background: a small caps label over its
+   contents, the way A1's "What happens today" is drawn. */
+const panel = (label: string, inner: string, marginTop = 22) =>
+  `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:separate;margin-top:${marginTop}px"><tr>` +
+  `<td style="padding:16px 18px;border-radius:12px;background-color:${SOFT};border:1px solid ${HAIR}">` +
+  `<div style="font-family:${MONO};font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:${FAINT};font-weight:600">${label}</div>` +
+  inner +
+  `</td></tr></table>`;
+
+const lead = (html: string, marginTop = 16) =>
+  `<p style="font-family:${SANS};font-size:15px;line-height:1.62;color:${MUTE};margin:${marginTop}px 0 0">${html}</p>`;
+
+const referenceLine = (reference: string) =>
+  `<div style="margin-top:26px;padding-top:16px;border-top:1px solid ${HAIR}">` +
+  `<span style="font-family:${MONO};font-size:10px;color:${FAINT}">Reference ${esc(reference)}</span></div>`;
+
+export interface W1 { name?: string | null; shopName?: string | null; workspace: string; reference: string }
+
+/* W1 · Your address is held. A shop in Canada not yet registered with
+   FINTRAC as a money services business. */
+export function addressHeld(o: W1): { subject: string; text: string; html: string } {
+  const first = firstName(o.name);
+  const shop = String(o.shopName ?? "").trim();
+  const host = String(o.workspace ?? "").trim().toLowerCase();
+  const subject = "Your address is held";
+  const preheader = host ? `${host} is yours while you register with FINTRAC.` : "Your address is yours while you register with FINTRAC.";
+  const opening = `${first ? `${first}, early` : "Early"} access is for shops registered with FINTRAC as a money services business.`;
+  const kept = host
+    ? `${host} is saved${shop ? ` for ${shop}` : ""}, and nobody else can take it while you register.`
+    : "Your address is saved, and nobody else can take it while you register.";
+  const steps = [
+    "Register your business as an MSB with FINTRAC. Their page is below, with the full list of what to send.",
+    "FINTRAC sends your MSB number, usually M followed by 8 digits.",
+    "Reply to this email with it. A person reads every reply and picks your application back up.",
+  ];
+  const asks = [
+    "Your bank account details and your compliance officer's details",
+    "The owners and senior managers, with their dates of birth",
+    "Every location, and what you expect to handle in a year for each service",
+    "Criminal record checks for the CEO, president, directors and anyone owning or controlling 20% or more, issued in the six months before you apply",
+    "Your incorporation papers, and a document showing who owns and controls the business",
+  ];
+  const asksFoot = "FINTRAC charges no fee and only takes complete applications.";
+
+  const text =
+    `Your address is held.\n\n${opening} ${kept}\n\n` +
+    `WHAT TO DO NEXT\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n` +
+    `START ON FINTRAC'S SITE\n${FINTRAC_REGISTER_URL}\n\n` +
+    `WHAT FINTRAC ASKS FOR\n${asks.map((a) => `· ${a}`).join("\n")}\n${asksFoot}\n\n` +
+    `${SIGNOFF_TEXT}\n\nReference ${o.reference}\n${WAITLIST_FOOTER}`;
+
+  const numbered = steps.map((s, i) =>
+    `<tr><td valign="top" style="font-family:${MONO};font-size:12px;font-weight:700;color:${GREEN};padding:8px 12px 0 0;width:14px">${i + 1}</td>` +
+    `<td style="font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};padding-top:8px">${esc(s)}</td></tr>`).join("");
+  const body =
+    `<div style="padding:38px 40px 34px">` +
+    `<div style="font-family:${SERIF};font-size:30px;line-height:1.1;letter-spacing:-0.015em;color:${INK}">Your address is held.</div>` +
+    lead(`${esc(opening)} ${esc(kept)}`) +
+    panel("What to do next",
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse">${numbered}</table>`) +
+    /* FINTRAC's page, as a button: it is the one thing in this letter to act on. */
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:separate;margin-top:22px"><tr>` +
+    `<td align="center" bgcolor="${GREEN}" style="border-radius:13px;background-color:${GREEN}">` +
+    `<a href="${esc(FINTRAC_REGISTER_URL)}" style="display:block;padding:18px 28px;font-family:${MONO};font-size:12.5px;letter-spacing:0.14em;text-transform:uppercase;font-weight:700;color:#ffffff;text-decoration:none;text-align:center">Start on FINTRAC&rsquo;s site &rarr;</a>` +
+    `</td></tr></table>` +
+    panel("What FINTRAC asks for",
+      `<div style="font-family:${SANS};font-size:13.5px;line-height:1.7;color:${INK};margin-top:8px">${asks.map(esc).join("<br>")}</div>` +
+      `<div style="font-family:${SANS};font-size:12.5px;line-height:1.6;color:${MUTE};margin-top:10px">${esc(asksFoot)}</div>`) +
+    signoffPlain +
+    referenceLine(o.reference) +
+    `</div>`;
+
+  return { subject, text, html: shell({ preheader, body, footer: WAITLIST_FOOTER }) };
+}
+
+export interface W2 {
+  name?: string | null;
+  shopName?: string | null;
+  country: string;
+  place?: number | null;
+  inviteCode: string;
+  reference: string;
+}
+
+/* W2 · Your place is held. A shop outside Canada: early access is Canada
+   only for now. It carries the place in line for their country and the
+   code to give another shop, both issued by the server. */
+export function placeHeld(o: W2): { subject: string; text: string; html: string } {
+  const first = firstName(o.name);
+  const country = String(o.country ?? "").trim() || "your country";
+  const place = o.place && o.place > 0 ? `Nº ${o.place}` : null;
+  const code = String(o.inviteCode ?? "").trim();
+  const subject = "Your place is held";
+  const preheader = place ? `${place} in line for ${country}. Your invite code is inside.` : "Your invite code is inside.";
+  const opening = `${first ? `${first}, early` : "Early"} access is Canada only for now. We've kept your place, and you'll be among the first in when we open in ${country}.`;
+  const codeNote = "Give it to another shop. It's how we'll know they came from you.";
+
+  const text =
+    `Your place is held.\n\n${opening}\n\n` +
+    (place ? `YOUR PLACE IN ${country.toUpperCase()}\n${place}\n\n` : "") +
+    (code ? `YOUR INVITE CODE\n${code}\n${codeNote}\n\n` : "") +
+    `We'll write to you when CurrencyDesk opens in ${country}.\n\n` +
+    `${SIGNOFF_TEXT}\n\nReference ${o.reference}\n${WAITLIST_FOOTER}`;
+
+  const big = (value: string) =>
+    `<div style="font-family:${SANS};font-size:30px;font-weight:800;letter-spacing:0.06em;color:${INK};margin-top:6px">${esc(value)}</div>`;
+  const body =
+    `<div style="padding:38px 40px 34px">` +
+    `<div style="font-family:${SERIF};font-size:30px;line-height:1.1;letter-spacing:-0.015em;color:${INK}">Your place is held.</div>` +
+    lead(esc(opening)) +
+    (place ? panel(`Your place in ${esc(country)}`, big(place)) : "") +
+    (code ? panel("Your invite code", big(code) +
+      `<div style="font-family:${SANS};font-size:13.5px;line-height:1.6;color:${MUTE};margin-top:6px">${esc(codeNote)}</div>`, place ? 12 : 22) : "") +
+    lead(`We&rsquo;ll write to you when CurrencyDesk opens in ${esc(country)}.`, 20) +
+    signoffPlain +
+    referenceLine(o.reference) +
+    `</div>`;
+
+  return { subject, text, html: shell({ preheader, body, footer: WAITLIST_FOOTER }) };
+}
 
 /* A code, in a box, on our paper.
 

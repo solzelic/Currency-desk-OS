@@ -31,6 +31,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { inviteEmail, reviewEmail, sendEmail, type EmailStatus } from "../email.js";
+import { addressHeld, placeHeld } from "../emails/design.js";
 
 export type Stage = "new" | "reviewing" | "hold" | "invited" | "accepted" | "declined";
 
@@ -79,7 +80,7 @@ export const STAGES: {
   { id: "accepted", title: "Open", action: "", terminal: true, step: 3,
     blurb: "They finished. The desk exists and they are trading." },
   { id: "hold", title: "On hold", action: "Hold for later", exit: true,
-    blurb: "Worth keeping, not now. They hear nothing — this is our note, not a decision they were told about." },
+    blurb: "Worth keeping, not now. Holding somebody sends nothing. A v2.1 application on the waitlist lands here, told only that its address or place is held." },
   { id: "declined", title: "Declined", action: "Decline", terminal: true, exit: true,
     blurb: "Not for us. Their code no longer opens anything." },
 ];
@@ -141,19 +142,56 @@ function aboutTheShop(a: Row): { shopName: string | null; place: string | null }
   };
 }
 
+/* Who to greet. The v2.1 form asks for first and last name in the answers
+   and may not send a name beside them; older forms only sent the name. */
+function nameOf(a: Row): string | null {
+  const d = (a.details ?? {}) as Record<string, unknown>;
+  const typed = [d.firstName, d.lastName].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ");
+  return a.name?.trim() || typed || null;
+}
+
+/* Whether they asked not to be rung. Only the v2.1 form asks: "No call,
+   thanks" posts bestTime "no call". Older applications never said, and
+   keep the letter they always had. Exported for the panel's resends. */
+export function saidNoCall(a: { details?: unknown }): boolean {
+  return ((a.details ?? {}) as Record<string, unknown>).bestTime === "no call";
+}
+
 /* What each stage sends on arrival. Declared here, beside the stage, so
    "what does the applicant hear when we accept them?" is answerable by
    reading one file rather than by grepping for sendEmail. */
 type Mail = { subject: string; text: string; html: string };
 const ON_ARRIVAL: Partial<Record<Stage, (a: Row, origin: string) => Mail>> = {
-  reviewing: (a) => reviewEmail({ name: a.name, reference: a.reference, ...aboutTheShop(a) }),
+  reviewing: (a) => reviewEmail({ name: nameOf(a), reference: a.reference, ...aboutTheShop(a) }),
+  /* A v2.1 application accepted at once carries its CurrencyDesk ID, and
+     the letter honours "No call, thanks". */
   invited: (a, origin) => inviteEmail({
-    name: a.name, reference: a.reference, origin, cohortNo: a.charterNo, ...aboutTheShop(a),
+    name: nameOf(a), reference: a.reference, origin, cohortNo: a.charterNo, ...aboutTheShop(a),
+    cdId: a.cdId, call: !saidNoCall(a),
   }),
   /* `hold` and `declined` send nothing on purpose. Holding somebody is a
      note to ourselves; telling them they are parked is worse than saying
-     nothing. Declining deserves a human reply, not an automated one. */
+     nothing. Declining deserves a human reply, not an automated one.
+     The waitlist letters below are not this: they explain a decision the
+     page already showed, and go once, from the application route. */
 };
+
+/* The letter for a v2.1 application held on the waitlist (CD-182,
+   CD-183), by the reason the server gave it. Null for anything else. */
+export function waitlistMail(a: Row): Mail | null {
+  const d = (a.details ?? {}) as Record<string, unknown>;
+  const { shopName } = aboutTheShop(a);
+  if (a.waitlistReason === "not-fintrac-registered") {
+    return addressHeld({ name: nameOf(a), shopName, workspace: String(d.workspace ?? ""), reference: a.reference });
+  }
+  if (a.waitlistReason === "outside-canada") {
+    return placeHeld({
+      name: nameOf(a), shopName, country: String(d.country ?? ""), place: a.placeInLine,
+      inviteCode: a.inviteCode ?? "", reference: a.reference,
+    });
+  }
+  return null;
+}
 
 /* Which stages speak to the applicant. Exported so the communications
    catalogue can be checked against it rather than kept in step by hand: a
@@ -179,7 +217,10 @@ export async function moveTo(
   row: Row,
   to: Stage,
   by: string,
-  opts: { origin?: string; actorId?: string | null; resend?: boolean } = {},
+  /* `mail` replaces the stage's own letter for this one move. The
+     application route passes the waitlist letter as a v2.1 application
+     lands on hold; a hold by hand passes nothing and stays silent. */
+  opts: { origin?: string; actorId?: string | null; resend?: boolean; mail?: Mail } = {},
 ): Promise<Moved | Refused> {
   const from = (row.status ?? "new") as Stage;
 
@@ -214,7 +255,7 @@ export async function moveTo(
      not silently roll back a decision, and the operator can see it failed
      and send again. */
   let email: EmailStatus | null = null;
-  const compose = ON_ARRIVAL[to];
+  const compose = opts.mail ? () => opts.mail! : ON_ARRIVAL[to];
   if (compose && !row.isDemo) {
     const origin = (opts.origin ?? process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "");
     const mail = compose(row, origin);

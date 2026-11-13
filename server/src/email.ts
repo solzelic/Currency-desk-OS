@@ -142,6 +142,10 @@ export interface InviteOpts {
   cohortNo?: number | null;
   place?: string | null;
   issuedOn?: Date;
+  /* A v2.1 applicant's CurrencyDesk ID, and whether they welcomed a call
+     (design.ts, A2). Absent for every other invitation. */
+  cdId?: string | null;
+  call?: boolean;
 }
 export function inviteEmail(o: InviteOpts): { subject: string; text: string; html: string } {
   /* Straight into setup, with their code already in the link so most people
@@ -151,7 +155,7 @@ export function inviteEmail(o: InviteOpts): { subject: string; text: string; htm
   const setupUrl = `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
   return youreIn({
     name: o.name, shopName: o.shopName, reference: o.reference, setupUrl,
-    cohortNo: o.cohortNo, place: o.place, issuedOn: o.issuedOn,
+    cohortNo: o.cohortNo, place: o.place, issuedOn: o.issuedOn, cdId: o.cdId, call: o.call,
   });
 }
 

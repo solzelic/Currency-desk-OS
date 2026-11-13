@@ -35,7 +35,7 @@ import { clientIp } from "../auth/client-ip.js";
 import { issueCdId } from "../enquiries/cd-id.js";
 import { normalizeMsb } from "../enquiries/msb.js";
 import { answersOf, issueInviteCode, nextPlaceInLine, V21_FORM, v21Details, waitlistFor, type WaitlistReason } from "../enquiries/v21.js";
-import { moveTo } from "../onboarding/pipeline.js";
+import { moveTo, waitlistMail, type Stage } from "../onboarding/pipeline.js";
 import { forgetClaimedCount } from "./early-access.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
@@ -295,8 +295,16 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
        one whether a person, this route, or a reviewer agent caused it. Best
        effort: the row is saved, and a mail outage must never cost us the
        application. */
+    /* Where a v2.1 application lands, and what it hears (Sol, 13 Nov:
+       accept at once). Accepted: Invited straight away, and A2 carries the
+       CurrencyDesk ID and the setup link; there is nothing left to review,
+       so no A1. Waitlisted: On hold, with the letter for its reason. The
+       old page and an open sign-up are reviewed as before; what an open
+       sign-up hears is not decided yet, and OPEN_SIGNUP is off. */
     if (kind !== "contact" && row) {
-      await moveTo(db, row, "reviewing", "system").catch(() => null);
+      const to: Stage = !v21 ? "reviewing" : waitlistReason ? "hold" : kind === "signup" ? "reviewing" : "invited";
+      const mail = to === "hold" ? waitlistMail(row) ?? undefined : undefined;
+      await moveTo(db, row, to, "system", { mail }).catch(() => null);
     }
 
     // Tell the operators. Best-effort: the enquiry is already saved, so a
