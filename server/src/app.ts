@@ -30,6 +30,7 @@ import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
 import { registerEarlyAccessRoutes } from "./routes/early-access.js";
+import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 import { registerPinRoutes } from "./routes/pin.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerRatePageRoutes } from "./routes/rate-pages.js";
@@ -263,6 +264,7 @@ export async function buildApp(
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);
   registerEarlyAccessRoutes(app, db);
+  registerWorkspaceRoutes(app, db);
   registerPinRoutes(app, db);
   registerStaffRoutes(app, db);
   registerDeskRoutes(app, db);

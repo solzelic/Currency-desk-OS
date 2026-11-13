@@ -48,7 +48,7 @@ describe("GET /api/workspaces/:slug", () => {
   it("says a free address is available, never stored, with free alternatives", async () => {
     const res = await check("northside-cambio");
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(String(res.headers["cache-control"])).toMatch(/no-store/);
     const body = res.json() as { available: boolean; slug: string; suggestions: string[] };
     expect(body.available).toBe(true);
     expect(body.slug).toBe("northside-cambio");

@@ -23,19 +23,14 @@ import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { sendEmail, makeCode, hashCode, codeMatches, verificationEmail } from "../email.js";
 import { closeApplication, provisionDesk, slugTaken } from "../onboarding/provision.js";
 import { isStagingFreshShop, STAGING_OWNER_DOMAIN } from "./staging-fresh-shop.js";
+/* One list of reserved words and one address shape, shared with desk
+   creation and the Early Access address check. */
+import { isReservedSlug, slugShape } from "../onboarding/reserved-slugs.js";
 import { tenantPlan } from "./tenant.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
-const RESERVED_SLUGS = new Set(["api", "app", "www", "sites", "admin", "administrator", "currencydesk", "static", "assets", "os-src", "public", "help", "support", "status", "signup", "login"]);
 
-const slugShape = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .min(2)
-  .max(40)
-  .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, "slug: lowercase letters, digits and hyphens");
 const emailShape = z.string().trim().toLowerCase().email().max(160);
 
 // the guided-onboarding answers (all optional): regulator/country, home
@@ -142,7 +137,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     /* A staging fresh shop is the only writer of this domain. Live
        must not hold one, and must not be handed a code in the body. */
     if (b.email.endsWith(STAGING_OWNER_DOMAIN)) return reply.code(400).send({ error: "invalid_request" });
-    if (RESERVED_SLUGS.has(b.slug)) return reply.code(409).send({ error: "slug_reserved", detail: "That desk address is reserved — pick another." });
+    if (isReservedSlug(b.slug)) return reply.code(409).send({ error: "slug_reserved", detail: "That desk address is reserved — pick another." });
     if (!allow("signup-ip:" + req.ip, signupIpMax()) || !allow("signup-email:" + b.email, 4)) {
       return reply.code(429).send({ error: "slow_down", detail: "Too many attempts — try again in a bit." });
     }
