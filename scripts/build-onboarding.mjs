@@ -45,6 +45,7 @@
    stopped verifying, or stopped creating desks.
    ============================================================ */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { STAGING_BACK_LINK } from "./staging-back-link.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1067,7 +1068,7 @@ let page = html.slice(0, openAt + OPEN.length) + reserialized + html.slice(close
 const bodyAt = page.indexOf("<body");
 if (bodyAt < 0) throw new Error("onboarding: no <body> to place the bridge in");
 const bodyEnd = page.indexOf(">", bodyAt) + 1;
-page = page.slice(0, bodyEnd) + "\n" + BRIDGE + page.slice(bodyEnd);
+page = page.slice(0, bodyEnd) + "\n" + BRIDGE + STAGING_BACK_LINK + page.slice(bodyEnd);
 
 if (!page.includes("<title>Bundled Page</title>")) throw new Error("onboarding: the bundle's title is no longer 'Bundled Page'");
 page = page

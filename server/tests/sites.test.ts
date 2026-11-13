@@ -175,17 +175,28 @@ describe("the public site", () => {
     expect(res.body).toContain("more trades, less paperwork");
   });
 
-  it("sends applicants to the design's Early Access page and members to the OS", async () => {
-    const apply = await app.inject({ method: "GET", url: "/signup" });
-    expect(apply.statusCode).toBe(200);
-    expect(apply.body).toContain("Become a Founding Operator");
+  /* Staging only: a way back to the sign-in page from every page of the
+     journey (Sol, 14 Nov: "I should always be able to go back to that
+     login page"). It asks the staging door, and only on a staging host. */
+  it("carries the staging way back to sign-in on every page of the journey", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const file of ["web/index.html", "web/mobile.html", "web/faq.html", "web/early-access-v2.html", "web/onboarding.html"]) {
+      const html = readFileSync(path.resolve("..", file), "utf8");
+      expect(html, file).toContain("cd-staging-back");
+      expect(html, file).toContain("/api/staging/signin");
+    }
+  });
 
-    /* Early Access v2.1, previewed beside it until /signup switches over,
-       kept out of search, and posting the v2.1 application. */
-    const v2 = await app.inject({ method: "GET", url: "/early-access" });
-    expect(v2.statusCode).toBe(200);
-    expect(v2.body).toContain("form: 'early-access-v2.1'");
-    expect(v2.body).toContain('<meta name="robots" content="noindex,follow">');
+  it("sends applicants to the design's Early Access page and members to the OS", async () => {
+    /* Early Access v2.1 is the application now (Sol, 14 Nov): every "Get
+       early access" on the site goes to /signup, and /signup serves v2.1.
+       /early-access serves the same page. */
+    for (const url of ["/signup", "/early-access"]) {
+      const apply = await app.inject({ method: "GET", url });
+      expect(apply.statusCode, url).toBe(200);
+      expect(apply.body, url).toContain("form: 'early-access-v2.1'");
+      expect(apply.body, url).not.toContain("Become a Founding Operator");
+    }
 
     const login = await app.inject({ method: "GET", url: "/login" });
     expect(login.statusCode).toBe(200);

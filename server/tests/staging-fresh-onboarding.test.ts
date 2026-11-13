@@ -161,6 +161,30 @@ describe("fresh onboarding", () => {
 });
 
 describe("the staging ticket", () => {
+  /* Only a saved application uses the ticket: a refusal before it is saved
+     (here, too many from one address) leaves it for the next press. */
+  it("is not spent by a refusal before the application is saved", async () => {
+    const { app, handle } = await boot("1", STAGING_HOST);
+    const before = process.env.ENQUIRY_IP_MAX;
+    process.env.ENQUIRY_IP_MAX = "1";
+    try {
+      const { resetEnquiryThrottle } = await import("../src/routes/enquiries.js");
+      resetEnquiryThrottle();
+      const opened = await app.inject({ method: "POST", url: "/api/staging/fresh-onboarding", headers: { host: STAGING_HOST } });
+      const door = ticketOf((opened.json() as { start: string }).start);
+      const first = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, remoteAddress: "198.51.100.70", payload: application("first@example.com") });
+      expect(first.statusCode).toBe(201);
+      const slowed = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, remoteAddress: "198.51.100.70", payload: application("x@example.com", door) });
+      expect(slowed.statusCode).toBe(429);
+      const again = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, remoteAddress: "198.51.100.71", payload: application("x@example.com", door) });
+      expect(again.statusCode, again.body).toBe(201);
+    } finally {
+      if (before === undefined) delete process.env.ENQUIRY_IP_MAX; else process.env.ENQUIRY_IP_MAX = before;
+      await app.close();
+      await handle.close();
+    }
+  });
+
   it("means nothing on a live host, and a made-up ticket is refused", async () => {
     const { app, handle } = await boot("1", STAGING_HOST);
     try {
@@ -173,6 +197,12 @@ describe("the staging ticket", () => {
 
       const madeUp = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("madeup@example.com", "0".repeat(32)) });
       expect(madeUp.statusCode).toBe(400);
+
+      /* a staging address never applies as a real shop: without a ticket it is refused */
+      const bare = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("owner+ab12@staging.invalid") });
+      expect(bare.statusCode).toBe(400);
+      expect(bare.json().error).toBe("staging_ticket");
+      expect(await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.email, "owner+ab12@staging.invalid"))).toHaveLength(0);
     } finally {
       await app.close();
       await handle.close();

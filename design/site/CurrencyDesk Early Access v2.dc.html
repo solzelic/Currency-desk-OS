@@ -931,6 +931,12 @@ class Component extends DCLogic {
   }
 
   next = () => {
+    /* after a refused staging ticket the last step goes nowhere: back to sign in instead */
+    if (this.state.step === 3 && this._doorSpent) {
+      this._tone('nope');
+      this.flashToast('This staging start has been used or has expired. Go back to sign in and start a fresh shop again.');
+      return;
+    }
     if (this.state.step < 4 && !this.canNext()) {
       if (this.state.step === 1 && !this.state.wsChecking) { const slug = this._wsSlug(), r = this._wsFor(slug); if (this._wsShaped(slug) && (!r || r.available === null)) this._wsCheck(); }
       this._tone('nope');
@@ -972,15 +978,28 @@ class Component extends DCLogic {
     if (this._filtered()) {
       if (!(this.state.issued && this.state.issued.inviteCode)) return; /* nothing to share until the server issues the code */
       const code = this._inviteCode(), P = this._pass;
-      if (P) P.spinTo(P.face === 180 ? P.ry + 360 : P.ry + 180);
-      clearTimeout(this._copiedT);
-      this.setState({ wlCopied: true });
-      this._copiedT = setTimeout(() => this.setState({ wlCopied: false }), 2200);
+      /* It says what really happened (the rule kept from PR #682): the pass turns and the button
+         says so only once the share or the copy worked; a cancelled share says nothing; a failure
+         says so and gives the code. */
+      const worked = (patch, msg) => {
+        if (P) P.spinTo(P.face === 180 ? P.ry + 360 : P.ry + 180);
+        clearTimeout(this._copiedT);
+        this.setState(patch);
+        this._copiedT = setTimeout(() => this.setState({ wlCopied: false, wlShared: false }), 2200);
+        if (msg) this.flashToast(msg);
+      };
+      const failed = () => this.flashToast('We could not copy the link. Your code is ' + code + '.');
+      const copy = () => {
+        let p = null;
+        try { p = navigator.clipboard && navigator.clipboard.writeText(url); } catch (e) { p = null; }
+        if (!p) { failed(); return; }
+        p.then(() => worked({ wlCopied: true }, 'Link copied, with your code ' + code + ' in it.'), failed);
+      };
       if (navigator.share && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-        navigator.share({ title: 'CurrencyDesk OS', text: 'Use my code ' + code + ' at checkout and your first month of CurrencyDesk is free.', url: url }).catch(() => {});
+        navigator.share({ title: 'CurrencyDesk OS', text: 'Use my code ' + code + ' at checkout and your first month of CurrencyDesk is free.', url: url })
+          .then(() => worked({ wlShared: true }), (err) => { if (err && err.name === 'AbortError') return; copy(); });
       } else {
-        try { navigator.clipboard && navigator.clipboard.writeText(url).catch(() => {}); } catch (e) {}
-        this.flashToast('Link copied, with your code ' + code + ' in it.');
+        copy();
       }
       return;
     }
@@ -1007,8 +1026,7 @@ class Component extends DCLogic {
         setTimeout(() => { try { el.focus(); } catch (e) {} }, 60);
       }
       if (this.state.step === 4) {
-        this._submit();
-        this._startDone();
+        if (this._submit() !== false) this._startDone();
       }
     }
   }
@@ -1018,6 +1036,8 @@ class Component extends DCLogic {
      with a line saying so, rather than showing a number nobody issued. Nothing is kept in the
      browser beyond this page. */
   _submit() {
+    /* A refused staging ticket stops here: the next press must not go out as a real shop. */
+    if (this._doorSpent) { this._submitFailed(400, true, true); return false; }
     const s = this.state;
     const open = s.openMode == null ? this.OPEN_SIGNUP : s.openMode;
     const call = this.SAM_CALL && !this._filtered() && !s.noCall;
@@ -1044,7 +1064,17 @@ class Component extends DCLogic {
       .then((r) => r.json().catch(() => ({})).then((body) => ({ status: r.status, body })))
       .then(({ status, body }) => {
         if (seq !== this._submitSeq) return;
+        /* a used or expired staging ticket: forget it, and say how to start again */
+        if (status === 400 && body && body.error === 'staging_ticket') {
+          this._forgetDoor();
+          /* no further press goes out, and the staging address leaves the form */
+          this._doorSpent = true;
+          if (/@staging\.invalid$/.test(this.state.email)) this.setState({ email: '' });
+          this._settle({ ok: false, status, stagingExpired: true });
+          return;
+        }
         if (status !== 201 || !body || !body.reference) { this._settle({ ok: false, status }); return; }
+        if (this._door) this._forgetDoor(); /* the ticket opens one application */
         /* the ID as the server issued it, or none: CD, 4 letters, 4 characters with no 0, O, 1, I or L */
         const id = String(body.cdId || '').toUpperCase();
         this._issuedId = /^CD-[A-Z]{4}-[2-9A-HJKMNP-Z]{4}$/.test(id) ? id : null;
@@ -1057,11 +1087,18 @@ class Component extends DCLogic {
       })
       .catch(() => { if (seq === this._submitSeq) this._settle({ ok: false, status: 0 }); });
   }
+  /* The ticket is done with: used, or refused. Remembered as spent in this tab, so neither the
+     address nor Back can bring it round again. */
+  _forgetDoor() {
+    const door = this._door;
+    this._door = null;
+    try { sessionStorage.removeItem('cdStagingDoor'); if (door) sessionStorage.setItem('cdStagingDoorSpent', door); } catch (x) {}
+  }
   _settle(result) {
     this._issued = result;
     this.setState({ issued: result.ok ? result : null });
     const wait = this._replyWait; this._replyWait = null;
-    if (!result.ok) { this._submitFailed(result.status); return; }
+    if (!result.ok) { this._submitFailed(result.status, result.stagingExpired); return; }
     if (wait) wait();
   }
   /* run fn once the server has answered; straight away if it already has */
@@ -1069,13 +1106,14 @@ class Component extends DCLogic {
     if (this._issued && this._issued.ok) fn();
     else if (!this._issued) this._replyWait = fn;
   }
-  _submitFailed(status) {
-    if (this.state.step !== 4) return;
+  _submitFailed(status, stagingExpired, blocked) {
+    if (this.state.step !== 4 && !blocked) return;
     (this._doneT || []).forEach(clearTimeout); clearInterval(this._spinI); clearInterval(this._spinTick); clearInterval(this._mc);
     if (this._tok) { cancelAnimationFrame(this._tok.raf); this._tok = null; }
     if (this._pass) { cancelAnimationFrame(this._pass.raf); this._pass = null; }
     this.setState({ step: 3, whoOpen: -1, reeling: false, headLit: false, torn: false, dPhase: 0, idShown: 0 });
-    this.flashToast(status === 429 ? 'Too many tries from here. Wait a minute, then press the button again.' : 'We could not send that. Check your connection and press the button again.');
+    this.flashToast(stagingExpired ? 'This staging start has been used or has expired. Go back to sign in and start a fresh shop again.'
+      : status === 429 ? 'Too many tries from here. Wait a minute, then press the button again.' : 'We could not send that. Check your connection and press the button again.');
   }
   /* the auto-scroll that opens each question can leave a clipped (overflow: hidden) wrapper shifted; the dark screens start from a clean frame */
   _unshift() {
@@ -1249,10 +1287,14 @@ class Component extends DCLogic {
   _inviteCode() { const i = this.state.issued; return i && i.inviteCode ? i.inviteCode : '····'; } /* issued by the server, unique */
   _wlPlace() { const i = this.state.issued; return i && i.place ? i.place : 0; } /* the place in line for their country, from the server */
   _country() { return this.COUNTRIES.indexOf(this.state.outCountry) >= 0 ? this.state.outCountry : ''; }
+  /* Copied only when it was: a refused copy says so and gives the ID (the rule kept from PR #682). */
   copyId = () => {
     const id = this._deskId();
-    try { navigator.clipboard && navigator.clipboard.writeText(id).catch(() => {}); } catch (e) {}
-    this.setState({ copied: true }); this.flashToast(id + ' copied. You will need it on the next page.');
+    const failed = () => { this.setState({ copied: false }); this.flashToast('We could not copy it. Your ID is ' + id + '. It is in your email too.'); };
+    let p = null;
+    try { p = navigator.clipboard && navigator.clipboard.writeText(id); } catch (e) { p = null; }
+    if (!p) { failed(); return; }
+    p.then(() => { this.setState({ copied: true }); this.flashToast(id + ' copied. You will need it on the next page.'); }, failed);
   };
   openInfo = () => this.setState({ infoOpen: true });
   stopIt = (e) => { e.stopPropagation(); };
@@ -1355,11 +1397,31 @@ class Component extends DCLogic {
     /* Staging's "Start a fresh shop" opens this page with a one-time ticket and a staging
        email (routes/staging-fresh-shop.ts). The application carries the ticket, and the server
        honours it on the staging door only: the whole journey runs as a staging test shop. */
+    /* The tab keeps the staging start (sessionStorage "cdStagingDoor": the ticket and the
+       staging address, nothing about a person), so going back and forth on the site does not
+       turn a staging test into a real application. Cleared once the ticket is used. */
+    /* Only on a staging host (or this machine): live never reads, keeps or sends a ticket. The
+       address bar lets it go once the tab has it, so Back cannot bring a used one round again,
+       and a ticket already used in this tab ("cdStagingDoorSpent") is ignored. */
     try {
-      const q = new URLSearchParams(window.location.search), door = q.get('door') || '', em = q.get('email') || '';
-      if (/^[0-9a-f]{32}$/.test(door)) {
-        this._door = door;
-        if (/^owner\+[0-9a-f]+@staging\.invalid$/.test(em)) this.setState({ email: em });
+      const host = window.location.hostname;
+      if (/staging/i.test(host) || /^(localhost|127\.0\.0\.1)$/.test(host)) {
+        const get = (k) => { try { return sessionStorage.getItem(k); } catch (x) { return null; } };
+        const q = new URLSearchParams(window.location.search);
+        let door = q.get('door') || '', em = q.get('email') || '', fromUrl = /^[0-9a-f]{32}$/.test(door);
+        if (!fromUrl || door === get('cdStagingDoorSpent')) {
+          let held = {};
+          try { held = JSON.parse(get('cdStagingDoor') || 'null') || {}; } catch (x) {}
+          door = String(held.door || ''); em = String(held.email || ''); fromUrl = false;
+        }
+        if (/^[0-9a-f]{32}$/.test(door) && door !== get('cdStagingDoorSpent')) {
+          this._door = door;
+          if (!/^owner\+[0-9a-f]+@staging\.invalid$/.test(em)) em = '';
+          let kept = false;
+          try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door, email: em })); kept = true; } catch (x) {}
+          if (kept && fromUrl) { try { history.replaceState(history.state, '', window.location.pathname + window.location.hash); } catch (x) {} }
+          if (em) this.setState({ email: em });
+        }
       }
     } catch (e) {}
     /* the two switches, from the server */
@@ -1943,10 +2005,10 @@ class Component extends DCLogic {
       samPhone: s.samMode === 'count' && s.dPhase >= 9 ? 'transform-origin: 50% 80%; animation: cdSamRingPhone 3s ease-in-out 90.6s infinite;' : '', /* the ring takes 90s to close, then the phone starts ringing (no sound) */
       samDot: 'width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; transition: background 0.4s ease; background: ' + (s.samMode === 'pick' && s.samWhen === 'never' ? '#9C948A' : '#2EA36B') + ';',
       samPick: this.samPick, refToken: this.refToken,
-      wlShareArrow: !s.wlCopied, wlNotReg: s.prov !== 'OUT' && s.fintrac === 'Not yet', wlOutside: s.prov === 'OUT',
+      wlShareArrow: !s.wlCopied && !s.wlShared, wlNotReg: s.prov !== 'OUT' && s.fintrac === 'Not yet', wlOutside: s.prov === 'OUT',
       wlIntro: !s.fromDark, lightIntro: !s.fromDark,
       wlInviteSub: 'We\'re bringing CurrencyDesk to ' + (this._country() || 'your country') + ' soon. Your invite counts once the shop signs up.',
-      wlShareLabel: s.wlCopied ? 'Link copied ✓' : 'Share my invite link',
+      wlShareLabel: s.wlCopied ? 'Link copied ✓' : s.wlShared ? 'Shared ✓' : 'Share my invite link',
       wlCode: this._inviteCode(), refPass: this.refPass,
       wlShareStyle: "display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 46px; padding: 0 24px; border-radius: 999px; border: none; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; transition: background 0.3s ease, color 0.3s ease; " + (s.wlCopied ? 'background: #2EA36B; color: #0C0A06;' : 'background: #FFFFFF; color: #17140F;'),
       wlCountry: this._country() || 'your country',
