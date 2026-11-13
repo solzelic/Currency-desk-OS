@@ -76,8 +76,11 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   `fix/staging-banner-timestamps` accepts only positive safe-integer hide times
   and current clock values. Invalid stored values show the notice, and invalid
   clocks are not saved. Real timestamps keep the exact ten-minute interval.
-  The banner's layout, focus behavior, staging detection and remaining CD-118
-  workflow/template work are unchanged. This slice is not deployed.
+  A focus-only follow-up returns focus from the dismissed X to the visible
+  screen without scrolling or adding a tab stop. It leaves other focused
+  controls alone and does not focus the desktop behind the lock or handover.
+  Layout, staging detection and remaining CD-118 workflow/template work are
+  unchanged. These slices are not deployed.
 
 - **The Vault flags Low stock only below a floor the owner set (in review, CD-133).** On `fix/vault-floors`: `os-src/cdos-vault.jsx` carried York FX's own reorder levels (CAD 120,000, USD 40,000 and so on) as every shop's fallback, so a desk with no floor set saw Low stock on every currency it held, 40,000 CAD included, while the Rates app's Cost & stock (which only reads the owner's floors) said nothing was running low. The table is gone: a currency with no floor shows "No floor set", a floor from Settings (`vaultFloors`, `vaultReserveCad` for the home currency) flags that currency, and the low-stock notification suggests an order to twice the floor as it always did when no target was set. Settings says blank means no floor. CD-133's other parts: board rates are #659; Reports opening the Vault could not be reproduced on 6 Nov.
 - **Rates v2.5, a flag for every currency (#658; not reviewed).** On `feat/rates-all-flags`: `shared/currency-face.js` maps every currency the market feeds offer (open.er-api.com and openexchangerates.org, 165 codes) to its country's flag; 130 more images from flag-icons 7.2.3 (MIT, the set the design uses) in `assets/flags`, 158 in all, checked to hold no script. XAF, XCD, XOF and XPF are each shared by several countries, so they show a plain tile instead of two loose letters. The Board, the currency panel, Cost & stock, Pricing & rates, Guardrails, the public rate page and the window screens all draw from it.

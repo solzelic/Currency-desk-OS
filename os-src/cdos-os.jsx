@@ -1661,13 +1661,26 @@
         document.body.appendChild(node);
       }
       node.toggleAttribute('data-hidden', bannerHidden);
-      node.querySelector('.cdos-staging-x').onclick = () => { window.CDOS.stagingBanner.hide(bannerStore(), Date.now()); setBannerHidden(true); };
+      const close = node.querySelector('.cdos-staging-x');
+      close.onclick = () => {
+        window.CDOS.stagingBanner.hide(bannerStore(), Date.now());
+        if (document.activeElement === close && !deskLocked && !handover && !pinGate) {
+          const screen = document.getElementById(stage === 'desktop' ? 'os' : 'lock');
+          if (screen && screen.getClientRects().length && window.getComputedStyle(screen).visibility === 'visible'
+            && !screen.closest('[hidden], [inert], [aria-hidden="true"]')) {
+            // Return to the screen without adding a tab stop or activating a control.
+            if (!screen.hasAttribute('tabindex')) screen.setAttribute('tabindex', '-1');
+            screen.focus({ preventScroll: true });
+          }
+        }
+        setBannerHidden(true);
+      };
       const fit = () => document.documentElement.style.setProperty('--cdos-banner', bannerHidden ? '0px' : node.offsetHeight + 'px');
       fit();
       const watch = window.ResizeObserver ? new ResizeObserver(fit) : null;
       if (watch) watch.observe(node);
       return () => { if (watch) watch.disconnect(); document.removeEventListener('cdos-staging-door', onDoor); };
-    }, [stagingOn, stagingDoor, stage, bannerHidden]);
+    }, [stagingOn, stagingDoor, stage, bannerHidden, deskLocked, handover, pinGate]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
