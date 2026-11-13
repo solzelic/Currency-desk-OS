@@ -249,6 +249,43 @@ postgres("cross-instance market sync", () => {
     expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
   });
 
+  it("survives a real backend disconnect during provider wait and recovers both pools", async () => {
+    // Identify only this test's sole connection, never an arbitrary backend.
+    const client = await poolA.connect();
+    const pid = (await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+    client.release();
+    const entered = latch();
+    const finish = latch();
+    let signal: AbortSignal | undefined;
+    const syncing = syncMarketRates(dbA, "primary", async (value) => {
+      signal = value; entered.release(); await finish.promise;
+      return { ...pull, provider: "late-disconnected-result" };
+    });
+    try {
+      await entered.promise;
+      const lock = await poolB.query("SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND granted", [pid]);
+      expect(lock.rowCount).toBe(1);
+      // PostgreSQL waits for this owned backend to terminate (PG16 in CI).
+      const killed = await poolB.query<{ killed: boolean }>("SELECT pg_terminate_backend($1, 1000) AS killed", [pid]);
+      expect(killed.rows).toEqual([{ killed: true }]);
+      expect(await syncing).toMatchObject({ ok: false, detail: "market sync database connection lost" });
+      expect(signal?.aborted).toBe(true);
+      expect(await dbB.select().from(schema.marketRates)).toHaveLength(0);
+      expect(await dbB.select().from(schema.rateBoards)).toHaveLength(1);
+      const remaining = await poolB.query("SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory'", [pid]);
+      expect(remaining.rowCount).toBe(0);
+      finish.release();
+      await new Promise<void>((done) => setImmediate(done));
+      expect(await dbB.select().from(schema.marketRates)).toHaveLength(0);
+      expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
+      expect((await syncMarketRates(dbB, "primary", async () => pull)).ok).toBe(true);
+      expect(await dbB.select().from(schema.marketRates)).toHaveLength(2);
+      expect(await dbB.select().from(schema.rateBoards)).toHaveLength(3);
+      expect(poolA.waitingCount).toBe(0);
+      expect(poolB.waitingCount).toBe(0);
+    } finally { finish.release(); await syncing; }
+  });
+
   it("discards a checkout even when BEGIN fails before Drizzle enters its finally", async () => {
     const client = await poolA.connect();
     client.release();
