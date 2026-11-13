@@ -1,7 +1,8 @@
 /* Tenant plan (purchased tier) — task #9. The tier lives on the tenant:
    login/me expose it, the desk's own sessions cannot change it (Stripe
    webhooks do), and API plan-gates refuse what the tier doesn't include. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import pg from "pg";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
@@ -20,8 +21,8 @@ const login = async (staffId: string) =>
 
 beforeAll(async () => {
   process.env.PGLITE_MEMORY = "1";
-  // register the ledger routes without a real Postgres: the plan gate fires
-  // before the service ever touches the pool, which is what we test here
+  // Register the real ledger routes without Postgres. Requests stop at the
+  // plan or workspace gate, before any ledger pool connection is needed.
   process.env.LEDGER_DATABASE_URL = "postgres://plan-gate-test-only";
   handle = await createDb();
   await seed(handle.db);
@@ -85,17 +86,35 @@ describe("tenant plan", () => {
   });
 
   it("upgrading back to pro lifts the ledger gate", async () => {
-    const admin = await login("j.masri");
-    const cookies = cookieOf(admin);
-    await handle.db.update(schema.tenants).set({ plan: "pro" }).where(eq(schema.tenants.id, DEMO.tenantId));
-    const post = await app.inject({
-      method: "POST",
-      url: "/api/ledger/exchanges",
-      cookies,
-      payload: { idempotencyKey: "t9-2", customerId: "c1", from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "0", purpose: "", sourceOfFunds: "" },
+    const connect = vi.spyOn(pg.Pool.prototype, "connect").mockImplementation(() => {
+      throw new Error("Plan-gate tests must not connect to Postgres");
     });
-    // past the plan gate now — the request proceeds until it hits the dummy
-    // ledger pool, so anything but PLAN_NOT_ENTITLED proves the gate lifted
-    expect(post.json().code).not.toBe("PLAN_NOT_ENTITLED");
+    try {
+      await handle.db.update(schema.tenants).set({ plan: "basic" }).where(eq(schema.tenants.id, DEMO.tenantId));
+      const admin = await login("j.masri");
+      expect(admin.statusCode).toBe(200);
+      const cookies = cookieOf(admin);
+      const post = () => app.inject({
+        method: "POST",
+        url: "/api/ledger/exchanges",
+        cookies,
+        // Scope is checked after the plan, but before any ledger query.
+        headers: { "x-workspace-id": "missing-plan-gate-workspace" },
+        payload: { idempotencyKey: "t9-2", customerId: "c1", from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "0", purpose: "", sourceOfFunds: "" },
+      });
+      const basic = await post();
+      expect(basic.statusCode).toBe(403);
+      expect(basic.json().code).toBe("PLAN_NOT_ENTITLED");
+
+      await handle.db.update(schema.tenants).set({ plan: "pro" }).where(eq(schema.tenants.id, DEMO.tenantId));
+      const upgraded = await post();
+      // The same session passes the plan gate and reaches the scope gate.
+      // A connection error or another unrelated refusal must not pass.
+      expect(upgraded.statusCode).toBe(403);
+      expect(upgraded.json().code).toBe("SCOPE_DENIED");
+      expect(connect).not.toHaveBeenCalled();
+    } finally {
+      connect.mockRestore();
+    }
   });
 });
