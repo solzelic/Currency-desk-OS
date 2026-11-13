@@ -272,6 +272,10 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
           timezone: validTimezone(contactContext?.timezone),
           timezoneSource: validTimezone(contactContext?.timezone) ? "browser" : null,
         });
+      }
+      /* Every application is received and researched, whatever its call
+         choice; only the consent above depends on it. */
+      if (kind !== "contact") {
         /* Provider calls do not belong in a public form request. The lead,
            consent evidence and durable job commit together; a worker can
            retry later without making the applicant wait or submit twice. */
