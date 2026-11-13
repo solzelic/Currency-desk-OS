@@ -28,11 +28,12 @@ export const STAGING_OWNER_DOMAIN = "@staging.invalid";
 const recent = new Map<string, number[]>();
 
 /* The Early Access v2.1 start (U5b). The button hands out a one-time
-   ticket bound to a staging identity, and the page applies with it. A
-   ticket lives half an hour, opens one application, and only on the
-   staging door. In memory: a restart drops them, and the button makes
-   another. */
-const TICKET_TTL_MS = 30 * 60 * 1000;
+   ticket bound to a staging identity and opens the website with it; the
+   way into the application carries it, and the page applies with it. A
+   ticket lives two hours (time to look round the site), opens one
+   application, and only on the staging door. In memory: a restart drops
+   them, and the button makes another. */
+const TICKET_TTL_MS = 2 * 60 * 60 * 1000;
 const tickets = new Map<string, { email: string; slug: string; expires: number }>();
 
 /** The staging identity behind a ticket, once: the door must be open, the
@@ -144,12 +145,13 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
     return reply.code(201).send({ ok: true, email, slug, code, password });
   });
 
-  /* The sign-in button. It starts the whole journey at the Early Access
-     v2.1 page: a one-time ticket and a staging identity, and the page's
-     address to open with them. The page applies (routes/enquiries.ts
-     reads the ticket), the application is accepted at once, and "Start
-     building your desk" opens /onboarding/CD-... Nothing is emailed. The
-     body is ignored. */
+  /* The sign-in button. It starts the whole journey where a new shop
+     starts, on the website (Sol, 14 Nov): a one-time ticket and a staging
+     identity, and the homepage address to open with them. The way in
+     carries the ticket to the Early Access v2.1 page, the page applies
+     with it (routes/enquiries.ts reads it), the application is accepted
+     at once, and "Start building your desk" opens /onboarding/CD-...
+     Nothing is emailed. The body is ignored. */
   app.post("/api/staging/fresh-onboarding", async (req, reply) => {
     if (!stagingDoorOpen(req.headers as StagingDoorHeaders)) {
       return reply.code(404).send({ error: "not_found" });
@@ -177,7 +179,7 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
     const now = Date.now();
     for (const [key, held] of tickets) if (held.expires <= now) tickets.delete(key);
     tickets.set(ticket, { email, slug, expires: now + TICKET_TTL_MS });
-    const start = `/early-access?door=${ticket}&email=${encodeURIComponent(email)}`;
+    const start = `/?door=${ticket}&email=${encodeURIComponent(email)}`;
     return reply.code(201).send({ ok: true, start, email });
   });
 }

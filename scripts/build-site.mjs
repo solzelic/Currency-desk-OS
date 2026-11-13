@@ -309,6 +309,36 @@ window.claimedCount.then(function (d) {
 </script>
 `;
 
+/* Staging's "Start a fresh shop" opens the website with a one-time ticket
+   (?door=<ticket>&email=<staging email>; routes/staging-fresh-shop.ts).
+   While it is in the address, the way into the application leads to the
+   Early Access v2.1 page with it, and links between the site's own pages
+   keep it. Without a well-formed ticket this does nothing at all, which
+   is every visit on live. Clicks are caught rather than links rewritten,
+   because the design's runtime re-renders the links. */
+const STAGING_JOURNEY_HELPER = `<script>
+(function () {
+  var q, door, email;
+  try { q = new URLSearchParams(location.search); door = q.get('door') || ''; email = q.get('email') || ''; } catch (e) { return; }
+  if (!/^[0-9a-f]{32}$/.test(door)) return;
+  if (!/^owner\\+[0-9a-f]+@staging\\.invalid$/.test(email)) email = '';
+  var keep = 'door=' + door + (email ? '&email=' + encodeURIComponent(email) : '');
+  var APPLY = { '/signup': 1, '/early-access': 1 };
+  var SITE = { '/': 1, '/m': 1, '/d': 1, '/faq': 1, '/compliance': 1, '/contact': 1, '/legal': 1, '/add-ons': 1 };
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var u;
+    try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
+    if (u.origin !== location.origin) return;
+    if (APPLY[u.pathname]) { e.preventDefault(); location.assign('/early-access?' + keep); return; }
+    if (SITE[u.pathname] && !u.search) { e.preventDefault(); location.assign(u.pathname + '?' + keep + u.hash); }
+  }, true);
+})();
+</script>
+`;
+
 /* dc-runtime asks for React at runtime; cdnScriptFor() consults
    window.__resources first, so pointing those URLs at local copies keeps
    the page working with no network at all. (Babel is only fetched for
@@ -483,7 +513,9 @@ for (const name of present) {
   const resources = `<script>window.__resources = ${JSON.stringify(CDN)};</script>\n`;
   const helper = html.includes("sendEnquiry(") ? ENQUIRY_HELPER : "";
   const counter = /data-cd-(claimed|cap)|claimedCount/.test(html) ? CLAIMED_HELPER : "";
-  html = html.replace('<script src="/web/support.js">', resources + helper + counter + '<script src="/web/support.js">');
+  // the application pages read the staging ticket themselves; every other page carries it
+  const journey = page.out.startsWith("early-access") ? "" : STAGING_JOURNEY_HELPER;
+  html = html.replace('<script src="/web/support.js">', resources + helper + counter + journey + '<script src="/web/support.js">');
 
   const head =
     `<title>${esc(page.title)}</title>\n` +

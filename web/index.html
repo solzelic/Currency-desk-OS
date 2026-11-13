@@ -4,6 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js":"/web/vendor/react.production.min.js","https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js":"/web/vendor/react-dom.production.min.js"};</script>
+<script>
+(function () {
+  var q, door, email;
+  try { q = new URLSearchParams(location.search); door = q.get('door') || ''; email = q.get('email') || ''; } catch (e) { return; }
+  if (!/^[0-9a-f]{32}$/.test(door)) return;
+  if (!/^owner\+[0-9a-f]+@staging\.invalid$/.test(email)) email = '';
+  var keep = 'door=' + door + (email ? '&email=' + encodeURIComponent(email) : '');
+  var APPLY = { '/signup': 1, '/early-access': 1 };
+  var SITE = { '/': 1, '/m': 1, '/d': 1, '/faq': 1, '/compliance': 1, '/contact': 1, '/legal': 1, '/add-ons': 1 };
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var u;
+    try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
+    if (u.origin !== location.origin) return;
+    if (APPLY[u.pathname]) { e.preventDefault(); location.assign('/early-access?' + keep); return; }
+    if (SITE[u.pathname] && !u.search) { e.preventDefault(); location.assign(u.pathname + '?' + keep + u.hash); }
+  }, true);
+})();
+</script>
 <script src="/web/support.js"></script>
 <title>more trades, less paperwork | CurrencyDesk</title>
 <meta name="description" content="One desk for the whole shop: the rate board, till and ledger, and clients. Canada is the only Live country.">

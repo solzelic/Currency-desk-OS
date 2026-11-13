@@ -112,7 +112,7 @@ describe("fresh shop button", () => {
     expect(page).not.toContain("leaveFreshCard");
     expect(page).not.toContain("data-fresh-card");
     const helper = readFileSync(join(root, "os-src/staging-fresh-shop.js"), "utf8");
-    expect(helper).toContain("/?door=");
+    expect(helper).toContain("\\/\\?door=");
     /* the website carries the ticket into the application */
     for (const site of ["web/index.html", "web/mobile.html"]) {
       const html = readFileSync(join(root, site), "utf8");
