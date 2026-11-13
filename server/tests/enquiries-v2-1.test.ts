@@ -21,6 +21,7 @@ import { buildApp } from "../src/app.js";
 import { CD_ID_ALPHABET, cdIdLetters, mintCdId, normalizeCdIdInput } from "../src/enquiries/cd-id.js";
 import { normalizeMsb } from "../src/enquiries/msb.js";
 import { enquiryIpMax, resetEnquiryThrottle } from "../src/routes/enquiries.js";
+import { CallRefused, placeOutboundCall } from "../src/growth/calls.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -202,6 +203,46 @@ describe("POST /api/enquiries, v2.1", () => {
     for (let i = 0; i < enquiryIpMax(); i++) expect((await send(v21(`burst${i}@example.com`), "198.51.100.30")).statusCode).toBe(201);
     expect((await send(v21("burst-over@example.com"), "198.51.100.30")).statusCode).toBe(429);
     expect((await send(v21("other-ip@example.com"), "198.51.100.31")).statusCode).toBe(201);
+  });
+});
+
+/* "No call, thanks" has to mean no call. The growth caller dials only an
+   application with a contact consent on record (growth/calls.ts), so a
+   v2.1 applicant who declined the SAM call must not get one. */
+describe("the call choice", () => {
+  const consentsOf = async (reference: string) => {
+    const row = await rowOf(reference);
+    return handle.db.select().from(schema.enquiryContactConsents).where(eq(schema.enquiryContactConsents.enquiryId, row.id));
+  };
+
+  it("records the contact consent when they said SAM can call", async () => {
+    const { reference } = (await send(v21("callme@example.com"))).json();
+    expect(await consentsOf(reference)).toHaveLength(1);
+  });
+
+  it("records none after No call, thanks, so the caller refuses them", async () => {
+    const { reference } = (await send(v21("nocall@example.com", { bestTime: "no call", samConsent: null }))).json();
+    expect(await consentsOf(reference)).toHaveLength(0);
+
+    await handle.db.insert(schema.platformSettings).values({ key: "outbound_calling_enabled", value: { enabled: true }, updatedBy: "test" })
+      .onConflictDoUpdate({ target: schema.platformSettings.key, set: { value: { enabled: true } } });
+    const dial = async () => ({ providerCallId: "never", conversationId: null });
+    const refused = await placeOutboundCall({
+      db: handle.db, enquiryId: (await rowOf(reference)).id, triggerKey: "no-call-test", createdBy: "test",
+      provider: { name: "fixture", place: dial },
+      config: { agentId: "agent", agentPhoneNumberId: "number", recordingEnabled: false },
+    }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(CallRefused);
+    expect((refused as CallRefused).code).toBe("consent_absent");
+  });
+
+  it("records none for a waitlisted shop, which the page offers no call", async () => {
+    const { reference } = (await send(v21("held-call@example.com", { fintracRegistered: "Not yet", msbNumber: null }))).json();
+    expect(await consentsOf(reference)).toHaveLength(0);
+  });
+
+  it("refuses a call now with no consent behind it", async () => {
+    expect((await send(v21("nodetail@example.com", { bestTime: "call now", samConsent: null }))).statusCode).toBe(400);
   });
 });
 
