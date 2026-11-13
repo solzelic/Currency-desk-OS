@@ -75461,8 +75461,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, []);
 
     /* A label, not a permission. It lives on document.body so the lock,
-       the station picker, and the desktop all show it. A password
-       sign-in, a sign-out, and a 401 take it down. It takes its own space:
+       the station picker, and the desktop all show it. Authenticated
+       sign-ins keep the runtime label; a sign-out and a 401 take it down. It takes its own space:
        --cdos-banner moves #os and #lock down by its height, which a
        ResizeObserver keeps true when the words wrap to two lines. */
     useEffect(() => {
@@ -76728,6 +76728,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       employees: settings.employees || [],
       onSignup: () => setStage('signup'),
       onMustChange: (rec, temp, srvPlan, srvUser) => {
+        setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({
           ...s,
           employees: [...(s.employees || []), {

@@ -238,12 +238,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: user.authorizedBranchIds,
         mustChangePassword: user.mustChangePassword,
         plan: await tenantPlan(db, user.tenantId),
+        staging: isStagingRuntime(req.headers.host ?? ""),
       },
     };
   });
 
   // shared response shape for a signed-in user
-  const userPayload = async (user: typeof schema.staffUsers.$inferSelect) => ({
+  const userPayload = async (user: typeof schema.staffUsers.$inferSelect, host: string) => ({
     id: user.staffId,
     name: user.name,
     role: user.role,
@@ -253,6 +254,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     authorizedBranchIds: user.authorizedBranchIds,
     mustChangePassword: user.mustChangePassword,
     plan: await tenantPlan(db, user.tenantId),
+    staging: isStagingRuntime(host),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
@@ -316,7 +318,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
       reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
       clearStagingCookie(reply, cookieOpts.secure);
-      return { ok: true, needsCode: false, user: await userPayload(user) };
+      return { ok: true, needsCode: false, user: await userPayload(user, req.headers.host ?? "") };
     }
     /* Pressing "Send my code" twice used to send two, and only the second
        one worked — so the code somebody read off the first email was the
@@ -385,7 +387,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
     clearStagingCookie(reply, cookieOpts.secure);
-    return { user: await userPayload(user) };
+    return { user: await userPayload(user, req.headers.host ?? "") };
   });
 
   app.post("/api/auth/change-password", async (req, reply) => {

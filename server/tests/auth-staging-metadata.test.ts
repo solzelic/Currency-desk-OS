@@ -8,8 +8,9 @@ import { buildApp } from "../src/app.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { hashPin } from "../src/routes/pin.js";
-import { sendEmail } from "../src/email.js";
+import { hashCode, sendEmail } from "../src/email.js";
 import { createSession } from "../src/auth/sessions.js";
+import { createLoginProof, LOGIN_PROOF_COOKIE } from "../src/auth/signin-guard.js";
 import { registerAuthRoutes } from "../src/routes/auth.js";
 
 vi.mock("../src/email.js", async (importOriginal) => ({
@@ -123,6 +124,7 @@ describe("staging metadata for every sign-in path", () => {
       headers: { host: HOST }, payload: { staffId: "metadata@example.invalid", password: DEMO.password } });
     expect(start.statusCode).toBe(200);
     expect(start.json().needsCode).toBe(true);
+    expect(start.json().user).not.toHaveProperty("staging");
     expect(start.json()).not.toHaveProperty("code");
     expect(start.cookies.some((c) => c.name === "cdos_session")).toBe(false);
     expect(sendEmail).toHaveBeenCalledTimes(1);
@@ -134,6 +136,7 @@ describe("staging metadata for every sign-in path", () => {
       headers: { host: HOST }, cookies: Object.fromEntries(start.cookies.map((c) => [c.name, c.value])),
       payload: { staffId: "metadata@example.invalid", code } });
     expect(verified.statusCode).toBe(200);
+    expect(verified.json().user.staging).toBe(true);
     await expectStagingAfterReload(cookiesOf(verified), "metadata@example.invalid");
   });
 
@@ -220,5 +223,62 @@ describe("metadata stays behind the existing runtime and raw Host gates", () => 
       expect(res.statusCode).toBe(200);
       expect(res.json().staging).toBe(false);
     } finally { await proxied.close(); }
+  });
+});
+
+// Check the immediate answers independently of /me: the browser consumes these
+// before any reload/focus. The verify matrix uses a real stored password proof;
+// the earlier email test covers creating that proof through login/start.
+describe.each(["/api/auth/login", "/api/auth/login/start", "/api/auth/login/verify"])("immediate metadata at %s", (url) => {
+  async function login(headers: Record<string, string>) {
+    if (url === "/api/auth/login/verify") {
+      const proof = await createLoginProof(handle.db, `${DEMO.tenantId}:metadata@example.invalid`, hashCode("482953"));
+      return app.inject({ method: "POST", url, headers,
+        cookies: { [LOGIN_PROOF_COOKIE]: proof.token },
+        payload: { staffId: "metadata@example.invalid", code: "482953" } });
+    }
+    return app.inject({ method: "POST", url, headers,
+      payload: { staffId: "j.masri", password: DEMO.password } });
+  }
+  it.each([
+    { host: HOST, expected: true }, { host: SERVICE, expected: true },
+    { host: "Staging.CurrencyDeskOS.com:443", expected: true }, { host: `${HOST}.`, expected: true },
+    { host: "currencydeskos.com", expected: false }, { host: "www.currencydeskos.com", expected: false },
+    { host: `${SERVICE}.evil.invalid`, expected: false },
+  ])("labels raw Host $host as $expected", async ({ host, expected }) => {
+    const res = await login({ host, "x-forwarded-host": HOST, forwarded: `host=${HOST}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.staging).toBe(expected);
+  });
+  it("does not label a missing Host", async () => {
+    const res = await login({ host: HOST, "x-test-no-host": "1", "x-forwarded-host": HOST });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.staging).toBe(false);
+  });
+  it.each([
+    ["STAGING", undefined], ["STAGING", "true"], ["STAGING", "0"],
+    ["RENDER_EXTERNAL_HOSTNAME", undefined], ["RENDER_EXTERNAL_HOSTNAME", "currencydeskos.com"],
+  ])("fails closed for %s=%s", async (name, value) => {
+    vi.stubEnv(name!, value);
+    const res = await login({ host: HOST });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.staging).toBe(false);
+  });
+  it("requires the preview flag", async () => {
+    vi.stubEnv("RENDER_EXTERNAL_HOSTNAME", PREVIEW);
+    for (const [flag, expected] of [[undefined, false], ["true", true]] as const) {
+      vi.stubEnv("IS_PULL_REQUEST", flag);
+      const res = await login({ host: PREVIEW });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().user.staging).toBe(expected);
+    }
+  });
+  it("does not label refused authentication", async () => {
+    const res = await app.inject({ method: "POST", url, headers: { host: HOST },
+      payload: url.endsWith("verify") ? { staffId: "metadata@example.invalid", code: "482953" }
+        : { staffId: "absent-staff", password: "wrong-password" } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).not.toHaveProperty("staging");
+    expect(res.json()).not.toHaveProperty("user");
   });
 });
