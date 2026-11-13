@@ -15,7 +15,7 @@ let port: number;
 let output = "";
 test.use({ launchOptions: {
   ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
-  args: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1`, "--no-proxy-server"],
+  args: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1, MAP www.currencydeskos.com 127.0.0.1`, "--no-proxy-server"],
 } });
 
 test.beforeAll(async () => {
@@ -64,7 +64,7 @@ function observeRefreshes(page: Page) {
   return events;
 }
 
-for (const host of [HOST, "127.0.0.1"]) {
+for (const host of [HOST, "127.0.0.1", "www.currencydeskos.com"]) {
   test(`password sign-in shows the correct first-screen label on ${host}`, async ({ page }) => {
     const events = observeRefreshes(page);
     const answer = await password(page, "j.masri", host);
