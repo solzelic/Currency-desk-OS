@@ -541,10 +541,30 @@ class Component extends DCLogic {
       this.flashToast('Certificate ' + no + ' downloaded.');
     } catch (err) { this.flashToast('Could not build the certificate. Try again.'); }
   };
-  share = () => {
-    const url = 'https://' + this._workspaceFull();
-    if (navigator.share) { navigator.share({ title: 'CurrencyDesk OS', text: 'My Founding Operator desk', url: url }).catch(() => {}); }
-    else { try { navigator.clipboard && navigator.clipboard.writeText(url); } catch (e) {} this.flashToast('Link copied. ' + this._workspaceFull()); }
+  share = async () => {
+    if (this._sharePending) return;
+    this._sharePending = true;
+    let nativeShare = false;
+    try {
+      const workspace = this._workspaceFull();
+      const url = 'https://' + workspace;
+      nativeShare = typeof navigator.share === 'function';
+      if (nativeShare) {
+        await navigator.share({ title: 'CurrencyDesk OS', text: 'My Founding Operator desk', url: url });
+      } else {
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+          throw new Error('Clipboard unavailable');
+        }
+        await navigator.clipboard.writeText(url);
+        this.flashToast('Link copied. ' + workspace);
+      }
+    } catch (err) {
+      if (!nativeShare || !err || err.name !== 'AbortError') {
+        this.flashToast(nativeShare ? 'Could not share the link. Try again.' : 'Could not copy the link. Try again.');
+      }
+    } finally {
+      this._sharePending = false;
+    }
   };
 
   onCardMove = (e) => {

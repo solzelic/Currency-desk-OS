@@ -122,3 +122,91 @@ for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-
     assert.deepEqual(r.messages, ['Could not build the certificate. Try again.']);
   });
 }
+
+// Exercise the actual sharing callback with synthetic browser capabilities.
+// No clipboard, share target, network or application server is used here.
+for (const file of ['design/site/CurrencyDesk Early Access.dc.html', 'web/early-access.html']) {
+  const html = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
+  const body = html.match(/share = (?:async )?\(\) => \{([\s\S]*?)\n  \};\n\n  onCardMove =/)?.[1];
+  assert.ok(body, 'sharing callback exists');
+  assert.match(html, /sc-camel-on-click="\{\{ share \}\}"/, 'ending binds share');
+  assert.match(html, /share: this\.share/, 'ending invokes the tested callback');
+  const makeShare = new Function('navigator', 'return async function () {' + body + '\n}');
+  function setup(navigator) {
+    const messages = [];
+    let workspace = 'example.invalid';
+    const context = { _workspaceFull: () => workspace, flashToast: message => messages.push(message) };
+    return { share: makeShare(navigator).bind(context), messages,
+      rename: value => { workspace = value; } };
+  }
+  function deferred() {
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+  }
+  test(`${file}: copy waits for success, ignores duplicate clicks and keeps the copied identity`, async () => {
+    const pending = deferred(), calls = [];
+    const run = setup({ clipboard: { writeText: url => { calls.push(url); return pending.promise; } } });
+    const first = run.share();
+    assert.deepEqual(run.messages, [], 'pending is not success');
+    await run.share();
+    assert.deepEqual(calls, ['https://example.invalid']);
+    run.rename('other.invalid');
+    pending.resolve();
+    await first;
+    assert.deepEqual(run.messages, ['Link copied. example.invalid']);
+    await run.share();
+    assert.deepEqual(calls, ['https://example.invalid', 'https://other.invalid']);
+    assert.deepEqual(run.messages, ['Link copied. example.invalid', 'Link copied. other.invalid']);
+  });
+  for (const [label, clipboard] of [
+    ['unavailable', undefined], ['missing writer', {}], ['nonfunction writer', { writeText: true }],
+    ['synchronous refusal', { writeText() { throw new Error('synthetic refusal'); } }],
+    ['asynchronous refusal', { writeText: () => Promise.reject(new Error('synthetic refusal')) }],
+    ['clipboard abort', { writeText: () => Promise.reject({ name: 'AbortError' }) }],
+  ]) {
+    test(`${file}: ${label} never reports a copied link and permits a retry`, async () => {
+      const run = setup({ clipboard });
+      await run.share();
+      await run.share();
+      assert.deepEqual(run.messages, ['Could not copy the link. Try again.', 'Could not copy the link. Try again.']);
+    });
+  }
+  test(`${file}: native share stays preferred and overlapping invocations are ignored`, async () => {
+    const pending = deferred(), payloads = [];
+    let clipboardCalls = 0;
+    const run = setup({ share: payload => { payloads.push(payload); return pending.promise; },
+      clipboard: { writeText: () => { clipboardCalls++; return Promise.resolve(); } } });
+    const first = run.share();
+    await run.share();
+    assert.equal(payloads.length, 1);
+    assert.deepEqual(payloads[0], { title: 'CurrencyDesk OS', text: 'My Founding Operator desk', url: 'https://example.invalid' });
+    pending.resolve();
+    await first;
+    assert.deepEqual(run.messages, []);
+    await run.share();
+    assert.equal(payloads.length, 2);
+    assert.equal(clipboardCalls, 0);
+  });
+  for (const [label, failure, expected] of [
+    ['native cancellation', { name: 'AbortError' }, []],
+    ['native rejection', new Error('synthetic refusal'), ['Could not share the link. Try again.']],
+  ]) {
+    test(`${file}: ${label} is handled and releases the pending action`, async () => {
+      let attempts = 0, clipboardCalls = 0;
+      const run = setup({ share: () => { attempts++; return Promise.reject(failure); },
+        clipboard: { writeText: () => { clipboardCalls++; return Promise.resolve(); } } });
+      await run.share();
+      await run.share();
+      assert.equal(attempts, 2);
+      assert.equal(clipboardCalls, 0);
+      assert.deepEqual(run.messages, expected.concat(expected));
+    });
+  }
+  test(`${file}: a synchronous native refusal is reported and releases the pending action`, async () => {
+    const run = setup({ share() { throw new Error('synthetic refusal'); } });
+    await run.share();
+    await run.share();
+    assert.deepEqual(run.messages, ['Could not share the link. Try again.', 'Could not share the link. Try again.']);
+  });
+}

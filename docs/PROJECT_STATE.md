@@ -1,5 +1,11 @@
 # PROJECT_STATE — what is true now
 
+- **Early Access sharing outcomes (bounded CD-181 continuation).** The ending
+  waits for the native share or clipboard operation, prevents overlapping
+  actions, and reports a copied link only after it is written. Native-share
+  cancellation stays silent; failures use the existing toast and allow retry.
+  This does not change the reveal, ID, application submission or v2 design.
+
 - **Early Access certificate claims (partial CD-181).** The downloadable
   certificate omits the unsigned first-hundred assertion, its OF 100 seal
   qualifier and the lifetime-rate sentence. Names, member numbers, other
