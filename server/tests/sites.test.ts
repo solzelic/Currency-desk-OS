@@ -180,6 +180,13 @@ describe("the public site", () => {
     expect(apply.statusCode).toBe(200);
     expect(apply.body).toContain("Become a Founding Operator");
 
+    /* Early Access v2.1, previewed beside it until /signup switches over,
+       kept out of search, and posting the v2.1 application. */
+    const v2 = await app.inject({ method: "GET", url: "/early-access" });
+    expect(v2.statusCode).toBe(200);
+    expect(v2.body).toContain("form: 'early-access-v2.1'");
+    expect(v2.body).toContain('<meta name="robots" content="noindex,follow">');
+
     const login = await app.inject({ method: "GET", url: "/login" });
     expect(login.statusCode).toBe(200);
     expect(login.body).toContain("CurrencyDesk OS");

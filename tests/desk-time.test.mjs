@@ -122,6 +122,9 @@ test("the shell loads the helper before the screens that call it", () => {
 const BASELINE = {
   "YorkFX/yorkfx-staff.js": { time: 1, day: 0 },
   "design/kyc-handoff/kyc-verification-states.html": { time: 0, day: 2 },
+  /* Early Access v2.1: when SAM can call, in the applicant's own clock.
+     There is no desk yet, so there is no desk zone to show it in. */
+  "design/site/CurrencyDesk Early Access v2.dc.html": { time: 2, day: 0 },
   "os-src/cdos-backend.js": { time: 0, day: 1 },
   "os-src/cdos-cheques.jsx": { time: 0, day: 1 },
   "os-src/cdos-import.jsx": { time: 0, day: 2 },
