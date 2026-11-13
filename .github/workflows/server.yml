@@ -2,7 +2,7 @@ name: Server
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
 jobs:
   server-validate:
     runs-on: ubuntu-latest

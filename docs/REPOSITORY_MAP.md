@@ -194,6 +194,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 
 ## Test commands
 
+Browser, Server, Civil dates and Governance run on pull requests and pushes
+to `main` or `staging`. The dedicated `staging` branch supports staging-only
+delivery without a push to `main`. The Render staging service's source must
+be changed separately; its verified setting on 13 November 2026 is still
+`main`. Live follows `release`. See `docs/DEVELOPMENT.md` for the transition,
+database-isolation checks and promotion boundary.
+
 ```bash
 npm run check:parse                     # every browser script parses
 npm run check:sanctions                 # banned-name variants, then the built web/app/os.js

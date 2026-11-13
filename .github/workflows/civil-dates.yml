@@ -8,7 +8,7 @@ name: Civil dates
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
   zones:
