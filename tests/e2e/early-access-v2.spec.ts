@@ -100,6 +100,14 @@ test.describe("Early Access v2.1", () => {
     const open = page.getByRole("link", { name: /Start building your desk/ });
     await expect(open).toHaveAttribute("href", `/onboarding/${body.reference}`);
 
+    /* Call later: the time tapped is booked with the server, inside calling hours */
+    await page.getByRole("button", { name: "Call later" }).click();
+    const booked = page.waitForResponse((r) => r.url().endsWith(`/api/enquiries/${body.reference}/sam`));
+    await page.locator("[data-samgrid] button").first().click();
+    const kept = await booked;
+    expect(kept.status()).toBe(200);
+    expect((await kept.json()) as { at: string; zone: string }).toMatchObject({ zone: expect.any(String) });
+
     await open.click();
     await expect(page).toHaveURL(new RegExp(`/onboarding/${body.reference}$`));
   });
