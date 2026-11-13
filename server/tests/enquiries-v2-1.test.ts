@@ -236,6 +236,18 @@ describe("the call choice", () => {
     expect((refused as CallRefused).code).toBe("consent_absent");
   });
 
+  /* Only the consent depends on the call choice. Every application is
+     still received and researched, as before. */
+  it("still records the application and queues its research without a call", async () => {
+    for (const body of [v21("nocall-growth@example.com", { bestTime: "no call", samConsent: null }), v21("held-growth@example.com", { fintracRegistered: "Not yet", msbNumber: null })]) {
+      const { reference } = (await send(body)).json();
+      const row = await rowOf(reference);
+      const events = await handle.db.select().from(schema.enquiryGrowthEvents).where(eq(schema.enquiryGrowthEvents.enquiryId, row.id));
+      expect(events.map((e) => e.type).sort()).toEqual(["application_received", "research_queued"]);
+      expect(await handle.db.select().from(schema.enquiryGrowthJobs).where(eq(schema.enquiryGrowthJobs.enquiryId, row.id))).toHaveLength(1);
+    }
+  });
+
   it("records none for a waitlisted shop, which the page offers no call", async () => {
     const { reference } = (await send(v21("held-call@example.com", { fintracRegistered: "Not yet", msbNumber: null }))).json();
     expect(await consentsOf(reference)).toHaveLength(0);
