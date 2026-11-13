@@ -16,6 +16,7 @@ import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import type { RateBoardRow } from "../db/schema.js";
 import { forgetPublicAnswers } from "./public-board.js";
+import { boundedMarketPull, withSyncTransaction } from "./sync-transaction.js";
 
 // non-fiat provider symbols we never offer (metals, IMF SDR, crypto)
 const NON_FIAT = new Set(["XAU", "XAG", "XPT", "XPD", "XDR", "BTC"]);
@@ -41,17 +42,17 @@ export function normalizePerCad(rates: Record<string, number>): Record<string, n
   return mids;
 }
 
-async function pullOpenErApi(): Promise<MarketPull> {
-  const res = await fetch("https://open.er-api.com/v6/latest/CAD");
+async function pullOpenErApi(signal?: AbortSignal): Promise<MarketPull> {
+  const res = await fetch("https://open.er-api.com/v6/latest/CAD", { signal });
   if (!res.ok) throw new Error(`open.er-api.com HTTP ${res.status}`);
   const body = (await res.json()) as { result: string; rates: Record<string, number>; time_last_update_utc?: string };
   if (body.result !== "success" || !body.rates) throw new Error("open.er-api.com bad payload");
   return { provider: "open.er-api.com", providerTimestamp: body.time_last_update_utc ?? null, mids: normalizePerCad(body.rates) };
 }
 
-async function pullOpenExchangeRates(appId: string): Promise<MarketPull> {
+async function pullOpenExchangeRates(appId: string, signal?: AbortSignal): Promise<MarketPull> {
   // free tier is USD-base; rebase to CAD: X per CAD = (X per USD) / (CAD per USD)
-  const res = await fetch(`https://openexchangerates.org/api/latest.json?app_id=${appId}`);
+  const res = await fetch(`https://openexchangerates.org/api/latest.json?app_id=${appId}`, { signal });
   if (!res.ok) throw new Error(`openexchangerates HTTP ${res.status}`);
   const body = (await res.json()) as { rates: Record<string, number>; timestamp?: number };
   const cadPerUsd = body.rates?.CAD;
@@ -67,16 +68,19 @@ async function pullOpenExchangeRates(appId: string): Promise<MarketPull> {
   };
 }
 
-export async function fetchMarketRates(): Promise<MarketPull> {
+export async function fetchMarketRates(signal?: AbortSignal): Promise<MarketPull> {
+  signal?.throwIfAborted();
   const appId = process.env.OXR_APP_ID;
   if (appId) {
     try {
-      return await pullOpenExchangeRates(appId);
+      return await pullOpenExchangeRates(appId, signal);
     } catch {
+      signal?.throwIfAborted();
       // fall through to the keyless provider rather than serving nothing
     }
   }
-  return pullOpenErApi();
+  signal?.throwIfAborted();
+  return pullOpenErApi(signal);
 }
 
 /** The feed's mids (CAD per 1 unit) in another home currency: each
@@ -171,11 +175,11 @@ type SyncResult = { ok: boolean; skipped: boolean; detail: string; ageMs: number
     every query to one connection, also with a transaction-pooling proxy.
     Commit/rollback releases the lock; no session lock can leak into a pool. */
 async function syncWithLock(
-  db: Db, branchId: string, minGapMs: number | null, fetcher: () => Promise<MarketPull>,
+  db: Db, branchId: string, minGapMs: number | null, fetcher: (signal?: AbortSignal) => Promise<MarketPull>,
 ): Promise<SyncResult> {
   let ageMs = Number.POSITIVE_INFINITY;
   try {
-    const result = await db.transaction(async (tx) => {
+    const result = await withSyncTransaction(db, async (tx, controller) => {
       const lock = await tx.execute<{ acquired: boolean }>(sql`SELECT pg_try_advisory_xact_lock(1128550996, 1) AS acquired`);
       if (!lock.rows[0]?.acquired) {
         return { ok: false, skipped: true, detail: "sync already in progress", ageMs };
@@ -186,9 +190,10 @@ async function syncWithLock(
       if (minGapMs !== null && ageMs < minGapMs) {
         return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago`, ageMs };
       }
-      const result = await pullAndPublish(tx, branchId, fetcher);
+      const pull = await boundedMarketPull(fetcher, controller);
+      const result = await pullAndPublish(tx, branchId, pull);
       return { ...result, skipped: false, ageMs };
-    }, { isolationLevel: "read committed" });
+    });
     // Readers can refill the cache before this transaction commits. Invalidate
     // again after commit, when the new boards are visible to other connections.
     if (result.ok && !result.skipped) forgetPublicAnswers();
@@ -206,19 +211,18 @@ export async function syncMarketRatesIfStale(
   db: Db,
   branchId: string,
   minGapMs: number,
-  fetcher: () => Promise<MarketPull> = fetchMarketRates,
+  fetcher: (signal?: AbortSignal) => Promise<MarketPull> = fetchMarketRates,
 ): Promise<SyncResult> {
   return syncWithLock(db, branchId, minGapMs, fetcher);
 }
 
 /** Force one sync cycle, still excluding concurrent market syncs. Never throws. */
-export async function syncMarketRates(db: Db, branchId: string, fetcher: () => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
+export async function syncMarketRates(db: Db, branchId: string, fetcher: (signal?: AbortSignal) => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
   return syncWithLock(db, branchId, null, fetcher);
 }
 
 /** Called only with the lock-owning transaction; errors must reach rollback. */
-async function pullAndPublish(db: Db, branchId: string, fetcher: () => Promise<MarketPull>): Promise<{ ok: boolean; detail: string }> {
-  const pull = await fetcher();
+async function pullAndPublish(db: Db, branchId: string, pull: MarketPull): Promise<{ ok: boolean; detail: string }> {
   const snapshotId = randomUUID();
   await db.insert(schema.marketRates).values({
     id: snapshotId,

@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { schema } from "../src/db/index.js";
 import { syncMarketRates, syncMarketRatesIfStale, type MarketPull } from "../src/rates/market.js";
+import { MARKET_PULL_TIMEOUT_MS } from "../src/rates/sync-transaction.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe.sequential : describe.skip;
@@ -83,13 +84,14 @@ postgres("cross-instance market sync", () => {
   });
 
   it("checks freshness after acquiring the connection and lock", async () => {
-    const original = dbB.transaction.bind(dbB);
-    vi.spyOn(dbB, "transaction").mockImplementationOnce(async (callback) => {
-      expect((await syncMarketRatesIfStale(dbA, "primary", HOUR, async () => pull)).ok).toBe(true);
-      return original(callback);
-    });
+    const held = await poolB.connect();
     const fetcher = vi.fn(async () => pull);
-    expect(await syncMarketRatesIfStale(dbB, "primary", HOUR, fetcher)).toMatchObject({ ok: true, skipped: true });
+    const waiting = syncMarketRatesIfStale(dbB, "primary", HOUR, fetcher);
+    try {
+      expect(poolB.waitingCount).toBe(1);
+      expect((await syncMarketRatesIfStale(dbA, "primary", HOUR, async () => pull)).ok).toBe(true);
+    } finally { held.release(); }
+    expect(await waiting).toMatchObject({ ok: true, skipped: true });
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -167,5 +169,96 @@ postgres("cross-instance market sync", () => {
       await syncing;
       await poolA.query("ALTER TABLE rate_boards DROP CONSTRAINT reject_bad");
     }
+  });
+
+  it.each(["resolve", "reject"])("bounds a non-cooperative provider and ignores late %s", async (settlement) => {
+    const entered = latch();
+    let resolve!: (value: MarketPull) => void;
+    let reject!: (reason: Error) => void;
+    let signal: AbortSignal | undefined;
+    const pending = new Promise<MarketPull>((yes, no) => { resolve = yes; reject = no; });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const syncing = syncMarketRates(dbA, "primary", async (value) => {
+      signal = value; entered.release(); return pending;
+    });
+    try {
+      await entered.promise;
+      const contender = vi.fn(async () => pull);
+      expect((await syncMarketRates(dbB, "primary", contender)).ok).toBe(false);
+      expect(contender).not.toHaveBeenCalled();
+      let readFinished = false;
+      const read = poolA.query("SELECT 1").then(() => { readFinished = true; });
+      await vi.advanceTimersByTimeAsync(MARKET_PULL_TIMEOUT_MS - 1);
+      expect(readFinished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await syncing).toMatchObject({ ok: false, detail: "market provider timed out" });
+      await read;
+      expect(signal?.aborted).toBe(true);
+      expect(await dbB.select().from(schema.marketRates)).toHaveLength(0);
+      expect(await dbB.select().from(schema.rateBoards)).toHaveLength(1);
+      expect((await syncMarketRates(dbB, "primary", async () => pull)).ok).toBe(true);
+      if (settlement === "resolve") resolve({ ...pull, provider: "late-result" });
+      else reject(new Error("late rejection"));
+      await new Promise<void>((done) => setImmediate(done));
+      expect(await dbB.select().from(schema.marketRates)).toHaveLength(1);
+      expect(await dbB.select().from(schema.rateBoards)).toHaveLength(2);
+      expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
+      expect(poolA.waitingCount).toBe(0);
+    } finally {
+      resolve(pull);
+      await syncing;
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes sync listeners after success, freshness skips and failure", async () => {
+    const client = await poolA.connect();
+    const count = client.listenerCount("error");
+    client.release();
+    const idleListeners = client.listeners("error");
+    for (let i = 0; i < 3; i += 1) {
+      expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
+      expect((await syncMarketRatesIfStale(dbA, "primary", HOUR, async () => pull)).skipped).toBe(true);
+      const checked = await poolA.connect();
+      expect(checked).toBe(client);
+      expect(checked.listenerCount("error")).toBe(count);
+      checked.release();
+    }
+    expect((await syncMarketRates(dbA, "primary", async () => { throw new Error("synthetic"); })).ok).toBe(false);
+    // pg-pool retains its own idle listener even on a discarded client.
+    expect(client.listeners("error")).toEqual(idleListeners);
+    expect(poolA.totalCount).toBe(0);
+    expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
+  });
+
+  it("fails and rolls back when the checked-out client emits an error during provider wait", async () => {
+    const entered = latch();
+    const client = await poolA.connect();
+    client.release();
+    let signal: AbortSignal | undefined;
+    const syncing = syncMarketRates(dbA, "primary", async (value) => {
+      signal = value; entered.release(); return new Promise<MarketPull>(() => {});
+    });
+    await entered.promise;
+    client.emit("error", new Error("synthetic client failure"));
+    expect(await syncing).toMatchObject({ ok: false, detail: "market sync database connection lost" });
+    expect(signal?.aborted).toBe(true);
+    expect(await dbB.select().from(schema.marketRates)).toHaveLength(0);
+    expect(await dbB.select().from(schema.rateBoards)).toHaveLength(1);
+    expect(poolA.totalCount).toBe(0);
+    expect((await syncMarketRates(dbA, "primary", async () => pull)).ok).toBe(true);
+  });
+
+  it("discards a checkout even when BEGIN fails before Drizzle enters its finally", async () => {
+    const client = await poolA.connect();
+    client.release();
+    const query = vi.spyOn(client, "query").mockRejectedValueOnce(new Error("synthetic BEGIN failure"));
+    const fetcher = vi.fn(async () => pull);
+    try {
+      expect((await syncMarketRates(dbA, "primary", fetcher)).ok).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(poolA.totalCount).toBe(0);
+    } finally { query.mockRestore(); }
+    expect((await syncMarketRates(dbA, "primary", fetcher)).ok).toBe(true);
   });
 });

@@ -95,7 +95,20 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   ten minutes. Primary failures roll back the cycle; follower failures roll
   back to a savepoint and are reported individually. Timestamps use
   `clock_timestamp()` so provider latency does not consume snapshot/board
-  lifetime. The embedded PGlite path uses the same lock and transaction SQL.
+  lifetime. Provider waiting has a ten-second deadline (including fallback
+  and response body), independent of whether the provider honors abort. Timeout
+  or a PG client error fails the sync; rollback precedes the result and late
+  provider settlement cannot write. The real provider request receives the
+  abort signal and does not fall back after cancellation. The sync owns only
+  its checked-out PG client's error listener through transaction completion,
+  removes it on release, and discards failed connections; other pool users'
+  error policy is unchanged. The embedded PGlite path uses the same lock and
+  transaction SQL, but its mutex also holds unrelated reads until completion
+  or the provider deadline plus database work/rollback. This bounds provider
+  waiting with a responsive event loop and database, not total SQL time or
+  pool acquisition. A frozen event loop/process or an undetected network
+  partition may retain the lock until the database session ends; no session
+  timeout/lease is configured by this path.
   This does not serialize manual staff publication with market sync.
 - Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
   it once. Saving or clearing a domain, and deleting a desk that had one,
