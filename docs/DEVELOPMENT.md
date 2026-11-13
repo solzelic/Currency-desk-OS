@@ -41,6 +41,13 @@ deliberately leave ledger state behind (an append-only book is the point).
 - **Drive the seam to verify wiring.** A server test and a browser test
   both green while the join is broken is how every serious cash defect
   here survived CI.
+- **A refused connection is not proof that a gate opened.** The tenant
+  plan test used to accept any response other than `PLAN_NOT_ENTITLED`,
+  including an error from its dummy Postgres host; slow connection failure
+  timed out instead. It now uses the same session and a missing workspace:
+  Basic gets `PLAN_NOT_ENTITLED`, then Pro gets `SCOPE_DENIED`, before any
+  ledger query. A connection guard makes accidental network access fail
+  deterministically. Keep successful ledger posting in the Postgres suites.
 
 ## Buildless-JSX gotchas (the OS compiles in Babel, not a bundler)
 
