@@ -13,6 +13,7 @@ import {
   type LedgerActor,
 } from "../src/ledger/service.js";
 import { DEMO, seed } from "../src/seed.js";
+import { financialState } from "./financial-state.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -286,6 +287,98 @@ postgres("quote service against real PostgreSQL", () => {
     expect(refused.statusCode).toBe(400);
     expect(refused.json().message).toMatch(/no minor unit/);
   });
+  describe("fractional JPY route refusal (#553)", () => {
+    beforeEach(async () => {
+      await pool.query(
+        `UPDATE rate_boards SET board_rows = board_rows ||
+          '{"JPY":{"mid":0.01,"show":true}}'::jsonb WHERE id='board-1'`,
+      );
+      await pool.query(
+        "INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,'till-01','JPY',200000)",
+        [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId],
+      );
+    });
+
+    const sellYen = {
+      ...body, from: "JPY", to: "CAD", inputAmount: "1500",
+      feeCad: "0.00", direction: "customer_sell_foreign",
+    };
+
+    it("returns 422 without financial writes when quote creation receives JPY 1500.7", async () => {
+      const cookies = await cookie();
+      const before = await financialState(pool);
+      expect(before.ledger_till_balances).not.toHaveLength(0);
+      const refused = await app.inject({
+        method: "POST", url: "/api/quotes", cookies,
+        payload: { ...sellYen, inputAmount: "1500.7" },
+      });
+      // Soft only so the no-write and viable-fixture checks still run on a
+      // wrong HTTP status. A mismatch remains a failing acceptance test.
+      expect.soft(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json().message).toBe(
+        "Amount is not a whole number of JPY. JPY has no minor unit.",
+      );
+      expect(await financialState(pool)).toEqual(before);
+
+      const whole = await app.inject({
+        method: "POST", url: "/api/quotes", cookies, payload: sellYen,
+      });
+      expect(whole.statusCode, whole.body).toBe(201);
+      const saved = await pool.query(
+        "SELECT input_amount,status FROM quotes WHERE quote_id=$1", [whole.json().quoteId],
+      );
+      expect(saved.rows).toEqual([{ input_amount: "1500.00", status: "active" }]);
+    });
+
+    it.each([
+      { direction: "customer_sell_foreign", column: "input_amount", field: "Amount", request: sellYen },
+      { direction: "customer_buy_foreign", column: "output_amount", field: "Payout",
+        request: { ...body, to: "JPY", inputAmount: "15.46", feeCad: "0.00" } },
+    ])("returns 422 without financial writes for frozen $direction JPY 1500.7", async ({ column, field, request }) => {
+      const cookies = await cookie();
+      const created = await app.inject({ method: "POST", url: "/api/quotes", cookies, payload: request });
+      expect(created.statusCode, created.body).toBe(201);
+      const validId = created.json().quoteId;
+      const original = await pool.query("SELECT * FROM quotes WHERE quote_id=$1", [validId]);
+      expect(original.rows[0][column]).toBe("1500.00");
+
+      /* The HTTP post accepts a quote ID, not amounts. Exercise the ledger's
+         independent frozen-term guard with a persisted legacy/bad quote.
+         Clone a real quote and change ONLY its ID and the JPY amount. INSERT
+         keeps the immutability trigger enabled; no valid quote is rewritten. */
+      const invalidId = `${validId}-fractional`;
+      await pool.query(
+        `INSERT INTO quotes SELECT (jsonb_populate_record(NULL::quotes,
+          to_jsonb(q) || $2::jsonb)).* FROM quotes q WHERE quote_id=$1`,
+        [validId, JSON.stringify({ quote_id: invalidId, [column]: "1500.7" })],
+      );
+      const before = await financialState(pool);
+      const refused = await app.inject({
+        method: "POST", url: `/api/quotes/${invalidId}/post`, cookies,
+        payload: postBody(`fractional-${column}`),
+      });
+      expect.soft(refused.statusCode, refused.body).toBe(422);
+      expect(refused.json().message).toBe(
+        `${field} is not a whole number of JPY. JPY has no minor unit.`,
+      );
+      expect(await financialState(pool)).toEqual(before);
+
+      // Same session, customer, board, till and terms, with whole JPY.
+      const whole = await app.inject({
+        method: "POST", url: `/api/quotes/${validId}/post`, cookies,
+        payload: postBody(`fractional-${column}`),
+      });
+      expect(whole.statusCode, whole.body).toBe(201);
+      const saved = await pool.query(
+        "SELECT input_amount,output_amount FROM ledger_transactions WHERE quote_id=$1", [validId],
+      );
+      expect(saved.rows).toHaveLength(1);
+      expect(saved.rows[0][column]).toBe("1500.00");
+      const posted = await pool.query("SELECT status FROM quotes WHERE quote_id=$1", [validId]);
+      expect(posted.rows).toEqual([{ status: "posted" }]);
+    });
+  });
+
   it("creates a customer-sell quote using We Buy and preserves old board terms", async () => {
     const created = await app.inject({
       method: "POST",
