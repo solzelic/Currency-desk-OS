@@ -22,6 +22,7 @@
    ============================================================ */
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { STAGING_BACK_LINK } from "./staging-back-link.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SRC = path.join(ROOT, "design", "site");
@@ -313,15 +314,22 @@ window.claimedCount.then(function (d) {
    (?door=<ticket>&email=<staging email>; routes/staging-fresh-shop.ts).
    While it is in the address, the way into the application leads to the
    Early Access v2.1 page with it, and links between the site's own pages
-   keep it. Without a well-formed ticket this does nothing at all, which
-   is every visit on live. Clicks are caught rather than links rewritten,
-   because the design's runtime re-renders the links. */
+   keep it. The tab keeps it too (sessionStorage, "cdStagingDoor": the
+   ticket and the staging address, nothing about a person), so going back
+   to the homepage does not drop a tester into a real application. Without
+   a well-formed ticket this does nothing at all, which is every visit on
+   live. Clicks are caught rather than links rewritten, because the
+   design's runtime re-renders the links. */
 const STAGING_JOURNEY_HELPER = `<script>
 (function () {
-  var q, door, email;
-  try { q = new URLSearchParams(location.search); door = q.get('door') || ''; email = q.get('email') || ''; } catch (e) { return; }
+  var q, door = '', email = '';
+  try { q = new URLSearchParams(location.search); door = q.get('door') || ''; email = q.get('email') || ''; } catch (e) {}
+  if (!/^[0-9a-f]{32}$/.test(door)) {
+    try { var held = JSON.parse(sessionStorage.getItem('cdStagingDoor') || 'null') || {}; door = String(held.door || ''); email = String(held.email || ''); } catch (e) { door = ''; }
+  }
   if (!/^[0-9a-f]{32}$/.test(door)) return;
   if (!/^owner\\+[0-9a-f]+@staging\\.invalid$/.test(email)) email = '';
+  try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door: door, email: email })); } catch (e) {}
   var keep = 'door=' + door + (email ? '&email=' + encodeURIComponent(email) : '');
   var APPLY = { '/signup': 1, '/early-access': 1 };
   var SITE = { '/': 1, '/m': 1, '/d': 1, '/faq': 1, '/compliance': 1, '/contact': 1, '/legal': 1, '/add-ons': 1 };
@@ -515,7 +523,8 @@ for (const name of present) {
   const counter = /data-cd-(claimed|cap)|claimedCount/.test(html) ? CLAIMED_HELPER : "";
   // the application pages read the staging ticket themselves; every other page carries it
   const journey = page.out.startsWith("early-access") ? "" : STAGING_JOURNEY_HELPER;
-  html = html.replace('<script src="/web/support.js">', resources + helper + counter + journey + '<script src="/web/support.js">');
+  // and every page, the application included, carries the staging way back to sign-in
+  html = html.replace('<script src="/web/support.js">', resources + helper + counter + journey + STAGING_BACK_LINK + '<script src="/web/support.js">');
 
   const head =
     `<title>${esc(page.title)}</title>\n` +

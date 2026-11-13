@@ -58,8 +58,9 @@ const SITE_PAGES = {
   // the Early Access application — what every "Get early access" on the site
   // leads to. Applying is not the same as opening a desk: an accepted
   // operator creates theirs from the OS's own wizard, at /app?signup=1.
-  "/signup": "web/early-access.html",
-  // Early Access v2.1, previewed here until /signup switches over to it
+  // Early Access v2.1 (Sol, 14 Nov: every way in is v2.1). The page the
+  // site links to as "Get early access", and /early-access is the same page.
+  "/signup": "web/early-access-v2.html",
   "/early-access": "web/early-access-v2.html",
   // where the invite email lands: type your code, walk the setup
   "/onboarding": "web/onboarding.html",
