@@ -75,6 +75,13 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 
 ## Databases
 
+Unexpected exceptions at the HTTP boundary use `server/src/error-boundary.ts`:
+server failures return a generic body; framework/client errors retain their
+existing semantics. The same formatter protects selected caught-error logs in
+ledger/client/quote routes, billing webhooks and demo population. It does not
+serialize free-form messages, causes, stacks or database payloads. This is not
+a blanket sanitizer for all console logs or provider response bodies.
+
 - App tables: Drizzle; embedded PGlite (dev/test) or Postgres (`DATABASE_URL`).
   Boot applies `DDL` + `runMigrations`. A fresh database self-provisions.
   `runMigrations` logs `opening database` before its first query and one

@@ -7,6 +7,7 @@
    so session cookies work with no CORS configuration.
    ============================================================ */
 import Fastify, { type FastifyInstance } from "fastify";
+import { unexpectedErrorHandler } from "./error-boundary.js";
 import cookie from "@fastify/cookie";
 import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
@@ -186,6 +187,7 @@ export async function buildApp(
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
   });
+  app.setErrorHandler(unexpectedErrorHandler);
   await app.register(cookie);
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });
 

@@ -1,3 +1,4 @@
+import { safeError } from "../error-boundary.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { and, eq } from "drizzle-orm";
 import Decimal from "decimal.js";
@@ -373,14 +374,14 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
        it is expected, and nothing is in error — and it sends a teller
        looking for a problem with a movement that was perfectly good. */
     if (isRetryable(error)) {
-      app.log.warn(error, "ledger contention after retries");
+      app.log.warn(safeError(error), "ledger contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
         message: LEDGER_BUSY_MESSAGE,
       });
     }
     if (!(error instanceof LedgerError)) {
-      app.log.error(error, "ledger route failure");
+      app.log.error(safeError(error), "ledger route failure");
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =

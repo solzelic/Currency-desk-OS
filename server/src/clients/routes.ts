@@ -1,3 +1,4 @@
+import { safeError } from "../error-boundary.js";
 /* ============================================================
    The customer file, over HTTP.
 
@@ -192,14 +193,14 @@ export function registerClientRoutes(app: FastifyInstance, db: Db, databaseUrl: 
 
   function failure(reply: Reply, error: unknown) {
     if (isRetryable(error)) {
-      app.log.warn(error, "client records contention after retries");
+      app.log.warn(safeError(error), "client records contention after retries");
       return reply.code(409).send({
         code: "LEDGER_BUSY",
         message: LEDGER_BUSY_MESSAGE,
       });
     }
     if (!(error instanceof LedgerError)) {
-      app.log.error(error, "client records route failure");
+      app.log.error(safeError(error), "client records route failure");
       return reply.code(500).send({ code: "INTERNAL_ERROR", message: "Unexpected server error." });
     }
     const status =

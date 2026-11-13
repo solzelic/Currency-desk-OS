@@ -1,3 +1,4 @@
+import { safeError } from "../error-boundary.js";
 /* Stripe Billing boundary.
    Checkout and the customer portal are hosted by Stripe. This server never
    receives PAN/CVC data. Webhooks are signed, deduplicated, and projected into
@@ -283,7 +284,7 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
       return { received: true };
     } catch (error) {
       await db.delete(schema.stripeEvents).where(eq(schema.stripeEvents.stripeEventId, id));
-      req.log.error({ err: error, stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
+      req.log.error({ error: safeError(error), stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
       return reply.code(500).send({ error: "webhook_processing_failed" });
     }
   });

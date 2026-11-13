@@ -69,7 +69,8 @@ const BASELINE: Record<string, number> = {
   "server/src/db/index.ts": 5,
   "server/src/email.ts": 3,
   "server/src/emails/design.ts": 18,
-  "server/src/index.ts": 10,
+  // The raw demo-populate error template was replaced by a safe structured log.
+  "server/src/index.ts": 9,
   "server/src/ledger/cheques.ts": 2,
   "server/src/ledger/currencies.ts": 2,
   "server/src/ledger/obligations.ts": 1,
@@ -98,6 +99,7 @@ const BASELINE: Record<string, number> = {
   "web/app/os.js": 749,
 };
 const FIXED: Array<[string, string]> = [
+  ["server/src/index.ts", "[demo-desk] populate failed"],
   ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],
   ["os-src/cdos-settings.jsx", "Password set by the employee. Only they know it. Reset issues a new temporary one."],
   ["os-src/cdos-settings.jsx", "Server unavailable. Passwords are managed on the live desk."],
@@ -349,6 +351,15 @@ describe("dash ratchet", () => {
     const before = dashCount(visible(path, source));
     lines[idx] = lines[idx]!.replace("Desk 1.", "Desk 1. " + EM);
     expect(dashCount(visible(path, lines.join("\n")))).toBe(before + 1);
+  });
+  it("detects a dash restored to the safe demo-populate log label", () => {
+    const path = "server/src/index.ts";
+    const source = readFileSync(join(root, path), "utf8");
+    const label = '"[demo-desk] populate failed"';
+    expect(source).toContain(label);
+    const altered = source.replace(label, '"[demo-desk] populate failed ' + EM + '"');
+    expect(dashCount(visible(path, source))).toBe(BASELINE[path]);
+    expect(dashCount(visible(path, altered))).toBe(BASELINE[path]! + 1);
   });
   it("keeps a slash-star inside a string, and skips a JSX comment", () => {
     expect(dashCount(visibleJs('<label><input accept="image/*" /> a ' + EM + " b</label>", true))).toBe(1);

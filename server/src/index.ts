@@ -1,3 +1,4 @@
+import { safeError } from "./error-boundary.js";
 // local secrets (OXR_APP_ID etc.) — server/.env is gitignored; in production
 // these come from the host's environment (Render dashboard)
 try {
@@ -115,8 +116,7 @@ if (shouldPopulateDemoDesk()) {
         );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown error";
-      console.warn(`[demo-desk] populate failed — ${message}`);
+      console.warn("[demo-desk] populate failed", safeError(error));
     } finally {
       await pool.end();
     }
