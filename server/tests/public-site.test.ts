@@ -218,7 +218,8 @@ describe("public site responses do not carry a customer's phone or name", () => 
       confirm: ["quote", "ref", "status", "expiresAt"],
       config: ["site", "name", "slug", "phone", "email", "address", "city", "region", "postal", "hours", "days", "updatedAt"],
       rates: ["published", "publishedAt", "currencies", "rates", "code", "buy", "sell", "board", "buyMargin", "sellMargin", "rows", "order", "mid", "spread", "show"],
-      early: ["claimed", "cap", "remaining", "full"],
+      /* and the Early Access v2.1 page's two switches, which are nobody's data */
+      early: ["claimed", "cap", "remaining", "full", "mode", "samCall"],
       error: ["error"],
     };
     const shape = (url: string, status: number) => {
