@@ -1,7 +1,12 @@
 /* ============================================================
    How many of the founding cohort are gone.
 
-     GET /api/site/early-access → { claimed, cap, remaining, full }
+     GET /api/site/early-access → { claimed, cap, remaining, full, mode, samCall }
+
+   `mode` and `samCall` are the Early Access v2.1 page's two switches,
+   read at load: OPEN_SIGNUP=1 turns the page into open sign-up, and
+   SAM_CALL=0 takes the SAM call off it. Unset, it is early access with
+   the call on.
 
    The number on the marketing site used to be the literal 64 the design
    was drawn with, so it said the same thing forever. It is counted here
@@ -36,6 +41,9 @@ const cap = (): number => {
 };
 
 const PLATFORM_TENANT = "tnt-platform";
+
+/* A switch in the environment: on for 1, true, yes or on. */
+const switchOn = (raw: string | undefined): boolean => /^(1|true|yes|on)$/i.test(String(raw ?? "").trim());
 const CACHE_MS = 15_000;
 let cached: { at: number; claimed: number } | null = null;
 
@@ -49,7 +57,9 @@ export function isStagingDoorEnquiry(row: { doNotContact?: boolean | null; doNot
 export async function claimedCount(db: Db): Promise<number> {
   const applications = (await db.select().from(schema.enquiries)).filter(
     // never the walkthrough: practising must not tell the site a place has gone
-    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo && !isStagingDoorEnquiry(e),
+    // and never a waitlisted shop (Early Access v2.1): it is not a founding
+    // operator until it is let in
+    (e) => e.kind === "early_access" && e.status !== "declined" && !e.isDemo && !isStagingDoorEnquiry(e) && !e.waitlistReason,
   );
   const spokenFor = new Set(applications.map((a) => a.tenantId).filter(Boolean) as string[]);
   const desks = (await db.select().from(schema.tenants)).filter(
@@ -69,7 +79,11 @@ export function registerEarlyAccessRoutes(app: FastifyInstance, db: Db): void {
     // reads past the cohort, however many apply
     const claimed = Math.min(cached.claimed, total);
     reply.header("cache-control", "public, max-age=15");
-    return { claimed, cap: total, remaining: Math.max(0, total - claimed), full: claimed >= total };
+    return {
+      claimed, cap: total, remaining: Math.max(0, total - claimed), full: claimed >= total,
+      mode: switchOn(process.env.OPEN_SIGNUP) ? "open" : "early_access",
+      samCall: process.env.SAM_CALL == null || process.env.SAM_CALL.trim() === "" || switchOn(process.env.SAM_CALL),
+    };
   });
 }
 

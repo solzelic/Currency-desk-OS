@@ -79,7 +79,6 @@ const BASELINE: Record<string, number> = {
   "server/src/ledger/threshold-control.ts": 1,
   "server/src/ledger/vault-control.ts": 1,
   "server/src/onboarding/flow.ts": 6,
-  "server/src/onboarding/pipeline.ts": 1,
   "server/src/onboarding/walkthrough.ts": 2,
   "server/src/platform/health.ts": 2,
   "server/src/platform/team.ts": 1,

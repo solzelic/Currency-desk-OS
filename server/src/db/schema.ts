@@ -618,6 +618,20 @@ export const enquiries = pgTable(
     doNotContactAt: timestamp("do_not_contact_at", { withTimezone: true }),
     doNotContactBy: text("do_not_contact_by"),
     doNotContactReason: text("do_not_contact_reason"),
+    /* Early Access v2.1 (migration 072). The CurrencyDesk ID minted when
+       the application was accepted (enquiries/cd-id.ts), unique and never
+       reused; null when waitlisted, for a contact message, and before v2.1. */
+    cdId: text("cd_id"),
+    /* The server's waitlist decision; null when accepted. */
+    waitlistReason: text("waitlist_reason").$type<"outside-canada" | "not-fintrac-registered">(),
+    /* A waitlisted shop outside Canada: its code to give another shop, and
+       its place in line for its own country. */
+    inviteCode: text("invite_code"),
+    placeInLine: integer("place_in_line"),
+    /* When the applicant asked SAM to call, in UTC, and the zone its
+       calling hours were read in (enquiries/sam.ts, 073). */
+    samCallAt: timestamp("sam_call_at", { withTimezone: true }),
+    samCallZone: text("sam_call_zone"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -627,7 +641,9 @@ export const enquiries = pgTable(
     index("enquiries_email_idx").on(t.email),
   ],
 );
-export type EnquiryKind = "early_access" | "contact";
+/* "signup" is Early Access v2.1 in open sign-up mode (OPEN_SIGNUP): an
+   application with no founding-cohort place. */
+export type EnquiryKind = "early_access" | "signup" | "contact";
 /* reviewing → invited → accepted, with hold and declined as the two other
    ways out of review. "accepted" is not set by hand: it is what a completed
    signup means. "new" is only for rows that arrived before applications
@@ -652,6 +668,25 @@ export const enquiryContactConsents = pgTable(
     consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("enquiry_contact_consents_idx").on(t.enquiryId, t.consentedAt)],
+);
+
+/* Consent to the SAM call, kept as evidence (Early Access v2.1, 073).
+   Only ever inserted: a stop is another row, and the latest row is the
+   answer (enquiries/sam.ts). */
+export const enquiryCallConsents = pgTable(
+  "enquiry_call_consents",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    event: text("event").$type<"consent" | "stop">().notNull(),
+    phone: text("phone").notNull(),
+    consentText: text("consent_text"),
+    ipAddress: text("ip_address"),
+    ipCountry: text("ip_country"),
+    userAgent: text("user_agent"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("enquiry_call_consents_idx").on(t.enquiryId, t.at)],
 );
 
 /* One immutable snapshot per research attempt. A re-run adds a row; it never

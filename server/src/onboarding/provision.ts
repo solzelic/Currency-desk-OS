@@ -33,6 +33,9 @@ import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js
 import { landApplicantStatedPhone } from "./applicant-phone.js";
 import { JURISDICTION, type Resolved } from "./flow.js";
 import { ensureRatePage } from "../rates/rate-page.js";
+/* One list of reserved words, shared with sign-up and the Early Access
+   address check (reserved-slugs.ts). */
+import { isReservedSlug } from "./reserved-slugs.js";
 
 /* The design sells three plans; the server gates on three tiers. They are
    not the same axis — "AI Bundle" is Full System plus an assistant, not a
@@ -56,10 +59,6 @@ const ROLE_MAP: Record<string, typeof schema.staffRole.enumValues[number]> = {
   "Trainee": "teller",
 };
 
-const RESERVED_SLUGS = new Set([
-  "api", "app", "www", "sites", "admin", "administrator", "currencydesk", "static",
-  "assets", "os-src", "public", "help", "support", "status", "signup", "login", "onboarding",
-]);
 
 /* "York Currency Exchange" → "york-currency-exchange". The design never asks
    for a desk address — it shows one derived from the shop name — so this is
@@ -136,7 +135,7 @@ export function specFromAnswers(
       ? slugFrom(applied.workspace.split(".")[0]!)
       : "";
   let slug = fromApplication || slugFrom(businessName);
-  if (!slug || RESERVED_SLUGS.has(slug)) slug = slugFrom(businessName + "-fx") || "desk";
+  if (!slug || isReservedSlug(slug)) slug = slugFrom(businessName + "-fx") || "desk";
 
   const planId = str(resolved, "plan") || "full";
   const teamRaw = resolved.team?.value;

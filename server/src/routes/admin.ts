@@ -29,7 +29,7 @@ import { audit } from "../audit.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite, refreshSiteDomains, warnSiteDomainRefreshFailure } from "../sites.js";
-import { board, cleanLabel, labelsOf, moveTo, type Stage } from "../onboarding/pipeline.js";
+import { board, cleanLabel, labelsOf, moveTo, saidNoCall, type Stage } from "../onboarding/pipeline.js";
 import { can, member, refuseChange, ROLES, type Permission, type PlatformRole } from "../platform/team.js";
 import { stripeBillingConfig } from "../billing/stripe.js";
 import { systemHealth } from "../platform/health.js";
@@ -283,6 +283,8 @@ const recipientOf = (row: typeof schema.enquiries.$inferSelect): Recipient => ({
   reference: row.reference,
   status: row.status,
   kind: row.kind,
+  cdId: row.cdId ?? null,
+  call: !saidNoCall(row),
 });
 
 /* A staff member's address is their sign-in id, but only when that id is an
@@ -1511,6 +1513,7 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       const mail = inviteEmail({
         name: existing.name, reference: existing.reference, origin,
         shopName: b.businessName || null, cohortNo: existing.charterNo,
+        cdId: existing.cdId, call: !saidNoCall(existing),
       });
       const sent = await sendEmail(existing.email, mail.subject, { text: mail.text, html: mail.html }).catch(() => "failed" as const);
       return {

@@ -24,6 +24,7 @@ import {
   cdIdEmail, contactReceivedEmail, customEmail, inviteEmail, loginCodeEmail,
   passwordResetEmail, replyEmail, reviewEmail, tempPasswordEmail, verificationEmail,
 } from "./email.js";
+import { addressHeld, placeHeld } from "./emails/design.js";
 
 /* Who is on the other end. Worth naming, because "an email went out" is a
    very different fact depending on whether it reached a customer, one of
@@ -50,6 +51,10 @@ export interface Recipient {
   /* the pipeline stage, for an applicant; the desk's name, for staff */
   status: string;
   kind: string;
+  /* An applicant's CurrencyDesk ID and call choice, off their record, so a
+     resent invitation is the letter they first got (Early Access v2.1). */
+  cdId?: string | null;
+  call?: boolean;
 }
 
 /* Something the operator has to supply because the template cannot know
@@ -143,7 +148,7 @@ export const DISPATCHES: Dispatch[] = [
     id: "review",
     title: "We're looking at your application",
     audience: "applicant",
-    when: "The moment an application arrives. Nobody presses anything.",
+    when: "The moment an application from the old page, or an open sign-up, arrives. Nobody presses anything. A v2.1 application that is accepted or waitlisted gets its own letter instead.",
     automatic: true,
     stage: "reviewing",
     manual: {
@@ -158,8 +163,8 @@ export const DISPATCHES: Dispatch[] = [
     id: "invite",
     title: "You're in — set up your desk",
     audience: "applicant",
-    when: "When you approve an application. Carries their reference and the setup link.",
-    automatic: false,
+    when: "When you approve an application, and on its own the moment a v2.1 application is accepted at once (registered with FINTRAC, or in progress). Carries the setup link, and for v2.1 their CurrencyDesk ID.",
+    automatic: true,
     stage: "invited",
     manual: {
       action: "Send the invitation again",
@@ -174,9 +179,30 @@ export const DISPATCHES: Dispatch[] = [
           : to.status === "invited"
             ? null
             : "This carries their setup link, and the link only opens while they are Invited. Approve them first — that sends this email on its own.",
-      render: (to, _f, ctx) => inviteEmail({ name: to.name, reference: to.reference, origin: ctx.origin }),
+      render: (to, _f, ctx) => inviteEmail({ name: to.name, reference: to.reference, origin: ctx.origin, cdId: to.cdId, call: to.call }),
     },
     sample: () => inviteEmail({ name: "Amir Rostami", reference: "CD-7BETHC", origin: SAMPLE_ORIGIN }),
+  },
+  /* The two waitlist letters (Early Access v2.1). Sent once, as a v2.1
+     application lands on hold. Each quotes what the server gave that
+     application, so neither can be typed up from here. */
+  {
+    id: "address_held",
+    title: "Your address is held",
+    audience: "applicant",
+    when: "The moment a v2.1 application from a Canadian shop not yet registered with FINTRAC arrives. Nobody presses anything.",
+    automatic: true,
+    elsewhere: "It quotes the address they reserved and goes once, as the application lands on hold. Holding somebody by hand sends nothing; write to them yourself if they need it again.",
+    sample: () => addressHeld({ name: "Amir Rostami", shopName: "Yorkville Currency", workspace: "yorkville-currency.currencydeskos.com", reference: "CD-7BETHC" }),
+  },
+  {
+    id: "place_held",
+    title: "Your place is held",
+    audience: "applicant",
+    when: "The moment a v2.1 application from a shop outside Canada arrives. Nobody presses anything.",
+    automatic: true,
+    elsewhere: "It quotes their place in line and their invite code, both issued by the server, and goes once, as the application lands on hold. Holding somebody by hand sends nothing.",
+    sample: () => placeHeld({ name: "Ana Ruiz", shopName: "Cambio Azteca", country: "Mexico", place: 7, inviteCode: "CAMBIO-7K42", reference: "CD-7BETHD" }),
   },
   {
     id: "signup_code",
@@ -309,7 +335,7 @@ export function sendableTo(to: Recipient): Array<{
    held application should not be left wondering whether the applicant
    was told, and an agent should not "helpfully" add a message here. */
 export const SILENT: { stage: string; why: string }[] = [
-  { stage: "hold", why: "Holding somebody is a note to ourselves. Telling them they are parked is worse than saying nothing." },
+  { stage: "hold", why: "Holding somebody is a note to ourselves. Telling them they are parked is worse than saying nothing. (A v2.1 application held on the waitlist was already told, by its own letter, as it arrived.)" },
   { stage: "declined", why: "A decline deserves a person writing to them, not an automated line." },
 ];
 

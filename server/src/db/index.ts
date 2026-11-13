@@ -149,6 +149,14 @@ ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS do_not_contact_reason text;
 CREATE UNIQUE INDEX IF NOT EXISTS enquiries_reference_idx ON enquiries(reference);
 CREATE INDEX IF NOT EXISTS enquiries_kind_idx ON enquiries(kind, created_at);
 CREATE INDEX IF NOT EXISTS enquiries_status_idx ON enquiries(status);
+-- Early Access v2.1 (migration 072): the ID, the waitlist decision, the
+-- invite code and the place in line, on the application.
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS cd_id text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS waitlist_reason text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS invite_code text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS place_in_line integer;
+CREATE UNIQUE INDEX IF NOT EXISTS enquiries_cd_id_idx ON enquiries (cd_id) WHERE cd_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS enquiries_invite_code_idx ON enquiries (invite_code) WHERE invite_code IS NOT NULL;
 -- Consent evidence is operational metadata, not an answer the applicant
 -- typed. Keeping it beside rather than inside details preserves provenance.
 CREATE TABLE IF NOT EXISTS enquiry_contact_consents (
@@ -162,6 +170,21 @@ CREATE TABLE IF NOT EXISTS enquiry_contact_consents (
   consented_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS enquiry_contact_consents_idx ON enquiry_contact_consents(enquiry_id, consented_at);
+-- The SAM call's consent, kept as evidence and only ever inserted (073).
+CREATE TABLE IF NOT EXISTS enquiry_call_consents (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  event text NOT NULL CHECK (event IN ('consent', 'stop')),
+  phone text NOT NULL,
+  consent_text text,
+  ip_address text,
+  ip_country text,
+  user_agent text,
+  at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS enquiry_call_consents_idx ON enquiry_call_consents (enquiry_id, at);
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_at timestamptz;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_zone text;
 CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   id text PRIMARY KEY,
   enquiry_id text NOT NULL REFERENCES enquiries(id),

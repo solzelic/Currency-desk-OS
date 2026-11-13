@@ -29,7 +29,9 @@ import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
+import { registerEnquirySamRoutes } from "./routes/enquiry-sam.js";
 import { registerEarlyAccessRoutes } from "./routes/early-access.js";
+import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 import { registerPinRoutes } from "./routes/pin.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerRatePageRoutes } from "./routes/rate-pages.js";
@@ -57,6 +59,8 @@ const SITE_PAGES = {
   // leads to. Applying is not the same as opening a desk: an accepted
   // operator creates theirs from the OS's own wizard, at /app?signup=1.
   "/signup": "web/early-access.html",
+  // Early Access v2.1, previewed here until /signup switches over to it
+  "/early-access": "web/early-access-v2.html",
   // where the invite email lands: type your code, walk the setup
   "/onboarding": "web/onboarding.html",
 } as const satisfies Record<string, string>;
@@ -262,7 +266,9 @@ export async function buildApp(
   }
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);
+  registerEnquirySamRoutes(app, db);
   registerEarlyAccessRoutes(app, db);
+  registerWorkspaceRoutes(app, db);
   registerPinRoutes(app, db);
   registerStaffRoutes(app, db);
   registerDeskRoutes(app, db);

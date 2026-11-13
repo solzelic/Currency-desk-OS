@@ -1,6 +1,11 @@
-/* The staging button opens the real desk setup. It mints an invited
-   application and does not email. Launch marks the tenant a test shop
-   only when the staging door is open. A live host stays 404. */
+/* The staging button starts the whole journey at the Early Access v2.1
+   page (Sol, 13 Nov: "when you start a whole new shop, you should start
+   from what I'm giving you right now and then running through the whole
+   process"). It hands out a one-time ticket and a staging identity; the
+   page applies with the ticket, the application is accepted at once, and
+   "Start building your desk" opens the real setup. Nothing is emailed.
+   Launch marks the tenant a test shop only when the staging door is open.
+   A live host stays 404, and a ticket means nothing there. */
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -11,6 +16,21 @@ import { buildApp } from "../src/app.js";
 import { resetFreshShopThrottle } from "../src/routes/staging-fresh-shop.js";
 
 const STAGING_HOST = "staging.currencydeskos.com";
+
+/* What the v2.1 page posts, with the staging ticket it was opened with. */
+const application = (email: string, door?: string) => ({
+  kind: "early_access", form: "early-access-v2.1", email, name: "Staging Owner",
+  ...(door ? { stagingDoor: door } : {}),
+  details: {
+    firstName: "Staging", lastName: "Owner", shopName: "Harbour Test", workspace: "harbour-test.currencydeskos.com",
+    website: "none yet", mode: "early_access", jurisdiction: "CA", province: "ON", country: "Canada", state: null,
+    fintracRegistered: "Yes", msbNumber: null, waitlist: false, waitlistReason: null, role: "Owner",
+    employees: "2 to 5", monthlyVolume: "$2M to $10M", branches: "single", runningOn: "Spreadsheets", timeline: "This quarter",
+    phone: "+1 4165550148", bestTime: "no call", samConsent: null,
+  },
+  contactContext: { timezone: "America/Toronto" },
+});
+const ticketOf = (start: string) => new URL(start, "https://x").searchParams.get("door") ?? "";
 const saved = {
   STAGING: process.env.STAGING,
   IS_PULL_REQUEST: process.env.IS_PULL_REQUEST,
@@ -64,22 +84,39 @@ describe("fresh onboarding", () => {
 
       const opened = await app.inject({ method: "POST", url: "/api/staging/fresh-onboarding", headers: { host: STAGING_HOST } });
       expect(opened.statusCode).toBe(201);
-      const body = opened.json() as { ok: boolean; reference: string; email: string; password?: string; code?: string };
-      expect(body.ok).toBe(true);
-      expect(body.reference).toMatch(/^CD-[2-9A-HJ-NP-Z]{6}$/);
-      expect(body.email).toMatch(/^owner\+[0-9a-f]+@staging\.invalid$/);
-      expect(body.password).toBeUndefined();
-      expect(body.code).toBeUndefined();
+      const door = opened.json() as { ok: boolean; start: string; email: string; reference?: string; password?: string; code?: string };
+      expect(door.ok).toBe(true);
+      expect(door.email).toMatch(/^owner\+[0-9a-f]+@staging\.invalid$/);
+      /* the website first, as a new shop sees it (Sol, 14 Nov), with the ticket */
+      expect(door.start).toMatch(/^\/\?door=[0-9a-f]{32}&email=owner%2B[0-9a-f]+%40staging\.invalid$/);
+      expect(door.reference).toBeUndefined(); // nothing is applied for them: they apply on the page
+      expect(door.password).toBeUndefined();
+      expect(door.code).toBeUndefined();
+      const before = (await handle.db.select().from(schema.enquiries)).length;
+
+      /* the page applies with the ticket; whatever email was typed, the staging identity is used */
+      const applied = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("someone@example.com", ticketOf(door.start)) });
+      expect(applied.statusCode, applied.body).toBe(201);
+      const body = { ...(applied.json() as { reference: string; cdId: string; charterNo: number | null }), email: door.email };
+      expect(body.cdId).toMatch(/^CD-HARB-[2-9A-HJKMNP-Z]{4}$/);
+      expect(body.charterNo).toBeNull();
+      expect((await handle.db.select().from(schema.enquiries)).length).toBe(before + 1);
       expect(lines.join("\n")).not.toContain("[email");
       expect(lines.join("\n")).not.toContain(body.email);
 
       const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, body.reference)))[0];
+      expect(row?.email).toBe(door.email);
       expect(row?.status).toBe("invited");
       expect(row?.kind).toBe("early_access");
       expect(row?.isDemo).toBe(false);
       expect(row?.charterNo).toBeNull();
+      expect(row?.doNotContact).toBe(true);
       expect((row?.details as { stagingFresh?: boolean; slug?: string }).stagingFresh).toBe(true);
       expect(String((row?.details as { slug?: string }).slug)).toMatch(/^stg-/);
+
+      /* one application per ticket */
+      const again = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("again@example.com", ticketOf(door.start)) });
+      expect(again.statusCode).toBe(400);
 
       const state = await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } });
       expect(state.statusCode).toBe(200);
@@ -116,6 +153,26 @@ describe("fresh onboarding", () => {
       expect(tenant?.siteSlug?.startsWith("stg-")).toBe(true);
       const owner = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, body.email)))[0];
       expect(owner?.mustChangePassword).toBe(false);
+    } finally {
+      await app.close();
+      await handle.close();
+    }
+  });
+});
+
+describe("the staging ticket", () => {
+  it("means nothing on a live host, and a made-up ticket is refused", async () => {
+    const { app, handle } = await boot("1", STAGING_HOST);
+    try {
+      const opened = await app.inject({ method: "POST", url: "/api/staging/fresh-onboarding", headers: { host: STAGING_HOST } });
+      const door = ticketOf((opened.json() as { start: string }).start);
+
+      const live = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: "www.currencydeskos.com" }, payload: application("live@example.com", door) });
+      expect(live.statusCode).toBe(400);
+      expect((await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.email, "live@example.com")))).toHaveLength(0);
+
+      const madeUp = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("madeup@example.com", "0".repeat(32)) });
+      expect(madeUp.statusCode).toBe(400);
     } finally {
       await app.close();
       await handle.close();

@@ -44,3 +44,22 @@ A provider error body that cannot be read still logs the status.
 The panel still says, per send, when a message did not reach a person.
 Until sending is on, **the admin panel is the only notification** for
 inbound enquiries; somebody has to be opening it.
+
+## Early Access v2.1 letters
+
+What a v2.1 applicant hears depends on where the server puts the
+application (`server/src/routes/enquiries.ts`, `server/src/onboarding/pipeline.ts`):
+
+| Outcome | Stage | Letter |
+| --- | --- | --- |
+| Canada, registered with FINTRAC or in progress | Invited at once | A2 with the CurrencyDesk ID on the plate, the setup link, no time claims; no phone-call promise after "No call, thanks" |
+| Canada, not yet registered | On hold | W1 "Your address is held": the reserved address, FINTRAC's registration page, what FINTRAC asks for |
+| Outside Canada | On hold | W2 "Your place is held": place in line for the country, the invite code |
+
+W1 and W2 go once, as the application lands on hold. Holding somebody
+by hand sends nothing. Neither prints a reward for passing the invite
+code on (the page's "move up five places" and "two months free"): no
+checkout takes the code and no place moves yet. Both are drafts for
+Sol's approval; Compliance checks W1's FINTRAC list and the phrase
+"usually M followed by 8 digits" before they ship. They sign off as
+plain "SAM", with no dash, by the v2.1 copy rule.

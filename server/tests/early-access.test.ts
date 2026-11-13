@@ -123,6 +123,7 @@ describe("desks claimed", () => {
     const res = await app.inject({ method: "GET", url: "/api/site/early-access" });
     expect(res.statusCode).toBe(200);
     expect(res.body).not.toContain("@");
-    expect(Object.keys(res.json()).sort()).toEqual(["cap", "claimed", "full", "remaining"]);
+    /* and the Early Access v2.1 page's two switches, which say nothing about anybody */
+    expect(Object.keys(res.json()).sort()).toEqual(["cap", "claimed", "full", "mode", "remaining", "samCall"]);
   });
 });

@@ -95,9 +95,13 @@ describe("fresh shop button", () => {
     expect(api.freshShopMessage(503)).toBe("Something went wrong. Try again.");
   });
 
-  it("opens the existing onboarding page and not a one-time card", () => {
-    expect(api.freshShopEntry({ ok: true, reference: "cd-ab23cd", email: "owner+ab12@staging.invalid" })).toBe("/onboarding/CD-AB23CD");
-    expect(api.freshShopEntry({ reference: "CD-WALKTHRU" })).toBe("/onboarding/CD-WALKTHRU");
+  it("opens the website with the staging ticket, and not a one-time card", () => {
+    const start = "/?door=" + "ab".repeat(16) + "&email=owner%2Bab12%40staging.invalid";
+    expect(api.freshShopEntry({ ok: true, start, email: "owner+ab12@staging.invalid" })).toBe(start);
+    expect(api.freshShopEntry({ start: "https://evil.example/?door=" + "ab".repeat(16) + "&email=x" })).toBeNull();
+    expect(api.freshShopEntry({ start: "//evil.example/?door=" + "ab".repeat(16) + "&email=x" })).toBeNull();
+    expect(api.freshShopEntry({ start: "/?door=nothex&email=x" })).toBeNull();
+    expect(api.freshShopEntry({ reference: "CD-WALKTHRU" })).toBeNull();
     expect(api.freshShopEntry({ email: "owner+ab12@staging.invalid", password: "temp-pass-word", code: "654321" })).toBeNull();
     expect(api.freshShopEntry(null)).toBeNull();
     const page = readFileSync(join(root, "os-src/cdos-signin.jsx"), "utf8");
@@ -108,7 +112,18 @@ describe("fresh shop button", () => {
     expect(page).not.toContain("leaveFreshCard");
     expect(page).not.toContain("data-fresh-card");
     const helper = readFileSync(join(root, "os-src/staging-fresh-shop.js"), "utf8");
-    expect(helper).toContain('"/onboarding/"');
+    expect(helper).toContain("\\/\\?door=");
+    /* the website carries the ticket into the application */
+    for (const site of ["web/index.html", "web/mobile.html"]) {
+      const html = readFileSync(join(root, site), "utf8");
+      expect(html, site).toContain("location.assign('/early-access?' + keep)");
+    }
+    /* and the application pages do not carry the site's copy of it */
+    expect(readFileSync(join(root, "web/early-access.html"), "utf8")).not.toContain("location.assign('/early-access?' + keep)");
+    /* and the page it opens reads the ticket and applies with it */
+    const early = readFileSync(join(root, "web/early-access-v2.html"), "utf8");
+    expect(early).toContain("q.get('door')");
+    expect(early).toContain("stagingDoor: this._door");
     expect(helper).not.toMatch(/localStorage|sessionStorage|location\.|console\./);
     expect(writes.join("\n")).toBe("");
     expect(locationStub.href).not.toContain("password");
