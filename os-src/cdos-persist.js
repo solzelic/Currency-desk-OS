@@ -46,6 +46,7 @@ window.CDOS_PERSIST = (function () {
   var lastTrouble = null;
   var listeners = [];
   var warnedNearLimit = false;
+  var warnedPinsIgnored = false;
 
   /* What the server had when we last agreed with it: the version number, and
      the document itself. The document is the baseline a three-way merge is
@@ -233,7 +234,7 @@ window.CDOS_PERSIST = (function () {
   //   'offline'  — no backend / not signed in; demo continues untouched
   async function begin(tid) {
     tenantId = tid || null;
-    health = 'ok'; failures = 0; nextAttemptAt = 0; warnedNearLimit = false;
+    health = 'ok'; failures = 0; nextAttemptAt = 0; warnedNearLimit = false; warnedPinsIgnored = false;
     version = 0; baseline = {};
     announce({ level: 'ok', detail: '' });
     if (!tenantId) return 'offline';
@@ -311,6 +312,13 @@ window.CDOS_PERSIST = (function () {
       try { body = await r.json(); } catch (e) {}
       // the version our next save will be built on
       if (body && typeof body.version === 'number') version = body.version;
+      /* Older settings can still offer a till PIN. The server saves the
+         desk but drops that PIN; success must not imply it was set.
+         This reminder is once per session and does not stop saving. */
+      if (body && body.pinsIgnored > 0 && !warnedPinsIgnored) {
+        warnedPinsIgnored = true;
+        announce({ level: 'notice', code: 'pins_ignored', detail: 'Set your till PIN in Settings → My account.' });
+      }
       /* Said once, not every four seconds — a warning repeated on a loop is
          one people learn to ignore. */
       if (body && body.nearingLimit && !warnedNearLimit) {

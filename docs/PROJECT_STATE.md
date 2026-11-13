@@ -72,6 +72,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
+- **Shop-ready core review and ignored-PIN feedback (13 November 2026, local branch `fix/ignored-pin-save-feedback`).** Reviewed from `origin/main` at `cab672f`. The browser persistence bridge now shows "Set your till PIN in Settings → My account." once per session when a successful settings save returns `pinsIgnored > 0`; saving continues and no PIN is set through the snapshot. `tests/e2e/ignored-pin-save.spec.ts` first reproduced the missing notice, then passed at 1280 and 390 pixels against disposable local Postgres, including another save, unchanged server PIN status and restoration of the shared desk snapshot. The adjacent PIN-permissions and owner-settings seams pass too (7 tests together). The operating-day gate and customer journey pass together (17 tests); these remain separate evidence for the demo shop's full shift and a new shop's onboarding, not a complete new-shop shift. Build, browser parse/public-claims/sanctions checks, server typecheck, and 56 targeted PIN/persistence server tests pass. The default embedded server run has 1,290 passing tests, 2 failing account-switch tests, 2 failing route-sweep setup suites and 641 skipped tests: the switch queries a ledger table absent from PGlite, and the sweep suites require `TEST_DATABASE_URL`. The switch file passes all 10 tests on local Postgres. The full Postgres server suite and live/staging deployment were not verified. The August readiness percentages in `ROAD_TO_DEPLOYMENT.md` are historical, not a current launch assessment.
 - **The Vault flags Low stock only below a floor the owner set (in review, CD-133).** On `fix/vault-floors`: `os-src/cdos-vault.jsx` carried York FX's own reorder levels (CAD 120,000, USD 40,000 and so on) as every shop's fallback, so a desk with no floor set saw Low stock on every currency it held, 40,000 CAD included, while the Rates app's Cost & stock (which only reads the owner's floors) said nothing was running low. The table is gone: a currency with no floor shows "No floor set", a floor from Settings (`vaultFloors`, `vaultReserveCad` for the home currency) flags that currency, and the low-stock notification suggests an order to twice the floor as it always did when no target was set. Settings says blank means no floor. CD-133's other parts: board rates are #659; Reports opening the Vault could not be reproduced on 6 Nov.
 - **Rates v2.5, a flag for every currency (#658; not reviewed).** On `feat/rates-all-flags`: `shared/currency-face.js` maps every currency the market feeds offer (open.er-api.com and openexchangerates.org, 165 codes) to its country's flag; 130 more images from flag-icons 7.2.3 (MIT, the set the design uses) in `assets/flags`, 158 in all, checked to hold no script. XAF, XCD, XOF and XPF are each shared by several countries, so they show a plain tile instead of two loose letters. The Board, the currency panel, Cost & stock, Pricing & rates, Guardrails, the public rate page and the window screens all draw from it.
 - **Rates v2.5 against the engineering standard (on staging, #657; not reviewed).** On `fix/rates-standard`, after reading the standard against the Rates work: the server's margin floor check is Decimal, not floating point (§3: a deal exactly at a 0.5% floor read as 0.49999999999999994%); the cash figures the Rates screens show are the server's, not worked out in the browser ("the browser renders cash, it never computes it"): `GET /api/ledger/position` now gives each currency's `avgCostHome` (hidden with the other cost figures from roles that cannot read earnings) and the whole branch's `unrealizedPnlHome`, and Cost & stock shows the ledger's market value (at the rates the shop last published) instead of multiplying in the browser; reads that may fail now say what failed (§5); the casts and non-null assertions in the new server code say why they are safe (§2.3). Known and left for the team: #654 is far over the 400-line PR rule and several Rates PRs reached main with Sol's OK before the CTO's review (standard §8).
@@ -806,6 +807,21 @@ deliberately retained until external hot-linking can be ruled out.
 
 1. **Resend API key rotation** (issue #32) — the key passed through chat;
    rotation cannot be verified from the repo. Open until confirmed rotated.
+2. **Canadian compliance valuation** (issue #631) — still present at
+   `cab672f`: exchange posting values incoming foreign cash using the frozen
+   board mid (`server/src/ledger/service.ts`, `inputHome`) and uses that value
+   for identification and `cash_in_home`. The Canadian screen still falls
+   back to a one-for-one rate when its cross is missing
+   (`os-src/cdos-txmodal.jsx`, `cashInHome`). The issue tracks the required
+   Bank of Canada valuation separately from the shop's deal price. A green
+   operating-day test does not resolve that tracked launch blocker.
+3. **Embedded database differs from Postgres** (issue #404) — PGlite still
+   runs the boot DDL and selected migrations rather than the complete list.
+   The default server test command fails account switching because
+   `ledger_till_sessions` is absent; the same switch tests pass with a
+   disposable `TEST_DATABASE_URL`. Two sweep suites also require that URL
+   even in the default run. Embedded-only results are not proof of the
+   production schema or financial paths.
 
 Issue **#34** (multi-till/workspace resolution) is closed in code: an
 unscoped ledger, quote or client-records call uses the workspace stamped
@@ -827,16 +843,26 @@ Public `GET /api/health` is process-up only. It returns `{ ok: true, service: "c
 
 ## Next engineering priorities (ordered)
 
-1. client shows Set your till PIN in Settings when pinsIgnored > 0
-2. The Shop-Ready Core walkthrough — prove the milestone loop end to end.
+1. The Shop-Ready Core walkthrough — prove the milestone loop end to end
+   **on a newly provisioned shop**, carrying the onboarding session through
+   rates, opening cash, trading, KYC/compliance and reconciliation to close.
+   Keep the existing demo-shift gate and compare the new shop's closing
+   balance with an independent tally of its opening cash and movements.
    The operator file folder is no longer the gap in that loop: opening a
    client shows the papers filed for them, searchable, from the database,
    and where they stand (`unverified` / `identified` / `expired` /
    `verified`). The identification and large-cash lines stay the pack's.
    The platform desk tile counts those customers and that standing from
    `desk_clients`, not from the browser blob.
+2. Resolve the tracked Canadian valuation gap (#631) before treating that
+   walkthrough as evidence for a real Canadian shop opening.
 
 ## Last reviewed
+
+**2026-11-13**, shop-ready review from `cab672f`: first ignored-PIN feedback
+implemented locally; 17 core/customer-journey seams and 7 PIN/settings seams
+pass on disposable Postgres. Default server failures and the Canadian
+valuation gap are recorded above; this is not a deployment sign-off.
 
 **2026-11-06**, the Vault flags Low stock only below a floor the owner set (CD-133).
 
