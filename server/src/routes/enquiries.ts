@@ -256,7 +256,11 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
         inviteCode,
         placeInLine,
       }).returning();
-      if (kind !== "contact") {
+      /* The contact consent is what the growth caller dials on
+         (growth/calls.ts). A v2.1 applicant who chose "No call, thanks",
+         and every waitlisted one (the page offers them no call), gets
+         none: no consent on record, no call. */
+      if (kind !== "contact" && (!v21 || (v21.samConsent && !waitlistReason))) {
         await tx.insert(schema.enquiryContactConsents).values({
           id: randomUUID(),
           enquiryId,

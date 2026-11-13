@@ -21,6 +21,7 @@ import { randomCharacters, type RandomBytes, secureBytes } from "./cd-id.js";
 export const V21_FORM = "early-access-v2.1";
 
 const text = (max: number) => z.string().trim().max(max);
+const digits = (s: string) => s.replace(/\D/g, "");
 const optionalText = (max: number) => text(max).nullable().optional();
 
 export const v21Details = z
@@ -62,6 +63,15 @@ export const v21Details = z
   })
   .refine((d) => d.jurisdiction !== "outside-canada" || !!d.country, {
     message: "A shop outside Canada needs its country",
+  })
+  /* The call choice and the consent are one answer, the box on step 4:
+     "call now" carries the consent, "no call" carries none. The page
+     sends exactly that; anything else is not an answer it can give. */
+  .refine((d) => (d.bestTime === "call now") === !!d.samConsent, {
+    message: "The call choice and the call consent must agree",
+  })
+  .refine((d) => !d.samConsent || digits(d.samConsent.phone) === digits(d.phone), {
+    message: "The call consent must be for the number given",
   });
 export type V21Details = z.infer<typeof v21Details>;
 
