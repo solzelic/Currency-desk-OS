@@ -95,9 +95,12 @@ describe("fresh shop button", () => {
     expect(api.freshShopMessage(503)).toBe("Something went wrong. Try again.");
   });
 
-  it("opens the existing onboarding page and not a one-time card", () => {
-    expect(api.freshShopEntry({ ok: true, reference: "cd-ab23cd", email: "owner+ab12@staging.invalid" })).toBe("/onboarding/CD-AB23CD");
-    expect(api.freshShopEntry({ reference: "CD-WALKTHRU" })).toBe("/onboarding/CD-WALKTHRU");
+  it("opens the Early Access v2.1 page with the staging ticket, and not a one-time card", () => {
+    const start = "/early-access?door=" + "ab".repeat(16) + "&email=owner%2Bab12%40staging.invalid";
+    expect(api.freshShopEntry({ ok: true, start, email: "owner+ab12@staging.invalid" })).toBe(start);
+    expect(api.freshShopEntry({ start: "https://evil.example/early-access?door=" + "ab".repeat(16) })).toBeNull();
+    expect(api.freshShopEntry({ start: "/early-access?door=nothex&email=x" })).toBeNull();
+    expect(api.freshShopEntry({ reference: "CD-WALKTHRU" })).toBeNull();
     expect(api.freshShopEntry({ email: "owner+ab12@staging.invalid", password: "temp-pass-word", code: "654321" })).toBeNull();
     expect(api.freshShopEntry(null)).toBeNull();
     const page = readFileSync(join(root, "os-src/cdos-signin.jsx"), "utf8");
@@ -108,7 +111,7 @@ describe("fresh shop button", () => {
     expect(page).not.toContain("leaveFreshCard");
     expect(page).not.toContain("data-fresh-card");
     const helper = readFileSync(join(root, "os-src/staging-fresh-shop.js"), "utf8");
-    expect(helper).toContain('"/onboarding/"');
+    expect(helper).toContain("/early-access");
     expect(helper).not.toMatch(/localStorage|sessionStorage|location\.|console\./);
     expect(writes.join("\n")).toBe("");
     expect(locationStub.href).not.toContain("password");
