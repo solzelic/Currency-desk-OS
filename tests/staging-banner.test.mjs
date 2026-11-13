@@ -75,3 +75,57 @@ test("storage that throws shows the bar, and hiding does not throw", () => {
   assert.equal(hiddenNow(null, T), false);
   assert.doesNotThrow(() => hide(null, T));
 });
+
+test("invalid stored timestamps cannot hide the bar near the start of the clock", () => {
+  const { isHidden } = bar();
+  for (const stored of ["-5", -5, "1.5", 1.5, "9".repeat(400), { t: 1 }, "0", 0]) {
+    assert.equal(isHidden(stored, 2), false, JSON.stringify(stored));
+  }
+});
+
+test("unsafe integers are not exact stored timestamps", () => {
+  const { isHidden } = bar();
+  const unsafe = Number.MAX_SAFE_INTEGER + 1;
+  assert.equal(isHidden(unsafe, unsafe), false);
+  assert.equal(isHidden(String(unsafe), unsafe), false);
+});
+
+test("a missing, coerced or fractional current clock shows the bar", () => {
+  const { isHidden } = bar();
+  for (const now of [undefined, null, true, "2", [2], { t: 2 }, NaN, Infinity, -1, 0, 1.5]) {
+    assert.equal(isHidden(1, now), false, String(now));
+  }
+});
+
+test("small positive and safe-boundary integers retain the exact interval", () => {
+  const { isHidden, HIDE_MS } = bar();
+  for (const at of [1, T, Number.MAX_SAFE_INTEGER - HIDE_MS]) {
+    for (const stored of [at, String(at)]) {
+      assert.equal(isHidden(stored, at), true);
+      assert.equal(isHidden(stored, at + HIDE_MS - 1), true);
+      assert.equal(isHidden(stored, at + HIDE_MS), false);
+    }
+  }
+});
+
+test("invalid storage values are visible without changing the saved value", () => {
+  const { hiddenNow, KEY } = bar();
+  const store = memory();
+  for (const stored of ["-5", "1.5", "9".repeat(400), '{"t":1}', "0"]) {
+    store.setItem(KEY, stored);
+    assert.equal(hiddenNow(store, 2), false, stored);
+    assert.equal(store.getItem(KEY), stored);
+  }
+});
+
+test("hide does not persist an invalid clock, and valid hiding still works", () => {
+  const { hide, hiddenNow, KEY } = bar();
+  const store = memory();
+  for (const now of [undefined, null, true, "2", -5, 0, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    hide(store, now);
+    assert.equal(store.getItem(KEY), null, String(now));
+  }
+  hide(store, T);
+  assert.equal(store.getItem(KEY), String(T));
+  assert.equal(hiddenNow(store, T), true);
+});
