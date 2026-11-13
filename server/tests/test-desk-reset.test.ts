@@ -18,10 +18,10 @@ function fakePool(): pg.Pool {
   } as unknown as pg.Pool;
 }
 
-async function status(env: NodeJS.ProcessEnv, databaseUrl: string): Promise<number> {
+async function status(env: NodeJS.ProcessEnv, databaseUrl: string, url = "/api/test/reset-desk"): Promise<number> {
   const app: FastifyInstance = Fastify({ logger: false });
   registerTestDeskReset(app, fakePool(), databaseUrl, env);
-  const response = await app.inject({ method: "POST", url: "/api/test/reset-desk" });
+  const response = await app.inject({ method: "POST", url });
   await app.close();
   return response.statusCode;
 }
@@ -78,6 +78,23 @@ describe("the reset route registers only for a local test", () => {
   });
 });
 
+describe("signup isolation uses the same local-only gate", () => {
+  it.each([
+    [{ NODE_ENV: "production", CD_TEST_RESET: "1" }, local],
+    [{ NODE_ENV: "staging", CD_TEST_RESET: "1" }, local],
+    [{ NODE_ENV: "test" }, local],
+    [allowed, "postgres://user:fake@dpg-abc.example.com:5432/db"],
+    [allowed, "postgres://user:fake@127.0.0.1:5432/db?host=dpg-abc.example.com"],
+    [{ ...allowed, PGHOST: "dpg-abc.example.com" }, "postgres://user:fake@/db"],
+  ])("does not register for %j and %s", async (env, databaseUrl) => {
+    expect(await status(env, databaseUrl, "/api/test/reset-signup")).toBe(404);
+  });
+
+  it("clears history without accessing the ledger pool", async () => {
+    expect(await status(allowed, local, "/api/test/reset-signup")).toBe(200);
+  });
+});
+
 describe("the production bundle does not contain the reset", () => {
   it("bundles src/index.ts without registerTestDeskReset", async () => {
     const result = await build({
@@ -93,5 +110,6 @@ describe("the production bundle does not contain the reset", () => {
     const output = result.outputFiles.map((file) => file.text).join("\n");
     expect(output.includes("registerTestDeskReset"), "bundle names registerTestDeskReset").toBe(false);
     expect(output.includes("test-desk-reset"), "bundle names test-desk-reset").toBe(false);
+    expect(output.includes("/api/test/reset-signup"), "bundle contains the signup reset route").toBe(false);
   });
 });

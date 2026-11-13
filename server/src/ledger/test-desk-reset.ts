@@ -8,6 +8,7 @@
 import { createRequire } from "node:module";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+import { resetSignupThrottle } from "../routes/signup.js";
 
 const require = createRequire(import.meta.url);
 const parseConnectionString = require("pg-connection-string") as (
@@ -103,6 +104,13 @@ export function registerTestDeskReset(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (!testDeskResetEnabled(env, databaseUrl)) return;
+  /* A test keeps the real signup budget, but not another test's history.
+     This uses the same local-only gate and is absent from the production
+     entry point. It changes no desk, session or financial record. */
+  app.post("/api/test/reset-signup", async () => {
+    resetSignupThrottle();
+    return { ok: true };
+  });
   app.post("/api/test/reset-desk", async (_req, reply) => {
     const client = await pool.connect();
     try {
