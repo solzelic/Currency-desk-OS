@@ -88,6 +88,15 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   the timer waits the full 60 minutes. A snapshot that is already part
   way through that hour waits only the remainder. The timer does not
   query every 15 minutes. `RATES_SYNC=off` does not start it.
+  Both sync entry points hold the database-wide transaction advisory lock
+  `(1128550996, 1)` (CDRT, 1) across freshness, fetch and publication. All
+  work uses that transaction's connection, including with single-slot pools;
+  commit/rollback releases the lock. A busy contender skips and retries in
+  ten minutes. Primary failures roll back the cycle; follower failures roll
+  back to a savepoint and are reported individually. Timestamps use
+  `clock_timestamp()` so provider latency does not consume snapshot/board
+  lifetime. The embedded PGlite path uses the same lock and transaction SQL.
+  This does not serialize manual staff publication with market sync.
 - Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
   it once. Saving or clearing a domain, and deleting a desk that had one,
   reload it on this process. That instant reload assumes one server

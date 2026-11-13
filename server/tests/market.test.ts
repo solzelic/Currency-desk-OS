@@ -1,5 +1,5 @@
 /* Market-rate sync tests — injected fetcher, no network. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
@@ -70,6 +70,29 @@ describe("market rates", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("provider exploded");
+  });
+
+  it("can sync again after a failed embedded cycle without leaving a snapshot", async () => {
+    const before = (await handle.db.select().from(schema.marketRates)).length;
+    const failed = await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, async () => {
+      throw new Error("synthetic failure");
+    });
+    expect(failed).toMatchObject({ ok: false, skipped: false });
+    expect(await handle.db.select().from(schema.marketRates)).toHaveLength(before);
+    expect(await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, async () => ({
+      provider: "recovery", providerTimestamp: null, mids: { USD: 1.4 },
+    }))).toMatchObject({ ok: true, skipped: false });
+    expect(await handle.db.select().from(schema.marketRates)).toHaveLength(before + 1);
+  });
+
+  it("reports a connection acquisition failure without fetching or throwing", async () => {
+    const unavailable = vi.spyOn(handle.db, "transaction").mockRejectedValueOnce(new Error("connection unavailable"));
+    const fetcher = vi.fn();
+    try {
+      expect(await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, fetcher))
+        .toMatchObject({ ok: false, skipped: false, detail: "connection unavailable" });
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { unavailable.mockRestore(); }
   });
 
   it("gates on snapshot age: repeated boots within the gap don't re-pull", async () => {

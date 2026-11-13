@@ -41,8 +41,8 @@ export function startRatesSync(
       const result = await sync(db, branchId, gate, fetcher);
       if (stopped) return;
       console.log(`[rates-sync] ${result.skipped ? "skip" : result.ok ? "ok" : "FAILED"} - ${result.detail}`);
-      if (result.skipped) delay = nextRatesSyncDelayMs(result.ageMs, gap);
-      else if (!result.ok) delay = RATES_SYNC_FAILURE_RETRY_MS;
+      if (!result.ok) delay = RATES_SYNC_FAILURE_RETRY_MS;
+      else if (result.skipped) delay = nextRatesSyncDelayMs(result.ageMs, gap);
       else delay = nextRatesSyncDelayMs(0, gap);
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";

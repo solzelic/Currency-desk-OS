@@ -130,7 +130,13 @@ describe("quote staleness stays inside 70 minutes", () => {
 });
 
 function chain(limit: () => Promise<unknown>) {
-  return { select: () => ({ from: () => ({ orderBy: () => ({ limit }) }) }) };
+  return {
+    select: () => ({ from: () => ({ orderBy: () => ({ limit }) }) }),
+    execute: async () => ({ rows: [{ acquired: true }] }),
+    // This scheduler fake models a successful lock and keeps the existing
+    // read/write assertions; real connection/lock behavior has a Postgres test.
+    async transaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T> { return callback(this); },
+  };
 }
 
 describe("rates sync timer", () => {
@@ -224,6 +230,19 @@ describe("rates sync timer", () => {
     expect(writes).toBe(1);
     await vi.advanceTimersByTimeAsync(1000);
     expect(writes).toBe(1);
+  });
+
+  it("retries a busy sync inside headroom rather than treating it as fresh", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const sync = vi.fn(async () => ({ ok: false, skipped: true, detail: "sync already in progress", ageMs: Infinity }));
+    // The injected sync owns all DB behavior in this scheduler-only test.
+    stops.push(startRatesSync({} as Db, "br-yorkville", HOUR, undefined, sync));
+    await boot();
+    await vi.advanceTimersByTimeAsync(RATES_SYNC_FAILURE_RETRY_MS - 1);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sync).toHaveBeenCalledTimes(2);
   });
 
   it("after a successful pull, waits out the new gap instead of the old age", async () => {
