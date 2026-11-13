@@ -36,14 +36,28 @@ const recent = new Map<string, number[]>();
 const TICKET_TTL_MS = 2 * 60 * 60 * 1000;
 const tickets = new Map<string, { email: string; slug: string; expires: number }>();
 
-/** The staging identity behind a ticket, once: the door must be open, the
-    ticket real and unexpired. Anything else is null. */
-export function takeStagingTicket(ticket: string, headers: StagingDoorHeaders): { email: string; slug: string } | null {
+type Held = { email: string; slug: string; expires: number };
+
+/** The staging identity behind a ticket, without using it: the door must be
+    open, the ticket real and unexpired. Anything else is null. */
+export function peekStagingTicket(ticket: string, headers: StagingDoorHeaders): Held | null {
   if (!stagingDoorOpen(headers)) return null;
   const held = tickets.get(ticket);
-  if (!held) return null;
+  return held && held.expires > Date.now() ? { ...held } : null;
+}
+
+/** The same, and the ticket is used: only once, by whoever takes it first.
+    Taken at the last step before an application is saved, so a refusal
+    before then (a throttle, a bad answer) leaves it for the next press. */
+export function takeStagingTicket(ticket: string, headers: StagingDoorHeaders): Held | null {
+  const held = peekStagingTicket(ticket, headers);
   tickets.delete(ticket);
-  return held.expires > Date.now() ? { email: held.email, slug: held.slug } : null;
+  return held;
+}
+
+/** Put back a ticket whose application then failed to save. */
+export function restoreStagingTicket(ticket: string, held: Held): void {
+  if (held.expires > Date.now()) tickets.set(ticket, held);
 }
 
 export function resetFreshShopThrottle(): void {

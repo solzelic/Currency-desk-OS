@@ -37,7 +37,7 @@ import { normalizeMsb } from "../enquiries/msb.js";
 import { answersOf, issueInviteCode, nextPlaceInLine, V21_FORM, v21Details, waitlistFor, type WaitlistReason } from "../enquiries/v21.js";
 import { moveTo, waitlistMail, type Stage } from "../onboarding/pipeline.js";
 import { forgetClaimedCount, STAGING_DOOR_REASON } from "./early-access.js";
-import { takeStagingTicket } from "./staging-fresh-shop.js";
+import { peekStagingTicket, restoreStagingTicket, STAGING_OWNER_DOMAIN, takeStagingTicket } from "./staging-fresh-shop.js";
 import type { StagingDoorHeaders } from "../auth/staging-runtime.js";
 
 /* Free-text the sender controls. Kept as a blob because the two forms ask
@@ -186,9 +186,14 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
        launch. A ticket that is not one is refused, never quietly taken as
        a real shop's application. */
     let staging: { email: string; slug: string } | null = null;
+    const expired = () => reply.code(400).send({ error: "staging_ticket", detail: "This staging start has been used or has expired. Start a fresh shop again." });
     if (parsed.data.stagingDoor !== undefined) {
-      staging = isV21 ? takeStagingTicket(parsed.data.stagingDoor, req.headers as StagingDoorHeaders) : null;
-      if (!staging) return reply.code(400).send({ error: "staging_ticket", detail: "This staging start has expired. Start a fresh shop again." });
+      staging = isV21 ? peekStagingTicket(parsed.data.stagingDoor, req.headers as StagingDoorHeaders) : null;
+      if (!staging) return expired();
+    } else if (parsed.data.email.endsWith(STAGING_OWNER_DOMAIN)) {
+      /* A staging address applies only through the staging door, with its
+         ticket. Without one it is refused, never taken as a real shop. */
+      return expired();
     }
     const email = staging ? staging.email : parsed.data.email;
 
@@ -269,6 +274,12 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     // the site's "N of 100 claimed" counts this row — show it straight away
     forgetClaimedCount();
     const enquiryId = randomUUID();
+    /* The ticket is used here, at the last step before saving, and put back
+       if the save fails: two presses at once cannot both use it, and a
+       refusal earlier on (a throttle) has not spent it. */
+    const door = parsed.data.stagingDoor;
+    const spent = staging && door ? takeStagingTicket(door, req.headers as StagingDoorHeaders) : null;
+    if (staging && !spent) return expired();
     const [row] = await db.transaction(async (tx) => {
       const inserted = await tx.insert(schema.enquiries).values({
         id: enquiryId,
@@ -329,6 +340,9 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
         ]);
       }
       return inserted;
+    }).catch((err: unknown) => {
+      if (spent && door) restoreStagingTicket(door, spent);
+      throw err;
     });
 
     /* An application goes straight into review, and the applicant is told so

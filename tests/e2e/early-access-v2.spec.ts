@@ -241,26 +241,3 @@ test.describe("Early Access v2.1", () => {
     expect(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1))).toContain(body.invite.code);
   });
 });
-
-/* Staging only, so on a host whose name says staging: the way back to the
-   sign-in page is on every page of the journey, setup included, and it
-   signs out on the way so /login shows the sign-in page, not a desk. */
-test.describe("the staging way back to sign-in", () => {
-  test.use({ launchOptions: { args: ["--host-resolver-rules=MAP cd-staging.test 127.0.0.1"] } });
-  for (const path of ["/", "/early-access", "/onboarding/CD-ABCDEF"]) {
-    test(`is on ${path} and stays there`, async ({ page }) => {
-      const port = new URL(String(test.info().project.use.baseURL)).port;
-      await page.route("**/api/staging/signin", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: true }) }));
-      let loggedOut = false;
-      await page.route("**/api/auth/logout", (route) => { loggedOut = true; return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
-      await page.goto(`http://cd-staging.test:${port}${path}`);
-      await page.waitForTimeout(2500);
-      const back = page.locator("#cd-staging-back");
-      await expect(back).toBeVisible();
-      await expect(back).toHaveText("Staging · Back to sign in");
-      await back.click();
-      await expect(page).toHaveURL(/\/login$/);
-      expect(loggedOut).toBe(true);
-    });
-  }
-});

@@ -931,6 +931,12 @@ class Component extends DCLogic {
   }
 
   next = () => {
+    /* after a refused staging ticket the last step goes nowhere: back to sign in instead */
+    if (this.state.step === 3 && this._doorSpent) {
+      this._tone('nope');
+      this.flashToast('This staging start has been used or has expired. Go back to sign in and start a fresh shop again.');
+      return;
+    }
     if (this.state.step < 4 && !this.canNext()) {
       if (this.state.step === 1 && !this.state.wsChecking) { const slug = this._wsSlug(), r = this._wsFor(slug); if (this._wsShaped(slug) && (!r || r.available === null)) this._wsCheck(); }
       this._tone('nope');
@@ -1020,8 +1026,7 @@ class Component extends DCLogic {
         setTimeout(() => { try { el.focus(); } catch (e) {} }, 60);
       }
       if (this.state.step === 4) {
-        this._submit();
-        this._startDone();
+        if (this._submit() !== false) this._startDone();
       }
     }
   }
@@ -1031,6 +1036,8 @@ class Component extends DCLogic {
      with a line saying so, rather than showing a number nobody issued. Nothing is kept in the
      browser beyond this page. */
   _submit() {
+    /* A refused staging ticket stops here: the next press must not go out as a real shop. */
+    if (this._doorSpent) { this._submitFailed(400, true, true); return false; }
     const s = this.state;
     const open = s.openMode == null ? this.OPEN_SIGNUP : s.openMode;
     const call = this.SAM_CALL && !this._filtered() && !s.noCall;
@@ -1058,7 +1065,14 @@ class Component extends DCLogic {
       .then(({ status, body }) => {
         if (seq !== this._submitSeq) return;
         /* a used or expired staging ticket: forget it, and say how to start again */
-        if (status === 400 && body && body.error === 'staging_ticket') { this._forgetDoor(); this._settle({ ok: false, status, stagingExpired: true }); return; }
+        if (status === 400 && body && body.error === 'staging_ticket') {
+          this._forgetDoor();
+          /* no further press goes out, and the staging address leaves the form */
+          this._doorSpent = true;
+          if (/@staging\.invalid$/.test(this.state.email)) this.setState({ email: '' });
+          this._settle({ ok: false, status, stagingExpired: true });
+          return;
+        }
         if (status !== 201 || !body || !body.reference) { this._settle({ ok: false, status }); return; }
         if (this._door) this._forgetDoor(); /* the ticket opens one application */
         /* the ID as the server issued it, or none: CD, 4 letters, 4 characters with no 0, O, 1, I or L */
@@ -1073,7 +1087,13 @@ class Component extends DCLogic {
       })
       .catch(() => { if (seq === this._submitSeq) this._settle({ ok: false, status: 0 }); });
   }
-  _forgetDoor() { this._door = null; try { sessionStorage.removeItem('cdStagingDoor'); } catch (x) {} }
+  /* The ticket is done with: used, or refused. Remembered as spent in this tab, so neither the
+     address nor Back can bring it round again. */
+  _forgetDoor() {
+    const door = this._door;
+    this._door = null;
+    try { sessionStorage.removeItem('cdStagingDoor'); if (door) sessionStorage.setItem('cdStagingDoorSpent', door); } catch (x) {}
+  }
   _settle(result) {
     this._issued = result;
     this.setState({ issued: result.ok ? result : null });
@@ -1086,8 +1106,8 @@ class Component extends DCLogic {
     if (this._issued && this._issued.ok) fn();
     else if (!this._issued) this._replyWait = fn;
   }
-  _submitFailed(status, stagingExpired) {
-    if (this.state.step !== 4) return;
+  _submitFailed(status, stagingExpired, blocked) {
+    if (this.state.step !== 4 && !blocked) return;
     (this._doneT || []).forEach(clearTimeout); clearInterval(this._spinI); clearInterval(this._spinTick); clearInterval(this._mc);
     if (this._tok) { cancelAnimationFrame(this._tok.raf); this._tok = null; }
     if (this._pass) { cancelAnimationFrame(this._pass.raf); this._pass = null; }
@@ -1380,19 +1400,28 @@ class Component extends DCLogic {
     /* The tab keeps the staging start (sessionStorage "cdStagingDoor": the ticket and the
        staging address, nothing about a person), so going back and forth on the site does not
        turn a staging test into a real application. Cleared once the ticket is used. */
+    /* Only on a staging host (or this machine): live never reads, keeps or sends a ticket. The
+       address bar lets it go once the tab has it, so Back cannot bring a used one round again,
+       and a ticket already used in this tab ("cdStagingDoorSpent") is ignored. */
     try {
-      const q = new URLSearchParams(window.location.search);
-      let door = q.get('door') || '', em = q.get('email') || '';
-      if (!/^[0-9a-f]{32}$/.test(door)) {
-        let held = {};
-        try { held = JSON.parse(sessionStorage.getItem('cdStagingDoor') || 'null') || {}; } catch (x) {}
-        door = String(held.door || ''); em = String(held.email || '');
-      }
-      if (/^[0-9a-f]{32}$/.test(door)) {
-        this._door = door;
-        if (!/^owner\+[0-9a-f]+@staging\.invalid$/.test(em)) em = '';
-        try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door, email: em })); } catch (x) {}
-        if (em) this.setState({ email: em });
+      const host = window.location.hostname;
+      if (/staging/i.test(host) || /^(localhost|127\.0\.0\.1)$/.test(host)) {
+        const get = (k) => { try { return sessionStorage.getItem(k); } catch (x) { return null; } };
+        const q = new URLSearchParams(window.location.search);
+        let door = q.get('door') || '', em = q.get('email') || '', fromUrl = /^[0-9a-f]{32}$/.test(door);
+        if (!fromUrl || door === get('cdStagingDoorSpent')) {
+          let held = {};
+          try { held = JSON.parse(get('cdStagingDoor') || 'null') || {}; } catch (x) {}
+          door = String(held.door || ''); em = String(held.email || ''); fromUrl = false;
+        }
+        if (/^[0-9a-f]{32}$/.test(door) && door !== get('cdStagingDoorSpent')) {
+          this._door = door;
+          if (!/^owner\+[0-9a-f]+@staging\.invalid$/.test(em)) em = '';
+          let kept = false;
+          try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door, email: em })); kept = true; } catch (x) {}
+          if (kept && fromUrl) { try { history.replaceState(history.state, '', window.location.pathname + window.location.hash); } catch (x) {} }
+          if (em) this.setState({ email: em });
+        }
       }
     } catch (e) {}
     /* the two switches, from the server */

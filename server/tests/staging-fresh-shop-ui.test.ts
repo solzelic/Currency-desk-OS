@@ -116,10 +116,10 @@ describe("fresh shop button", () => {
     /* the website carries the ticket into the application */
     for (const site of ["web/index.html", "web/mobile.html"]) {
       const html = readFileSync(join(root, site), "utf8");
-      expect(html, site).toContain("location.assign('/early-access?' + keep)");
+      expect(html, site).toContain("location.assign('/early-access' + carried)");
     }
     /* and the application pages do not carry the site's copy of it */
-    expect(readFileSync(join(root, "web/early-access.html"), "utf8")).not.toContain("location.assign('/early-access?' + keep)");
+    expect(readFileSync(join(root, "web/early-access.html"), "utf8")).not.toContain("location.assign('/early-access' + carried)");
     /* and the page it opens reads the ticket and applies with it */
     const early = readFileSync(join(root, "web/early-access-v2.html"), "utf8");
     expect(early).toContain("q.get('door')");

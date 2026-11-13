@@ -312,36 +312,42 @@ window.claimedCount.then(function (d) {
 
 /* Staging's "Start a fresh shop" opens the website with a one-time ticket
    (?door=<ticket>&email=<staging email>; routes/staging-fresh-shop.ts).
-   While it is in the address, the way into the application leads to the
-   Early Access v2.1 page with it, and links between the site's own pages
-   keep it. The tab keeps it too (sessionStorage, "cdStagingDoor": the
-   ticket and the staging address, nothing about a person), so going back
-   to the homepage does not drop a tester into a real application. Without
-   a well-formed ticket this does nothing at all, which is every visit on
-   live. Clicks are caught rather than links rewritten, because the
-   design's runtime re-renders the links. */
+
+   On a staging host (or this machine) the tab keeps it (sessionStorage
+   "cdStagingDoor": the ticket and the staging address, nothing about a
+   person) and the address bar lets it go, so Back cannot bring a used one
+   round again. The way into the application ("/signup", "/early-access")
+   then opens the Early Access v2.1 page, which reads the ticket from the
+   tab. A ticket already used in this tab ("cdStagingDoorSpent") is
+   ignored. If the tab cannot keep it, the address carries it instead.
+   Anywhere else, live included, this does nothing at all. Clicks are
+   caught rather than links rewritten, because the design's runtime
+   re-renders the links. */
 const STAGING_JOURNEY_HELPER = `<script>
 (function () {
-  var q, door = '', email = '';
+  if (!/staging/i.test(location.hostname) && !/^(localhost|127\\.0\\.0\\.1)$/.test(location.hostname)) return;
+  var DOOR = /^[0-9a-f]{32}$/, MAIL = /^owner\\+[0-9a-f]+@staging\\.invalid$/;
+  function get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  var q, door = '', email = '', kept = false;
   try { q = new URLSearchParams(location.search); door = q.get('door') || ''; email = q.get('email') || ''; } catch (e) {}
-  if (!/^[0-9a-f]{32}$/.test(door)) {
-    try { var held = JSON.parse(sessionStorage.getItem('cdStagingDoor') || 'null') || {}; door = String(held.door || ''); email = String(held.email || ''); } catch (e) { door = ''; }
-  }
-  if (!/^[0-9a-f]{32}$/.test(door)) return;
-  if (!/^owner\\+[0-9a-f]+@staging\\.invalid$/.test(email)) email = '';
-  try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door: door, email: email })); } catch (e) {}
-  var keep = 'door=' + door + (email ? '&email=' + encodeURIComponent(email) : '');
+  if (DOOR.test(door) && door !== get('cdStagingDoorSpent')) {
+    if (!MAIL.test(email)) email = '';
+    try { sessionStorage.setItem('cdStagingDoor', JSON.stringify({ door: door, email: email })); kept = true; } catch (e) {}
+    if (kept) { try { history.replaceState(history.state, '', location.pathname + location.hash); } catch (e) {} }
+  } else { door = ''; email = ''; }
+  var carried = kept ? '' : (door ? '?door=' + door + (email ? '&email=' + encodeURIComponent(email) : '') : '');
+  function held() { try { var h = JSON.parse(get('cdStagingDoor') || 'null'); return h && DOOR.test(String(h.door)) ? h : null; } catch (e) { return null; } }
   var APPLY = { '/signup': 1, '/early-access': 1 };
-  var SITE = { '/': 1, '/m': 1, '/d': 1, '/faq': 1, '/compliance': 1, '/contact': 1, '/legal': 1, '/add-ons': 1 };
   document.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!carried && !held()) return;
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!a) return;
     var u;
     try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
-    if (u.origin !== location.origin) return;
-    if (APPLY[u.pathname]) { e.preventDefault(); location.assign('/early-access?' + keep); return; }
-    if (SITE[u.pathname] && !u.search) { e.preventDefault(); location.assign(u.pathname + '?' + keep + u.hash); }
+    if (u.origin !== location.origin || !APPLY[u.pathname]) return;
+    e.preventDefault();
+    location.assign('/early-access' + carried);
   }, true);
 })();
 </script>
