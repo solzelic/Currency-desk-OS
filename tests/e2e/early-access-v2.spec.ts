@@ -94,14 +94,44 @@ test.describe("Early Access v2.1", () => {
   test("the website with a staging ticket leads into the application with it", async ({ page }) => {
     const door = "ab".repeat(16), email = "owner+ab12@staging.invalid";
     await page.goto(`/?door=${door}&email=${encodeURIComponent(email)}`);
+    /* the tab keeps the ticket and the address bar lets it go */
+    await expect(page).toHaveURL(/\/$/);
     await page.locator("a[data-nav-cta]").click();
-    await expect(page).toHaveURL(new RegExp(`/early-access\\?door=${door}&email=owner%2Bab12%40staging\\.invalid$`));
     await expect(page.getByPlaceholder("you@yourexchange.com")).toHaveValue(email);
+    await expect(page).toHaveURL(/\/early-access$/);
 
     /* going back to the homepage keeps the staging start, for this tab */
     await page.goto("/");
     await page.locator("a[data-nav-cta]").click();
-    await expect(page).toHaveURL(new RegExp(`/early-access\\?door=${door}`));
+    await expect(page.getByPlaceholder("you@yourexchange.com")).toHaveValue(email);
+  });
+
+  /* A refused ticket (used, expired, or lost in a restart) must never turn
+     the next press into a real shop's application. */
+  test("after a refused staging ticket, pressing again sends nothing", async ({ page }) => {
+    const door = "cd".repeat(16), email = "owner+cd34@staging.invalid";
+    const posts: string[] = [];
+    await page.route("**/api/enquiries", async (route) => {
+      posts.push(route.request().postData() ?? "");
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "staging_ticket" }) });
+    });
+    await page.goto(`/early-access?door=${door}&email=${encodeURIComponent(email)}`);
+    await expect(page.getByPlaceholder("you@yourexchange.com")).toHaveValue(email);
+    await page.getByPlaceholder("you@yourexchange.com").press("Enter");
+    await page.locator("#cd-shop").fill(`Refused Exchange ${unique()}`);
+    await expect(page.getByText(/is available/)).toBeVisible();
+    await page.getByRole("button", { name: /Reserve it/ }).click();
+    await aboutTheShop(page,
+      () => sec(page, 4).getByRole("button", { name: "ON", exact: true }).click(),
+      async () => { await opened(page, 5, "Your MSB registration"); await sec(page, 5).getByRole("button", { name: "Registered", exact: true }).click(); await sec(page, 5).getByRole("button", { name: /^Next/ }).click(); });
+    await whoRunsIt(page);
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
+    await expect(page.getByText(/This staging start has been used or has expired/)).toBeVisible({ timeout: 15_000 });
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(posts[0]!)).toMatchObject({ stagingDoor: door });
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
+    await page.waitForTimeout(1500);
+    expect(posts).toHaveLength(1);
   });
 
   test("every way into the application is v2.1, with no ticket at all", async ({ page }) => {
@@ -210,4 +240,27 @@ test.describe("Early Access v2.1", () => {
     await expect(page.getByRole("button", { name: /Link copied/ })).toBeVisible();
     expect(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1))).toContain(body.invite.code);
   });
+});
+
+/* Staging only, so on a host whose name says staging: the way back to the
+   sign-in page is on every page of the journey, setup included, and it
+   signs out on the way so /login shows the sign-in page, not a desk. */
+test.describe("the staging way back to sign-in", () => {
+  test.use({ launchOptions: { args: ["--host-resolver-rules=MAP cd-staging.test 127.0.0.1"] } });
+  for (const path of ["/", "/early-access", "/onboarding/CD-ABCDEF"]) {
+    test(`is on ${path} and stays there`, async ({ page }) => {
+      const port = new URL(String(test.info().project.use.baseURL)).port;
+      await page.route("**/api/staging/signin", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: true }) }));
+      let loggedOut = false;
+      await page.route("**/api/auth/logout", (route) => { loggedOut = true; return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+      await page.goto(`http://cd-staging.test:${port}${path}`);
+      await page.waitForTimeout(2500);
+      const back = page.locator("#cd-staging-back");
+      await expect(back).toBeVisible();
+      await expect(back).toHaveText("Staging · Back to sign in");
+      await back.click();
+      await expect(page).toHaveURL(/\/login$/);
+      expect(loggedOut).toBe(true);
+    });
+  }
 });
