@@ -269,24 +269,46 @@ test.describe("Early Access v2.1", () => {
     /* It is theirs to keep and quote. It is not a sign-in yet, so the hint does not say it is. */
     await expect(page.getByText("It stays yours. Quote it whenever you write to us.")).toBeVisible();
     await expect(page.getByText(/sign in from now on/)).toHaveCount(0);
-    /* Their own ID typed the way it is read out (no second hyphen), or pasted with a typographic
-       dash, is still theirs, and is still never looked up. */
+    /* Their own ID typed the way it is read out (no second hyphen), key by key as a person types
+       or pasted, or pasted with a typographic dash, is still theirs, and is never looked up. */
     const own: string[] = [];
     page.on("request", (r) => { if (r.url().includes("/api/onboarding/") && !r.url().includes(body.reference)) own.push(r.url()); });
-    await idField.fill(body.cdId.replace(/-/g, "").toLowerCase());
+    const compact = body.cdId.replace(/-/g, "").toLowerCase();
+    await idField.fill("");
+    await idField.pressSequentially(compact);
     await expect(idField).toHaveValue(body.cdId);
     await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
+    await idField.fill(compact);
+    await expect(idField).toHaveValue(body.cdId);
     await idField.fill(body.cdId.replace(/-/g, "\u2013"));
     await expect(idField).toHaveValue(body.cdId);
+    /* a stranger's ID pasted with typographic dashes is an ID too, so it is not looked up either */
+    await idField.fill("CD\u2013ABCD\u20132345");
+    await expect(idField).toHaveValue("CD-ABCD-2345");
     await page.waitForTimeout(800);
     expect(own).toHaveLength(0);
-    /* A six-character code typed with a space after four letters is still a code, and the
-       walkthrough's code is still a code. */
-    expect(await page.evaluate(() => {
-      const b = (window as unknown as { __cdOnb: { known: Record<string, boolean>; fmtRef(v: string): string; refState(v: string): string } }).__cdOnb;
-      b.known["CD-ZAQRBJ"] = true;
-      return [b.refState(b.fmtRef("CD ZAQR BJ")), b.fmtRef("cd-walkthru"), b.refState(b.fmtRef("CD-ABCD-2345"))];
-    })).toEqual(["ok", "CD-WALKTHRU", "link"]);
+    /* Part of their own ID, while they correct it, is not sent anywhere. */
+    const partial = await page.evaluate(async () => {
+      const b = (window as unknown as { __cdOnb: { known: Record<string, boolean>; refState(v: string): string; checkRef(v: string, done: () => void): void } }).__cdOnb;
+      b.known["CD-HARB-7K42"] = true;
+      const states = ["CD-HARB-7K4", "CD-HARB-7K"].map((v) => b.refState(v));
+      b.checkRef("CD-HARB-7K", () => {});
+      await new Promise((r) => setTimeout(r, 700));
+      return states;
+    });
+    expect(partial).not.toContain("no");
+    expect(own.filter((u) => u.includes("CD-HARB"))).toHaveLength(0);
+    /* A six-character code typed with a space after four letters is looked up as that code. */
+    const zaqr: string[] = [];
+    await page.route("**/api/onboarding/CD-ZAQRBJ/state", (r) => { zaqr.push(r.request().url()); return r.fulfill({ status: 404, contentType: "application/json", body: "{}" }); });
+    await idField.fill("CD ZAQR BJ");
+    await expect.poll(() => zaqr.length).toBe(1);
+    await expect(page.getByText("Not recognised", { exact: true })).toBeVisible();
+    /* The walkthrough's code, typed key by key, is still that code (answered here, so the page stays). */
+    await page.route("**/api/onboarding/CD-WALK*/state", (r) => r.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+    await idField.fill("");
+    await idField.pressSequentially("cd-walkthru");
+    await expect(idField).toHaveValue("CD-WALKTHRU");
   });
 
   test("a Canadian shop not yet registered is told its address is held", async ({ page }) => {
@@ -317,6 +339,8 @@ test.describe("Early Access v2.1", () => {
         await page.getByPlaceholder("Type a country").fill("United States");
         await page.getByPlaceholder("Type a country").press("Enter");
         await expect(page.getByPlaceholder("Type a state")).toBeVisible();
+        /* the state search takes focus by itself on a short timer; let it land first */
+        await expect(page.getByPlaceholder("Type a state")).toBeFocused();
         await page.evaluate(() => {
           const w = window as unknown as { __focused: string[] };
           w.__focused = [];
