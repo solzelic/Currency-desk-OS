@@ -168,6 +168,18 @@ test.describe("Early Access v2.1", () => {
 
     await expect(page.getByText("You're in.")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(body.cdId).first()).toBeVisible();
+
+    /* The ticket shows the face towards you, with the ID, and hides its back. Safari drew the
+       back over the front, mirrored, because it does not always honour backface-visibility; the
+       page now hides the face turned away itself, in every engine. */
+    const faces = await page.evaluate(() => {
+      const label = [...document.querySelectorAll("span")].find((x) => x.textContent === "YOUR CURRENCYDESK ID" && x.closest("[style*='preserve-3d']"));
+      const token = label && (label.closest("[style*='preserve-3d']") as HTMLElement);
+      if (!token) return null;
+      const [front, back] = [...token.children].map((c) => getComputedStyle(c).visibility);
+      return { front, back };
+    });
+    expect(faces).toEqual({ front: "visible", back: "hidden" });
     const open = page.getByRole("link", { name: /Start building your desk/ });
     await expect(open).toHaveAttribute("href", `/onboarding/${body.reference}`);
 
