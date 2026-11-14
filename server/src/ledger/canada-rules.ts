@@ -29,6 +29,7 @@
 import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import type pg from "pg";
+import { LedgerError } from "./service.js";
 import { idKindForDeal } from "./compliance-gate.js";
 import type { JurisdictionPack } from "./jurisdiction.js";
 
@@ -111,7 +112,7 @@ type IdRow = {
 export const NOT_A_DEAL_SQL = "'cheque_clearing','cheque_return'";
 
 const AXES = ["conductor", "on_behalf_of", "beneficiary"] as const;
-type Axis = (typeof AXES)[number];
+export type Axis = (typeof AXES)[number];
 
 function positive(value: unknown): Decimal | null {
   if (value == null || value === "") return null;
@@ -200,7 +201,7 @@ function effectiveLine(
   return { amount, comparator: packRow.comparator };
 }
 
-async function deskMoney(
+export async function deskMoney(
   client: pg.PoolClient,
   legalEntityId: string,
   column: "id_threshold" | "report_threshold",
@@ -218,7 +219,7 @@ type LargeCashRule = {
   axes: Axis[];
 };
 
-async function largeCashRule(
+export async function largeCashRule(
   client: pg.PoolClient,
   packId: string,
 ): Promise<LargeCashRule | null> {
@@ -303,6 +304,74 @@ function zonedMidnight(at: Date, timeZone: string): Date {
   return new Date(start);
 }
 
+/** A required Gregorian day (0001..9999), not a UTC timestamp. The old
+ * midnight/wallInstant helpers use Date.UTC (which remaps years 00..99),
+ * and staticWindow adds 24 elapsed hours. Keep those consumers unchanged. Each civil
+ * boundary is resolved separately from the zone's actual UTC offsets.
+ * At a midnight overlap use its first occurrence; at a gap use the first
+ * instant after the gap. A completely skipped shop day has no window.
+ */
+export function shopDayWindow(day: string, timeZone: string): {
+  start: Date; end: Date; startOffset: string; endOffset: string;
+} {
+  const invalid = () => new LedgerError("INVALID_REQUEST", "Expected an existing shop day in YYYY-MM-DD format.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day.startsWith("0000")) throw invalid();
+  const civil = new Date(`${day}T00:00:00.000Z`);
+  if (!Number.isFinite(civil.getTime()) || civil.toISOString().slice(0, 10) !== day) throw invalid();
+  const next = new Date(civil);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" });
+  const offset = (instant: number) => {
+    const text = formatter.formatToParts(new Date(instant)).find(p => p.type === "timeZoneName")?.value ?? "";
+    if (text === "GMT") return { ms: 0, text: "+00:00" };
+    const match = /^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text);
+    if (!match) throw new Error("Cannot read shop time zone offset.");
+    const seconds = Number(match[2]) * 3600 + Number(match[3]) * 60 + Number(match[4] ?? 0);
+    return { ms: (match[1] === "-" ? -1 : 1) * seconds * 1000, text: text.slice(3) };
+  };
+  const boundary = (wall: number) => {
+    // Sample both sides of a midnight transition, including a date-line
+    // jump. Choose the earliest candidate at/after the intended wall time.
+    const offsets = [-36, 0, 36].map(hours => offset(wall + hours * 3600000).ms);
+    const candidates = offsets.map(ms => wall - ms).filter(at => at + offset(at).ms >= wall);
+    if (!candidates.length) throw invalid();
+    return Math.min(...candidates);
+  };
+  const start = boundary(civil.getTime()), end = boundary(next.getTime());
+  if (start >= end || start + offset(start).ms >= next.getTime()) throw invalid();
+  return { start: new Date(start), end: new Date(end), startOffset: offset(start).text, endOffset: offset(end).text };
+}
+
+/* One source for amounts, joins, entity/window scope and non-deals. The
+   grouped read and the existing single-key identity gate use it verbatim.
+   Axis keys retain the existing SQL lower(btrim(...)) semantics. */
+const CASH_RECEIPTS_SQL = `
+  SELECT t.transaction_id, t.branch_id, t.customer_id AS conductor,
+         lower(btrim(COALESCE(t.third_party_name, ''))) AS on_behalf_of,
+         lower(btrim(COALESCE(o.beneficiary_name, ''))) AS beneficiary,
+         CASE
+           WHEN t.cash_in_home IS NOT NULL THEN t.cash_in_home
+           WHEN t.deal_kind = 'exchange'
+            AND upper(btrim(t.from_currency::text))
+                = upper(btrim(COALESCE(t.home_currency::text, '')))
+             THEN t.input_amount
+           ELSE NULL
+         END AS amount,
+         r.reason
+    FROM ledger_transactions t
+    LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
+    LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
+   WHERE t.legal_entity_id = $1
+     AND t.posted_at >= $2 AND t.posted_at < $3
+     AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})`;
+
+type CashRow = { amount: string | null; reason: string | null };
+function receivedAmount(row: CashRow): Decimal | null {
+  if (!countsTowardLctr(row.reason) || row.amount == null) return null;
+  const amount = new Decimal(row.amount);
+  return amount.gt(0) ? amount : null;
+}
+
 /* Cash the desk received, in home currency, inside the window, for
    one axis only. Axes are not added together: the same notes can be
    a conductor report and, separately, an on-behalf-of report, and
@@ -325,40 +394,63 @@ export async function cashReceived(
      add the same cash twice. The beneficiary axis still needs the
      join, because that name lives on the obligation. Start inclusive,
      end exclusive. countsTowardLctr decides. SQL does not copy the reason. */
-  const found = await client.query(
-    `SELECT DISTINCT ON (t.transaction_id)
-            CASE
-              WHEN t.cash_in_home IS NOT NULL THEN t.cash_in_home
-              WHEN t.deal_kind = 'exchange'
-               AND upper(btrim(t.from_currency::text))
-                   = upper(btrim(COALESCE(t.home_currency::text, '')))
-                THEN t.input_amount
-              ELSE NULL
-            END AS amount,
-            r.reason
-       FROM ledger_transactions t
-       LEFT JOIN ledger_reversals r ON r.transaction_id = t.transaction_id
-       LEFT JOIN ledger_obligations o ON o.transaction_id = t.transaction_id
-      WHERE t.legal_entity_id = $1
-        AND t.posted_at >= $2
-        AND t.posted_at < $3
-        AND t.deal_kind NOT IN (${NOT_A_DEAL_SQL})
-        AND (
-          ($4 = 'conductor' AND t.customer_id = $5)
-          OR ($4 = 'on_behalf_of' AND lower(btrim(COALESCE(t.third_party_name, ''))) = $5)
-          OR ($4 = 'beneficiary' AND lower(btrim(COALESCE(o.beneficiary_name, ''))) = $5)
-        )
-      ORDER BY t.transaction_id`,
+  const found = await client.query<CashRow>(
+    `WITH receipts AS (${CASH_RECEIPTS_SQL})
+     SELECT DISTINCT ON (transaction_id) amount, reason FROM receipts
+      WHERE ($4 = 'conductor' AND conductor = $5)
+         OR ($4 = 'on_behalf_of' AND on_behalf_of = $5)
+         OR ($4 = 'beneficiary' AND beneficiary = $5)
+      ORDER BY transaction_id`,
     [legalEntityId, window.start, window.end, axis, key],
   );
   let total = new Decimal(0);
   for (const row of found.rows) {
-    if (!countsTowardLctr(row.reason)) continue;
-    if (row.amount == null) continue;
-    const amount = new Decimal(String(row.amount));
-    if (amount.gt(0)) total = total.add(amount);
+    const amount = receivedAmount(row);
+    if (amount) total = total.add(amount);
   }
   return total;
+}
+
+export type CashReceivedGroup = {
+  axis: Axis; key: string; total: Decimal; transactionIds: string[]; branchIds: string[];
+};
+
+/** One total per axis/key; no branch filter, pagination or cross-axis sum. */
+export async function cashReceivedGroups(
+  client: pg.PoolClient,
+  legalEntityId: string,
+  window: { start: Date; end: Date },
+  axes: readonly Axis[] = AXES,
+): Promise<CashReceivedGroup[]> {
+  const found = await client.query<CashRow & { axis: Axis; key: string; transaction_id: string; branch_id: string }>(
+    `WITH receipts AS (${CASH_RECEIPTS_SQL})
+     SELECT DISTINCT ON (axis, key, transaction_id)
+            axis, key, transaction_id, branch_id, amount, reason
+       FROM receipts
+       CROSS JOIN LATERAL (VALUES
+         ('conductor', conductor), ('on_behalf_of', on_behalf_of), ('beneficiary', beneficiary)
+       ) AS person(axis, key)
+      WHERE axis = ANY($4::text[]) AND key IS NOT NULL AND key <> ''
+      ORDER BY axis, key, transaction_id`,
+    [legalEntityId, window.start, window.end, axes],
+  );
+  const groups = new Map<string, CashReceivedGroup>();
+  for (const row of found.rows) {
+    const amount = receivedAmount(row);
+    if (!amount) continue;
+    const id = JSON.stringify([row.axis, row.key]);
+    let group = groups.get(id);
+    if (!group) {
+      group = { axis: row.axis, key: row.key, total: new Decimal(0), transactionIds: [], branchIds: [] };
+      groups.set(id, group);
+    }
+    group.total = group.total.add(amount);
+    group.transactionIds.push(row.transaction_id);
+    group.branchIds.push(row.branch_id);
+  }
+  return [...groups.values()].map(group => ({
+    ...group, transactionIds: group.transactionIds.sort(), branchIds: [...new Set(group.branchIds)].sort(),
+  }));
 }
 
 async function ticketComplete(

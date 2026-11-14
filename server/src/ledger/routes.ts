@@ -19,6 +19,7 @@ import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
 import { EntityZoneService } from "./entity-zone.js";
+import { LctrGroupsService } from "./lctr-groups.js";
 import {
   ThresholdService,
   type ThresholdChanges,
@@ -344,6 +345,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
   const entityZone = new EntityZoneService(pool);
+  const lctrGroups = new LctrGroupsService(pool);
   const thresholds = new ThresholdService(pool);
   const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
@@ -825,6 +827,20 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
           )
         : undefined;
     } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/lctr-groups", async (req, reply) => {
+    const parsed = z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await lctrGroups.forDay(actor, parsed.data.day)) : undefined;
+    } catch (error) {
+      if (error instanceof LedgerError && error.code === "INVALID_REQUEST") {
+        return reply.code(400).send({ code: error.code, message: error.message });
+      }
       return failure(reply, error);
     }
   });

@@ -122,6 +122,61 @@ Beneficiary, s.36(c.1) to (f). At the remittance line the ledger
 stores the beneficiary's name and address. Under the line they are
 stored when the teller typed them, and they may be omitted.
 
+## Shop-day groups read (CD-107 A1)
+
+`GET /api/ledger/lctr-groups?day=YYYY-MM-DD` is a server-only read.
+`LctrGroupsService.forDay(actor, day)` checks `filing:view`: supervisor,
+branch manager, administrator and compliance officer may read; teller and
+auditor may not. The session supplies the tenant and entity. Query fields
+other than `day` are refused, including entity, branch, axis and limit.
+A foreign workspace cannot select another shop. Authorization, entity-zone
+resolution, the current trigger and the receipts share one held Postgres
+client and repeatable-read snapshot.
+
+The required day is an exact real Gregorian calendar date, years 0001 through
+9999; blanks, timestamps, invalid leap days and duplicate values are 400
+`INVALID_REQUEST`. `entityReportZone` supplies the zone and its provenance.
+The interval is start-inclusive and end-exclusive, from the start of D to
+the start of D+1 in that zone, not 24 elapsed hours. Toronto's spring day is
+23 hours and its autumn day 25. At a midnight overlap the first occurrence
+starts the day; at a gap the first instant after the gap does. A completely
+skipped local date is refused. UTC boundary strings and numeric offset
+strings (`+00:00`, `-04:00`, etc.; historical seconds when present) are read
+metadata only. The final day 9999-12-31 has an extended ISO year in its end.
+
+The response is `{ day, zone, zoneSource, mixed, window: { start, end,
+startOffset, endOffset }, trigger, groups }`. Each group has `{ axis, key,
+total, transactionIds, branchIds, needsReport }`. Money is an exact decimal
+string with two places. ID arrays are sorted and duplicate-free. The
+conductor key is the customer ID; on-behalf-of and beneficiary keys retain
+the existing SQL `lower(btrim(name))`. No additional names are returned.
+Groups are separate by axis and key; they must not be added across axes or
+counted directly as deduplicated filings.
+
+`cashReceivedGroups` shares the single-key `cashReceived` SQL amount,
+entity/window predicates and joins, and the same `countsTowardLctr` reversal
+rule. Both deduplicate transactions. Recorded `cash_in_home` wins; a missing
+figure falls back to input only for a home-currency exchange. Non-positive
+cash, cheque clearing/return, a booking-error reversal and an unvalued
+foreign receipt do not contribute. All branches and all receipts are read,
+with no pagination. Empty names create no name-axis group.
+
+The trigger uses the current `largeCashRule` and the lower positive desk
+`report_threshold`, exactly as `countryIdentification` does. It does not
+introduce a conversion, comparator, or new country policy. With no usable
+large-cash rule, `trigger` and each `needsReport` are **null**, meaning this
+read cannot determine reportability; a desk override alone does not invent
+a rule. Groups remain available. An empty receipt set is `groups: []`.
+
+This is a grouping/read contract, not a change to the rolling identification
+gate or an interpretation that replaces other countries' reporting windows.
+The browser's existing clusters, `staticWindow`, filing totals and sealed
+records are unchanged. Filing offset storage, amount/deal-set recomputation
+and refusal, corrections, shared name-key alignment, VC block and the bell,
+dashboard and worksheet remain later work. **CD-107/#595 stays P0 and open.**
+A1 supplies only part of acceptance 1/2, not filing acceptance or a release.
+No promotion until the full approved stack is complete.
+
 ## Known gaps
 
 These are not implemented. The pack does not pretend they are.
