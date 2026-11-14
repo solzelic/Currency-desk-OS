@@ -1637,8 +1637,8 @@
     useEffect(() => { const t = setInterval(() => { setClock(new Date()); }, 1000); return () => clearInterval(t); }, []);
 
     /* A label, not a permission. It lives on document.body so the lock,
-       the station picker, and the desktop all show it. A password
-       sign-in, a sign-out, and a 401 take it down. It takes its own space:
+       the station picker, and the desktop all show it. Authenticated
+       sign-ins keep the runtime label; a sign-out and a 401 take it down. It takes its own space:
        --cdos-banner moves #os and #lock down by its height, which a
        ResizeObserver keeps true when the words wrap to two lines. */
     useEffect(() => { setBannerHidden(bannerHiddenNow()); }, [stage]);
@@ -2358,6 +2358,7 @@
       employees={settings.employees || []}
       onSignup={() => setStage('signup')}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
+        setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
         markPersistRole(rec.role);

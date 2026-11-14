@@ -27,7 +27,7 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isStagingRuntime, type StagingDoorHeaders } from "../auth/staging-runtime.js";
 import { stagingTestOwnerOnScreen } from "./staging-fresh-shop.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
-import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
+import { clearStagingCookie } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { stagingTestShop } from "../staging/pin-reset.js";
@@ -238,12 +238,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
         authorizedBranchIds: user.authorizedBranchIds,
         mustChangePassword: user.mustChangePassword,
         plan: await tenantPlan(db, user.tenantId),
+        staging: isStagingRuntime(req.headers.host ?? ""),
       },
     };
   });
 
   // shared response shape for a signed-in user
-  const userPayload = async (user: typeof schema.staffUsers.$inferSelect) => ({
+  const userPayload = async (user: typeof schema.staffUsers.$inferSelect, host: string) => ({
     id: user.staffId,
     name: user.name,
     role: user.role,
@@ -253,6 +254,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     authorizedBranchIds: user.authorizedBranchIds,
     mustChangePassword: user.mustChangePassword,
     plan: await tenantPlan(db, user.tenantId),
+    staging: isStagingRuntime(host),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
@@ -316,7 +318,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
       reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
       clearStagingCookie(reply, cookieOpts.secure);
-      return { ok: true, needsCode: false, user: await userPayload(user) };
+      return { ok: true, needsCode: false, user: await userPayload(user, req.headers.host ?? "") };
     }
     /* Pressing "Send my code" twice used to send two, and only the second
        one worked — so the code somebody read off the first email was the
@@ -385,7 +387,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
     reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
     clearStagingCookie(reply, cookieOpts.secure);
-    return { user: await userPayload(user) };
+    return { user: await userPayload(user, req.headers.host ?? "") };
   });
 
   app.post("/api/auth/change-password", async (req, reply) => {
@@ -676,9 +678,9 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const who = resolved.state === "active" ? resolved.user : null;
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     return {
-      /* A label for the banner. It is not a permission. The cookie is
-         set only by quick sign-in, and only a staging host may read it. */
-      staging: req.cookies[STAGING_COOKIE] === "1" && isStagingRuntime(req.headers.host ?? ""),
+      /* A runtime label, not a permission or a sign-in-method marker.
+         Use raw Host, never a proxy-derived hostname; missing Host is closed. */
+      staging: isStagingRuntime(req.headers.host ?? ""),
       user: {
         id: who.staffId,
         name: who.name,
