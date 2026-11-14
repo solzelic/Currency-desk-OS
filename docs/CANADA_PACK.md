@@ -122,6 +122,99 @@ Beneficiary, s.36(c.1) to (f). At the remittance line the ledger
 stores the beneficiary's name and address. Under the line they are
 stored when the teller typed them, and they may be omitted.
 
+## Shop-day groups read (CD-107 A1)
+
+`GET /api/ledger/lctr-groups?day=YYYY-MM-DD` is a server-only read.
+`LctrGroupsService.forDay(actor, day)` checks `filing:view`: supervisor,
+branch manager, administrator and compliance officer may read; teller and
+auditor may not. The route checks the session and `filing:view` before query
+validation: missing sessions receive 401 and disallowed roles 403, even with
+a missing or malformed day. The service retains its transactional principal
+check. The session supplies the tenant and entity. Query fields
+other than `day` are refused, including entity, branch, axis and limit.
+A foreign workspace cannot select another shop. Authorization, entity-zone
+resolution, the current trigger and the receipts share one held Postgres
+client and repeatable-read snapshot.
+
+The required day is an exact real Gregorian calendar date, years 0001 through
+9999; blanks, timestamps, invalid leap days and duplicate values are 400
+`INVALID_REQUEST`. `entityReportZone` supplies the zone and its provenance.
+The interval is start-inclusive and end-exclusive, from the start of D to
+the start of D+1 in that zone, not 24 elapsed hours. Toronto's spring day is
+23 hours and its autumn day 25. At a midnight overlap the first occurrence
+starts the day; at a gap the first instant after the gap does. A completely
+skipped local date is refused. UTC boundary strings and numeric offset
+strings (`+00:00`, `-04:00`, etc.; historical seconds when present) are read
+metadata only. The final day 9999-12-31 has an extended ISO year in its end.
+
+Boundary resolution uses the runtime's IANA data through `Intl`: sampled
+UTC offsets within 36 hours of midnight supply the possible exact instants.
+If midnight is missing, those offset candidates bracket the local forward
+gap; millisecond bisection finds the transition itself. This also handles
+the Toronto/Nassau 1919-03-30/31 jump from 23:30 to 00:30 (04:30Z), rather
+than assigning the first half hour of March 31 to March 30. The algorithm
+assumes the bracket contains the one offset transition responsible for that
+gap; it is not a general solver for arbitrary custom clock histories.
+Results depend on the runtime timezone database. Focused regressions cover
+that historical gap, Sao Paulo midnight, Havana overlap, Apia's skipped
+date, modern 23/25-hour days, endpoint inclusion and civil range/validity.
+They are not an exhaustive guarantee for every historical or future zone.
+
+The response is `{ day, zone, zoneSource, mixed, window: { start, end,
+startOffset, endOffset }, trigger, groups }`. Each group has `{ axis, key,
+total, transactionIds, branchIds, needsReport }`. Money is an exact decimal
+string with two places. ID arrays are sorted and duplicate-free. The
+conductor key is the customer ID; on-behalf-of and beneficiary keys retain
+the existing SQL `lower(btrim(name))`. No additional names are returned.
+Groups are separate by axis and key; they must not be added across axes or
+counted directly as deduplicated filings.
+
+`cashReceivedGroups` shares the single-key `cashReceived` SQL amount,
+entity/window predicates and joins, and the same `countsTowardLctr` reversal
+rule. Both deduplicate transactions. Recorded `cash_in_home` wins; a missing
+figure falls back to input only for a home-currency exchange. Non-positive
+cash, cheque clearing/return, a booking-error reversal and an unvalued
+foreign receipt do not contribute. All branches and all receipts are read,
+with no pagination. Empty names create no name-axis group.
+
+The isolated `shopDayLargeCashRule` reader evaluates only a latest stored
+`large_cash` rule with a positive trigger, `aggregate_all_amounts: true`,
+`cash_only: true`, `direction: in`, `comparator: gte`, `window_kind: fixed_24h`,
+and `trigger_currency` matching the book currency resolved by `resolvePack`.
+An explicit `threshold_currency` must also match the book; null or blank
+uses the already-validated trigger currency, without conversion. Compatibility follows
+these actual fields, not a country name. Only within that supported subset
+does the lower positive desk `report_threshold` tighten the pack trigger,
+using the existing precedence. The comparison is inclusive. Each group's
+`needsReport` is evaluated only when its axis is explicitly listed in
+`aggregation_axes`; absent axes mean unknown, with no all-axis fallback.
+
+Unsupported or missing rules yield **`trigger: null` and `needsReport: null`**;
+unlisted axes on a compatible rule also have `needsReport: null`. Groups
+remain available. A desk override cannot supply missing semantics, a
+currency conversion, payout coverage or another country's reporting rule.
+Unknown never means false or "no report needed". In particular, current
+CA-v1, US, Australia, Serbia, India, Philippines and international/no-pack
+rules do not satisfy this comparison contract. `largeCashRule`,
+`countryIdentification` and `cashReceived` retain their existing behavior.
+An empty receipt set is `groups: []`.
+
+The ticket requires a calendar-day read, but the stored CA-v2 report row
+still says `window_kind: fixed_24h`; a DST calendar day can be 23 or 25 hours.
+That mismatch remains explicit for CTO/Compliance confirmation before
+broader reporting/filing integration or storing filing offsets. This
+read's defensive null contract does not resolve that policy question and
+does not change the pack, migrations, existing rolling gate or rules.
+
+This is a grouping/read contract, not a change to the rolling identification
+gate or an interpretation that replaces other countries' reporting windows.
+The browser's existing clusters, `staticWindow`, filing totals and sealed
+records are unchanged. Filing offset storage, amount/deal-set recomputation
+and refusal, corrections, shared name-key alignment, VC block and the bell,
+dashboard and worksheet remain later work. **CD-107/#595 stays P0 and open.**
+A1 supplies only part of acceptance 1/2, not filing acceptance or a release.
+No promotion until the full approved stack is complete.
+
 ## Known gaps
 
 These are not implemented. The pack does not pretend they are.

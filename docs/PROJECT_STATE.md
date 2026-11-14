@@ -80,10 +80,37 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   implementation convention. `GET /api/ledger/entity-zone` requires
   `ledger:view`; PUT requires the administrator-only `compliance:thresholds`.
   An owner set/clear and its before/after audit commit atomically, scoped to
-  the session tenant/entity. The settings screen is not built, and T1b/CD-107
-  reporting consumers are not wired yet; branch clocks and earnings access
-  are unchanged. The resolver and invalid-legacy-value behavior are documented
+  the session tenant/entity. The settings screen is not built. CD-107 A1
+  uses this resolver for its server grouping read; branch clocks and earnings
+  access are unchanged. The resolver and invalid-legacy-value behavior are documented
   in `CASH_OWNERSHIP_INVARIANTS.md`, "Shop reporting zone".
+
+- **CD-107 A1 provides a server-only shop-day LCTR grouping read.**
+  `GET /api/ledger/lctr-groups?day=YYYY-MM-DD` checks the session and
+  `filing:view` before query validation, retains the ledger principal check, and
+  uses the session tenant/entity, across all branches and all three axes,
+  without a list cap. Amounts and reversal exclusions share `cashReceived`'s
+  predicates. The accepted CD-108 resolver supplies one shop zone; separate
+  local-midnight boundaries give 23/25-hour DST days and both UTC offsets.
+  The comparison now requires actual stored aggregate-all, cash-only,
+  incoming-cash, gte semantics, the stored `fixed_24h` label and matching
+  trigger/book currency. A separate threshold currency must be absent or
+  match the book; absent uses the validated trigger currency. Only then
+  may the lower positive desk threshold tighten the pack trigger. Missing or
+  unsupported rules yield `trigger: null` and `needsReport: null`; axes not
+  explicitly listed by a compatible rule also yield null, never a cleared
+  report. Existing cash aggregation and identification are unchanged.
+  Midnight-straddling gaps use the actual transition (including Toronto and
+  Nassau in 1919). Calendar-day bounds still differ from the stored CA-v2
+  `fixed_24h` label; CTO/Compliance confirmation remains necessary before
+  broader reporting/filing integration and storing offsets.
+  This proves the grouping read and window metadata only. **P0 #595 remains
+  open:** the filing path still trusts browser totals; offsets are not stored
+  on filings. Server sealing/recomputation/refusal, corrections, future shared
+  name-key alignment, VC block, and bell/dashboard/worksheet wiring remain
+  open. A1 does not complete acceptance 1/2 end to end, adds no migration and
+  changes no rolling identification window. No promotion until the full
+  approved stack is complete. Contract and limits: `docs/CANADA_PACK.md`.
 
 - **The Vault flags Low stock only below a floor the owner set (in review, CD-133).** On `fix/vault-floors`: `os-src/cdos-vault.jsx` carried York FX's own reorder levels (CAD 120,000, USD 40,000 and so on) as every shop's fallback, so a desk with no floor set saw Low stock on every currency it held, 40,000 CAD included, while the Rates app's Cost & stock (which only reads the owner's floors) said nothing was running low. The table is gone: a currency with no floor shows "No floor set", a floor from Settings (`vaultFloors`, `vaultReserveCad` for the home currency) flags that currency, and the low-stock notification suggests an order to twice the floor as it always did when no target was set. Settings says blank means no floor. CD-133's other parts: board rates are #659; Reports opening the Vault could not be reproduced on 6 Nov.
 - **Rates v2.5, a flag for every currency (#658; not reviewed).** On `feat/rates-all-flags`: `shared/currency-face.js` maps every currency the market feeds offer (open.er-api.com and openexchangerates.org, 165 codes) to its country's flag; 130 more images from flag-icons 7.2.3 (MIT, the set the design uses) in `assets/flags`, 158 in all, checked to hold no script. XAF, XCD, XOF and XPF are each shared by several countries, so they show a plain tile instead of two loose letters. The Board, the currency panel, Cost & stock, Pricing & rates, Guardrails, the public rate page and the window screens all draw from it.

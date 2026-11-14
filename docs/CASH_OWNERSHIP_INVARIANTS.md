@@ -198,6 +198,7 @@ may compute a cash figure for itself:
 | what was posted, and what did it earn | `GET /api/ledger/summary` |
 | what cash is out on cheques that have not cleared | `GET /api/ledger/cheques` |
 | what this desk owes, and what it is owed | `GET /api/ledger/obligations` |
+| which shop-day cash receipts group across all branches (server read only) | `GET /api/ledger/lctr-groups?day=YYYY-MM-DD` |
 | which rules does this desk trade under | `GET /api/ledger/jurisdiction` |
 | which currencies may this desk hold | `GET /api/ledger/desk-currencies` |
 | what does this desk report and identify at | `GET /api/ledger/desk-thresholds` |
@@ -282,11 +283,11 @@ An audit failure rolls back the setting. A repeat of the same choice is
 also audited. NULL clears the choice, without backfilling branch data or
 restating any posted deal or filing.
 
-This is the **server half only**. T1b/CD-107 can import this contract for
-shop-wide reporting, but no reporting consumer is wired to it yet. The
-settings screen is not built. The existing branch civil-day helper and
-single browser clock still serve their current consumers. This setting
-does not change earnings permissions, report windows or filing rules.
+This is the **server half only**. CD-107 A1 imports this contract for the
+shop-day grouping read documented in `CANADA_PACK.md`. The settings screen
+and filing/UI consumers are not built. The existing branch civil-day helper,
+rolling identity gate and single browser clock still serve their current
+consumers. Earnings permissions and filing rules are unchanged.
 `server/tests/entity-zone.postgres.test.ts` covers the resolver, embedded
 and Postgres schema, migration replay, actual routes/roles, tenant isolation,
 one-client operation, concurrent changes and audit-failure rollback. A
