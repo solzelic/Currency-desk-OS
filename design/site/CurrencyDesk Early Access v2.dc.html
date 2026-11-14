@@ -626,7 +626,10 @@
           </div>
           <!-- stub: the desk ID. Stays a ticket: notches, torn edge, barcode -->
           <div style="{{ tStubStyle }}">
-           <!-- the token: grab it to tilt, flick it to spin. It always comes back to rest face up -->
+           <!-- the token: grab it to tilt, flick it to spin. It always comes back to rest face up.
+                The back face starts hidden and the spinner shows whichever face is towards the
+                viewer: Safari does not always honour backface-visibility, and drew the back face
+                over the front, mirrored. -->
            <div ref="{{ refToken }}" style="position: relative; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; touch-action: pan-y; user-select: none; -webkit-user-select: none;">
             <div style="position: relative; backface-visibility: hidden; -webkit-backface-visibility: hidden;">
             <div aria-hidden="true" style="{{ stubBgStyle }}">
@@ -647,7 +650,7 @@
             <div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; border-radius: 0 0 20px 20px; background: linear-gradient(105deg, transparent calc(var(--gx, 50%) - 22%), rgba(255,255,255,0.55) var(--gx, 50%), transparent calc(var(--gx, 50%) + 22%)); opacity: var(--go, 0); mix-blend-mode: soft-light;"></div>
             </div>
             <!-- the back of the token: the mark, the charter number, nothing to read twice -->
-            <div aria-hidden="true" style="position: absolute; inset: 0; transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden;">
+            <div aria-hidden="true" style="position: absolute; inset: 0; transform: rotateY(180deg); -webkit-transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden; visibility: hidden;">
               <div style="{{ stubBgStyle }}">
                 <div style="{{ stubFillStyle }}">
                   <div style="position: absolute; inset: 0; background: repeating-radial-gradient(circle at 50% 50%, rgba(58,42,8,0.1) 0 1px, transparent 1px 7px);"></div>
@@ -795,7 +798,7 @@
         </div>
         </div>
         <!-- the back -->
-        <div style="position: absolute; inset: 0; display: flex; flex-direction: column; transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden;">
+        <div style="position: absolute; inset: 0; display: flex; flex-direction: column; transform: rotateY(180deg); -webkit-transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden; visibility: hidden;">
           <div style="position: relative; flex: 1;">
             <div aria-hidden="true" style="position: absolute; inset: 0; overflow: hidden; border-radius: 20px 20px 0 0; background: linear-gradient(158deg, #4A4F57 0%, #2A2D32 30%, #3D4148 55%, #23262A 80%, #383C42 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.18); -webkit-mask: radial-gradient(circle 11px at 0 100%, transparent 97%, #000) left / 51% 100% no-repeat, radial-gradient(circle 11px at 100% 100%, transparent 97%, #000) right / 51% 100% no-repeat; mask: radial-gradient(circle 11px at 0 100%, transparent 97%, #000) left / 51% 100% no-repeat, radial-gradient(circle 11px at 100% 100%, transparent 97%, #000) right / 51% 100% no-repeat;">
               <div style="position: absolute; inset: 0; background: repeating-radial-gradient(circle at 15% 110%, rgba(255,255,255,0.05) 0 1px, transparent 1px 8px);"></div>
@@ -1188,6 +1191,10 @@ class Component extends DCLogic {
       el.style.setProperty('--go', Math.min(1, Math.abs(sn) * 1.5 + Math.abs(T.rx) / 14).toFixed(2));
       const h = Math.round(T.ry / 180);
       if (h !== T.half) { T.half = h; this._tone('tap'); }
+      /* the face towards the viewer is the one shown (Safari ignores backface-visibility here) */
+      const front = Math.cos(T.ry * Math.PI / 180) >= 0, faces = el.children;
+      if (faces[0]) faces[0].style.visibility = front ? 'visible' : 'hidden';
+      if (faces[1]) faces[1].style.visibility = front ? 'hidden' : 'visible';
     };
     T.apply = apply;
     const rest = () => {
@@ -1384,6 +1391,7 @@ class Component extends DCLogic {
   };
   componentDidMount() {
     document.addEventListener('pointerdown', this._tick, true);
+    ['click', 'touchend', 'keydown', 'pointerup'].forEach((t) => document.addEventListener(t, this._unlockAudio, true));
     /* A clipped box (overflow: hidden) never scrolls in this design; only the card's own
        scroller does. Focusing a field or opening a question asks the browser to bring it into
        view, and the browser scrolls every box in the way, clipped ones too, which pushed the
@@ -1439,7 +1447,7 @@ class Component extends DCLogic {
       try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) c.style.display = 'none'; } catch (e) {}
     }
   }
-  componentWillUnmount() { (this._doneT || []).forEach(clearTimeout); clearInterval(this._samI); clearInterval(this._spinI); clearInterval(this._spinTick); document.removeEventListener('pointerdown', this._tick, true); clearTimeout(this._wsT); document.removeEventListener('scroll', this._unclip, true); clearTimeout(this._tt); clearInterval(this._mc); clearTimeout(this._curtainT); }
+  componentWillUnmount() { (this._doneT || []).forEach(clearTimeout); clearInterval(this._samI); clearInterval(this._spinI); clearInterval(this._spinTick); document.removeEventListener('pointerdown', this._tick, true); ['click', 'touchend', 'keydown', 'pointerup'].forEach((t) => document.removeEventListener(t, this._unlockAudio, true)); if (this._ac) { try { this._ac.close(); } catch (e) {} } clearTimeout(this._wsT); document.removeEventListener('scroll', this._unclip, true); clearTimeout(this._tt); clearInterval(this._mc); clearTimeout(this._curtainT); }
 
   /* The address check, against the server (GET /api/workspaces/:slug): desks, sign-ups in
      progress, and addresses other applicants hold. The reply also carries up to three free
@@ -1529,12 +1537,23 @@ class Component extends DCLogic {
       const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9000;
       this._in = ac.createGain(); this._in.connect(tone); tone.connect(comp); tone.connect(verb); verb.connect(wet); wet.connect(comp); comp.connect(master); master.connect(ac.destination);
     }
-    if (this._ac.state === 'suspended') this._ac.resume();
+    if (this._ac.state !== 'running') { try { this._ac.resume(); } catch (e) {} }
     return this._ac;
   }
+  /* Sound starts only once the browser allows it: Safari and Firefox wait for a click, a tap or a
+     key, and a page that asks earlier gets a paused context. Every sound asked for while paused
+     used to wait in it, then all play at once the moment it was allowed, so the flow's sounds ran
+     ahead in a burst. Now the first click, tap or key starts the context (with one silent sample,
+     which iOS needs), and _tone skips a sound that cannot play yet instead of queueing it. */
+  _unlockAudio = () => {
+    const ac = this._bus();
+    if (!ac) return;
+    try { const b = ac.createBuffer(1, 1, 22050), src = ac.createBufferSource(); src.buffer = b; src.connect(ac.destination); src.start(0); } catch (e) {}
+    if (ac.state === 'running') ['click', 'touchend', 'keydown', 'pointerup'].forEach((t) => document.removeEventListener(t, this._unlockAudio, true));
+  };
   _tone(kind) {
     try {
-      const ac = this._bus(); if (!ac) return; const now = ac.currentTime + 0.005;
+      const ac = this._bus(); if (!ac || ac.state !== 'running') return; const now = ac.currentTime + 0.005;
       /* levels: the finish is mixed hotter than the form, so it carries at half volume (Sol, 6 Nov). The compressor keeps the peaks comfortable */
       const LV = { bloom: 1.7, lock: 1.8, settle: 1.6, tap: 1.3, step: 1.4, next: 1.4, done: 1.6, nope: 1.3, status: 2.6, tick3: 2.4, strain: 2.2, rip: 2.0, spin: 2.2, char: 2.4, reveal: 2.4, mail: 2.4, pip: 2, dot: 2, iris: 1.8 };
       const out = ac.createGain(); out.gain.value = LV[kind] || 1.5; out.connect(this._in);
