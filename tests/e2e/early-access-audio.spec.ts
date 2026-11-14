@@ -22,13 +22,13 @@ import { test, expect, type Page } from "@playwright/test";
 
 const unique = () => Math.random().toString(36).slice(2, 8);
 
-type Start = { perf: number; when: number; ctxNow: number; lat: number; hz: number | null };
-type Log = { starts: Start[]; disc: number[]; t0: number | null; claim: number | null; suspendedAt: number | null; resumedAt: number | null };
+type Start = { perf: number; when: number; ctxNow: number; lat: number; hz: number | null; type: string | null };
+type Log = { starts: Start[]; disc: number[]; t0: number | null; claim: number | null; next: number | null; suspendedAt: number | null; resumedAt: number | null };
 
 /* In the page, before it loads: keep the context, and log every scheduled sound. */
 function instrument() {
   const W = window as unknown as { __aud: Log; __ac?: AudioContext; webkitAudioContext?: typeof AudioContext };
-  W.__aud = { starts: [], disc: [], t0: null, claim: null, suspendedAt: null, resumedAt: null };
+  W.__aud = { starts: [], disc: [], t0: null, claim: null, next: null, suspendedAt: null, resumedAt: null };
   const AC = window.AudioContext || W.webkitAudioContext;
   if (AC) {
     const Kept = class extends AC { constructor(o?: AudioContextOptions) { super(o); W.__ac = this; } };
@@ -42,17 +42,21 @@ function instrument() {
     if (!firstValue.has(this)) firstValue.set(this, v);
     return set.call(this, v, t);
   };
-  const start = AudioScheduledSourceNode.prototype.start;
-  AudioScheduledSourceNode.prototype.start = function (when?: number, ...rest: number[]) {
-    const ac = this.context as AudioContext;
-    const freq = (this as unknown as { frequency?: AudioParam }).frequency;
-    W.__aud.starts.push({
-      perf: performance.now(), when: when || 0, ctxNow: ac.currentTime,
-      lat: (ac.baseLatency || 0) + (ac.outputLatency || 0),
-      hz: freq ? firstValue.get(freq) ?? null : null,
-    });
-    return (start as (w?: number, ...r: number[]) => void).call(this, when, ...rest);
-  };
+  /* oscillators and buffer sources (the noise layers) each have their own start() */
+  for (const P of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.prototype]) {
+    const start = P.start;
+    P.start = function (this: AudioScheduledSourceNode, when?: number, ...rest: number[]) {
+      const ac = this.context as AudioContext;
+      const osc = this as unknown as { frequency?: AudioParam; type?: string };
+      W.__aud.starts.push({
+        perf: performance.now(), when: when || 0, ctxNow: ac.currentTime,
+        lat: (ac.baseLatency || 0) + (ac.outputLatency || 0),
+        hz: osc.frequency ? firstValue.get(osc.frequency) ?? null : null,
+        type: osc.frequency ? osc.type ?? null : null,
+      });
+      return (start as (w?: number, ...r: number[]) => void).call(this, when, ...rest);
+    };
+  }
   const disconnect = AudioNode.prototype.disconnect;
   AudioNode.prototype.disconnect = function (...a: unknown[]) {
     W.__aud.disc.push(performance.now());
@@ -117,6 +121,12 @@ async function onClaim(page: Page, extra: string) {
 }
 
 const read = (page: Page) => page.evaluate(() => (window as unknown as { __aud: Log }).__aud);
+/* the reveal's last sound, the mail (880 Hz rising), placed after the ID has locked */
+const untilMail = async (page: Page) => {
+  await expect.poll(async () => { const l = await read(page); return l.t0 === null ? 0 : l.starts.filter((s) => s.hz === 880 && s.type === "sine" && s.perf > l.t0! + 9000).length; },
+    { timeout: 40_000, message: "the reveal played through to the mail sound" }).toBeGreaterThan(0);
+  await page.waitForTimeout(1200);
+};
 
 test.describe("Early Access v2.1 sounds", () => {
   test("the logo's three beats are heard on its animation's beats, even when the page stalls", async ({ page }) => {
@@ -163,12 +173,58 @@ test.describe("Early Access v2.1 sounds", () => {
   test("Claim pressed straight after the last answer plays no stray chime inside the logo moment", async ({ page }) => {
     await toStepFour(page);
     await onClaim(page, "");
+    await page.evaluate(() => {
+      const W = window as unknown as { __aud: Log };
+      document.addEventListener("click", (e) => {
+        const b = (e.target as HTMLElement).closest && (e.target as HTMLElement).closest("button");
+        if (b && b.closest('[data-who="3"]') && W.__aud.next === null) W.__aud.next = performance.now();
+      }, true);
+    });
     await page.locator('[data-who="3"]').getByRole("button", { name: /^Next/ }).click();
-    await page.getByRole("button", { name: /Claim my desk/ }).click(); /* well inside the 260 ms the answer's chime waits */
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
     await page.waitForTimeout(1500);
     const log = await read(page);
-    /* 1318.5 Hz is the top note of the "done" chime: once, from the press itself */
-    const done = log.starts.filter((s) => s.hz === 1318.5 && s.perf >= log.claim! - 300);
+    expect(log.claim! - log.next!, "Claim was pressed inside the 260 ms the answer's chime waits").toBeLessThan(240);
+    /* 1318.5 Hz is the top note of the "done" chime: from the press on, once, the press's own */
+    const done = log.starts.filter((s) => s.hz === 1318.5 && s.perf >= log.claim! - 1);
     expect(done).toHaveLength(1);
+  });
+
+  /* Bluetooth headphones report a quarter of a second or more. Every beat must still land, and
+     no reel tick may sound after the ID has locked. */
+  test("on a slow output every beat still lands on time, and no reel tick sounds after the ID locks", async ({ page }) => {
+    await page.addInitScript(() => { Object.defineProperty(AudioContext.prototype, "outputLatency", { configurable: true, get: () => 0.25 }); });
+    await toStepFour(page);
+    await page.locator('[data-who="3"]').getByRole("button", { name: /^Next/ }).click();
+    await page.waitForTimeout(600);
+    await onClaim(page, "");
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
+    await untilMail(page);
+    const log = await read(page);
+    for (const [beat, at] of [["bloom", 500], ["lock", 1410], ["settle", 2810]] as const) {
+      const target = log.t0! + at;
+      const near = log.starts.map(heard).filter((h) => Math.abs(h - target) < 200).sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+      expect(near.length && Math.abs(near[0]! - target), `${beat} on its beat`).toBeLessThanOrEqual(10);
+    }
+    const chars = log.starts.filter((s) => s.hz === 1567.98 && s.type === "triangle");
+    expect(chars, "every character of the ID ticks").toHaveLength(11);
+    const reveal = log.starts.filter((s) => s.hz === 523.25 && s.perf > log.t0! + 9000).map(heard).sort((a, b) => a - b)[0]!;
+    const spins = log.starts.filter((s) => s.type === "square").map(heard);
+    expect(spins.length, "the reels ticked").toBeGreaterThan(5);
+    expect(spins.filter((h) => h > reveal - 5), "no reel tick after the ID locks").toHaveLength(0);
+  });
+
+  /* Something outside the page can pause the context (another tab, the output device changing).
+     The next beat asks it to run again, as every sound always did; that beat is still skipped. */
+  test("a context paused from outside is asked to run again, so the rest of the reveal is heard", async ({ page }) => {
+    await toStepFour(page);
+    await page.locator('[data-who="3"]').getByRole("button", { name: /^Next/ }).click();
+    await page.waitForTimeout(600);
+    await onClaim(page, `setTimeout(() => { W.__aud.suspendedAt = performance.now(); W.__ac.suspend(); }, 5000);`);
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
+    await untilMail(page);
+    const log = await read(page);
+    expect(await page.evaluate(() => (window as unknown as { __ac: AudioContext }).__ac.state)).toBe("running");
+    expect(log.starts.filter((s) => s.hz === 1567.98 && s.type === "triangle" && s.perf > log.suspendedAt!).length, "the ID's ticks were heard after the pause").toBeGreaterThan(0);
   });
 });
