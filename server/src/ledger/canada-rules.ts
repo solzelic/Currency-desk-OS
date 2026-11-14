@@ -258,7 +258,7 @@ export async function shopDayLargeCashRule(
 ): Promise<{ trigger: Decimal; axes: Axis[] } | null> {
   const found = await client.query(
     `SELECT trigger_threshold, trigger_currency, aggregate_all_amounts,
-            aggregation_axes, comparator, direction, cash_only
+            aggregation_axes, comparator, direction, cash_only, window_kind, threshold_currency
        FROM jurisdiction_reports
       WHERE pack_id = $1 AND kind = 'large_cash'
       ORDER BY version DESC
@@ -268,8 +268,10 @@ export async function shopDayLargeCashRule(
   const row = found.rows[0];
   const trigger = positive(row?.trigger_threshold);
   const currency = String(row?.trigger_currency ?? "").trim().toUpperCase();
+  const thresholdCurrency = String(row?.threshold_currency ?? "").trim().toUpperCase();
   if (!trigger || row.aggregate_all_amounts !== true || row.cash_only !== true
-    || row.direction !== "in" || row.comparator !== "gte"
+    || row.direction !== "in" || row.comparator !== "gte" || row.window_kind !== "fixed_24h"
+    || (thresholdCurrency !== "" && thresholdCurrency !== pack.homeCurrency)
     || !/^[A-Z]{3}$/.test(currency) || currency !== pack.homeCurrency) return null;
   const axes: unknown[] = Array.isArray(row.aggregation_axes) ? row.aggregation_axes : [];
   return { trigger, axes: axes.filter((axis): axis is Axis =>

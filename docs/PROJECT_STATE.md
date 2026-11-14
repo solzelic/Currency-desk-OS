@@ -92,7 +92,9 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   predicates. The accepted CD-108 resolver supplies one shop zone; separate
   local-midnight boundaries give 23/25-hour DST days and both UTC offsets.
   The comparison now requires actual stored aggregate-all, cash-only,
-  incoming-cash, gte semantics and matching trigger/book currency. Only then
+  incoming-cash, gte semantics, the stored `fixed_24h` label and matching
+  trigger/book currency. A separate threshold currency must be absent or
+  match the book; absent uses the validated trigger currency. Only then
   may the lower positive desk threshold tighten the pack trigger. Missing or
   unsupported rules yield `trigger: null` and `needsReport: null`; axes not
   explicitly listed by a compatible rule also yield null, never a cleared

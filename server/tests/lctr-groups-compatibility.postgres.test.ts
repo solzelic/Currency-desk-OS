@@ -87,6 +87,8 @@ postgres("LCTR read compatibility and historical boundaries", () => {
   it.each([
     { aggregate_all_amounts: false }, { comparator: "gt" }, { direction: "both" }, { direction: "out" }, { direction: null },
     { cash_only: false }, { trigger_currency: "USD" }, { trigger_currency: null },
+    { window_kind: "calendar_month" }, { window_kind: "rolling_days", window_days: 7 },
+    { window_kind: "banking_day" }, { window_kind: "none" }, { threshold_currency: "USD" },
   ])("does not let a desk override supply unsupported semantics: %j", async changes => {
     await customRule(changes);
     await pool.query("UPDATE legal_entities SET report_threshold=1 WHERE id=$1", [entity]);
@@ -95,6 +97,14 @@ postgres("LCTR read compatibility and historical boundaries", () => {
     expect(result.trigger).toBeNull();
     expect(result.groups).toHaveLength(3);
     expect(result.groups.every((g: { needsReport: unknown }) => g.needsReport === null)).toBe(true);
+  });
+  it.each([null, "", "CAD"])("accepts an absent or book-denominated threshold currency: %j", async currency => {
+    await customRule({ threshold_currency: currency });
+    await receipt("10000.00");
+    const result = await read();
+    expect(result.trigger).toBe("10000.00");
+    expect(result.groups).toHaveLength(3);
+    expect(result.groups.every((g: { needsReport: unknown }) => g.needsReport === true)).toBe(true);
   });
   it.each([{ axes: null }, { axes: ["conductor"] }, { axes: ["on_behalf_of", "beneficiary"] }])("only evaluates explicitly listed axes %j", async ({ axes }) => {
     await customRule({ aggregation_axes: axes });

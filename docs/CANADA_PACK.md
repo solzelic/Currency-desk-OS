@@ -176,8 +176,10 @@ with no pagination. Empty names create no name-axis group.
 
 The isolated `shopDayLargeCashRule` reader evaluates only a latest stored
 `large_cash` rule with a positive trigger, `aggregate_all_amounts: true`,
-`cash_only: true`, `direction: in`, `comparator: gte`, and `trigger_currency`
-matching the book currency resolved by `resolvePack`. Compatibility follows
+`cash_only: true`, `direction: in`, `comparator: gte`, `window_kind: fixed_24h`,
+and `trigger_currency` matching the book currency resolved by `resolvePack`.
+An explicit `threshold_currency` must also match the book; null or blank
+uses the already-validated trigger currency, without conversion. Compatibility follows
 these actual fields, not a country name. Only within that supported subset
 does the lower positive desk `report_threshold` tighten the pack trigger,
 using the existing precedence. The comparison is inclusive. Each group's
