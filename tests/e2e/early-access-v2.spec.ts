@@ -200,7 +200,10 @@ test.describe("Early Access v2.1", () => {
     expect(kept.status()).toBe(200);
     expect((await kept.json()) as { at: string; zone: string }).toMatchObject({ zone: expect.any(String) });
 
-    await open.click();
+    /* The button breathes forever, so "stopped moving" never comes; once it takes clicks, it
+       is pressed the way a person presses it. */
+    await expect(open).toHaveCSS("pointer-events", "auto", { timeout: 30_000 });
+    await open.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/onboarding/${body.reference}$`));
   });
 
@@ -239,7 +242,8 @@ test.describe("Early Access v2.1", () => {
     expect(reply.status()).toBe(201);
     const body = (await reply.json()) as { place: number; invite: { code: string } };
     await expect(page.getByText("Your place is held.")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(body.invite.code)).toBeVisible();
+    /* the code is on the back of the pass, hidden until the pass turns (sharing turns it) */
+    await expect(page.getByText(body.invite.code, { exact: true })).toHaveCount(1);
     await expect(page.getByText(`Nº ${body.place}`, { exact: true })).toBeVisible({ timeout: 10_000 });
 
     /* Share says the link was copied only when it was */
@@ -250,6 +254,7 @@ test.describe("Early Access v2.1", () => {
     await clipboardWorks(page, true);
     await share.click();
     await expect(page.getByRole("button", { name: /Link copied/ })).toBeVisible();
+    await expect(page.getByText(body.invite.code, { exact: true })).toBeVisible({ timeout: 5_000 });
     expect(await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1))).toContain(body.invite.code);
   });
 });
