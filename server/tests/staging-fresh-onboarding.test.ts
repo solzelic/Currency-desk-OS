@@ -125,7 +125,10 @@ describe("fresh onboarding", () => {
       expect(state.json().data.cdId).toBe(body.cdId);
       expect(state.json().application.cdId).toBe(body.cdId);
       /* a copy saved by an older page (it wrote the reference there) cannot replace the server's */
-      await app.inject({ method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST }, payload: { at: 0, data: { cdId: body.reference } } });
+      const stale = await app.inject({ method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST }, payload: { at: 0, data: { cdId: body.reference } } });
+      expect(stale.statusCode).toBe(200);
+      const savedRow = (await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, row!.id)))[0];
+      expect((savedRow?.answers as Record<string, unknown>).cdId).toBeUndefined();
       expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } })).json().data.cdId).toBe(body.cdId);
       /* the ID is theirs to show and quote, so it is not a key: it does not open setup */
       expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.cdId + "/state", headers: { host: STAGING_HOST } })).statusCode).toBe(404);

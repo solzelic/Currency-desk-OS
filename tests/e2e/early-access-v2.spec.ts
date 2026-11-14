@@ -156,6 +156,11 @@ test.describe("Early Access v2.1", () => {
     await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeVisible();
     /* it opens near the bottom of the card, so the list comes into view rather than below the fold */
     await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeInViewport({ ratio: 1 });
+    /* the row Enter picks is the row drawn on top: matches first, the typed name last */
+    await page.getByPlaceholder("Type your software").fill("Office");
+    const rows = sec(page, 1).getByRole("listbox").getByRole("button");
+    await expect(rows.first()).toHaveText("Office Exchange");
+    await expect(rows.last()).toHaveText("Use “Office”");
     await page.getByPlaceholder("Type your software").fill("xchanger");
     await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toHaveCount(0);
     await sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true }).click();
@@ -261,6 +266,27 @@ test.describe("Early Access v2.1", () => {
     expect(lookups).toHaveLength(0);
     await idField.fill(body.cdId);
     await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
+    /* It is theirs to keep and quote. It is not a sign-in yet, so the hint does not say it is. */
+    await expect(page.getByText("It stays yours. Quote it whenever you write to us.")).toBeVisible();
+    await expect(page.getByText(/sign in from now on/)).toHaveCount(0);
+    /* Their own ID typed the way it is read out (no second hyphen), or pasted with a typographic
+       dash, is still theirs, and is still never looked up. */
+    const own: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/api/onboarding/") && !r.url().includes(body.reference)) own.push(r.url()); });
+    await idField.fill(body.cdId.replace(/-/g, "").toLowerCase());
+    await expect(idField).toHaveValue(body.cdId);
+    await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
+    await idField.fill(body.cdId.replace(/-/g, "\u2013"));
+    await expect(idField).toHaveValue(body.cdId);
+    await page.waitForTimeout(800);
+    expect(own).toHaveLength(0);
+    /* A six-character code typed with a space after four letters is still a code, and the
+       walkthrough's code is still a code. */
+    expect(await page.evaluate(() => {
+      const b = (window as unknown as { __cdOnb: { known: Record<string, boolean>; fmtRef(v: string): string; refState(v: string): string } }).__cdOnb;
+      b.known["CD-ZAQRBJ"] = true;
+      return [b.refState(b.fmtRef("CD ZAQR BJ")), b.fmtRef("cd-walkthru"), b.refState(b.fmtRef("CD-ABCD-2345"))];
+    })).toEqual(["ok", "CD-WALKTHRU", "link"]);
   });
 
   test("a Canadian shop not yet registered is told its address is held", async ({ page }) => {
@@ -286,6 +312,19 @@ test.describe("Early Access v2.1", () => {
     await aboutTheShop(page,
       async () => {
         await sec(page, 4).getByRole("button", { name: "The shop is outside Canada" }).click();
+        /* United States opens the state list by itself. Going straight back to the country list
+           focuses the country search, not the state one that is closing. */
+        await page.getByPlaceholder("Type a country").fill("United States");
+        await page.getByPlaceholder("Type a country").press("Enter");
+        await expect(page.getByPlaceholder("Type a state")).toBeVisible();
+        await page.evaluate(() => {
+          const w = window as unknown as { __focused: string[] };
+          w.__focused = [];
+          document.addEventListener("focusin", (e) => w.__focused.push((e.target as HTMLInputElement).placeholder || ""), true);
+        });
+        await sec(page, 4).getByRole("button", { name: /United States/ }).click();
+        await expect(page.getByPlaceholder("Type a country")).toBeFocused();
+        expect(await page.evaluate(() => (window as unknown as { __focused: string[] }).__focused)).not.toContain("Type a state");
         await page.getByPlaceholder("Type a country").fill("Mexico");
         await page.getByPlaceholder("Type a country").press("Enter");
       },
