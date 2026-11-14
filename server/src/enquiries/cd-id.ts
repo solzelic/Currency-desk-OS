@@ -20,9 +20,12 @@
    ID the owner's sign-in; that build widens the sign-in format check.
    Nothing here touches sign-in.
 
-   Open (SIGNUP-LOGIC §14 Q1): the letters for a shop name that is short,
-   numeric or not in Latin script. Until it is decided, the letters are
-   padded with X: "Wu" is WUXX, "123" and "東京両替" are XXXX.
+   The letters for a shop name that is short, numeric or not in Latin
+   script (SIGNUP-LOGIC §14 Q1; Sol, 14 Nov: "CD-XXXX-U3FZ" reads like a
+   placeholder): the shop name's letters when it has four, else the shop's
+   address's, else the owner's name's. X pads only when nothing has a
+   letter: "34343" at 34343-exchange is EXCH, "東京両替" at tokyo-ryogae
+   is TOKY.
    ============================================================ */
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
@@ -55,18 +58,20 @@ export function randomCharacters(count: number, random: RandomBytes = secureByte
   return out;
 }
 
-/* The first four Latin letters of the shop name, accents folded, X-padded. */
-export function cdIdLetters(shopName: string): string {
-  const letters = shopName
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z]/g, "");
-  return (letters + "XXXX").slice(0, 4);
+const latin = (text: string): string =>
+  String(text ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z]/g, "");
+
+/* Four Latin letters, accents folded: from the first source that has four
+   (the shop name, then its address, then the owner's name), else from all
+   of them together, X-padded only when nothing has a letter. */
+export function cdIdLetters(sources: string | string[]): string {
+  const all = (Array.isArray(sources) ? sources : [sources]).map(latin);
+  const enough = all.find((l) => l.length >= 4);
+  return ((enough ?? all.join("")) + "XXXX").slice(0, 4);
 }
 
-export function mintCdId(shopName: string, random: RandomBytes = secureBytes): string {
-  return `CD-${cdIdLetters(shopName)}-${randomCharacters(4, random)}`;
+export function mintCdId(sources: string | string[], random: RandomBytes = secureBytes): string {
+  return `CD-${cdIdLetters(sources)}-${randomCharacters(4, random)}`;
 }
 
 /* What a person types back, in the ID's shape: `cdyork7k42`,
@@ -83,14 +88,14 @@ export function normalizeCdIdInput(raw: unknown): string | null {
    is far more than enough (31^4 = 923,521 per set of letters); running
    out means something is wrong and says so. The unique indexes are the
    last word if two requests race. */
-export async function issueCdId(db: Db, shopName: string, random: RandomBytes = secureBytes): Promise<string> {
+export async function issueCdId(db: Db, sources: string | string[], random: RandomBytes = secureBytes): Promise<string> {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const id = mintCdId(shopName, random);
+    const id = mintCdId(sources, random);
     const asApplication = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(eq(schema.enquiries.cdId, id)).limit(1);
     if (asApplication.length) continue;
     const asStaff = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.cdId, id)).limit(1);
     if (asStaff.length) continue;
     return id;
   }
-  throw new Error(`No free CurrencyDesk ID for ${cdIdLetters(shopName)} after 8 tries`);
+  throw new Error(`No free CurrencyDesk ID for ${cdIdLetters(sources)} after 8 tries`);
 }

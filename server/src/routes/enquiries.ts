@@ -266,7 +266,10 @@ export function registerEnquiryRoutes(app: FastifyInstance, db: Db): void {
     /* v2.1: what the server hands back. An accepted application gets its
        CurrencyDesk ID; a shop outside Canada gets its place in line for its
        country and a code to give another shop. */
-    const cdId = v21 && !waitlistReason ? await issueCdId(db, v21.shopName) : null;
+    /* letters from the shop name, else its address, else the owner's name */
+    const cdId = v21 && !waitlistReason
+      ? await issueCdId(db, [v21.shopName, v21.workspace.split(".")[0] ?? "", `${v21.firstName} ${v21.lastName}`])
+      : null;
     const outside = v21 && waitlistReason === "outside-canada" ? v21 : null;
     const inviteCode = outside ? await issueInviteCode(db, outside.shopName) : null;
     const placeInLine = outside ? await nextPlaceInLine(db, outside.country ?? "") : null;
