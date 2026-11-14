@@ -40,3 +40,17 @@ debt exists (`docs/ARCHITECTURE.md` §8).
 
 Operational commands: `cd server && npm run ledger:migrate` applies
 migrations by hand; `npm run ledger:seed` seeds ledger fixtures.
+
+### Columns with constraints in the boot DDL
+
+The shared DDL runs **before** Postgres migrations and on every embedded
+boot. A migration must not assume that adding its column also adds its
+constraint: `ADD COLUMN IF NOT EXISTS` may already be a no-op. Migration
+074 (`legal_entities.timezone`) adds the nullable text column, then ensures
+the named nonblank CHECK exists. The DDL mirrors both operations, so fresh
+Postgres, legacy upgrades and embedded PGlite enforce the same check.
+Neither operation backfills rows or supplies a default; existing entities
+stay NULL and keep the resolver's branch fallback. IANA validity is checked
+by the service. The runner also supports an earlier migration arriving
+after 074: identifiers are sorted and recorded independently, not treated
+as a single high-water mark.

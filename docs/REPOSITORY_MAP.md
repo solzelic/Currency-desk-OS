@@ -75,6 +75,19 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 
 ## Databases
 
+- The optional shop reporting clock lives in `server/src/ledger/entity-zone.ts`.
+  It exports the held-client `entityReportZone` resolver and `EntityZoneService`.
+  `GET`/`PUT /api/ledger/entity-zone` are registered in `ledger/routes.ts`:
+  ledger readers may read; only the owner may set or clear, with an atomic
+  audit. No screen or reporting consumer uses the new setting yet. See
+  `CASH_OWNERSHIP_INVARIANTS.md`, "Shop reporting zone".
+- Migration `074_legal_entity_timezone` adds nullable `legal_entities.timezone`
+  with a nonblank CHECK, no default and no backfill. The boot DDL includes
+  both column and check for embedded PGlite and runs before migrations on
+  Postgres; the migration installs a missing check even if the column exists.
+  The Drizzle schema includes the nullable column. Earlier pending migrations
+  remain independently replayable; 074 does not depend on 069–073.
+
 - App tables: Drizzle; embedded PGlite (dev/test) or Postgres (`DATABASE_URL`).
   Boot applies `DDL` + `runMigrations`. A fresh database self-provisions.
   `runMigrations` logs `opening database` before its first query and one

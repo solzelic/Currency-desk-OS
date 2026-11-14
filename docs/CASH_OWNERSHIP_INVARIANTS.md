@@ -232,6 +232,66 @@ which way "stricter" points, and what the posting gate does when neither can
 answer — is written down in `DESK_THRESHOLDS.md`. The short version: the pack
 proposes, the desk decides, and a desk may only ever tighten.
 
+## Shop reporting zone
+
+`server/src/ledger/entity-zone.ts` exports
+`entityReportZone(client: pg.PoolClient, legalEntityId: string)`, returning
+`{ zone, source: "entity" | "shared_branches" | "first_branch" | "default", mixed }`.
+Callers authorize the entity before calling it and pass their **already held
+client inside an open transaction**. It never checks out another connection
+or commits the caller's work. Savepoints contain missing-table reads, are
+released on success and recovery, and leave the caller's transaction usable.
+
+The order is a valid trimmed `legal_entities.timezone`; otherwise all
+branches' valid trimmed zone strings when equal; otherwise the first
+branch's valid zone with `mixed: true`; otherwise `America/Toronto`.
+"First" is earliest `branches.created_at`, then `id` to break ties.
+`created_at` is the branch row's insertion time, not the date its physical
+shop opened. This ordering was chosen by the CD-108 coordinator as a
+deterministic implementation convention, **not a compliance rule**.
+
+An invalid legacy entity setting is ignored for resolution but remains
+visible as the raw `setting` in the API. Invalid or blank branch zones form
+one unavailable category when computing `mixed`; distinct valid trimmed
+strings (including differently written aliases) remain distinct categories.
+If the earliest branch's zone is invalid, use the default rather than
+silently choosing a later branch. `mixed` still reports whether branch
+categories differ. No branches, or missing branch and entity tables, give
+the default with `mixed: false`. A missing entity table can still resolve
+available branches. A valid entity setting gives `source: "entity"` and
+`mixed: false` without consulting branches. Only missing tables (`42P01`)
+are optional; missing columns, permissions failures and other SQL errors
+propagate. An unapplied schema change is not silently treated as an unset
+setting.
+
+`GET /api/ledger/entity-zone` requires `ledger:view` and returns the resolved
+fields plus `setting` (stored string or NULL). PUT accepts only
+`{ "zone": <trimmed 1..64 character IANA name or null> }` and requires
+`compliance:thresholds`, held only by `administrator`. Named-zone validity
+uses `civilTodayInZone`; numeric UTC offsets are not named IANA zones.
+Malformed input is 400 `INVALID_REQUEST`. All other staff roles may read
+but cannot change the setting. Neither a body field nor a foreign workspace
+can select another entity. Both methods check the session tenant/entity.
+
+The owner write locks the entity **before** reading its old setting. Set
+or clear, resolution, and `ledger_audit_events` action
+`entity_timezone.change` share one transaction. `reason` is JSON containing
+the complete before/after setting and resolved fields. Actor, tenant,
+entity, branch and workspace come from the session; target is the entity.
+An audit failure rolls back the setting. A repeat of the same choice is
+also audited. NULL clears the choice, without backfilling branch data or
+restating any posted deal or filing.
+
+This is the **server half only**. T1b/CD-107 can import this contract for
+shop-wide reporting, but no reporting consumer is wired to it yet. The
+settings screen is not built. The existing branch civil-day helper and
+single browser clock still serve their current consumers. This setting
+does not change earnings permissions, report windows or filing rules.
+`server/tests/entity-zone.postgres.test.ts` covers the resolver, embedded
+and Postgres schema, migration replay, actual routes/roles, tenant isolation,
+one-client operation, concurrent changes and audit-failure rollback. A
+future screen or reporting consumer needs its own seam verification.
+
 ## Where the seams are tested
 
 Each of these drives a real screen against a real ledger

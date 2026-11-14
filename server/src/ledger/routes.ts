@@ -18,6 +18,7 @@ import {
 import { TillControlService } from "./till-control.js";
 import { VaultControlService } from "./vault-control.js";
 import { CostMethodService } from "./cost-method-control.js";
+import { EntityZoneService } from "./entity-zone.js";
 import {
   ThresholdService,
   type ThresholdChanges,
@@ -188,6 +189,9 @@ const movementQuery = z.object({
 const costMethodBody = z.object({
   method: z.enum(["weighted_average", "fifo", "pack_default"]),
 }).strict();
+const entityZoneBody = z.object({
+  zone: z.string().trim().min(1).max(64).nullable(),
+}).strict();
 /* The desk's own thresholds. Every field is optional — a client changing
    the identification line should not have to restate the reporting one,
    and a PUT that carried all four would let a stale screen quietly undo
@@ -339,6 +343,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   const tillControl = new TillControlService(pool);
   const vaultControl = new VaultControlService(pool);
   const costMethod = new CostMethodService(pool);
+  const entityZone = new EntityZoneService(pool);
   const thresholds = new ThresholdService(pool);
   const branchLocation = new BranchLocationService(pool);
   const currencies = new CurrencyService(pool);
@@ -820,6 +825,29 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
           )
         : undefined;
     } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.get("/api/ledger/entity-zone", async (req, reply) => {
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await entityZone.current(actor)) : undefined;
+    } catch (error) {
+      return failure(reply, error);
+    }
+  });
+
+  app.put("/api/ledger/entity-zone", async (req, reply) => {
+    const parsed = entityZoneBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+    try {
+      const actor = await actorOrReply(req, reply);
+      return actor ? reply.send(await entityZone.set(actor, parsed.data.zone)) : undefined;
+    } catch (error) {
+      if (error instanceof LedgerError && error.code === "INVALID_REQUEST") {
+        return reply.code(400).send({ code: error.code, message: error.message });
+      }
       return failure(reply, error);
     }
   });
