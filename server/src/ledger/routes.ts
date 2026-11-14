@@ -832,11 +832,17 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
   });
 
   app.get("/api/ledger/lctr-groups", async (req, reply) => {
-    const parsed = z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().safeParse(req.query);
-    if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
     try {
       const actor = await actorOrReply(req, reply);
-      return actor ? reply.send(await lctrGroups.forDay(actor, parsed.data.day)) : undefined;
+      if (!actor) return;
+      // Refuse callers before parsing their query. The service also checks
+      // the ledger principal inside its held transaction.
+      if (!hasBackendPermission(actor.role, "filing:view")) {
+        throw new LedgerError("AUTHORIZATION_DENIED", "Missing filing:view.");
+      }
+      const parsed = z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().safeParse(req.query);
+      if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
+      return reply.send(await lctrGroups.forDay(actor, parsed.data.day));
     } catch (error) {
       if (error instanceof LedgerError && error.code === "INVALID_REQUEST") {
         return reply.code(400).send({ code: error.code, message: error.message });

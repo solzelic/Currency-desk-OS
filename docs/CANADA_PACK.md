@@ -127,7 +127,10 @@ stored when the teller typed them, and they may be omitted.
 `GET /api/ledger/lctr-groups?day=YYYY-MM-DD` is a server-only read.
 `LctrGroupsService.forDay(actor, day)` checks `filing:view`: supervisor,
 branch manager, administrator and compliance officer may read; teller and
-auditor may not. The session supplies the tenant and entity. Query fields
+auditor may not. The route checks the session and `filing:view` before query
+validation: missing sessions receive 401 and disallowed roles 403, even with
+a missing or malformed day. The service retains its transactional principal
+check. The session supplies the tenant and entity. Query fields
 other than `day` are refused, including entity, branch, axis and limit.
 A foreign workspace cannot select another shop. Authorization, entity-zone
 resolution, the current trigger and the receipts share one held Postgres

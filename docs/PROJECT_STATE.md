@@ -86,7 +86,8 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   in `CASH_OWNERSHIP_INVARIANTS.md`, "Shop reporting zone".
 
 - **CD-107 A1 provides a server-only shop-day LCTR grouping read.**
-  `GET /api/ledger/lctr-groups?day=YYYY-MM-DD` requires `filing:view` and
+  `GET /api/ledger/lctr-groups?day=YYYY-MM-DD` checks the session and
+  `filing:view` before query validation, retains the ledger principal check, and
   uses the session tenant/entity, across all branches and all three axes,
   without a list cap. Amounts and reversal exclusions share `cashReceived`'s
   predicates. The accepted CD-108 resolver supplies one shop zone; separate

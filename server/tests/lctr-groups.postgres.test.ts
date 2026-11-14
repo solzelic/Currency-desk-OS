@@ -214,6 +214,16 @@ postgres("entity shop-day LCTR groups", () => {
     if (response.statusCode === 403) expect(response.json()).toMatchObject({ code: "AUTHORIZATION_DENIED" });
   });
 
+  describe.each(["teller", "auditor", "signed-out"])("query authorization for %s", role => {
+    it.each(["", "day=invalid", "day=2026-02-30", "day=2026-06-15&extra=1"])("precedes query validation: %s", async query => {
+      const response = role === "signed-out"
+        ? await app.inject({ method: "GET", url: `/api/ledger/lctr-groups?${query}` })
+        : await get(query, role);
+      expect(response.statusCode).toBe(role === "signed-out" ? 401 : 403);
+      expect(response.json()).toMatchObject({ code: role === "signed-out" ? "AUTHENTICATION_REQUIRED" : "AUTHORIZATION_DENIED" });
+    });
+  });
+
   it("does not trust an actor's claimed role", async () => {
     await pool.query("UPDATE ledger_principals SET role='teller' WHERE user_id=$1", [owner.userId]);
     await expect(read()).rejects.toMatchObject({ code: "AUTHORIZATION_DENIED" });
