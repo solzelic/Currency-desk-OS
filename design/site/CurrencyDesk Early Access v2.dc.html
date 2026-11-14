@@ -407,6 +407,23 @@
                     <button type="button" sc-camel-on-click="{{ opt.onClick }}" style="{{ opt.style }}">{{ opt.label }}</button>
                   </sc-for>
                 </div>
+                <!-- which MSB software, optional (Sol, 14 Nov): the same searchable list as the country picker -->
+                <sc-if value="{{ softwareAsk }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <sc-for list="{{ softwarePickers }}" as="P" hint-placeholder-count="1"><span style="{{ P.wrap }}">
+<sc-if value="{{ P.closed }}" hint-placeholder-val="{{ true }}"><button type="button" ref="{{ P.ref }}" sc-camel-on-click="{{ P.toggle }}" aria-haspopup="listbox" style="{{ P.btn }}"><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;">{{ P.label }}</span><svg sc-camel-view-box="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex: none; color: #6B6459;"><path d="M6 9l6 6 6-6"></path></svg></button></sc-if>
+                      <sc-if value="{{ P.open }}" hint-placeholder-val="{{ false }}">
+                        <span aria-haspopup="listbox" style="position: relative; display: block;"><input ref="{{ P.refQ }}" value="{{ P.q }}" sc-camel-on-input="{{ P.onQ }}" sc-camel-on-key-down="{{ P.onKey }}" placeholder="{{ P.search }}" style="width: 100%; box-sizing: border-box; padding: 12px 40px 12px 14px; font-size: 15px; font-family: inherit; color: #17140F; background: #FFFDF8; border: 1.5px solid #1D6B45; border-radius: 12px; outline: none; box-shadow: 0 0 0 4px rgba(29,107,69,0.12);"><button type="button" sc-camel-on-click="{{ P.toggle }}" aria-label="Close" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: none; background: transparent; color: #6B6459; cursor: pointer; display: grid; place-items: center;"><svg sc-camel-view-box="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"></path></svg></button></span>
+                        <div role="listbox" style="margin-top: 8px; border-radius: 14px; background: #FFFDF8; border: 1.5px solid #E4DCCD; overflow: hidden; animation: cdWlRise 0.25s cubic-bezier(0.2,0.9,0.3,1) both;">
+                          <div style="max-height: 236px; overflow-y: auto; padding: 6px;">
+                            <sc-for list="{{ P.items }}" as="it" hint-placeholder-count="6"><button type="button" sc-camel-on-click="{{ it.pick }}" style="{{ it.style }}" style-hover="background: #F1EADD;">{{ it.label }}<sc-if value="{{ it.on }}" hint-placeholder-val="{{ false }}"><svg sc-camel-view-box="0 0 24 24" width="14" height="14" fill="none" stroke="#1D6B45" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></sc-if></button></sc-for>
+                            <sc-if value="{{ P.none }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px; font-size: 13px; color: #6B6459;">Nothing matches. Check the spelling.</div></sc-if>
+                          </div>
+                        </div>
+                      </sc-if>
+                    </span></sc-for>
+                  </div>
+                </sc-if>
                 <sc-if value="{{ stackOtherOn }}" hint-placeholder-val="{{ false }}">
                   <input value="{{ stackOther }}" sc-camel-on-input="{{ onStackOther }}" sc-camel-on-key-down="{{ onStackKey }}" placeholder="What do you use? e.g. QuickBooks + a binder" style="width: 100%; box-sizing: border-box; margin-top: 10px; padding: 12px 14px; font-size: 14.5px; color: #17140F; background: #FFFDF8; border: 1.5px solid #DDD5C6; border-radius: 12px; outline: none;" style-focus="border-color: #1D6B45; box-shadow: 0 0 0 4px rgba(29,107,69,0.12);">
                 </sc-if>
@@ -877,7 +894,7 @@ class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
-      step: 0, email: '', domain: '', shopName: '', workspace: '', volume: null,
+      step: 0, email: '', domain: '', shopName: '', software: '', workspace: '', volume: null,
       branches: null, torn: false, dPhase: 0, idShown: 0, spin: 0, reeling: false, infoOpen: false, copied: false, samLeft: 60, samMode: 'count', noCall: false, firstName: '', lastName: '', msbNo: '', prov: null, outCountry: '', outState: '', pk: '', pq: '', fintrac: null, justDone: null, whoOpen: -1, nameDone: false, phoneDone: false, roleOther: '', stacks: [], stackOtherOn: false, stackOther: '', stacksDone: false, openSec: 0, hasSite: null, timeline: null, name: '', role: '', employees: null, phone: '', dial: '+1', callWindow: '', jur: 'CA', seed: 0, toast: '', memberCount: null, openMode: null, railSel: null
     };
     this._initial = Object.assign({}, this.state);
@@ -900,6 +917,10 @@ class Component extends DCLogic {
     this.refMsb = React.createRef();
     this.refState = React.createRef();
     this.refQ = React.createRef();
+    this.refSoft = React.createRef();
+    /* The MSB software a shop may name under "MSB software we use": real products, checked on
+       their vendors' sites (14 Nov 2026). Anything else can be used as typed. */
+    this.MSB_SOFTWARE = [];
     this.COUNTRIES = ['United States'].concat('Afghanistan|Albania|Algeria|Andorra|Angola|Antigua and Barbuda|Argentina|Armenia|Australia|Austria|Azerbaijan|Bahamas|Bahrain|Bangladesh|Barbados|Belarus|Belgium|Belize|Benin|Bhutan|Bolivia|Bosnia and Herzegovina|Botswana|Brazil|Brunei|Bulgaria|Burkina Faso|Burundi|Cabo Verde|Cambodia|Cameroon|Central African Republic|Chad|Chile|China|Colombia|Comoros|Congo|Costa Rica|Croatia|Cuba|Cyprus|Czechia|Denmark|Djibouti|Dominica|Dominican Republic|DR Congo|Ecuador|Egypt|El Salvador|Equatorial Guinea|Eritrea|Estonia|Eswatini|Ethiopia|Fiji|Finland|France|Gabon|Gambia|Georgia|Germany|Ghana|Greece|Grenada|Guatemala|Guinea|Guinea-Bissau|Guyana|Haiti|Honduras|Hong Kong|Hungary|Iceland|India|Indonesia|Iran|Iraq|Ireland|Israel|Italy|Ivory Coast|Jamaica|Japan|Jordan|Kazakhstan|Kenya|Kiribati|Kosovo|Kuwait|Kyrgyzstan|Laos|Latvia|Lebanon|Lesotho|Liberia|Libya|Liechtenstein|Lithuania|Luxembourg|Macao|Madagascar|Malawi|Malaysia|Maldives|Mali|Malta|Marshall Islands|Mauritania|Mauritius|Mexico|Micronesia|Moldova|Monaco|Mongolia|Montenegro|Morocco|Mozambique|Myanmar|Namibia|Nauru|Nepal|Netherlands|New Zealand|Nicaragua|Niger|Nigeria|North Korea|North Macedonia|Norway|Oman|Pakistan|Palau|Palestine|Panama|Papua New Guinea|Paraguay|Peru|Philippines|Poland|Portugal|Puerto Rico|Qatar|Romania|Russia|Rwanda|Saint Kitts and Nevis|Saint Lucia|Saint Vincent and the Grenadines|Samoa|San Marino|Sao Tome and Principe|Saudi Arabia|Senegal|Serbia|Seychelles|Sierra Leone|Singapore|Slovakia|Slovenia|Solomon Islands|Somalia|South Africa|South Korea|South Sudan|Spain|Sri Lanka|Sudan|Suriname|Sweden|Switzerland|Syria|Taiwan|Tajikistan|Tanzania|Thailand|Timor-Leste|Togo|Tonga|Trinidad and Tobago|Tunisia|Turkey|Turkmenistan|Tuvalu|Uganda|Ukraine|United Arab Emirates|United Kingdom|Uruguay|Uzbekistan|Vanuatu|Vatican City|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe'.split('|'));
     /* country, two-letter code, dial code. The dial code follows the country they pick; they can still change it */
     this.DIAL = 'United States:US:1|Afghanistan:AF:93|Albania:AL:355|Algeria:DZ:213|Andorra:AD:376|Angola:AO:244|Antigua and Barbuda:AG:1|Argentina:AR:54|Armenia:AM:374|Australia:AU:61|Austria:AT:43|Azerbaijan:AZ:994|Bahamas:BS:1|Bahrain:BH:973|Bangladesh:BD:880|Barbados:BB:1|Belarus:BY:375|Belgium:BE:32|Belize:BZ:501|Benin:BJ:229|Bhutan:BT:975|Bolivia:BO:591|Bosnia and Herzegovina:BA:387|Botswana:BW:267|Brazil:BR:55|Brunei:BN:673|Bulgaria:BG:359|Burkina Faso:BF:226|Burundi:BI:257|Cabo Verde:CV:238|Cambodia:KH:855|Cameroon:CM:237|Central African Republic:CF:236|Chad:TD:235|Chile:CL:56|China:CN:86|Colombia:CO:57|Comoros:KM:269|Congo:CG:242|Costa Rica:CR:506|Croatia:HR:385|Cuba:CU:53|Cyprus:CY:357|Czechia:CZ:420|Denmark:DK:45|Djibouti:DJ:253|Dominica:DM:1|Dominican Republic:DO:1|DR Congo:CD:243|Ecuador:EC:593|Egypt:EG:20|El Salvador:SV:503|Equatorial Guinea:GQ:240|Eritrea:ER:291|Estonia:EE:372|Eswatini:SZ:268|Ethiopia:ET:251|Fiji:FJ:679|Finland:FI:358|France:FR:33|Gabon:GA:241|Gambia:GM:220|Georgia:GE:995|Germany:DE:49|Ghana:GH:233|Greece:GR:30|Grenada:GD:1|Guatemala:GT:502|Guinea:GN:224|Guinea-Bissau:GW:245|Guyana:GY:592|Haiti:HT:509|Honduras:HN:504|Hong Kong:HK:852|Hungary:HU:36|Iceland:IS:354|India:IN:91|Indonesia:ID:62|Iran:IR:98|Iraq:IQ:964|Ireland:IE:353|Israel:IL:972|Italy:IT:39|Ivory Coast:CI:225|Jamaica:JM:1|Japan:JP:81|Jordan:JO:962|Kazakhstan:KZ:7|Kenya:KE:254|Kiribati:KI:686|Kosovo:XK:383|Kuwait:KW:965|Kyrgyzstan:KG:996|Laos:LA:856|Latvia:LV:371|Lebanon:LB:961|Lesotho:LS:266|Liberia:LR:231|Libya:LY:218|Liechtenstein:LI:423|Lithuania:LT:370|Luxembourg:LU:352|Macao:MO:853|Madagascar:MG:261|Malawi:MW:265|Malaysia:MY:60|Maldives:MV:960|Mali:ML:223|Malta:MT:356|Marshall Islands:MH:692|Mauritania:MR:222|Mauritius:MU:230|Mexico:MX:52|Micronesia:FM:691|Moldova:MD:373|Monaco:MC:377|Mongolia:MN:976|Montenegro:ME:382|Morocco:MA:212|Mozambique:MZ:258|Myanmar:MM:95|Namibia:NA:264|Nauru:NR:674|Nepal:NP:977|Netherlands:NL:31|New Zealand:NZ:64|Nicaragua:NI:505|Niger:NE:227|Nigeria:NG:234|North Korea:KP:850|North Macedonia:MK:389|Norway:NO:47|Oman:OM:968|Pakistan:PK:92|Palau:PW:680|Palestine:PS:970|Panama:PA:507|Papua New Guinea:PG:675|Paraguay:PY:595|Peru:PE:51|Philippines:PH:63|Poland:PL:48|Portugal:PT:351|Puerto Rico:PR:1|Qatar:QA:974|Romania:RO:40|Russia:RU:7|Rwanda:RW:250|Saint Kitts and Nevis:KN:1|Saint Lucia:LC:1|Saint Vincent and the Grenadines:VC:1|Samoa:WS:685|San Marino:SM:378|Sao Tome and Principe:ST:239|Saudi Arabia:SA:966|Senegal:SN:221|Serbia:RS:381|Seychelles:SC:248|Sierra Leone:SL:232|Singapore:SG:65|Slovakia:SK:421|Slovenia:SI:386|Solomon Islands:SB:677|Somalia:SO:252|South Africa:ZA:27|South Korea:KR:82|South Sudan:SS:211|Spain:ES:34|Sri Lanka:LK:94|Sudan:SD:249|Suriname:SR:597|Sweden:SE:46|Switzerland:CH:41|Syria:SY:963|Taiwan:TW:886|Tajikistan:TJ:992|Tanzania:TZ:255|Thailand:TH:66|Timor-Leste:TL:670|Togo:TG:228|Tonga:TO:676|Trinidad and Tobago:TT:1|Tunisia:TN:216|Turkey:TR:90|Turkmenistan:TM:993|Tuvalu:TV:688|Uganda:UG:256|Ukraine:UA:380|United Arab Emirates:AE:971|United Kingdom:GB:44|Uruguay:UY:598|Uzbekistan:UZ:998|Vanuatu:VU:678|Vatican City:VA:39|Venezuela:VE:58|Vietnam:VN:84|Yemen:YE:967|Zambia:ZM:260|Zimbabwe:ZW:263'.split('|').map((r) => r.split(':')).reduce((m, [n, iso, d]) => { m[n] = { iso, dial: '+' + d }; return m; }, {});
@@ -1052,6 +1073,7 @@ class Component extends DCLogic {
       jurisdiction: s.prov === 'OUT' ? 'outside-canada' : 'CA', province: s.prov === 'OUT' ? null : s.prov, country: s.prov === 'OUT' ? s.outCountry.trim().slice(0, 80) : 'Canada', state: s.prov === 'OUT' && s.outCountry === 'United States' ? String(s.outState || '').slice(0, 80) || null : null,
       fintracRegistered: s.prov === 'OUT' ? null : s.fintrac, waitlist: this._filtered(), waitlistReason: s.prov === 'OUT' ? 'outside-canada' : s.fintrac === 'Not yet' ? 'not-fintrac-registered' : null,
       role: (s.role === 'Other' ? 'Other: ' + s.roleOther.trim() : s.role).slice(0, 120), employees: s.employees, monthlyVolume: s.volume,
+      software: s.stacks.indexOf('MSB software we use') >= 0 && s.software ? s.software.slice(0, 120) : null,
       branches: s.branches, runningOn: s.stacks.concat(s.stackOtherOn && s.stackOther.trim() ? ['Other: ' + s.stackOther.trim()] : []).join('; ').slice(0, 500), timeline: s.timeline,
       phone, bestTime: call ? 'call now' : 'no call', samConsent: call ? { phone, text: 'SAM can call this number to help set up my desk.', at: new Date().toISOString() } : null,
       msbNumber: s.prov === 'OUT' ? null : (s.msbNo.trim() || null),
@@ -1706,23 +1728,28 @@ class Component extends DCLogic {
   };
   // the country and state pickers: a field that opens a searchable list. pk is which one is open, pq the search text
   _picker(kind) {
-    const s = this.state, isC = kind === 'country', list = isC ? this.COUNTRIES : this.STATES, val = isC ? s.outCountry : s.outState;
+    const s = this.state, isC = kind === 'country', isS = kind === 'software';
+    const list = isS ? this.MSB_SOFTWARE : isC ? this.COUNTRIES : this.STATES, val = isS ? s.software : isC ? s.outCountry : s.outState;
     const open = s.pk === kind, q = open ? s.pq.trim().toLowerCase() : '';
     const items = list.filter((c) => !q || c.toLowerCase().indexOf(q) >= 0).slice(0, 80);
+    /* software not on the list can be used as typed */
+    const typed = isS ? s.pq.trim().slice(0, 80) : '';
+    const useTyped = !!typed && !list.some((c) => c.toLowerCase() === typed.toLowerCase());
     const pick = (v) => () => {
       this._tone('tap');
+      if (isS) { this.setState({ software: v, pk: '', pq: '' }); return; }
       if (isC) { this.setState({ outCountry: v, outState: '', pk: v === 'United States' ? 'state' : '', pq: '', dial: (this.DIAL[v] || { dial: '+1' }).dial }); if (v !== 'United States') setTimeout(() => this.outNext(), 160); else setTimeout(() => { try { this.refQ.current && this.refQ.current.focus(); } catch (x) {} }, 60); }
       else { this.setState({ outState: v, pk: '', pq: '' }); setTimeout(() => this.outNext(), 160); }
     };
     return {
       wrap: 'position: relative; min-width: 0; flex: ' + (open ? '1 1 100%' : '1 1 150px') + ';',
-      closed: !open, label: val || (isC ? 'Which country?' : 'Which state?'), search: isC ? 'Type a country' : 'Type a state', q: s.pq, open, none: open && items.length === 0,
-      ref: isC ? this.refCountry : this.refState, refQ: this.refQ,
+      closed: !open, label: val || (isS ? 'Which software? (optional)' : isC ? 'Which country?' : 'Which state?'), search: isS ? 'Type your software' : isC ? 'Type a country' : 'Type a state', q: s.pq, open, none: open && items.length === 0 && !useTyped,
+      ref: isS ? this.refSoft : isC ? this.refCountry : this.refState, refQ: this.refQ,
       btn: "display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 12px 12px 14px; font-size: 15px; font-family: inherit; text-align: left; background: #FFFDF8; border-radius: 12px; cursor: pointer; outline: none; color: " + (val ? '#17140F' : '#6B6459') + '; border: 1.5px solid ' + (open ? '#1D6B45' : '#DDD5C6') + ';' + (open ? ' box-shadow: 0 0 0 4px rgba(29,107,69,0.12);' : ''),
       toggle: () => { const o = s.pk === kind ? '' : kind; this.setState({ pk: o, pq: '' }); if (o) setTimeout(() => { try { this.refQ.current && this.refQ.current.focus(); } catch (x) {} }, 60); },
       onQ: (e) => this.setState({ pq: e.target.value }),
-      onKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (items.length) pick(items[0])(); } else if (e.key === 'Escape') this.setState({ pk: '', pq: '' }); },
-      items: items.map((c) => ({ label: c, on: c === val, pick: pick(c), style: 'display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 9px; border: none; font-size: 14.5px; font-family: inherit; color: #17140F; cursor: pointer; background: ' + (c === val ? '#E2EFE8' : 'transparent') + ';' + (isC && c === 'United States' ? ' font-weight: 700; border-bottom: 1px solid #EFE8DA; border-radius: 9px 9px 0 0; margin-bottom: 4px;' : '') }))
+      onKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (items.length) pick(items[0])(); else if (useTyped) pick(typed)(); } else if (e.key === 'Escape') this.setState({ pk: '', pq: '' }); },
+      items: (useTyped ? [{ c: typed, label: 'Use \u201c' + typed + '\u201d' }] : []).concat(items.map((c) => ({ c, label: c }))).map(({ c, label }) => ({ label, on: c === val, pick: pick(c), style: 'display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 9px; border: none; font-size: 14.5px; font-family: inherit; color: #17140F; cursor: pointer; background: ' + (c === val ? '#E2EFE8' : 'transparent') + ';' + (isC && c === 'United States' ? ' font-weight: 700; border-bottom: 1px solid #EFE8DA; border-radius: 9px 9px 0 0; margin-bottom: 4px;' : '') }))
     };
   }
   _outOk() { const s = this.state; return this.COUNTRIES.indexOf(s.outCountry) >= 0 && (s.outCountry !== 'United States' || this.STATES.indexOf(s.outState) >= 0); }
@@ -1735,8 +1762,8 @@ class Component extends DCLogic {
   pickBranch = (k) => () => { if (this.state.volume) this._advance(0, { branches: k }); else this.setState({ branches: k }); };
   toggleStack = (v) => () => {
     if (v === 'Other') { this.setState({ stackOtherOn: !this.state.stackOtherOn, stacksDone: false }); return; }
-    const cur = this.state.stacks;
-    this.setState({ stacksDone: false, stacks: cur.indexOf(v) >= 0 ? cur.filter((x) => x !== v) : cur.concat([v]) });
+    const cur = this.state.stacks, off = cur.indexOf(v) >= 0;
+    this.setState(Object.assign({ stacksDone: false, stacks: off ? cur.filter((x) => x !== v) : cur.concat([v]) }, off && v === 'MSB software we use' ? { software: '', pk: '' } : {}));
   };
   stackDone = () => {
     const s = this.state;
@@ -1917,7 +1944,7 @@ class Component extends DCLogic {
         const PROVS = [['ON','Ontario'],['QC','Quebec'],['BC','British Columbia'],['AB','Alberta'],['MB','Manitoba'],['SK','Saskatchewan'],['NS','Nova Scotia'],['NB','New Brunswick'],['NL','Newfoundland and Labrador'],['PE','Prince Edward Island'],['YT','Yukon'],['NT/NU','Northwest Territories or Nunavut']];
         const sums = [
           (s.volume || s.branches) ? [s.volume, s.branches === 'multi' ? 'Two or more shops' : s.branches === 'single' ? 'One shop' : null].filter(Boolean).join(' · ') : 'A ballpark, and how many shops',
-          (s.stacks.length || (s.stackOtherOn && s.stackOther.trim())) ? s.stacks.concat(s.stackOtherOn && s.stackOther.trim() ? [s.stackOther.trim()] : []).join(', ') : 'Pick all that apply',
+          (s.stacks.length || (s.stackOtherOn && s.stackOther.trim())) ? s.stacks.map((v) => v === 'MSB software we use' && s.software ? v + ' (' + s.software + ')' : v).concat(s.stackOtherOn && s.stackOther.trim() ? [s.stackOther.trim()] : []).join(', ') : 'Pick all that apply',
           s.timeline || 'No wrong answer',
           s.hasSite === false ? 'Not yet' : s.hasSite === true ? (s.domain.trim() || 'Type the address') : 'If you have one, add the address',
           s.prov === 'OUT' ? 'Outside Canada' + (this._country() ? ' · ' + this._country() + (s.outCountry === 'United States' && s.outState ? ', ' + s.outState : '') : '') : s.prov ? (PROVS.find((p) => p[0] === s.prov) || [s.prov, s.prov])[1] : '',
@@ -1952,6 +1979,7 @@ class Component extends DCLogic {
           aboutBar: 'position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; overflow: hidden; transition: width 0.6s cubic-bezier(0.2,0.9,0.3,1.2); width: ' + Math.max(4, Math.round(n / 6 * 100)) + '%; background: ' + (n === 6 ? 'linear-gradient(90deg, #1D6B45, #2EA36B)' : 'linear-gradient(90deg, #1D6B45, #2EA36B)') + ';' + (n === 6 ? ' animation: cdBarGlow 1.6s ease-in-out 2;' : ''),
           aboutCountStyle: "flex: none; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; " + (n === 6 ? 'background: #2EA36B; color: #fff; animation: cdTickPop 0.4s cubic-bezier(0.2,1.4,0.4,1);' : 'background: rgba(23,20,15,0.06); color: #6B6459;'),
           stackOtherOn: s.stackOtherOn, stackOther: s.stackOther,
+          softwareAsk: s.stacks.indexOf('MSB software we use') >= 0, softwarePickers: [this._picker('software')],
           onStackOther: (e) => this.setState({ stackOther: e.target.value, stacksDone: false }),
           onStackKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); this.stackDone(); } },
           stackDone: this.stackDone,
