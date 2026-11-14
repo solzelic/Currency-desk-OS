@@ -154,7 +154,7 @@ test.describe("Early Access v2.1", () => {
     /* the list is real products, checked on their vendors' sites, and the search narrows it */
     await expect(sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true })).toBeVisible();
     await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeVisible();
-    await page.getByPlaceholder("Type your software").fill("xchang");
+    await page.getByPlaceholder("Type your software").fill("xchanger");
     await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toHaveCount(0);
     await sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true }).click();
     await expect(sec(page, 1).getByRole("button", { name: /CurrencyXchanger/ })).toBeVisible();
