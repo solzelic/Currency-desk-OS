@@ -1200,6 +1200,7 @@ class Component extends DCLogic {
   _submitFailed(status, stagingExpired, blocked) {
     if (this.state.step !== 4 && !blocked) return;
     (this._doneT || []).forEach(clearTimeout); clearInterval(this._spinI); clearInterval(this._spinTick); clearInterval(this._mc);
+    this._cancelPending();
     if (this._tok) { cancelAnimationFrame(this._tok.raf); this._tok = null; }
     if (this._pass) { cancelAnimationFrame(this._pass.raf); this._pass = null; }
     this.setState({ step: 3, whoOpen: -1, reeling: false, headLit: false, torn: false, dPhase: 0, idShown: 0 });
@@ -1212,46 +1213,59 @@ class Component extends DCLogic {
     fix(); setTimeout(fix, 60); setTimeout(fix, 400);
   }
   _startDone() {
-    (this._doneT || []).forEach(clearTimeout); clearInterval(this._samI); clearInterval(this._mc); clearInterval(this._spinI);
+    (this._doneT || []).forEach(clearTimeout); clearInterval(this._samI); clearInterval(this._mc); clearInterval(this._spinI); clearInterval(this._spinTick);
+    /* an answer's chime still waiting (Claim pressed within 260 ms of the last answer) would ring inside the logo moment */
+    clearTimeout(this._whoT); clearTimeout(this._advT);
+    this._cancelPending();
     if (this._tok) { cancelAnimationFrame(this._tok.raf); this._tok = null; }
     if (this._pass) { cancelAnimationFrame(this._pass.raf); this._pass = null; }
     const fromDark = !!this._fromDark; this._fromDark = false;
     this.setState({ headLit: fromDark, fromDark, wlShown: null, wlCounting: false, wlCopied: false, torn: false, dPhase: 0, idShown: 0, reeling: false, samLeft: 60, samMode: 'count', samAt: null, samJust: false, memberCount: null, copied: false, infoOpen: false });
     this._doneT = [];
     this._unshift();
+    this._t0 = performance.now(); /* until the logo animation says when it really started */
     if (this._filtered()) { this._startWaitlist(); return; }
+    this._anchorToLogo();
     const at = (ms, fn) => { this._doneT.push(setTimeout(fn, ms + 2750)); }; /* everything after the logo moment */
     //  0.0 jackpot flash   0.6 ticket   1.5 seal   2.1 / 3.1 / 4.1 status lines, number counts up
     //  5.6 strain   6.2 tear   7.4 desk ID spins like reels, locks one by one   9.6 emailed
     //  10.2 You're in, copy it down   11.2 button and SAM
     /* the green is a three-beat sonic logo (Sol, 6 Nov): breath in as it opens, the lock as the two halves meet and the dot pops, breath out as it gathers into the dot */
-    this._doneT.push(setTimeout(() => this._tone('bloom'), 500));
-    this._doneT.push(setTimeout(() => this._tone('lock'), 1410));
-    this._doneT.push(setTimeout(() => this._tone('settle'), 2810));
+    this._cueAt('bloom', () => this._t0 + 500);
+    this._cueAt('lock', () => this._t0 + 1410);
+    this._cueAt('settle', () => this._t0 + 2810);
     this._doneT.push(setTimeout(() => this.setState({ headLit: true }), 820)); /* header turns white once the green has covered it */
     this._statusN = 0;
     at(2100, () => { this.setState({ dPhase: 1 }); this._countUp(); });
-    at(3900, () => { this._tone('status'); this.setState({ dPhase: 2 }); });
-    at(5700, () => { this._tone('status'); this.setState({ dPhase: 3 }); });
-    at(7400, () => { this._tone('status'); this.setState({ dPhase: 4 }); });
-    at(7900, () => { this._tone('strain'); this.setState({ dPhase: 5 }); });
-    at(8500, () => { this._tone('rip'); this.setState({ dPhase: 6, torn: true }); });
+    /* each sound is placed on the audio clock for the frame its picture lands on: the timer's moment plus one frame */
+    const beat = (kind, ms) => this._cueAt(kind, () => this._t0 + 2750 + ms + this.PAINT);
+    at(3900, () => this.setState({ dPhase: 2 })); beat('status', 3900);
+    at(5700, () => this.setState({ dPhase: 3 })); beat('status', 5700);
+    at(7400, () => this.setState({ dPhase: 4 })); beat('status', 7400);
+    at(7900, () => this.setState({ dPhase: 5 })); beat('strain', 7900);
+    at(8500, () => this.setState({ dPhase: 6, torn: true })); beat('rip', 8500);
     at(9700, () => {
       this.setState({ reeling: true });
       this._spinI = setInterval(() => { this.setState({ spin: (this.state.spin + 1) % 9973 }); }, 55);
-      this._spinTick = setInterval(() => this._tone('spin'), 120);
+      /* the reels tick every 120 ms on the audio clock, kept a little ahead, so a busy frame cannot bunch or drop them */
+      const s0 = performance.now(); let k = 0;
+      const fill = () => { const until = performance.now() + this._lead(); for (; s0 + k * 120 < until; k++) this._cueAt('spin', s0 + k * 120 + this.PAINT); };
+      fill(); this._spinTick = setInterval(fill, 60);
     });
     /* From here the reveal shows what the server issued, so it waits for the answer: the
        reels keep turning until it lands, then the ID locks in and the rest follows on the
        same beats as before (11.9, 12.5, 13.5 and 14.6 seconds when the answer is in time). */
     at(10200, () => this._afterReply(() => {
       const after = (ms, fn) => { this._doneT.push(setTimeout(fn, ms)); };
-      const id = this._deskId();
-      for (let i = 1; i <= id.length; i++) after(i * 110, () => {
-        this.setState({ idShown: i });
-        if (i === id.length) { clearInterval(this._spinI); clearInterval(this._spinTick); this.setState({ reeling: false }); this._tone('reveal'); } else this._tone('char');
-      });
-      after(1700, () => { this._tone('mail'); this.setState({ dPhase: 7 }); });
+      const id = this._deskId(), r0 = performance.now();
+      for (let i = 1; i <= id.length; i++) {
+        after(i * 110, () => {
+          this.setState({ idShown: i });
+          if (i === id.length) { clearInterval(this._spinI); clearInterval(this._spinTick); this._cancelPending('spin'); this.setState({ reeling: false }); }
+        });
+        this._cueAt(i === id.length ? 'reveal' : 'char', r0 + i * 110 + this.PAINT);
+      }
+      after(1700, () => this.setState({ dPhase: 7 })); this._cueAt('mail', r0 + 1700 + this.PAINT);
       after(2300, () => this.setState({ dPhase: 8 }));
       after(2360, () => this._bindToken());
       after(3300, () => this.setState({ dPhase: 9 }));
@@ -1360,7 +1374,7 @@ class Component extends DCLogic {
   _startWaitlist() {
     const T = (ms, fn) => this._doneT.push(setTimeout(fn, ms));
     T(1250, () => this.setState({ headLit: true }));
-    T(1700, () => this._tone('mail'));
+    this._cueAt('mail', this._t0 + 1700 + this.PAINT);
     if (this.state.prov !== 'OUT') return;
     this.setState({ wlCounting: true });
     T(2900, () => { const el = this.refPass.current; if (el && !el._cdBound) this._pass = this._spinner(el, { snap: 180, tapFlip: true, ready: () => this.state.step === 4 && this.state.prov === 'OUT' }); });
@@ -1624,6 +1638,10 @@ class Component extends DCLogic {
       this._hall = ac.createGain(); this._hall.connect(hall); hall.connect(hallTone); hallTone.connect(hallWet); hallWet.connect(comp);
       const tone = ac.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 9000;
       this._in = ac.createGain(); this._in.connect(tone); tone.connect(comp); tone.connect(verb); verb.connect(wet); wet.connect(comp); comp.connect(master); master.connect(ac.destination);
+      /* a sound placed ahead must never play late: when the context pauses (another tab, the
+         output device changing, Safari interrupting it), its clock stops, and what was placed
+         would play the moment it runs again. Called off instead, like any sound that cannot play yet */
+      ac.addEventListener('statechange', () => { if (ac.state !== 'running') this._cancelPending(); });
     }
     if (this._ac.state !== 'running') { try { this._ac.resume(); } catch (e) {} }
     return this._ac;
@@ -1639,12 +1657,62 @@ class Component extends DCLogic {
     try { const b = ac.createBuffer(1, 1, 22050), src = ac.createBufferSource(); src.buffer = b; src.connect(ac.destination); src.start(0); } catch (e) {}
     if (ac.state === 'running') ['click', 'touchend', 'keydown', 'pointerup'].forEach((t) => document.removeEventListener(t, this._unlockAudio, true));
   };
-  _tone(kind) {
+  /* KEEPING THE SOUND WITH THE PICTURE (Sol, 14 Nov, Safari: "the audio wasn't synced and there's a delay").
+     The reveal's sounds used to fire from main-thread timers, 5 ms ahead, with nothing allowed for the
+     time sound takes to reach the ear. So each one was heard late by the browser's own output delay
+     (16 to 35 ms on built-in speakers, 150 ms or more on Bluetooth headphones), and later still when a
+     timer landed in one of the stalls Safari has early in the reveal, while the CSS animation it belongs
+     to kept going. Now each beat is placed on the audio clock about a third of a second ahead, for the
+     moment it must be heard, with the latency the browser reports taken off. Presses still play at once:
+     nobody can place a sound ahead for a click. The rule from #700 holds: nothing is placed while the
+     context is paused, a beat it is too late for is skipped, and a pause calls off what was placed. */
+  PAINT = 16; /* a picture that changes by setState shows one frame after its timer */
+  _lat() { const ac = this._ac; return ac ? Math.min(0.5, Math.max(0, (ac.baseLatency || 0) + (ac.outputLatency || 0))) : 0; }
+  _lead() { return 320 + this._lat() * 1000; }
+  /* the audio-clock time a sound must start at to be heard at `at` (a performance.now() time) */
+  _audioAt(at) { const ac = this._ac; return ac.currentTime + (at - performance.now()) / 1000 - this._lat(); }
+  /* the logo's beats follow its own CSS animation, which starts on the frame after the reveal begins */
+  _anchorToLogo() {
+    const look = (tries) => {
+      try {
+        const a = document.getAnimations && document.getAnimations().find((x) => x.animationName === 'cdDotIris');
+        if (a) { (a.ready || Promise.resolve()).then(() => { if (typeof a.startTime === 'number') this._t0 = a.startTime; }); return; }
+      } catch (e) { return; }
+      if (tries < 10) requestAnimationFrame(() => look(tries + 1));
+    };
+    requestAnimationFrame(() => look(0));
+  }
+  /* a beat of the reveal, to be heard at `at` (a time, or a function giving it, read when it is placed) */
+  _cueAt(kind, at) {
+    const when = () => (typeof at === 'function' ? at() : at);
+    const place = () => {
+      const ac = this._ac; if (!ac || ac.state !== 'running') return;
+      let t = this._audioAt(when()); const soonest = ac.currentTime + 0.01;
+      if (t < soonest) { if (soonest - t > 0.06) return; t = soonest; } /* too late for its beat: skipped, never bunched */
+      this._tone(kind, t);
+    };
+    const wait = when() - performance.now() - this._lead();
+    if (wait <= 0) place(); else (this._doneT = this._doneT || []).push(setTimeout(place, wait));
+  }
+  /* call off sounds placed ahead that have not started (all, or one kind); one already ringing rings out */
+  _cancelPending(kind) {
+    const ac = this._ac; if (!ac || !this._pending) return;
+    this._pending = this._pending.filter((p) => {
+      if (p.at <= ac.currentTime) return false;
+      if (kind && p.kind !== kind) return true;
+      try { p.out.disconnect(); } catch (e) {}
+      return false;
+    });
+  }
+  _tone(kind, when) {
     try {
-      const ac = this._bus(); if (!ac || ac.state !== 'running') return; const now = ac.currentTime + 0.005;
+      const ac = this._bus(); if (!ac || ac.state !== 'running') return;
+      /* straight away (a press), or at the audio-clock time a beat of the reveal asked for (_cueAt) */
+      const now = Math.max(when == null ? 0 : when, ac.currentTime + 0.005);
       /* levels: the finish is mixed hotter than the form, so it carries at half volume (Sol, 6 Nov). The compressor keeps the peaks comfortable */
       const LV = { bloom: 1.7, lock: 1.8, settle: 1.6, tap: 1.3, step: 1.4, next: 1.4, done: 1.6, nope: 1.3, status: 2.6, tick3: 2.4, strain: 2.2, rip: 2.0, spin: 2.2, char: 2.4, reveal: 2.4, mail: 2.4, pip: 2, dot: 2, iris: 1.8 };
       const out = ac.createGain(); out.gain.value = LV[kind] || 1.5; out.connect(this._in);
+      if (now > ac.currentTime + 0.02) { this._pending = (this._pending || []).filter((p) => p.at > ac.currentTime); this._pending.push({ out, at: now, kind }); }
       if (kind === 'bloom' || kind === 'lock' || kind === 'settle') out.connect(this._hall); /* the brand moment sits in a bigger room */
       const voice = (hz, at, len, vol, type, glideTo) => {
         const o = ac.createOscillator(), g = ac.createGain(), t = now + at;
