@@ -79,13 +79,22 @@ describe("the CurrencyDesk ID", () => {
     for (let i = 0; i < 200; i++) expect(mintCdId("York Currency Exchange", random)).toMatch(/^CD-YORK-[2-9A-HJKMNP-Z]{4}$/);
   });
 
-  it("takes the letters from the shop name, accents folded, and pads with X", () => {
+  it("takes the letters from the shop name, accents folded", () => {
     expect(cdIdLetters("York Currency Exchange")).toBe("YORK");
     expect(cdIdLetters("A&B Échange")).toBe("ABEC");
     expect(cdIdLetters("77 Money Mart")).toBe("MONE");
+  });
+
+  /* Sol, 14 Nov: an ID reading CD-XXXX-U3FZ looks like a placeholder.
+     A shop name with fewer than four letters borrows them from the shop's
+     address, then from the owner's name; X only when nothing has a letter. */
+  it("borrows letters from the address, then the owner's name, before it ever pads with X", () => {
+    expect(cdIdLetters(["34343", "34343-exchange", "Daniel Okafor"])).toBe("EXCH");
+    expect(cdIdLetters(["Wu", "wu-fx", "Li Wu"])).toBe("WUFX");
+    expect(cdIdLetters(["東京両替", "tokyo-ryogae", "Kenji Sato"])).toBe("TOKY");
+    expect(cdIdLetters(["123", "123", "Daniel Okafor"])).toBe("DANI");
+    expect(cdIdLetters(["123", "456", "李"])).toBe("XXXX");
     expect(cdIdLetters("Wu")).toBe("WUXX");
-    expect(cdIdLetters("123")).toBe("XXXX");
-    expect(cdIdLetters("東京両替")).toBe("XXXX");
   });
 
   it("uses every character of the alphabet about equally (no modulo bias)", () => {
@@ -134,6 +143,11 @@ describe("POST /api/enquiries, v2.1", () => {
     /* The consent is evidence, not an answer: it is not kept in the answers. */
     expect(row.details).not.toHaveProperty("samConsent");
     expect(row.details).not.toHaveProperty("waitlist");
+  });
+
+  it("a shop called only by digits still gets a real word in its ID", async () => {
+    const body = (await send(v21("digits@example.com", { shopName: "34343", workspace: "34343-exchange.currencydeskos.com" }))).json();
+    expect(body.cdId).toMatch(/^CD-EXCH-[2-9A-HJKMNP-Z]{4}$/);
   });
 
   it("an application in progress with FINTRAC is accepted too", async () => {
