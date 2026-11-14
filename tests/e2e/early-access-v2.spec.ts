@@ -134,6 +134,48 @@ test.describe("Early Access v2.1", () => {
     expect(posts).toHaveLength(1);
   });
 
+  /* Sol, 14 Nov: when they run "MSB software we use", an optional searchable list asks which,
+     styled like the country picker; a name not on the list can be used as typed. */
+  test("asks which MSB software, optionally, and sends what they picked", async ({ page }) => {
+    await stepOneAndTwo(page, `soft-${unique()}@example.com`, `Software Exchange ${unique()}`);
+    await sec(page, 4).getByRole("button", { name: "ON", exact: true }).click();
+    await opened(page, 0, /A ballpark/);
+    await sec(page, 0).getByRole("button", { name: "$2M to $10M" }).click();
+    await sec(page, 0).getByRole("button", { name: "Just one" }).click();
+    await opened(page, 5, "Your MSB registration");
+    await sec(page, 5).getByRole("button", { name: "Registered", exact: true }).click();
+    await sec(page, 5).getByRole("button", { name: /^Next/ }).click();
+    await opened(page, 2, "No wrong answer");
+    await sec(page, 2).getByRole("button", { name: "This quarter" }).click();
+    await opened(page, 1, "Pick all that apply");
+    await expect(sec(page, 1).getByRole("button", { name: /Which software/ })).toHaveCount(0);
+    await sec(page, 1).getByRole("button", { name: /MSB software we use/ }).click();
+    await sec(page, 1).getByRole("button", { name: /Which software/ }).click();
+    /* the list is real products, checked on their vendors' sites, and the search narrows it */
+    await expect(sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true })).toBeVisible();
+    await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeVisible();
+    /* it opens near the bottom of the card, so the list comes into view rather than below the fold */
+    await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeInViewport({ ratio: 1 });
+    await page.getByPlaceholder("Type your software").fill("xchanger");
+    await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toHaveCount(0);
+    await sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true }).click();
+    await expect(sec(page, 1).getByRole("button", { name: /CurrencyXchanger/ })).toBeVisible();
+    /* and one that is not on the list is used as typed */
+    await sec(page, 1).getByRole("button", { name: /CurrencyXchanger/ }).click();
+    await page.getByPlaceholder("Type your software").fill("Harbour Desk Pro");
+    await sec(page, 1).getByRole("button", { name: "Use “Harbour Desk Pro”" }).click();
+    await expect(sec(page, 1).getByRole("button", { name: /Harbour Desk Pro/ })).toBeVisible();
+    await sec(page, 1).getByRole("button", { name: /^Next/ }).click();
+    await expect(sec(page, 1).getByText(/MSB software we use \(Harbour Desk Pro\)/)).toBeVisible();
+    await opened(page, 3, "If you have one, add the address");
+    await sec(page, 3).getByRole("button", { name: "Not yet" }).click();
+    await page.getByRole("button", { name: /^Continue/ }).click();
+    await whoRunsIt(page);
+    const sent = page.waitForRequest((r) => r.url().endsWith("/api/enquiries") && r.method() === "POST");
+    await page.getByRole("button", { name: /Claim my desk/ }).click();
+    expect(JSON.parse((await sent).postData() ?? "{}").details).toMatchObject({ software: "Harbour Desk Pro" });
+  });
+
   test("every way into the application is v2.1, with no ticket at all", async ({ page }) => {
     await page.goto("/");
     await page.locator("a[data-nav-cta]").click();

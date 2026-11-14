@@ -49,6 +49,8 @@ export const v21Details = z
     monthlyVolume: optionalText(60),
     branches: optionalText(30),
     runningOn: optionalText(500),
+    /* the MSB software they named, when they run "MSB software we use" (optional) */
+    software: optionalText(120),
     timeline: optionalText(60),
     phone: text(40).min(1),
     bestTime: z.enum(["call now", "no call"]),
