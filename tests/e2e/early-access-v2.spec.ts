@@ -151,6 +151,15 @@ test.describe("Early Access v2.1", () => {
     await expect(sec(page, 1).getByRole("button", { name: /Which software/ })).toHaveCount(0);
     await sec(page, 1).getByRole("button", { name: /MSB software we use/ }).click();
     await sec(page, 1).getByRole("button", { name: /Which software/ }).click();
+    /* the list is real products, checked on their vendors' sites, and the search narrows it */
+    await expect(sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true })).toBeVisible();
+    await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toBeVisible();
+    await page.getByPlaceholder("Type your software").fill("xchang");
+    await expect(sec(page, 1).getByRole("button", { name: "Office Exchange", exact: true })).toHaveCount(0);
+    await sec(page, 1).getByRole("button", { name: "CurrencyXchanger", exact: true }).click();
+    await expect(sec(page, 1).getByRole("button", { name: /CurrencyXchanger/ })).toBeVisible();
+    /* and one that is not on the list is used as typed */
+    await sec(page, 1).getByRole("button", { name: /CurrencyXchanger/ }).click();
     await page.getByPlaceholder("Type your software").fill("Harbour Desk Pro");
     await sec(page, 1).getByRole("button", { name: "Use “Harbour Desk Pro”" }).click();
     await expect(sec(page, 1).getByRole("button", { name: /Harbour Desk Pro/ })).toBeVisible();
