@@ -17,7 +17,8 @@ test.use({
 });
 
 for (const path of ["/", "/early-access", "/onboarding/CD-ABCDEF"]) {
-  test(`the staging way back to sign-in is on ${path} and stays there`, async ({ page }) => {
+  test(`the staging way back to sign-in is on ${path} and stays there`, async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "the staging host name is mapped with a Chromium switch");
     const port = new URL(String(test.info().project.use.baseURL)).port;
     await page.route("**/api/staging/signin", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: true }) }));
     let loggedOut = false;
