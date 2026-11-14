@@ -79,6 +79,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   A focus-only follow-up returns focus from the dismissed X to the visible
   screen without scrolling or adding a tab stop. It leaves other focused
   controls alone and does not focus the desktop behind the lock or handover.
+  The effect applies hidden state once, before insertion for a new notice.
   Layout, staging detection and remaining CD-118 workflow/template work are
   unchanged. These slices are not deployed.
 

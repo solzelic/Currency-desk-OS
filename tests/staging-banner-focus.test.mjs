@@ -8,20 +8,41 @@ const shell = readFileSync(new URL("../os-src/cdos-os.jsx", import.meta.url), "u
 const effect = shell.match(/const id = 'cdos-staging-banner';[\s\S]*?(?=\n    }, \[stagingOn, stagingDoor, stage, bannerHidden)/)?.[0];
 assert.ok(effect, "staging notice effect must be found in the OS source");
 
-function fixture({ rootId = "os", visible = true, cssVisibility = "visible", excluded = false, focused = true, deskLocked = false, handover = false, pinGate = null, tabIndex = null } = {}) {
+function fixture({ rootId = "os", visible = true, cssVisibility = "visible", excluded = false, focused = true, deskLocked = false, handover = false, pinGate = null, tabIndex = null, existingBanner = true, bannerHidden = false } = {}) {
   const writes = [];
   const focusCalls = [];
   const attributes = new Map(tabIndex === null ? [] : [["tabindex", tabIndex]]);
   const other = {};
   const button = {};
-  const banner = { toggleAttribute() {}, querySelector: () => button, offsetHeight: 40 };
+  const mutations = [];
+  const banner = {
+    hidden: existingBanner ? !bannerHidden : false,
+    toggleAttribute(name, force) {
+      assert.equal(name, "data-hidden");
+      this.hidden = force;
+      mutations.push(["toggle", force]);
+    },
+    setAttribute() {},
+    querySelector: () => button,
+    offsetHeight: 40,
+  };
   const document = {
     activeElement: focused ? button : other,
     addEventListener() {},
     removeEventListener() {},
     getElementById(id) {
-      if (id === "cdos-staging-banner") return banner;
+      if (id === "cdos-staging-banner") return existingBanner ? banner : null;
       return id === rootId ? screen : null;
+    },
+    createElement(tag) {
+      assert.equal(tag, "div");
+      return banner;
+    },
+    body: {
+      appendChild(node) {
+        assert.equal(node, banner);
+        mutations.push(["append", node.hidden]);
+      },
     },
     documentElement: { style: { setProperty() {} } },
   };
@@ -42,7 +63,7 @@ function fixture({ rootId = "os", visible = true, cssVisibility = "visible", exc
     stagingOn: true,
     stagingDoor: false,
     stage: rootId === "lock" ? "lock" : "desktop",
-    bannerHidden: false,
+    bannerHidden,
     deskLocked,
     handover,
     pinGate,
@@ -53,7 +74,7 @@ function fixture({ rootId = "os", visible = true, cssVisibility = "visible", exc
     },
   };
   runInNewContext(`(() => { ${effect} })()`, scope);
-  return { button, document, screen, other, focusCalls, writes, attributes };
+  return { button, document, screen, other, focusCalls, writes, attributes, mutations };
 }
 
 for (const rootId of ["lock", "os"]) {
@@ -93,3 +114,14 @@ test("dismissal preserves an existing screen tabindex", () => {
   assert.equal(attributes.get("tabindex"), "0");
   assert.equal(focusCalls.length, 1);
 });
+
+for (const existingBanner of [false, true]) {
+  for (const bannerHidden of [false, true]) {
+    test(`${existingBanner ? "existing" : "new"} banner applies ${bannerHidden ? "hidden" : "visible"} state once`, () => {
+      const { mutations } = fixture({ existingBanner, bannerHidden });
+      const expected = [["toggle", bannerHidden]];
+      if (!existingBanner) expected.push(["append", bannerHidden]);
+      assert.deepEqual(mutations, expected);
+    });
+  }
+}

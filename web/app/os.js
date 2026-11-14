@@ -75482,15 +75482,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
-      if (!node) {
+      const needsMount = !node;
+      if (needsMount) {
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
         node.innerHTML = '<div class="cdos-staging-row"><span data-staging-words>Staging. Demo data only. Never enter a real customer.</span>' + '<button type="button" class="cdos-staging-x" aria-label="Hide staging notice"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>';
-        node.toggleAttribute('data-hidden', bannerHidden);
-        document.body.appendChild(node);
       }
       node.toggleAttribute('data-hidden', bannerHidden);
+      if (needsMount) document.body.appendChild(node);
       const close = node.querySelector('.cdos-staging-x');
       close.onclick = () => {
         window.CDOS.stagingBanner.hide(bannerStore(), Date.now());
