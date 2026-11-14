@@ -89,6 +89,20 @@ const BRIDGE = `<script>
      it is theirs to quote, so typing one is not looked up, and setup opens
      only from the code in the email's link. Sol, 14 Nov. */
   var ID = /^CD-[A-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
+  /* A typed value read as a code. An ID stays an ID. A six-character code
+     typed with a space after four letters (CD-ZAQR-BJ, as fmtRef shows it)
+     is that code, CD-ZAQRBJ, so a code never gets stuck. Nothing else is
+     folded: CD-ZAQR-BJ7 is part of an ID, not a code. */
+  function asCode(v) {
+    var code = String(v || "").toUpperCase().trim();
+    return ID.test(code) ? code : code.replace(/^CD-([A-Z]{4})-([2-9A-HJ-NP-Z]{2})$/, "CD-$1$2");
+  }
+  /* Part of their own ID, as they correct it, is never sent anywhere. */
+  function partOfMine(v) {
+    var typed = String(v || "").toUpperCase().trim();
+    for (var k in CD.known) if (CD.known[k] === true && ID.test(k) && k !== typed && k.indexOf(typed) === 0) return true;
+    return false;
+  }
 
   function api(path, body) {
     return fetch("/api/onboarding/" + encodeURIComponent(CD.code) + path, {
@@ -144,14 +158,15 @@ const BRIDGE = `<script>
        as the same red chip. See checkRef below. */
     throttled: false,
 
+    isId: function (v) { return ID.test(String(v || "").toUpperCase().trim()); },
     refValid: function (v) {
-      var code = String(v || "").toUpperCase().trim();
+      var code = asCode(v);
       return (REF.test(code) || ID.test(code)) && CD.known[code] === true;
     },
     /* What screen 0 should be saying right now: nothing yet, we're asking,
        we don't know it, or it's theirs. */
     refState: function (v) {
-      var code = String(v || "").toUpperCase().trim();
+      var code = asCode(v);
       if ((REF.test(code) || ID.test(code)) && CD.known[code] === true) return "ok";
       if (ID.test(code)) return "link"; // an ID, not a code: see ID above
       if (!REF.test(code)) return "empty";
@@ -163,9 +178,9 @@ const BRIDGE = `<script>
        against the miss limit. Cached, so re-checking a code we already have
        an answer for costs nothing. */
     checkRef: function (v, done) {
-      var code = String(v || "").toUpperCase().trim();
+      var code = asCode(v);
       clearTimeout(CD._rt);
-      if (!REF.test(code) || code in CD.known) return;
+      if (!REF.test(code) || code in CD.known || partOfMine(v)) return;
       CD._rt = setTimeout(function () {
         if (code in CD.known) return;
         CD.checking = code;
@@ -199,10 +214,24 @@ const BRIDGE = `<script>
       }, 450);
     },
     fmtRef: function (v) {
-      var up = String(v || "").toUpperCase();
+      /* typographic dashes and spaces, as a paste brings them, are plain ones */
+      var up = String(v || "").toUpperCase()
+        .replace(/[\\u2010-\\u2015\\u2212\\uFE58\\uFE63\\uFF0D]/g, "-")
+        .replace(/[\\u00A0\\u2007\\u202F]/g, " ");
+      /* their own ID typed the way it is read out, with no second hyphen.
+         Only their own: a stranger's ID typed that way cannot be told from
+         an eight-character code such as CD-WALKTHRU, so it stays a code. */
+      var bare = up.replace(/[^A-Z0-9]/g, "");
+      if (/^CD[A-Z]{4}[2-9A-HJKMNP-Z]{4}$/.test(bare)) {
+        var mine = "CD-" + bare.slice(2, 6) + "-" + bare.slice(6);
+        if (CD.known[mine] === true) return mine;
+      }
       /* an ID typed with its second hyphen (or a space) keeps it: CD-YORK-7K42 */
       var id = up.replace(/^\\s*CD[\\s-]*/, "").match(/^([A-Z]{4})[\\s-]+([A-Z0-9]{0,4})/);
       if (id) return "CD-" + id[1] + "-" + id[2];
+      /* the prefix itself, as they type it: "CD-" goes on once there is
+         more, or typing "cd" into an empty field ends up as CD-CD... */
+      if (bare === "C" || bare === "CD") return bare;
       var raw = up.replace(/[^A-Z0-9]/g, "").replace(/^CD/, "").slice(0, 12);
       return raw ? "CD-" + raw : "";
     },
@@ -692,7 +721,9 @@ patch(
   "the code hint — it told somebody their invented code was theirs to keep",
   "cdIdHint: this.cdIdValid(d.cdId)\n        ? 'This is how you\\u2019ll sign in from now on. It stays yours.'\n        : 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.',",
   "cdIdHint: (() => { const s = window.__cdOnb ? window.__cdOnb.refState(d.cdId) : (this.cdIdValid(d.cdId) ? 'ok' : 'empty');\n" +
-  "        if (s === 'ok') return 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
+  "        if (s === 'ok') return window.__cdOnb && window.__cdOnb.isId(d.cdId)\n" +
+  "          ? 'It stays yours. Quote it whenever you write to us.'\n" +
+  "          : 'This is how you\\u2019ll sign in from now on. It stays yours.';\n" +
   "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
   "        if (s === 'slow') return 'Too many tries from this connection. Wait, then try again. Your ID is probably fine.';\n" +
   "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +

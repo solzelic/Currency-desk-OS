@@ -60,7 +60,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | Staging way back to sign-in | `scripts/staging-back-link.mjs`, injected into every site page and the setup page: on a staging hostname only, it asks `GET /api/staging/signin` and, when the door is open, draws a fixed "Staging · Back to sign in" link to `/login` (Sol, 14 Nov). Live never asks. |
 | `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
-| `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`) |
+| `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`; `asCode` reads anything else typed as a code, `fmtRef` recognises their own ID typed compact or with a typographic dash) |
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
