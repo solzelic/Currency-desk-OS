@@ -1225,6 +1225,7 @@ class Component extends DCLogic {
     this._unshift();
     this._t0 = performance.now(); /* until the logo animation says when it really started */
     if (this._filtered()) { this._startWaitlist(); return; }
+    const base = this._t0; /* the timers below count from here; only the logo's three beats follow its animation (_anchorToLogo moves _t0) */
     this._anchorToLogo();
     const at = (ms, fn) => { this._doneT.push(setTimeout(fn, ms + 2750)); }; /* everything after the logo moment */
     //  0.0 jackpot flash   0.6 ticket   1.5 seal   2.1 / 3.1 / 4.1 status lines, number counts up
@@ -1238,34 +1239,48 @@ class Component extends DCLogic {
     this._statusN = 0;
     at(2100, () => { this.setState({ dPhase: 1 }); this._countUp(); });
     /* each sound is placed on the audio clock for the frame its picture lands on: the timer's moment plus one frame */
-    const beat = (kind, ms) => this._cueAt(kind, () => this._t0 + 2750 + ms + this.PAINT);
+    const beat = (kind, ms) => this._cueAt(kind, base + 2750 + ms + this.PAINT);
     at(3900, () => this.setState({ dPhase: 2 })); beat('status', 3900);
     at(5700, () => this.setState({ dPhase: 3 })); beat('status', 5700);
     at(7400, () => this.setState({ dPhase: 4 })); beat('status', 7400);
     at(7900, () => this.setState({ dPhase: 5 })); beat('strain', 7900);
     at(8500, () => this.setState({ dPhase: 6, torn: true })); beat('rip', 8500);
+    /* The reels tick every 120 ms on the audio clock from the moment they start turning, kept a little
+       ahead so a busy frame cannot bunch or drop them. Placing starts 0.9 s early, so the first tick is on
+       time even on a slow output, and stops short of the moment the ID locks (_spinEnd, known once the
+       server has answered), so no tick sounds over the reveal chime. */
+    const s0 = base + 2750 + 9700; let k = 0; this._spinEnd = Infinity;
+    const fill = () => { const until = Math.min(performance.now() + this._lead(), this._spinEnd); for (; s0 + k * 120 + this.PAINT < until; k++) this._cueAt('spin', s0 + k * 120 + this.PAINT); };
+    at(9700 - 900, () => { fill(); this._spinTick = setInterval(fill, 60); });
     at(9700, () => {
       this.setState({ reeling: true });
       this._spinI = setInterval(() => { this.setState({ spin: (this.state.spin + 1) % 9973 }); }, 55);
-      /* the reels tick every 120 ms on the audio clock, kept a little ahead, so a busy frame cannot bunch or drop them */
-      const s0 = performance.now(); let k = 0;
-      const fill = () => { const until = performance.now() + this._lead(); for (; s0 + k * 120 < until; k++) this._cueAt('spin', s0 + k * 120 + this.PAINT); };
-      fill(); this._spinTick = setInterval(fill, 60);
     });
+    /* The ID locks in character by character. When the server's answer is already in, as it usually is,
+       its sounds are placed 0.9 s early for the planned moment, so the first character is on time even on
+       a slow output; an answer that comes later starts it when it lands. Pictures and sounds count from
+       the same moment. */
+    let idAt = null;
+    const placeId = (r0) => {
+      if (idAt !== null) return; idAt = r0;
+      const n = this._deskId().length;
+      this._spinEnd = r0 + n * 110 + this.PAINT - 60;
+      for (let i = 1; i <= n; i++) this._cueAt(i === n ? 'reveal' : 'char', r0 + i * 110 + this.PAINT);
+      this._cueAt('mail', r0 + 1700 + this.PAINT);
+    };
+    at(10200 - 900, () => { if (this._issued && this._issued.ok) placeId(base + 2750 + 10200); });
     /* From here the reveal shows what the server issued, so it waits for the answer: the
        reels keep turning until it lands, then the ID locks in and the rest follows on the
        same beats as before (11.9, 12.5, 13.5 and 14.6 seconds when the answer is in time). */
     at(10200, () => this._afterReply(() => {
-      const after = (ms, fn) => { this._doneT.push(setTimeout(fn, ms)); };
-      const id = this._deskId(), r0 = performance.now();
-      for (let i = 1; i <= id.length; i++) {
-        after(i * 110, () => {
-          this.setState({ idShown: i });
-          if (i === id.length) { clearInterval(this._spinI); clearInterval(this._spinTick); this._cancelPending('spin'); this.setState({ reeling: false }); }
-        });
-        this._cueAt(i === id.length ? 'reveal' : 'char', r0 + i * 110 + this.PAINT);
-      }
-      after(1700, () => this.setState({ dPhase: 7 })); this._cueAt('mail', r0 + 1700 + this.PAINT);
+      placeId(performance.now());
+      const r0 = idAt, after = (ms, fn) => { this._doneT.push(setTimeout(fn, Math.max(0, r0 + ms - performance.now()))); };
+      const id = this._deskId();
+      for (let i = 1; i <= id.length; i++) after(i * 110, () => {
+        this.setState({ idShown: i });
+        if (i === id.length) { clearInterval(this._spinI); clearInterval(this._spinTick); this._cancelPending('spin'); this.setState({ reeling: false }); }
+      });
+      after(1700, () => this.setState({ dPhase: 7 }));
       after(2300, () => this.setState({ dPhase: 8 }));
       after(2360, () => this._bindToken());
       after(3300, () => this.setState({ dPhase: 9 }));
@@ -1676,7 +1691,15 @@ class Component extends DCLogic {
     const look = (tries) => {
       try {
         const a = document.getAnimations && document.getAnimations().find((x) => x.animationName === 'cdDotIris');
-        if (a) { (a.ready || Promise.resolve()).then(() => { if (typeof a.startTime === 'number') this._t0 = a.startTime; }); return; }
+        if (a) {
+          (a.ready || Promise.resolve()).then(() => {
+            if (typeof a.startTime !== 'number') return;
+            const moved = a.startTime - this._t0; this._t0 = a.startTime;
+            /* the bloom can be placed before the animation's start is known: if it started later or earlier, the bloom goes on its real beat */
+            if (Math.abs(moved) > 5 && this._cancelPending('bloom')) this._cueAt('bloom', () => this._t0 + 500);
+          }, () => {}); /* a reveal abandoned before its first frame cancels the animation; its sounds are already called off */
+          return;
+        }
       } catch (e) { return; }
       if (tries < 10) requestAnimationFrame(() => look(tries + 1));
     };
@@ -1686,7 +1709,9 @@ class Component extends DCLogic {
   _cueAt(kind, at) {
     const when = () => (typeof at === 'function' ? at() : at);
     const place = () => {
-      const ac = this._ac; if (!ac || ac.state !== 'running') return;
+      const ac = this._ac; if (!ac) return;
+      /* paused from outside (another tab, the output device changing): ask it to run again, as every sound always did; this beat is skipped, never queued */
+      if (ac.state !== 'running') { if (ac.state !== 'closed') this._bus(); return; }
       let t = this._audioAt(when()); const soonest = ac.currentTime + 0.01;
       if (t < soonest) { if (soonest - t > 0.06) return; t = soonest; } /* too late for its beat: skipped, never bunched */
       this._tone(kind, t);
@@ -1696,13 +1721,15 @@ class Component extends DCLogic {
   }
   /* call off sounds placed ahead that have not started (all, or one kind); one already ringing rings out */
   _cancelPending(kind) {
-    const ac = this._ac; if (!ac || !this._pending) return;
+    const ac = this._ac; if (!ac || !this._pending) return 0;
+    let n = 0;
     this._pending = this._pending.filter((p) => {
       if (p.at <= ac.currentTime) return false;
       if (kind && p.kind !== kind) return true;
       try { p.out.disconnect(); } catch (e) {}
-      return false;
+      n++; return false;
     });
+    return n;
   }
   _tone(kind, when) {
     try {
