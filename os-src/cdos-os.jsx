@@ -1651,23 +1651,36 @@
         return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
-      if (!node) {
+      const needsMount = !node;
+      if (needsMount) {
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
         node.innerHTML = '<div class="cdos-staging-row"><span data-staging-words>Staging. Demo data only. Never enter a real customer.</span>'
           + '<button type="button" class="cdos-staging-x" aria-label="Hide staging notice"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>';
-        node.toggleAttribute('data-hidden', bannerHidden);
-        document.body.appendChild(node);
       }
       node.toggleAttribute('data-hidden', bannerHidden);
-      node.querySelector('.cdos-staging-x').onclick = () => { window.CDOS.stagingBanner.hide(bannerStore(), Date.now()); setBannerHidden(true); };
+      if (needsMount) document.body.appendChild(node);
+      const close = node.querySelector('.cdos-staging-x');
+      close.onclick = () => {
+        window.CDOS.stagingBanner.hide(bannerStore(), Date.now());
+        if (document.activeElement === close && !deskLocked && !handover && !pinGate) {
+          const screen = document.getElementById(stage === 'desktop' ? 'os' : 'lock');
+          if (screen && screen.getClientRects().length && window.getComputedStyle(screen).visibility === 'visible'
+            && !screen.closest('[hidden], [inert], [aria-hidden="true"]')) {
+            // Return to the screen without adding a tab stop or activating a control.
+            if (!screen.hasAttribute('tabindex')) screen.setAttribute('tabindex', '-1');
+            screen.focus({ preventScroll: true });
+          }
+        }
+        setBannerHidden(true);
+      };
       const fit = () => document.documentElement.style.setProperty('--cdos-banner', bannerHidden ? '0px' : node.offsetHeight + 'px');
       fit();
       const watch = window.ResizeObserver ? new ResizeObserver(fit) : null;
       if (watch) watch.observe(node);
       return () => { if (watch) watch.disconnect(); document.removeEventListener('cdos-staging-door', onDoor); };
-    }, [stagingOn, stagingDoor, stage, bannerHidden]);
+    }, [stagingOn, stagingDoor, stage, bannerHidden, deskLocked, handover, pinGate]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is

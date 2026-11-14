@@ -8,6 +8,8 @@
 - [ ] Required tests pass (say which suites in Validation below)
 - [ ] Generated output rebuilt (`npm run build`) — if this PR touches `design/`, `os-src/`, the root shells, or build scripts
 - [ ] No production secrets or production data used anywhere
+- [ ] PM verified on staging
+- [ ] PM verified on live
 
 **Living documentation** (CI checks one box per pair — see `scripts/check-repository-governance.mjs`):
 

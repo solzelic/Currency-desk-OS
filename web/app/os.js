@@ -348,10 +348,13 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
   var KEY = "cdos.stagingBanner.hiddenAt";
   var HIDE_MS = 600000;
+  function validTime(value) {
+    return Number.isSafeInteger(value) && value > 0;
+  }
   function isHidden(stored, now) {
     var at = typeof stored === "number" ? stored
       : typeof stored === "string" && /^[0-9]+$/.test(stored) ? Number(stored) : NaN;
-    return isFinite(at) && isFinite(now) && at <= now && now - at < HIDE_MS;
+    return validTime(at) && validTime(now) && at <= now && now - at < HIDE_MS;
   }
   function hiddenNow(storage, now) {
     try { return !!storage && isHidden(storage.getItem(KEY), now); }
@@ -360,7 +363,7 @@
   function hide(storage, now) {
     /* Storage is off: the bar still hides on this screen, and the next
        screen change cannot read the time back, so it shows again. */
-    try { if (storage) storage.setItem(KEY, String(now)); } catch (e) { return; }
+    try { if (storage && validTime(now)) storage.setItem(KEY, String(now)); } catch (e) { return; }
   }
   return { KEY: KEY, HIDE_MS: HIDE_MS, isHidden: isHidden, hiddenNow: hiddenNow, hide: hide };
 });
@@ -75479,17 +75482,28 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         return () => document.removeEventListener('cdos-staging-door', onDoor);
       }
       let node = document.getElementById(id);
-      if (!node) {
+      const needsMount = !node;
+      if (needsMount) {
         node = document.createElement('div');
         node.id = id;
         node.setAttribute('role', 'status');
         node.innerHTML = '<div class="cdos-staging-row"><span data-staging-words>Staging. Demo data only. Never enter a real customer.</span>' + '<button type="button" class="cdos-staging-x" aria-label="Hide staging notice"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button></div>';
-        node.toggleAttribute('data-hidden', bannerHidden);
-        document.body.appendChild(node);
       }
       node.toggleAttribute('data-hidden', bannerHidden);
-      node.querySelector('.cdos-staging-x').onclick = () => {
+      if (needsMount) document.body.appendChild(node);
+      const close = node.querySelector('.cdos-staging-x');
+      close.onclick = () => {
         window.CDOS.stagingBanner.hide(bannerStore(), Date.now());
+        if (document.activeElement === close && !deskLocked && !handover && !pinGate) {
+          const screen = document.getElementById(stage === 'desktop' ? 'os' : 'lock');
+          if (screen && screen.getClientRects().length && window.getComputedStyle(screen).visibility === 'visible' && !screen.closest('[hidden], [inert], [aria-hidden="true"]')) {
+            // Return to the screen without adding a tab stop or activating a control.
+            if (!screen.hasAttribute('tabindex')) screen.setAttribute('tabindex', '-1');
+            screen.focus({
+              preventScroll: true
+            });
+          }
+        }
         setBannerHidden(true);
       };
       const fit = () => document.documentElement.style.setProperty('--cdos-banner', bannerHidden ? '0px' : node.offsetHeight + 'px');
@@ -75500,7 +75514,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         if (watch) watch.disconnect();
         document.removeEventListener('cdos-staging-door', onDoor);
       };
-    }, [stagingOn, stagingDoor, stage, bannerHidden]);
+    }, [stagingOn, stagingDoor, stage, bannerHidden, deskLocked, handover, pinGate]);
 
     /* The desk is only signed in if the SERVER says so. Without this the shell
        restores from saved state and looks signed in while the session cookie is
