@@ -144,6 +144,19 @@ skipped local date is refused. UTC boundary strings and numeric offset
 strings (`+00:00`, `-04:00`, etc.; historical seconds when present) are read
 metadata only. The final day 9999-12-31 has an extended ISO year in its end.
 
+Boundary resolution uses the runtime's IANA data through `Intl`: sampled
+UTC offsets within 36 hours of midnight supply the possible exact instants.
+If midnight is missing, those offset candidates bracket the local forward
+gap; millisecond bisection finds the transition itself. This also handles
+the Toronto/Nassau 1919-03-30/31 jump from 23:30 to 00:30 (04:30Z), rather
+than assigning the first half hour of March 31 to March 30. The algorithm
+assumes the bracket contains the one offset transition responsible for that
+gap; it is not a general solver for arbitrary custom clock histories.
+Results depend on the runtime timezone database. Focused regressions cover
+that historical gap, Sao Paulo midnight, Havana overlap, Apia's skipped
+date, modern 23/25-hour days, endpoint inclusion and civil range/validity.
+They are not an exhaustive guarantee for every historical or future zone.
+
 The response is `{ day, zone, zoneSource, mixed, window: { start, end,
 startOffset, endOffset }, trigger, groups }`. Each group has `{ axis, key,
 total, transactionIds, branchIds, needsReport }`. Money is an exact decimal
@@ -161,12 +174,32 @@ cash, cheque clearing/return, a booking-error reversal and an unvalued
 foreign receipt do not contribute. All branches and all receipts are read,
 with no pagination. Empty names create no name-axis group.
 
-The trigger uses the current `largeCashRule` and the lower positive desk
-`report_threshold`, exactly as `countryIdentification` does. It does not
-introduce a conversion, comparator, or new country policy. With no usable
-large-cash rule, `trigger` and each `needsReport` are **null**, meaning this
-read cannot determine reportability; a desk override alone does not invent
-a rule. Groups remain available. An empty receipt set is `groups: []`.
+The isolated `shopDayLargeCashRule` reader evaluates only a latest stored
+`large_cash` rule with a positive trigger, `aggregate_all_amounts: true`,
+`cash_only: true`, `direction: in`, `comparator: gte`, and `trigger_currency`
+matching the book currency resolved by `resolvePack`. Compatibility follows
+these actual fields, not a country name. Only within that supported subset
+does the lower positive desk `report_threshold` tighten the pack trigger,
+using the existing precedence. The comparison is inclusive. Each group's
+`needsReport` is evaluated only when its axis is explicitly listed in
+`aggregation_axes`; absent axes mean unknown, with no all-axis fallback.
+
+Unsupported or missing rules yield **`trigger: null` and `needsReport: null`**;
+unlisted axes on a compatible rule also have `needsReport: null`. Groups
+remain available. A desk override cannot supply missing semantics, a
+currency conversion, payout coverage or another country's reporting rule.
+Unknown never means false or "no report needed". In particular, current
+CA-v1, US, Australia, Serbia, India, Philippines and international/no-pack
+rules do not satisfy this comparison contract. `largeCashRule`,
+`countryIdentification` and `cashReceived` retain their existing behavior.
+An empty receipt set is `groups: []`.
+
+The ticket requires a calendar-day read, but the stored CA-v2 report row
+still says `window_kind: fixed_24h`; a DST calendar day can be 23 or 25 hours.
+That mismatch remains explicit for CTO/Compliance confirmation before
+broader reporting/filing integration or storing filing offsets. This
+read's defensive null contract does not resolve that policy question and
+does not change the pack, migrations, existing rolling gate or rules.
 
 This is a grouping/read contract, not a change to the rolling identification
 gate or an interpretation that replaces other countries' reporting windows.

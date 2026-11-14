@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { cashReceivedGroups, deskMoney, largeCashRule, shopDayWindow, type Axis } from "./canada-rules.js";
+import { cashReceivedGroups, deskMoney, shopDayLargeCashRule, shopDayWindow, type Axis } from "./canada-rules.js";
 import { entityReportZone, type EntityReportZone } from "./entity-zone.js";
 import { resolvePack } from "./jurisdiction.js";
 import { authorizeLedgerActor } from "./principal.js";
@@ -34,17 +34,19 @@ export class LctrGroupsService {
       const zone = await entityReportZone(client, actor.legalEntityId);
       const window = shopDayWindow(day, zone.zone);
       const pack = await resolvePack(client, actor.legalEntityId);
-      const rule = await largeCashRule(client, pack.packId);
+      const rule = await shopDayLargeCashRule(client, pack);
       const desk = await deskMoney(client, actor.legalEntityId, "report_threshold");
-      // Identical precedence to countryIdentification. A desk number alone
-      // cannot establish a missing large-cash rule.
+      // Only a compatible stored rule permits this comparison. Within that
+      // subset, preserve the existing lower-positive desk/pack precedence.
+      // A desk number cannot supply missing or unsupported rule semantics.
       const trigger = rule ? (desk && desk.lt(rule.trigger) ? desk : rule.trigger) : null;
       const groups = await cashReceivedGroups(client, actor.legalEntityId, window);
       const result: LctrGroups = {
         day, zone: zone.zone, zoneSource: zone.source, mixed: zone.mixed,
         window: { ...window, start: window.start.toISOString(), end: window.end.toISOString() },
         trigger: trigger?.toFixed(2) ?? null,
-        groups: groups.map(group => ({ ...group, total: group.total.toFixed(2), needsReport: trigger ? group.total.gte(trigger) : null })),
+        groups: groups.map(group => ({ ...group, total: group.total.toFixed(2),
+          needsReport: trigger && rule?.axes.includes(group.axis) ? group.total.gte(trigger) : null })),
       };
       await client.query("COMMIT");
       return result;

@@ -91,8 +91,16 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
   without a list cap. Amounts and reversal exclusions share `cashReceived`'s
   predicates. The accepted CD-108 resolver supplies one shop zone; separate
   local-midnight boundaries give 23/25-hour DST days and both UTC offsets.
-  The current pack/desk trigger precedence is preserved. Missing rule means
-  `trigger: null` and `needsReport: null` (unknown), never a cleared report.
+  The comparison now requires actual stored aggregate-all, cash-only,
+  incoming-cash, gte semantics and matching trigger/book currency. Only then
+  may the lower positive desk threshold tighten the pack trigger. Missing or
+  unsupported rules yield `trigger: null` and `needsReport: null`; axes not
+  explicitly listed by a compatible rule also yield null, never a cleared
+  report. Existing cash aggregation and identification are unchanged.
+  Midnight-straddling gaps use the actual transition (including Toronto and
+  Nassau in 1919). Calendar-day bounds still differ from the stored CA-v2
+  `fixed_24h` label; CTO/Compliance confirmation remains necessary before
+  broader reporting/filing integration and storing offsets.
   This proves the grouping read and window metadata only. **P0 #595 remains
   open:** the filing path still trusts browser totals; offsets are not stored
   on filings. Server sealing/recomputation/refusal, corrections, future shared

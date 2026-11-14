@@ -247,6 +247,35 @@ export async function largeCashRule(
   };
 }
 
+/** Compatibility reader only for the shop-day grouping read. Do not widen
+ * largeCashRule/countryIdentification: their existing semantics stay intact.
+ * This checks the comparison we implement, not a country's reporting law or
+ * its filing window. Unspecified axes are unknown, not all three by default.
+ */
+export async function shopDayLargeCashRule(
+  client: pg.PoolClient,
+  pack: JurisdictionPack,
+): Promise<{ trigger: Decimal; axes: Axis[] } | null> {
+  const found = await client.query(
+    `SELECT trigger_threshold, trigger_currency, aggregate_all_amounts,
+            aggregation_axes, comparator, direction, cash_only
+       FROM jurisdiction_reports
+      WHERE pack_id = $1 AND kind = 'large_cash'
+      ORDER BY version DESC
+      LIMIT 1`,
+    [pack.packId],
+  );
+  const row = found.rows[0];
+  const trigger = positive(row?.trigger_threshold);
+  const currency = String(row?.trigger_currency ?? "").trim().toUpperCase();
+  if (!trigger || row.aggregate_all_amounts !== true || row.cash_only !== true
+    || row.direction !== "in" || row.comparator !== "gte"
+    || !/^[A-Z]{3}$/.test(currency) || currency !== pack.homeCurrency) return null;
+  const axes: unknown[] = Array.isArray(row.aggregation_axes) ? row.aggregation_axes : [];
+  return { trigger, axes: axes.filter((axis): axis is Axis =>
+    typeof axis === "string" && (AXES as readonly string[]).includes(axis)) };
+}
+
 /* Midnight in the branch's zone, then 24 elapsed hours. A calendar
    date uses this. The large-cash identity gate does not. The gate
    looks back the rolling 24 hours from the deal, through
@@ -330,12 +359,26 @@ export function shopDayWindow(day: string, timeZone: string): {
     return { ms: (match[1] === "-" ? -1 : 1) * seconds * 1000, text: text.slice(3) };
   };
   const boundary = (wall: number) => {
-    // Sample both sides of a midnight transition, including a date-line
-    // jump. Choose the earliest candidate at/after the intended wall time.
+    // Sample both sides of an IANA midnight transition, including a date-line
+    // jump. Exact candidates handle ordinary midnights and both occurrences
+    // of an overlap; the first occurrence is the boundary.
     const offsets = [-36, 0, 36].map(hours => offset(wall + hours * 3600000).ms);
-    const candidates = offsets.map(ms => wall - ms).filter(at => at + offset(at).ms >= wall);
-    if (!candidates.length) throw invalid();
-    return Math.min(...candidates);
+    const candidates = offsets.map(ms => wall - ms);
+    const wallAt = (at: number) => at + offset(at).ms;
+    const exact = candidates.filter(at => wallAt(at) === wall);
+    if (exact.length) return Math.min(...exact);
+    // A forward gap brackets the missing midnight between the two offset
+    // candidates. Those candidates are NOT necessarily the transition:
+    // Toronto 1919 jumped 23:30 -> 00:30. Bisect this local gap (not the
+    // globally non-monotone civil clock) to its first valid millisecond.
+    let before = Math.min(...candidates), after = Math.max(...candidates);
+    if (wallAt(before) >= wall || wallAt(after) < wall) throw invalid();
+    while (after - before > 1) {
+      const middle = before + Math.floor((after - before) / 2);
+      if (wallAt(middle) >= wall) after = middle;
+      else before = middle;
+    }
+    return after;
   };
   const start = boundary(civil.getTime()), end = boundary(next.getTime());
   if (start >= end || start + offset(start).ms >= next.getTime()) throw invalid();
