@@ -89,12 +89,19 @@ const BRIDGE = `<script>
      it is theirs to quote, so typing one is not looked up, and setup opens
      only from the code in the email's link. Sol, 14 Nov. */
   var ID = /^CD-[A-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
-  /* A typed value read as a code. An ID stays an ID. Anything else drops
-     the hyphen fmtRef keeps after four letters, because CD-ZAQR-BJ is the
-     code CD-ZAQRBJ typed with a space, and a code must never get stuck. */
+  /* A typed value read as a code. An ID stays an ID. A six-character code
+     typed with a space after four letters (CD-ZAQR-BJ, as fmtRef shows it)
+     is that code, CD-ZAQRBJ, so a code never gets stuck. Nothing else is
+     folded: CD-ZAQR-BJ7 is part of an ID, not a code. */
   function asCode(v) {
     var code = String(v || "").toUpperCase().trim();
-    return ID.test(code) ? code : code.replace(/^CD-([A-Z]{4})-/, "CD-$1");
+    return ID.test(code) ? code : code.replace(/^CD-([A-Z]{4})-([2-9A-HJ-NP-Z]{2})$/, "CD-$1$2");
+  }
+  /* Part of their own ID, as they correct it, is never sent anywhere. */
+  function partOfMine(v) {
+    var typed = String(v || "").toUpperCase().trim();
+    for (var k in CD.known) if (CD.known[k] === true && ID.test(k) && k !== typed && k.indexOf(typed) === 0) return true;
+    return false;
   }
 
   function api(path, body) {
@@ -173,7 +180,7 @@ const BRIDGE = `<script>
     checkRef: function (v, done) {
       var code = asCode(v);
       clearTimeout(CD._rt);
-      if (!REF.test(code) || code in CD.known) return;
+      if (!REF.test(code) || code in CD.known || partOfMine(v)) return;
       CD._rt = setTimeout(function () {
         if (code in CD.known) return;
         CD.checking = code;
@@ -222,6 +229,9 @@ const BRIDGE = `<script>
       /* an ID typed with its second hyphen (or a space) keeps it: CD-YORK-7K42 */
       var id = up.replace(/^\\s*CD[\\s-]*/, "").match(/^([A-Z]{4})[\\s-]+([A-Z0-9]{0,4})/);
       if (id) return "CD-" + id[1] + "-" + id[2];
+      /* the prefix itself, as they type it: "CD-" goes on once there is
+         more, or typing "cd" into an empty field ends up as CD-CD... */
+      if (bare === "C" || bare === "CD") return bare;
       var raw = up.replace(/[^A-Z0-9]/g, "").replace(/^CD/, "").slice(0, 12);
       return raw ? "CD-" + raw : "";
     },
