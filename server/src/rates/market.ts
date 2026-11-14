@@ -10,12 +10,13 @@
    overrides, show flags and ordering are preserved — only mids move).
    ============================================================ */
 import Decimal from "decimal.js";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import type { RateBoardRow } from "../db/schema.js";
 import { forgetPublicAnswers } from "./public-board.js";
+import { boundedMarketPull, withSyncTransaction } from "./sync-transaction.js";
 
 // non-fiat provider symbols we never offer (metals, IMF SDR, crypto)
 const NON_FIAT = new Set(["XAU", "XAG", "XPT", "XPD", "XDR", "BTC"]);
@@ -41,17 +42,17 @@ export function normalizePerCad(rates: Record<string, number>): Record<string, n
   return mids;
 }
 
-async function pullOpenErApi(): Promise<MarketPull> {
-  const res = await fetch("https://open.er-api.com/v6/latest/CAD");
+async function pullOpenErApi(signal?: AbortSignal): Promise<MarketPull> {
+  const res = await fetch("https://open.er-api.com/v6/latest/CAD", { signal });
   if (!res.ok) throw new Error(`open.er-api.com HTTP ${res.status}`);
   const body = (await res.json()) as { result: string; rates: Record<string, number>; time_last_update_utc?: string };
   if (body.result !== "success" || !body.rates) throw new Error("open.er-api.com bad payload");
   return { provider: "open.er-api.com", providerTimestamp: body.time_last_update_utc ?? null, mids: normalizePerCad(body.rates) };
 }
 
-async function pullOpenExchangeRates(appId: string): Promise<MarketPull> {
+async function pullOpenExchangeRates(appId: string, signal?: AbortSignal): Promise<MarketPull> {
   // free tier is USD-base; rebase to CAD: X per CAD = (X per USD) / (CAD per USD)
-  const res = await fetch(`https://openexchangerates.org/api/latest.json?app_id=${appId}`);
+  const res = await fetch(`https://openexchangerates.org/api/latest.json?app_id=${appId}`, { signal });
   if (!res.ok) throw new Error(`openexchangerates HTTP ${res.status}`);
   const body = (await res.json()) as { rates: Record<string, number>; timestamp?: number };
   const cadPerUsd = body.rates?.CAD;
@@ -67,16 +68,19 @@ async function pullOpenExchangeRates(appId: string): Promise<MarketPull> {
   };
 }
 
-export async function fetchMarketRates(): Promise<MarketPull> {
+export async function fetchMarketRates(signal?: AbortSignal): Promise<MarketPull> {
+  signal?.throwIfAborted();
   const appId = process.env.OXR_APP_ID;
   if (appId) {
     try {
-      return await pullOpenExchangeRates(appId);
+      return await pullOpenExchangeRates(appId, signal);
     } catch {
+      signal?.throwIfAborted();
       // fall through to the keyless provider rather than serving nothing
     }
   }
-  return pullOpenErApi();
+  signal?.throwIfAborted();
+  return pullOpenErApi(signal);
 }
 
 /** The feed's mids (CAD per 1 unit) in another home currency: each
@@ -145,6 +149,8 @@ export async function publishFromMarket(db: Db, pull: MarketPull, branchId: stri
     boardOrder: prev.boardOrder,
     publishedBy: `market-sync (${pull.provider})`,
     marketSnapshotId: marketSnapshotId ?? null,
+    // now() is transaction start, which can precede a slow provider response.
+    publishedAt: sql`clock_timestamp()`,
   });
   // The public rate page and screens show this board from now on.
   forgetPublicAnswers();
@@ -162,58 +168,90 @@ export async function msSinceLastPull(db: Db): Promise<number> {
   return last[0] ? Date.now() - last[0].fetchedAt.getTime() : Number.POSITIVE_INFINITY;
 }
 
-/** Sync only if the newest snapshot is older than `minGapMs`. The freshness
-    gate is read from the database (not process memory), so a service that
-    cold-starts many times a day — e.g. a Render free-tier instance waking
-    from sleep — still pulls the provider at most once per gap instead of
-    once per boot. Never throws. */
+type SyncResult = { ok: boolean; skipped: boolean; detail: string; ageMs: number };
+
+/** One global feed, not one pull per branch. The two-key advisory namespace
+    (CDRT, 1) is distinct from IDV's single-key locks. Transaction scope pins
+    every query to one connection, also with a transaction-pooling proxy.
+    Commit/rollback releases the lock; no session lock can leak into a pool. */
+async function syncWithLock(
+  db: Db, branchId: string, minGapMs: number | null, fetcher: (signal?: AbortSignal) => Promise<MarketPull>,
+): Promise<SyncResult> {
+  let ageMs = Number.POSITIVE_INFINITY;
+  try {
+    const result = await withSyncTransaction(db, async (tx, controller) => {
+      const lock = await tx.execute<{ acquired: boolean }>(sql`SELECT pg_try_advisory_xact_lock(1128550996, 1) AS acquired`);
+      if (!lock.rows[0]?.acquired) {
+        return { ok: false, skipped: true, detail: "sync already in progress", ageMs };
+      }
+      // Read only after acquiring the lock: a queued connection may have
+      // missed another instance completing a pull while it was waiting.
+      ageMs = await msSinceLastPull(tx);
+      if (minGapMs !== null && ageMs < minGapMs) {
+        return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago`, ageMs };
+      }
+      const pull = await boundedMarketPull(fetcher, controller);
+      const result = await pullAndPublish(tx, branchId, pull);
+      return { ...result, skipped: false, ageMs };
+    });
+    // Readers can refill the cache before this transaction commits. Invalidate
+    // again after commit, when the new boards are visible to other connections.
+    if (result.ok && !result.skipped) forgetPublicAnswers();
+    return result;
+  } catch (err) {
+    // Catch outside the transaction so failures roll back before reporting.
+    return { ok: false, skipped: false, detail: err instanceof Error ? err.message : String(err), ageMs };
+  }
+}
+
+/** The database freshness gate survives restarts. A competing sync skips
+    without fetching; the scheduler retries inside its existing headroom.
+    PGlite supports the same transaction/lock SQL. Never throws. */
 export async function syncMarketRatesIfStale(
   db: Db,
   branchId: string,
   minGapMs: number,
-  fetcher: () => Promise<MarketPull> = fetchMarketRates,
-): Promise<{ ok: boolean; skipped: boolean; detail: string; ageMs: number }> {
-  const ageMs = await msSinceLastPull(db);
-  if (ageMs < minGapMs) {
-    return { ok: true, skipped: true, detail: `fresh — last pull ${Math.round(ageMs / 60000)}m ago`, ageMs };
-  }
-  const r = await syncMarketRates(db, branchId, fetcher);
-  return { ...r, skipped: false, ageMs };
+  fetcher: (signal?: AbortSignal) => Promise<MarketPull> = fetchMarketRates,
+): Promise<SyncResult> {
+  return syncWithLock(db, branchId, minGapMs, fetcher);
 }
 
-/** One sync cycle: pull → snapshot → auto-publish. Never throws. */
-export async function syncMarketRates(db: Db, branchId: string, fetcher: () => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
-  try {
-    const pull = await fetcher();
-    const snapshotId = randomUUID();
-    await db.insert(schema.marketRates).values({
-      id: snapshotId,
-      provider: pull.provider,
-      mids: pull.mids,
-      providerTimestamp: pull.providerTimestamp,
-    });
-    const publicationId = await publishFromMarket(db, pull, branchId, snapshotId);
-    /* Every other branch with Auto-publish on follows the same pull, each
-       in its own home currency. One board that fails does not stop the
-       rest; it is named in the detail. */
-    const following = await db.select({ id: schema.branches.id }).from(schema.branches)
-      .where(and(eq(schema.branches.autoPublishRates, true), ne(schema.branches.id, branchId)));
-    let published = 0;
-    const failed: string[] = [];
-    for (const branch of following) {
-      try {
-        if (await publishFromMarket(db, pull, branch.id, snapshotId)) published += 1;
-      } catch {
-        failed.push(branch.id);
-      }
+/** Force one sync cycle, still excluding concurrent market syncs. Never throws. */
+export async function syncMarketRates(db: Db, branchId: string, fetcher: (signal?: AbortSignal) => Promise<MarketPull> = fetchMarketRates): Promise<{ ok: boolean; detail: string }> {
+  return syncWithLock(db, branchId, null, fetcher);
+}
+
+/** Called only with the lock-owning transaction; errors must reach rollback. */
+async function pullAndPublish(db: Db, branchId: string, pull: MarketPull): Promise<{ ok: boolean; detail: string }> {
+  const snapshotId = randomUUID();
+  await db.insert(schema.marketRates).values({
+    id: snapshotId,
+    provider: pull.provider,
+    mids: pull.mids,
+    providerTimestamp: pull.providerTimestamp,
+    fetchedAt: sql`clock_timestamp()`,
+  });
+  const publicationId = await publishFromMarket(db, pull, branchId, snapshotId);
+  /* Every other branch with Auto-publish on follows the same pull, each
+     in its own home currency. One board that fails does not stop the
+     rest; it is named in the detail. */
+  const following = await db.select({ id: schema.branches.id }).from(schema.branches)
+    .where(and(eq(schema.branches.autoPublishRates, true), ne(schema.branches.id, branchId)));
+  let published = 0;
+  const failed: string[] = [];
+  for (const branch of following) {
+    try {
+      // A failed follower must not abort the enclosing sync transaction.
+      const id = await db.transaction((tx) => publishFromMarket(tx, pull, branch.id, snapshotId));
+      if (id) published += 1;
+    } catch {
+      failed.push(branch.id);
     }
-    return {
-      ok: true,
-      detail: `${Object.keys(pull.mids).length} mids from ${pull.provider}${publicationId ? ", board published" : ""}`
-        + (following.length ? `, ${published} of ${following.length} auto-publish boards published` : "")
-        + (failed.length ? `, failed: ${failed.join(", ")}` : ""),
-    };
-  } catch (err) {
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
+  return {
+    ok: true,
+    detail: `${Object.keys(pull.mids).length} mids from ${pull.provider}${publicationId ? ", board published" : ""}`
+      + (following.length ? `, ${published} of ${following.length} auto-publish boards published` : "")
+      + (failed.length ? `, failed: ${failed.join(", ")}` : ""),
+  };
 }

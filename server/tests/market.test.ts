@@ -1,10 +1,11 @@
 /* Market-rate sync tests — injected fetcher, no network. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { seed, DEMO } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { normalizePerCad, syncMarketRates, syncMarketRatesIfStale, type MarketPull } from "../src/rates/market.js";
+import { fetchMarketRates, normalizePerCad, syncMarketRates, syncMarketRatesIfStale, type MarketPull } from "../src/rates/market.js";
+import { MARKET_PULL_TIMEOUT_MS } from "../src/rates/sync-transaction.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -72,6 +73,29 @@ describe("market rates", () => {
     expect(result.detail).toContain("provider exploded");
   });
 
+  it("can sync again after a failed embedded cycle without leaving a snapshot", async () => {
+    const before = (await handle.db.select().from(schema.marketRates)).length;
+    const failed = await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, async () => {
+      throw new Error("synthetic failure");
+    });
+    expect(failed).toMatchObject({ ok: false, skipped: false });
+    expect(await handle.db.select().from(schema.marketRates)).toHaveLength(before);
+    expect(await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, async () => ({
+      provider: "recovery", providerTimestamp: null, mids: { USD: 1.4 },
+    }))).toMatchObject({ ok: true, skipped: false });
+    expect(await handle.db.select().from(schema.marketRates)).toHaveLength(before + 1);
+  });
+
+  it("reports a connection acquisition failure without fetching or throwing", async () => {
+    const unavailable = vi.spyOn(handle.db, "transaction").mockRejectedValueOnce(new Error("connection unavailable"));
+    const fetcher = vi.fn();
+    try {
+      expect(await syncMarketRatesIfStale(handle.db, DEMO.branchId, 0, fetcher))
+        .toMatchObject({ ok: false, skipped: false, detail: "connection unavailable" });
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally { unavailable.mockRestore(); }
+  });
+
   it("gates on snapshot age: repeated boots within the gap don't re-pull", async () => {
     const before = (await handle.db.select().from(schema.marketRates)).length;
     let calls = 0;
@@ -119,5 +143,77 @@ describe("market rates", () => {
     expect(Number(newest.buyMargin)).toBeCloseTo(0.07);
     expect(newest.boardRows.USD?.spread).toBeCloseTo(0.06);
     expect(newest.boardRows.USD?.show).toBe(false);
+  });
+
+  it.each(["resolve", "reject"])("releases embedded reads at the provider deadline and ignores late %s", async (settlement) => {
+    const snapshots = (await handle.db.select().from(schema.marketRates)).length;
+    const boards = (await handle.db.select().from(schema.rateBoards)).length;
+    let entered!: () => void;
+    const inFetch = new Promise<void>((done) => { entered = done; });
+    let resolve!: (value: MarketPull) => void;
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<MarketPull>((yes, no) => { resolve = yes; reject = no; });
+    const pull: MarketPull = { provider: "deadline-recovery", providerTimestamp: null, mids: { USD: 1.4 } };
+    let signal: AbortSignal | undefined;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const syncing = syncMarketRates(handle.db, DEMO.branchId, async (value) => {
+      signal = value; entered(); return pending;
+    });
+    try {
+      await inFetch;
+      let readFinished = false;
+      const read = handle.db.select().from(schema.branches).then(() => { readFinished = true; });
+      await vi.advanceTimersByTimeAsync(MARKET_PULL_TIMEOUT_MS - 1);
+      expect(readFinished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await syncing).toMatchObject({ ok: false, detail: "market provider timed out" });
+      expect(signal?.aborted).toBe(true);
+      await read;
+      expect(await handle.db.select().from(schema.marketRates)).toHaveLength(snapshots);
+      expect(await handle.db.select().from(schema.rateBoards)).toHaveLength(boards);
+      expect((await syncMarketRates(handle.db, DEMO.branchId, async () => pull)).ok).toBe(true);
+      if (settlement === "resolve") resolve({ ...pull, provider: "late-result" });
+      else reject(new Error("late rejection"));
+      await new Promise<void>((done) => setImmediate(done));
+      expect(await handle.db.select().from(schema.marketRates)).toHaveLength(snapshots + 1);
+      expect(await handle.db.select().from(schema.rateBoards)).toHaveLength(boards + 1);
+    } finally {
+      resolve(pull);
+      await syncing;
+      vi.useRealTimers();
+    }
+  });
+
+  it("passes cancellation to the provider and does not fall back after abort", async () => {
+    vi.stubEnv("OXR_APP_ID", "synthetic-provider-key");
+    const controller = new AbortController();
+    let received: AbortSignal | null | undefined;
+    const fetch = vi.fn(async (_url: unknown, options?: RequestInit) => {
+      received = options?.signal;
+      controller.abort(new Error("synthetic cancellation"));
+      throw controller.signal.reason;
+    });
+    vi.stubGlobal("fetch", fetch);
+    try {
+      await expect(fetchMarketRates(controller.signal)).rejects.toThrow("synthetic cancellation");
+      expect(received).toBe(controller.signal);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
+  });
+
+  it("retains ordinary fallback and carries the same signal through both providers", async () => {
+    vi.stubEnv("OXR_APP_ID", "synthetic-provider-key");
+    const controller = new AbortController();
+    const fetch = vi.fn()
+      .mockRejectedValueOnce(new Error("synthetic provider failure"))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: "success", rates: { USD: 0.7 } }) });
+    vi.stubGlobal("fetch", fetch);
+    try {
+      expect((await fetchMarketRates(controller.signal)).provider).toBe("open.er-api.com");
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch.mock.calls.map((call) => call[1])).toEqual([
+        { signal: controller.signal }, { signal: controller.signal },
+      ]);
+    } finally { vi.unstubAllGlobals(); vi.unstubAllEnvs(); }
   });
 });
