@@ -98,6 +98,8 @@ export const migrations: readonly Migration[] = [
   ["067_branch_rates_lock", "src/db/migrations/067_branch_rates_lock.sql"],
   /* 068 is a rate page's custom domain request (Rates v2.5, Take it further). */
   ["068_rate_page_domain_request", "src/db/migrations/068_rate_page_domain_request.sql"],
+  /* 074 is the optional shop reporting zone. Earlier arrivals still replay. */
+  ["074_legal_entity_timezone", "src/db/migrations/074_legal_entity_timezone.sql"],
 ] as const;
 
 type MigrationReader = {

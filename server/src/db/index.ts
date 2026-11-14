@@ -348,6 +348,19 @@ ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS report_threshold numeric(24,
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS id_threshold numeric(24,2);
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS aggregation_hours integer;
 ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS retention_years integer;
+-- Shop reporting zone. Migration 074 on Postgres. PGlite needs both the
+-- nullable column and the check here; boot runs before migrations on PG.
+ALTER TABLE legal_entities ADD COLUMN IF NOT EXISTS timezone text;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'legal_entities'::regclass
+      AND conname = 'legal_entities_timezone_nonblank'
+  ) THEN
+    ALTER TABLE legal_entities ADD CONSTRAINT legal_entities_timezone_nonblank
+      CHECK (timezone IS NULL OR btrim(timezone) <> '');
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS legal_entities_tenant_idx ON legal_entities(tenant_id);
 CREATE TABLE IF NOT EXISTS branches (
   id text PRIMARY KEY,

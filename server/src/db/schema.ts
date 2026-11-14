@@ -248,6 +248,8 @@ export const legalEntities = pgTable(
        whatever the jurisdiction pack suggests", which is where a desk starts
        and stays until an owner decides otherwise. See migration 014. */
     costMethod: text("cost_method"),
+    /* NULL follows branch zones. Migration 074; see entity-zone.ts. */
+    timezone: text("timezone"),
     /* What this desk reports at, identifies at, aggregates over and keeps
        records for. Nullable for the same reason `costMethod` is: NULL means
        "follow the jurisdiction pack", which states the regulator's mandate.
