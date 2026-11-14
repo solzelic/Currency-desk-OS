@@ -1,4 +1,5 @@
 import pg from "pg";
+import Decimal from "decimal.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -6,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { financialState } from "./financial-state.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const postgres = url ? describe : describe.skip;
@@ -578,6 +580,50 @@ postgres("ledger HTTP routes against real PostgreSQL", () => {
       [posted.json().transactionId],
     );
     expect(row.rows[0].output_amount).toBe("11046.00");
+  });
+
+  it("returns 422 without financial writes when direct posting receives JPY 1500.7 (#553)", async () => {
+    const scope = [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, DEMO.workspaceId, "till-01"];
+    await pool.query("INSERT INTO ledger_rates VALUES ($1,$2,$3,$4,'JPY',100)", scope.slice(0, 4));
+    await pool.query("INSERT INTO ledger_till_balances VALUES ($1,$2,$3,$4,$5,'JPY',200000)", scope);
+    const balances = () => pool.query<{ currency: string; available_amount: string }>(
+      `SELECT currency,available_amount FROM ledger_till_balances
+        WHERE tenant_id=$1 AND legal_entity_id=$2 AND branch_id=$3
+          AND workspace_id=$4 AND till_id=$5 AND currency IN ('CAD','JPY') ORDER BY currency`,
+      scope,
+    );
+    const startingBalances = (await balances()).rows;
+    const cookies = await cookie();
+    const request = {
+      ...post, idempotencyKey: "fractional-jpy", from: "JPY", to: "CAD",
+      inputAmount: "1500.7", feeCad: "0.00",
+    };
+    const before = await financialState(pool);
+    expect(before.ledger_till_balances).not.toHaveLength(0);
+    const refused = await app.inject({ method: "POST", url: "/api/ledger/exchanges", cookies, payload: request });
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json().code).toBe("INVALID_REQUEST");
+    expect(refused.json().message).toBe("Amount is not a whole number of JPY. JPY has no minor unit.");
+    expect(await financialState(pool)).toEqual(before);
+
+    // Reusing the failed key also proves no idempotency claim was committed.
+    const whole = await app.inject({
+      method: "POST", url: "/api/ledger/exchanges", cookies,
+      payload: { ...request, inputAmount: "1500" },
+    });
+    expect(whole.statusCode, whole.body).toBe(201);
+    const saved = await pool.query(
+      "SELECT input_amount,output_amount FROM ledger_transactions WHERE transaction_id=$1", [whole.json().transactionId],
+    );
+    expect(saved.rows).toEqual([{ input_amount: "1500.00", output_amount: "15.00" }]);
+    const deltas = (await balances()).rows.map((row, index) => ({
+      currency: row.currency,
+      delta: new Decimal(row.available_amount).minus(startingBalances[index]!.available_amount).toFixed(2),
+    }));
+    expect(deltas).toEqual([
+      { currency: "CAD", delta: "-15.00" },
+      { currency: "JPY", delta: "1500.00" },
+    ]);
   });
 
   it("deduplicates posting and derives authorization from the staff record", async () => {
