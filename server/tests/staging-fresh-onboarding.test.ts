@@ -121,6 +121,14 @@ describe("fresh onboarding", () => {
       const state = await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } });
       expect(state.statusCode).toBe(200);
       expect(state.json().data.ownerEmail).toBe(body.email);
+      /* setup shows the CurrencyDesk ID the reveal showed, not the reference in the link (Sol, 14 Nov) */
+      expect(state.json().data.cdId).toBe(body.cdId);
+      expect(state.json().application.cdId).toBe(body.cdId);
+      /* a copy saved by an older page (it wrote the reference there) cannot replace the server's */
+      await app.inject({ method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST }, payload: { at: 0, data: { cdId: body.reference } } });
+      expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } })).json().data.cdId).toBe(body.cdId);
+      /* the ID is theirs to show and quote, so it is not a key: it does not open setup */
+      expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.cdId + "/state", headers: { host: STAGING_HOST } })).statusCode).toBe(404);
 
       await app.inject({
         method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST },

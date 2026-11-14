@@ -205,6 +205,20 @@ test.describe("Early Access v2.1", () => {
     await expect(open).toHaveCSS("pointer-events", "auto", { timeout: 30_000 });
     await open.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/onboarding/${body.reference}$`));
+
+    /* Setup shows the same CurrencyDesk ID, recognised, not the reference in the link (Sol, 14 Nov). */
+    const idField = page.getByPlaceholder("CD-XXXXXX");
+    await expect(idField).toHaveValue(body.cdId);
+    await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
+    /* Somebody else's ID is not a key, so it is not even looked up. */
+    const lookups: string[] = [];
+    page.on("request", (r) => { if (r.url().includes("/api/onboarding/CD-ABCD-")) lookups.push(r.url()); });
+    await idField.fill("CD-ABCD-2345");
+    await expect(page.getByText("To open your setup, use the button in the email we sent you.")).toBeVisible();
+    await page.waitForTimeout(800);
+    expect(lookups).toHaveLength(0);
+    await idField.fill(body.cdId);
+    await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
   });
 
   test("a Canadian shop not yet registered is told its address is held", async ({ page }) => {
