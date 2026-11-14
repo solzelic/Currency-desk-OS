@@ -1812,11 +1812,30 @@ class Component extends DCLogic {
       closed: !open, label: val || (isS ? 'Which software? (optional)' : isC ? 'Which country?' : 'Which state?'), search: isS ? 'Type your software' : isC ? 'Type a country' : 'Type a state', q: s.pq, open, none: open && items.length === 0 && !useTyped,
       ref: isS ? this.refSoft : isC ? this.refCountry : this.refState, refQ: this.refQ,
       btn: "display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 12px 12px 14px; font-size: 15px; font-family: inherit; text-align: left; background: #FFFDF8; border-radius: 12px; cursor: pointer; outline: none; color: " + (val ? '#17140F' : '#6B6459') + '; border: 1.5px solid ' + (open ? '#1D6B45' : '#DDD5C6') + ';' + (open ? ' box-shadow: 0 0 0 4px rgba(29,107,69,0.12);' : ''),
-      toggle: () => { const o = s.pk === kind ? '' : kind; this.setState({ pk: o, pq: '' }); if (o) setTimeout(() => { try { this.refQ.current && this.refQ.current.focus(); } catch (x) {} }, 60); },
+      toggle: () => { const o = s.pk === kind ? '' : kind; this.setState({ pk: o, pq: '' }); if (o) this._showList(0); },
       onQ: (e) => this.setState({ pq: e.target.value }),
       onKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (items.length) pick(items[0])(); else if (useTyped) pick(typed)(); } else if (e.key === 'Escape') this.setState({ pk: '', pq: '' }); },
       items: (useTyped ? [{ c: typed, label: 'Use \u201c' + typed + '\u201d' }] : []).concat(items.map((c) => ({ c, label: c }))).map(({ c, label }) => ({ label, on: c === val, pick: pick(c), style: 'display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 9px; border: none; font-size: 14.5px; font-family: inherit; color: #17140F; cursor: pointer; background: ' + (c === val ? '#E2EFE8' : 'transparent') + ';' + (isC && c === 'United States' ? ' font-weight: 700; border-bottom: 1px solid #EFE8DA; border-radius: 9px 9px 0 0; margin-bottom: 4px;' : '') }))
     };
+  }
+  /* Focus the open list's search and bring the list into view: near the bottom of the card (the
+     software one always is) it would open below the fold. It waits for the list to render, frame by
+     frame, rather than a fixed delay, which Safari can outlast. Only the stage's own scroller moves,
+     by just enough, and never so far that the search box leaves the top: scrollIntoView also nudged
+     the clipped card, the clip guard put that back, and in Safari that cancelled the whole scroll. */
+  _showList(tries) {
+    const q = this.refQ.current;
+    if (!q) { if (tries < 30) requestAnimationFrame(() => this._showList(tries + 1)); return; }
+    try {
+      q.focus({ preventScroll: true });
+      const box = q.parentNode && q.parentNode.nextElementSibling;
+      let sc = box && box.parentElement;
+      while (sc && sc !== document.body && !/auto|scroll/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement;
+      if (!box || !sc || sc === document.body) return;
+      const view = sc.getBoundingClientRect(), list = box.getBoundingClientRect(), field = q.getBoundingClientRect();
+      const by = Math.min(list.bottom + 16 - view.bottom, field.top - 16 - view.top);
+      if (by > 0) sc.scrollBy({ top: by, behavior: 'smooth' });
+    } catch (x) {}
   }
   _outOk() { const s = this.state; return this.COUNTRIES.indexOf(s.outCountry) >= 0 && (s.outCountry !== 'United States' || this.STATES.indexOf(s.outState) >= 0); }
   outNext = () => { if (this._outOk()) this._advance(4, {}); else this._tone('nope'); };
