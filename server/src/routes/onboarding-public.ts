@@ -393,10 +393,17 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       const picked = j.idDefault ?? j.idSeed ?? j.reportThreshold;
       if (typeof picked === "number" && picked > 0) seeded.idOver = String(picked);
     }
+    /* THE CURRENCYDESK ID IS THE SERVER'S. A v2.1 application was issued one
+       (enquiries/cd-id.ts) and the reveal showed it, so setup's "Your
+       CurrencyDesk ID" shows the same one, whatever an older page saved there
+       (it saved the reference). It is shown, never used as a key: setup opens
+       from the reference in the email's link, because the ID is theirs to quote
+       to support and its letters come from the shop's own name. Sol, 14 Nov. */
+    if (a.cdId) seeded.cdId = a.cdId;
     return {
       at: typeof (row.answers as Record<string, unknown>)?.__at === "number" ? (row.answers as Record<string, number>).__at : 0,
       data: seeded,
-      application: { reference: a.reference, name: a.name, email: a.email, told: details },
+      application: { reference: a.reference, cdId: a.cdId ?? null, name: a.name, email: a.email, told: details },
       /* Which channel confirms the account, decided here because this is the
          thing that actually sends. The page renders whatever it is told. */
       verify: { channel: VERIFY_CHANNEL, sentTo: sentToFor(seeded, a) },
@@ -413,6 +420,8 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     if (row.tenantId) return reply.code(409).send({ error: "already_created", detail: "Your desk is already open — sign in instead." });
 
     const incoming = stripSecrets(parsed.data.data);
+    /* the server's ID is not the browser's to save over (see GET /state) */
+    if (a.cdId) delete incoming.cdId;
     const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...incoming };
     delete answers.__flow; // the old shape, retired on first write
     answers.__at = parsed.data.at;

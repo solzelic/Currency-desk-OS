@@ -83,6 +83,12 @@ const BRIDGE = `<script>
      would reject every code we have ever emailed. The longer form is the
      walkthrough (CD-WALKTHRU) and anything else we mint by hand. */
   var REF = /^CD-[2-9A-HJ-NP-Z]{6,12}$/;
+  /* The CurrencyDesk ID the v2.1 page showed them: CD-, four letters, four
+     characters (server/src/enquiries/cd-id.ts). The server sends it with
+     their answers and this screen shows it as theirs. It is never a key:
+     it is theirs to quote, so typing one is not looked up, and setup opens
+     only from the code in the email's link. Sol, 14 Nov. */
+  var ID = /^CD-[A-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 
   function api(path, body) {
     return fetch("/api/onboarding/" + encodeURIComponent(CD.code) + path, {
@@ -140,14 +146,15 @@ const BRIDGE = `<script>
 
     refValid: function (v) {
       var code = String(v || "").toUpperCase().trim();
-      return REF.test(code) && CD.known[code] === true;
+      return (REF.test(code) || ID.test(code)) && CD.known[code] === true;
     },
     /* What screen 0 should be saying right now: nothing yet, we're asking,
        we don't know it, or it's theirs. */
     refState: function (v) {
       var code = String(v || "").toUpperCase().trim();
+      if ((REF.test(code) || ID.test(code)) && CD.known[code] === true) return "ok";
+      if (ID.test(code)) return "link"; // an ID, not a code: see ID above
       if (!REF.test(code)) return "empty";
-      if (CD.known[code] === true) return "ok";
       if (CD.throttled) return "slow";
       if (CD.known[code] === false) return "no";
       return CD.checking === code ? "checking" : "empty";
@@ -192,7 +199,11 @@ const BRIDGE = `<script>
       }, 450);
     },
     fmtRef: function (v) {
-      var raw = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^CD/, "").slice(0, 12);
+      var up = String(v || "").toUpperCase();
+      /* an ID typed with its second hyphen (or a space) keeps it: CD-YORK-7K42 */
+      var id = up.replace(/^\\s*CD[\\s-]*/, "").match(/^([A-Z]{4})[\\s-]+([A-Z0-9]{0,4})/);
+      if (id) return "CD-" + id[1] + "-" + id[2];
+      var raw = up.replace(/[^A-Z0-9]/g, "").replace(/^CD/, "").slice(0, 12);
       return raw ? "CD-" + raw : "";
     },
 
@@ -501,7 +512,13 @@ const BRIDGE = `<script>
         /* They followed a link that already carries the code. Making them
            read it off the email and type it back is the flow admitting it
            wasn't listening. */
-        if (!data.cdId) data.cdId = CD.code;
+        /* Their CurrencyDesk ID, when the server issued one, is what this
+           screen shows as theirs: the reveal said CD-YORK-7K42 and this said
+           CD-ZAQ4BJ (Sol, 14 Nov). The server's word wins over a copy saved
+           before; the code in the link stays the key for every call. */
+        var issued = s.application && s.application.cdId;
+        if (issued && ID.test(issued)) { data.cdId = issued; CD.known[issued] = true; }
+        else if (!data.cdId) data.cdId = CD.code;
         /* An open desk does not get a browser copy. createdDesk is the
            server's word; paid or launched in the answers means the same.
            The answers stay in memory so the welcome still shows, which is
@@ -679,6 +696,7 @@ patch(
   "        if (s === 'checking') return 'Just checking that one\\u2026';\n" +
   "        if (s === 'slow') return 'Too many tries from this connection. Wait, then try again. Your ID is probably fine.';\n" +
   "        if (s === 'no') return 'We don\\u2019t have that ID. Check the email we sent you \\u2014 or reply to it and we\\u2019ll look you up.';\n" +
+  "        if (s === 'link') return 'To open your setup, use the button in the email we sent you.';\n" +
   "        return 'We emailed it to you when you were approved. Can\\u2019t find it? Search your inbox for CurrencyDesk.'; })(),",
 );
 patch(
