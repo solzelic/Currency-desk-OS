@@ -174,6 +174,13 @@ describe("POST /api/enquiries, v2.1", () => {
     expect(row).toMatchObject({ waitlistReason: "outside-canada", placeInLine: 1, inviteCode: first.invite.code });
   });
 
+  /* Sol, 14 Nov: an optional "which MSB software" answer, under "MSB software we use". */
+  it("keeps the MSB software they named, and refuses one too long to be a name", async () => {
+    const { reference } = (await send(v21("software@example.com", { runningOn: "MSB software we use", software: "CurrencyXchanger" }))).json();
+    expect((await rowOf(reference)).details).toMatchObject({ software: "CurrencyXchanger" });
+    expect((await send(v21("software-long@example.com", { software: "x".repeat(121) }))).statusCode).toBe(400);
+  });
+
   it("refuses an answer the form cannot give", async () => {
     expect((await send(v21("maybe@example.com", { fintracRegistered: "Maybe" }))).statusCode).toBe(400);
     expect((await send(v21("badmsb@example.com", { msbNumber: "M123" }))).statusCode).toBe(400);
