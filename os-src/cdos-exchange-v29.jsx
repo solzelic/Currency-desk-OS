@@ -146,13 +146,72 @@
     ".cd-v29-actions{display:flex;gap:8px}",
     ".cd-v29-go{flex:1;background:#2f6bff;color:#fff;border:0;border-radius:12px;min-height:46px;font-weight:650}",
     ".cd-v29-quiet-btn{border:1px solid #e4dfd6;background:#fff;border-radius:12px;min-height:46px;padding:0 16px}",
+    ".cd-v29-panel{padding:16px;border:1px solid #e4dfd6;border-radius:14px;background:#fff}",
+    ".cd-v29-panel h2{font-size:22px;margin:4px 0 8px}",
+    ".cd-v29-reason{display:block;width:100%;text-align:left;margin:4px 0;padding:8px 10px;border-radius:8px;border:1px solid #e4dfd6;background:#fff}",
+    ".cd-v29-reason.is-on{border-color:#2f6bff;background:#f4f7ff}",
+    ".cd-v29-panel textarea,.cd-v29-panel input{width:100%;margin-top:6px;padding:8px;border:1px solid #e4dfd6;border-radius:8px}",
+    ".cd-v29-stamp{margin-top:8px;font-weight:650}",
+    ".cd-v29-dark,.cd-v29-dark .cd-v29-sheet,.cd-v29-dark .cd-v29-meter,.cd-v29-dark .cd-v29-panel{background:#1c1916;color:#f4efe6}",
+    ".cd-v29-dark .cd-v29-card,.cd-v29-dark .cd-v29-reason,.cd-v29-dark .cd-v29-quiet-btn{background:#2a2622;color:#f4efe6;border-color:#3a342c}",
+    ".cd-v29-dark .cd-v29-card.is-off{background:#241f1b;color:#a39b90}",
+    ".cd-v29-dark .cd-v29-kicker,.cd-v29-dark .cd-v29-footer,.cd-v29-dark .cd-v29-note{color:#c8bfb2}",
   ].join("\n");
 
   function Style() {
     return React.createElement("style", null, css);
   }
 
+  function Stamp(props) {
+    return React.createElement("p", { className: "cd-v29-stamp" }, props.text || "Verified, In person, 2 years");
+  }
+
+  function RevealPicker(props) {
+    var reasons = props.reasons || ["FINTRAC request", "report filing", "ID mismatch", "client request", "Other"];
+    var selected = props.selected || "Other";
+    return React.createElement("section", { className: "cd-v29-panel", "aria-label": "Reveal ID number" },
+      React.createElement("div", { className: "cd-v29-kicker" }, "Staff only"),
+      React.createElement("h2", null, "Reveal ID number"),
+      reasons.map(function (reason) {
+        var on = reason === selected;
+        return React.createElement("button", {
+          type: "button", key: reason,
+          className: "cd-v29-reason" + (on ? " is-on" : ""),
+          "aria-pressed": on ? "true" : "false",
+          onClick: function () { if (props.onSelect) props.onSelect(reason); },
+        }, reason);
+      }),
+      selected === "Other" ? React.createElement("label", null, "Note",
+        React.createElement("textarea", { defaultValue: props.note || "Asked for their own record", "aria-label": "Other reason" })
+      ) : null
+    );
+  }
+
+  function OccupationRequired() {
+    return React.createElement("section", { className: "cd-v29-panel", "aria-label": "Occupation required" },
+      React.createElement("div", { className: "cd-v29-kicker" }, "CAD 3,000 or more"),
+      React.createElement("h2", null, "Occupation is required"),
+      React.createElement("p", null, "This exchange cannot post until you record an occupation. Client declined is not an answer."),
+      React.createElement("div", null, ["Employed", "Self-employed", "Retired", "Student"].map(function (label) {
+        return React.createElement("button", { type: "button", key: label, className: "cd-v29-reason" }, label);
+      })),
+      React.createElement("input", { "aria-label": "Occupation", placeholder: "Or type the occupation" })
+    );
+  }
+
+  function LctrLeft() {
+    return React.createElement("section", { className: "cd-v29-panel", "aria-label": "LCTR client left" },
+      React.createElement("div", { className: "cd-v29-kicker" }, "Prepared only. Not filed"),
+      React.createElement("h2", null, "Client already left"),
+      React.createElement("p", null, "Cash in 24 hours reached CAD 10,000. ID was not checked at this shop. The gap is on the LCTR draft and the compliance review list.")
+    );
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
-    ExchangeV29: { Meter: Meter, Chooser: Chooser, Style: Style, NO_EARLIER: NO_EARLIER, FOOTER: FOOTER },
+    ExchangeV29: {
+      Meter: Meter, Chooser: Chooser, Style: Style, Stamp: Stamp,
+      RevealPicker: RevealPicker, OccupationRequired: OccupationRequired, LctrLeft: LctrLeft,
+      NO_EARLIER: NO_EARLIER, FOOTER: FOOTER,
+    },
   });
 })();

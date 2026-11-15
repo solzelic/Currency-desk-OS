@@ -446,6 +446,8 @@
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false);   // launches the KYC scan-ID walk-through
     const [idChooser, setIdChooser] = useState(false);
+    const [revealOpen, setRevealOpen] = useState(false);
+    const [lctrOpen, setLctrOpen] = useState(false);
     const [cashWindow, setCashWindow] = useState(null);
     const [returnReason, setReturnReason] = useState('No earlier check at this shop. A new check is needed.');
     const [returnOff, setReturnOff] = useState(true);
@@ -1454,8 +1456,11 @@
                   <div>
                     <window.CDOS.ExchangeV29.Style />
                     <window.CDOS.ExchangeV29.Meter postedTotal={cashWindow && cashWindow.postedTotal} heldCountedTotal={cashWindow && cashWindow.heldCountedTotal} heldNotCounted={cashWindow && cashWindow.heldNotCounted || []} />
-                    {idStamp ? <div className="cd-v29-footer">{idStamp}</div> : null}
+                    {idStamp ? <window.CDOS.ExchangeV29.Stamp text={idStamp} /> : null}
+                    {isExchange && inCcy === home && amtN >= 3000 && <window.CDOS.ExchangeV29.OccupationRequired />}
                     <button type="button" onClick={() => setIdChooser(true)} className="mt-2 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Choose an ID check</button>
+                    <button type="button" onClick={() => setRevealOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Reveal ID number</button>
+                    <button type="button" onClick={() => setLctrOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Client already left</button>
                   </div>
                 )}
 
@@ -1496,6 +1501,20 @@
             </div>
           </div>
           </div>
+          {revealOpen && window.CDOS && window.CDOS.ExchangeV29 && (
+            <div className="cd-v29-over" role="presentation" onMouseDown={() => setRevealOpen(false)}>
+              <div onMouseDown={e => e.stopPropagation()} style={{ width: 'min(420px, 100%)' }}>
+                <window.CDOS.ExchangeV29.RevealPicker />
+              </div>
+            </div>
+          )}
+          {lctrOpen && window.CDOS && window.CDOS.ExchangeV29 && (
+            <div className="cd-v29-over" role="presentation" onMouseDown={() => setLctrOpen(false)}>
+              <div onMouseDown={e => e.stopPropagation()} style={{ width: 'min(480px, 100%)' }}>
+                <window.CDOS.ExchangeV29.LctrLeft />
+              </div>
+            </div>
+          )}
           {idChooser && window.CDOS && window.CDOS.ExchangeV29 && (
             <window.CDOS.ExchangeV29.Chooser
               reason={returnReason}
