@@ -166,6 +166,14 @@ resolution, never to data access. **Any new endpoint that takes a tenant id
 in the body or query is wrong by default** and needs a comment justifying why
 it is the exception.
 
+**Sign-in presentation does not establish identity.** CD-221's first v2.3
+components compose the existing `SignIn` lifecycle through an explicit prop;
+default activation remains pending. The adapter uses the existing login/start,
+login/verify, password-change gate and session handoff. It fails closed on
+network failure even on localhost. Passkey/OIDC and verified shop lookup await
+returning-auth contracts; there are no invented endpoints, browser trust records
+or production capture routes. See [SIGNIN_V23.md](SIGNIN_V23.md).
+
 **A temporary password is not a desk session.** `must_change_password` is
 enforced in `server/src/auth/password-change-gate.ts`, a hook on every `/api`
 request, not in the sign-in screen and not as a line each handler remembers.

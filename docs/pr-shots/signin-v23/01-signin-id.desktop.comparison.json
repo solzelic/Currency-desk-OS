@@ -1,0 +1,67 @@
+[
+  {
+    "text": "OS",
+    "delta": {
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 0
+    },
+    "originalFont": "IBM Plex Mono 800 9.5px/normal ls 0.95px",
+    "actualFont": "IBM Plex Mono 800 10px/normal ls 1px",
+    "originalColor": "rgb(29, 107, 69)",
+    "actualColor": "rgb(29, 107, 69)"
+  },
+  {
+    "text": "Sign in",
+    "delta": {
+      "x": 0,
+      "y": 44,
+      "w": 0,
+      "h": 0
+    },
+    "originalFont": "IBM Plex Mono 400 11px/normal ls 2.42px",
+    "actualFont": "IBM Plex Mono 400 11px/normal ls 2.42px",
+    "originalColor": "rgb(110, 103, 94)",
+    "actualColor": "rgb(110, 103, 94)"
+  },
+  {
+    "text": "Open  desk",
+    "delta": {
+      "x": 0,
+      "y": 44,
+      "w": 0,
+      "h": 0
+    },
+    "originalFont": "Instrument Serif 400 141.9px/122.034px ls -4.9665px",
+    "actualFont": "Instrument Serif 400 141.9px/122.034px ls -4.9665px",
+    "originalColor": "rgb(23, 20, 15)",
+    "actualColor": "rgb(23, 20, 15)"
+  },
+  {
+    "text": "the",
+    "delta": {
+      "x": 0,
+      "y": 45,
+      "w": 0,
+      "h": 0
+    },
+    "originalFont": "Instrument Serif 400 141.9px/122.034px ls -4.9665px",
+    "actualFont": "Instrument Serif 400 141.9px/122.034px ls -4.9665px",
+    "originalColor": "rgb(23, 20, 15)",
+    "actualColor": "rgb(23, 20, 15)"
+  },
+  {
+    "text": "Recommended",
+    "delta": {
+      "x": -4,
+      "y": 0,
+      "w": 4,
+      "h": 0
+    },
+    "originalFont": "IBM Plex Mono 700 9.5px/normal ls 1.33px",
+    "actualFont": "IBM Plex Mono 700 10px/normal ls 1.4px",
+    "originalColor": "rgb(123, 224, 168)",
+    "actualColor": "rgb(123, 224, 168)"
+  }
+]

@@ -19,6 +19,18 @@ Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `
 
 ## Current product milestone — Shop-Ready Core v1
 
+**CD-221 Sign in v2.3 — first presentation slice, activation pending.**
+`os-src/cdos-signin-v23.jsx` supplies reusable first-screen/password components
+inside the existing compiled OS. The existing `SignIn` can compose them through
+an explicit `presentation` prop; shipped callers still select the existing UI.
+Only the Playwright response fixture selects v2.3. There is no production seed
+route, URL flag, synthetic login, new auth endpoint or migration. Passwords use
+the existing server/session lifecycle; unavailable passkey/OIDC controls are
+disabled. Returning-auth/CD-ID lookup, 30-day known-device trust and the rest of
+the pack remain unfinished. CD-206's sliding 24-hour enrolment is not that trust,
+and resuming expired enrolment still needs a shared reauthentication interface.
+See [SIGNIN_V23.md](SIGNIN_V23.md) for scope, evidence and the next-slice contract.
+
 One shop, one full operating loop, provable end to end: an approved operator
 can go from Early Access → approval → onboarding → configured desk and rates
 → open till → quote and post FX transactions → acknowledge manual KYC

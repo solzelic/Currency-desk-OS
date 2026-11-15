@@ -97,7 +97,7 @@
   });
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
-  function SignIn({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem }) {
+  function SignIn({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem, presentation }) {
     const [step, setStep] = useState('id');            // id | password | code
     const [idInput, setIdInput] = useState('');
     const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
@@ -272,7 +272,12 @@
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
           body: JSON.stringify({ staffId, password: pw }),
         });
-        if (res && res.status === 401) { sending.current = false; setBusy(false); clearLock(); setErr('That password doesn\'t match this ID. Try again, or reset it below.'); return; }
+        if (res && res.status === 401) {
+          sending.current = false; setBusy(false); clearLock();
+          if (presentation === 'v23') setPw('');
+          setErr(presentation === 'v23' ? 'That password didn’t work. Try again, or reset it.' : 'That password doesn\'t match this ID. Try again, or reset it below.');
+          return;
+        }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
           sending.current = false; setBusy(false);
@@ -296,7 +301,7 @@
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
         sending.current = false; setBusy(false);
-        if (!offlineDemoAllowed()) {
+        if (presentation === 'v23' || !offlineDemoAllowed()) {
           setErr('The sign-in service is unavailable. Check your connection and try again.');
           return;
         }
@@ -439,6 +444,22 @@
         {children}
       </div>
     );
+
+    // CD-221: explicit composition seam, not a public activation switch.
+    // Default callers keep the shipped flow until returning-auth is ready.
+    if (presentation === 'v23' && (step === 'id' || step === 'password')) {
+      const { FirstScreen, Password } = window.CDOS.SignInV23;
+      const recover = () => { if (busy) return; setResetEmail(idInput.includes('@') ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); };
+      if (step === 'id') return <FirstScreen identifier={idInput} error={err}
+        onIdentifier={value => { setIdInput(value); setErr(''); }} onContinue={goPassword}
+        onRecover={recover} onSignup={() => window.location.assign('/signup')} onBack={() => window.location.assign('/')} />;
+      const disabled = busy || !!(locked && lockUntil) || pw.length < 4 || (idInput.includes('@') && cool > 0);
+      return <Password identifier={idInput} password={pw} show={showPw} busy={busy} disabled={disabled}
+        onPassword={value => { setPw(value); if (!locked) setErr(''); }} onShow={() => setShowPw(value => !value)}
+        onBack={() => { if (busy) return; setStep('id'); setPw(''); setShowPw(false); setErr(''); clearLock(); }}
+        onSubmit={event => { event.preventDefault(); if (!disabled) submitPassword(event); }} onRecover={recover}
+        error={locked ? lockSentence : err} />;
+    }
 
     // ---- A1 · CurrencyDesk ID -----------------------------------------
     if (step === 'id') return shell(card(<form onSubmit={e => { e.preventDefault(); goPassword(); }}>

@@ -1,0 +1,45 @@
+{
+  "base": "04cd590d1c776a35bc2889409bc063b994e7340c",
+  "clock": "2026-11-13T14:00:00-05:00",
+  "timezone": "America/Toronto",
+  "locale": "en-CA",
+  "browser": "Playwright 1.61.1 Chromium 1228",
+  "states": [
+    "01-signin",
+    "01-signin-id",
+    "01-signin-email",
+    "02-password",
+    "02-password-wrong"
+  ],
+  "viewports": {
+    "desktop": [
+      1440,
+      860
+    ],
+    "laptop": [
+      1280,
+      760
+    ],
+    "phone": [
+      390,
+      844
+    ],
+    "small": [
+      360,
+      740
+    ],
+    "compact": [
+      1100,
+      700
+    ]
+  },
+  "source_sha256": {
+    "os-src/cdos-signin-v23.jsx": "700c706fb1e23c3d5e4b92aea534ff794aae6c210d336e6319afdcabae50d5de",
+    "os-src/cdos-signin.jsx": "4efa86e787b0a04ee658c4bc8272d3f6015bbe48b68c73a0303698b6bc77bd40",
+    "web/app/os.js": "e07f566e30b69629d268e1a2875a69cf645be4c430a04a2b9030463160962067",
+    "tests/e2e/signin-v23.spec.ts": "c3028fdd9ba16124d06255cadc9793af2f51155f4e1ef6d6914c8fe2bee492d9"
+  },
+  "targeted_tests": "17 passed, zero skips (10 new + 7 existing sign-in)",
+  "full_server_precommit": "198 files / 2007 tests passed, zero skips; disposable PostgreSQL16",
+  "activation": "pending; test-response composition only"
+}
