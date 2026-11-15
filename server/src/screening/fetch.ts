@@ -7,12 +7,16 @@ export type FetchBody = (url: string) => Promise<{ ok: boolean; status: number; 
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Official HTTPS hosts. A redirect to any other host fails the fetch. */
+/** Official HTTPS hosts, plus the Security Council file host on one path. */
 export const OFFICIAL_HTTPS_HOSTS = new Set([
   "www.international.gc.ca",
   "scsanctions.un.org",
   "www.publicsafety.gc.ca",
 ]);
+
+/** Live redirect on 15 Nov 2026: scsanctions.un.org 302s here, on this path only. */
+export const UN_BLOB_HOST = "unsolprodfiles.blob.core.windows.net";
+export const UN_BLOB_PATH_PREFIX = "/publiclegacyxmlfiles/EN/";
 
 /** A list larger than this is refused. The live files on 15 Nov 2026 were under 3 MB. */
 export const LIST_BYTE_CAP = 12_000_000;
@@ -23,8 +27,13 @@ export function pinnedRedirect(currentUrl: string, location: string | null): str
   if (!location) throw new Error("redirect had no location");
   const next = new URL(location, currentUrl);
   if (next.protocol !== "https:") throw new Error("redirect was not https");
-  if (!OFFICIAL_HTTPS_HOSTS.has(next.hostname)) throw new Error("redirect left the official host");
-  return next.toString();
+  if (next.username || next.password) throw new Error("redirect left the official host");
+  if (next.port && next.port !== "443") throw new Error("redirect left the official host");
+  if (OFFICIAL_HTTPS_HOSTS.has(next.hostname)) return next.toString();
+  if (next.hostname === UN_BLOB_HOST && next.pathname.startsWith(UN_BLOB_PATH_PREFIX)) {
+    return next.toString();
+  }
+  throw new Error("redirect left the official host");
 }
 
 export async function fetchOfficial(
