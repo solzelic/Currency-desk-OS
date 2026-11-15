@@ -29,7 +29,7 @@ export const EMAIL_TIMEOUT_MS = 10_000;
 export async function sendEmail(
   to: string,
   subject: string,
-  body: { text: string; html?: string; replyTo?: string },
+  body: { text: string; html?: string; replyTo?: string; sensitive?: boolean },
 ): Promise<EmailStatus> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
@@ -37,7 +37,7 @@ export async function sendEmail(
     /* A sign-in subject line is the code. Production must not write it
        down just because the provider is not configured yet. Dev and test
        still simulate — the suites read the code back from that log. */
-    if (process.env.NODE_ENV === "production") {
+    if (body.sensitive || process.env.NODE_ENV === "production") {
       const missing = [!key ? "RESEND_API_KEY" : null, !from ? "EMAIL_FROM" : null].filter((name): name is string => !!name);
       const verb = missing.length === 1 ? "is" : "are";
       console.warn(`[email refused] ${missing.join(" and ")} ${verb} not set. Nothing was sent. The message was not written to the log.`);
@@ -63,13 +63,13 @@ export async function sendEmail(
          must not hide the status, and production still does not log the
          body: a provider echo of the message would be the code. */
       const providerBody = await res.text().catch(() => "");
-      if (process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
+      if (body.sensitive || process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
       else console.error(`[email failed] ${res.status} ${providerBody}`);
       return "failed";
     }
     return "sent";
   } catch (err) {
-    console.error("[email failed]", err);
+    console.error("[email failed]", body.sensitive ? "transport_error" : err);
     return "failed";
   }
 }

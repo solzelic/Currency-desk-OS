@@ -153,7 +153,7 @@ export function createIdDoor(deps: DoorDeps) {
   const missesByConnection = new Throttle(MISS_LIMIT, MISS_WINDOW_MS, LOCK_MS, now);
   const resendByEmail = new Throttle(RESEND_PER_EMAIL, RESEND_WINDOW_MS, 0, now);
   const resendByConnection = new Throttle(RESEND_PER_CONNECTION, RESEND_WINDOW_MS, 0, now);
-  const send = deps.send ?? ((to, m) => sendEmail(to, m.subject, { text: m.text, html: m.html }));
+  const send = deps.send ?? ((to, m) => sendEmail(to, m.subject, { text: m.text, html: m.html, sensitive: true }));
   const logRefusal = deps.logRefusal ?? ((r: Refusal) =>
     console.warn(`[onboarding refused] ${r.reason} id=${r.id} connection=${emailHash(r.connection)}`));
 
@@ -221,7 +221,7 @@ export function createIdDoor(deps: DoorDeps) {
       return Promise.resolve();
     }
     return deliver(email, openUrl).catch((err: unknown) => {
-      console.error(`[onboarding resend-id failed] email=${emailHash(email)} ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`[onboarding resend-id failed] email=${emailHash(email)} ${err instanceof Error ? err.name : "delivery_error"}`);
     });
   }
 

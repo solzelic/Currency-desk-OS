@@ -213,3 +213,5 @@ or authenticator error contents are logged by these adapters. Empty/malformed
 breach-range replies are unavailable, never evidence that a password is safe.
 
 The Astra server review serializes candidate replacement, code sends and code verification on the signup account row. A browser's latest unverified choice replaces its previous candidate; a delayed save after proof refuses. Verification, candidate cleanup, audit and session creation commit together. Real PostgreSQL regressions cover concurrent sends, attempts and successful verification.
+
+Reservations with a CurrencyDesk ID refuse all legacy reference setup routes and plain signup/create/verify/resend, including stale pending plain-signup codes. Older reservations without an ID keep their existing route. Signup request/error logs redact identifiers, query secrets and raw database/provider errors. Signup code/ID mail marks its body sensitive: no simulation or provider echo in logs, even in development; use an injected test mailer locally.

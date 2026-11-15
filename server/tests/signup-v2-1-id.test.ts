@@ -102,8 +102,8 @@ describe("typing the ID", () => {
   it("leaves the older setup reference path as it was", async () => {
     const { reference } = await apply("legacy.one@yorkfx.test");
     const res = await stateOf(reference);
-    expect(res.statusCode).toBe(200);
-    expect(res.json().application.reference).toBe(reference);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain("application");
   });
 });
 
