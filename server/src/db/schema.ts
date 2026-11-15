@@ -701,9 +701,27 @@ export const signupAccounts = pgTable("signup_accounts", {
   state: text("state").$type<SignupState>().notNull().default("reserved"),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   lastStep: text("last_step"),
+  /* 076: the one active email code, as a hash, and its limits. */
+  codeHash: text("code_hash"),
+  codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+  codeAttempts: integer("code_attempts").notNull().default(0),
+  codeSends: jsonb("code_sends").$type<number[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const enrolmentSessions = pgTable(
+  "enrolment_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("enrolment_sessions_enquiry_idx").on(t.enquiryId)],
+);
 
 export const signupCredentials = pgTable(
   "signup_credentials",

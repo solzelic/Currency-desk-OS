@@ -188,3 +188,9 @@ The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, n
 - Microsoft: the app registration must emit `email_verified` (optional claim) or every Microsoft account is refused.
 - Timeouts: OIDC token and keys 8 s, breach range 3 s.
 
+## Sign-up v2.1: the email code and the enrolment session (PR 3 of 8)
+
+- The code is sent on every credential save and by `POST …/email/send`; it always goes to `enquiries.email`, never to an address in the request, so there is no destination to rebind (the CD-154 concern on the older path does not arise here).
+- `POST …/email/verify` needs the attempt cookie of a browser holding a candidate credential. Success sets `cd_enrol` (24 h sliding). Only `enrolment_sessions.token_hash` is stored.
+- Status codes: 401 wrong, 410 expired, 423 five wrong, 429 too soon, 409 nothing waiting.
+

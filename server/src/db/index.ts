@@ -229,6 +229,20 @@ CREATE TABLE IF NOT EXISTS signup_challenges (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS signup_challenges_idx ON signup_challenges (enquiry_id, created_at);
+-- Sign-up v2.1 email code and enrolment session (076).
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_hash text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_expires_at timestamptz;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_sends jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS enrolment_sessions (
+  token_hash text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS enrolment_sessions_enquiry_idx ON enrolment_sessions (enquiry_id);
 CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   id text PRIMARY KEY,
   enquiry_id text NOT NULL REFERENCES enquiries(id),

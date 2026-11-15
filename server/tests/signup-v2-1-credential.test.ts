@@ -107,7 +107,7 @@ beforeAll(async () => {
   await app.register(cookie);
   door = createIdDoor({ db: handle.db, logRefusal: () => {} });
   registerCredentialRoutes(app, handle.db, door, {
-    env: ENV, http,
+    env: ENV, http, mail: async () => "simulated",
     breachRange: async (prefix) => {
       if (rangeDown) throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
       return [...breached].filter((h) => h.startsWith(prefix)).map((h) => `${h.slice(5)}:12`).concat(["0000000000000000000000000000000000A:0"]).join("\r\n");
@@ -161,7 +161,7 @@ describe("D. email and password", () => {
     const { id, cdId, email } = await reserve();
     const res = await post(`/api/onboarding/${cdId}/password`, { password: "four plain words here", confirm: "four plain words here" });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toEqual({ ok: true, kind: "password", state: "enrolling" });
+    expect(res.json()).toEqual({ ok: true, kind: "password", state: "enrolling", codeSent: true });
     expect(res.body).not.toContain(email);
     expect(res.cookies.find((c) => c.name === "cd_enrol_attempt")?.httpOnly).toBe(true);
     const cred = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
@@ -212,7 +212,7 @@ describe("A. passkey", () => {
     const credential = makePasskey(opt.json().options.challenge);
     const ok = await post(`/api/onboarding/${cdId}/passkey/verify`, { response: credential, deviceLabel: "This Mac" }, jar);
     expect(ok.statusCode, ok.body).toBe(200);
-    expect(ok.json()).toEqual({ ok: true, kind: "passkey", state: "enrolling" });
+    expect(ok.json()).toEqual({ ok: true, kind: "passkey", state: "enrolling", codeSent: true });
     const cred = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
     expect(cred).toMatchObject({ kind: "passkey", passkeyId: credential.id, deviceLabel: "This Mac", signCount: 0 });
     expect(cred.publicKey).toBeTruthy();
@@ -259,7 +259,7 @@ describe("B / C. Google and Microsoft", () => {
     nextClaims = { iss: "https://accounts.google.com", aud: "google-client", exp: now() + 300, nonce: s.nonce, sub: "g-123", email: email.toUpperCase(), email_verified: true };
     const res = await post(`/api/onboarding/${cdId}/sso/callback`, { provider: "google", code: "c", state: s.state }, s.jar);
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toEqual({ ok: true, kind: "google", state: "enrolling" });
+    expect(res.json()).toEqual({ ok: true, kind: "google", state: "enrolling", codeSent: true });
     const cred = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
     expect(cred).toMatchObject({ kind: "google", ssoSubject: "g-123" });
     expect(sameEmail("Ｏwner@x.test".normalize("NFKC"), "owner@x.test")).toBe(true);
