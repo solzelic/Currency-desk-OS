@@ -3,8 +3,8 @@
    rotate the secret.
    On staging the signing secret is printed on stdout once. It is not
    logged, written to a file, or sent onward.
-   With --production the secret is written to the --secret-file path
-   at mode 0600 and is not printed.
+   --production is refused until go-live (CD-219). Live Persona is
+   blocked in code.
    Lists existing webhooks first and does not create a second one for
    the same URL. https://docs.withpersona.com/api-reference/webhooks/create-a-webhook */
 import { chmod, writeFile } from "node:fs/promises";
@@ -123,8 +123,12 @@ export async function registerPersonaWebhook(
     io.stderr("Usage: npm run persona -- register-webhook [--url https://...] [--production]");
     return 2;
   }
-  if (!args.production && !isStagingRuntime(undefined, env)) {
-    io.stderr("register-webhook refused: this is not a staging runtime. Pass --production to run it on another host.");
+  if (args.production) {
+    io.stderr("register-webhook --production is refused until go-live (CD-219). Live Persona is blocked in code.");
+    return 1;
+  }
+  if (!isStagingRuntime(undefined, env)) {
+    io.stderr("register-webhook refused: this is not a staging runtime. Live Persona is blocked in code until go-live (CD-219).");
     return 1;
   }
   if (args.production && !args.urlSet) {
@@ -147,6 +151,10 @@ export async function registerPersonaWebhook(
   const key = personaSharedKey(env);
   if (!key) {
     io.stderr("The Persona API key is not set.");
+    return 1;
+  }
+  if (key.startsWith("persona_production")) {
+    io.stderr("register-webhook refused: a live Persona key is blocked until a later change with Sol's yes (CD-219).");
     return 1;
   }
   const fetchImpl = io.fetch ?? fetch;

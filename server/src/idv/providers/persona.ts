@@ -36,16 +36,19 @@ export function personaSharedKey(env: NodeJS.ProcessEnv): string {
   return (env[SHARED] ?? "").trim();
 }
 
-/* Staging allows a sandbox key. Production allows a production key.
-   An unset or unknown runtime refuses both. A key with neither prefix
-   is not a Persona key, so the fixture key still runs there. */
+/* A live key is refused on every runtime. Staging allows only a sandbox
+   key. A live host refuses every key until go-live (CD-219). Any other
+   persona_ prefix is refused. A key with no persona_ prefix is not a
+   Persona key, so the fixture key still runs off those hosts. */
 export function personaKeyMatchesRuntime(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const value = key.trim();
   const sandbox = value.startsWith("persona_sandbox");
   const production = value.startsWith("persona_production");
+  if (production) return false;
+  if (value.startsWith("persona_") && !sandbox) return false;
   if (isStagingRuntime(undefined, env)) return sandbox;
-  if (isProductionRuntime(env)) return production;
-  return !sandbox && !production;
+  if (isProductionRuntime(env)) return false;
+  return !sandbox;
 }
 
 /* True only for a sandbox key, or a key with no Persona prefix on a staging runtime. */

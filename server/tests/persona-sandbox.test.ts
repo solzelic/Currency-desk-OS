@@ -3,7 +3,7 @@
    PERSONA_SANDBOX_API_KEY is set, and it is skipped otherwise. */
 import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { personaInquiryBody, PERSONA_API_BASE_DEFAULT, PERSONA_VERSION, PERSONA_WEBHOOK_EVENTS, startPersonaCheck } from "../src/idv/providers/persona/index.js";
@@ -91,31 +91,39 @@ describe("register-webhook", () => {
     expect(await registerPersonaWebhook(["register-webhook"], {}, { ...cap.io, fetch: fetchImpl })).toBe(1);
     expect(cap.err[0]).toContain("not a staging runtime");
     expect(fetchImpl).not.toHaveBeenCalled();
-    const live = capture();
-    const { fetch, calls } = webhookFetch([]);
-    const liveUrl = "https://example.com/api/webhooks/idv/persona";
     const missing = capture();
     expect(await registerPersonaWebhook(["register-webhook", "--production"], { PERSONA_API_KEY: "fixture-api-key" }, { ...missing.io, fetch: fetchImpl })).toBe(1);
-    expect(missing.err[0]).toContain("Pass --url");
-    const stagingUrl = capture();
+    expect(missing.err[0]).toContain("CD-219");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses register-webhook with a live key", async () => {
+    const cap = capture();
+    const fetchImpl = vi.fn<typeof fetch>();
     expect(await registerPersonaWebhook(
-      ["register-webhook", "--production", "--url", STAGING_WEBHOOK_URL, "--secret-file", "/tmp/unused-secret"],
-      { PERSONA_API_KEY: "fixture-api-key" },
-      { ...stagingUrl.io, fetch: fetchImpl },
+      ["register-webhook"],
+      { ...STAGING, PERSONA_API_KEY: "persona_production_fixture" },
+      { ...cap.io, fetch: fetchImpl },
     )).toBe(1);
-    expect(stagingUrl.err[0]).toContain("staging webhook URL");
+    expect(cap.err.join(" ")).toContain("CD-219");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses --production until go-live", async () => {
+    const cap = capture();
+    const fetchImpl = vi.fn<typeof fetch>();
     const dir = await mkdtemp(join(tmpdir(), "persona-secret-"));
     const secretFile = join(dir, "webhook-secret");
     try {
       expect(await registerPersonaWebhook(
-        ["register-webhook", "--production", "--url", liveUrl, "--secret-file", secretFile],
+        ["register-webhook", "--production", "--url", "https://example.com/api/webhooks/idv/persona", "--secret-file", secretFile],
         { PERSONA_API_KEY: "fixture-api-key" },
-        { ...live.io, fetch },
-      )).toBe(0);
-      expect(calls.some((call) => call.method === "POST" && call.body.includes(liveUrl))).toBe(true);
-      expect(live.out.join("")).not.toContain(SECRET);
-      expect(await readFile(secretFile, "utf8")).toBe(`${SECRET}\n`);
-      expect((await stat(secretFile)).mode & 0o777).toBe(0o600);
+        { ...cap.io, fetch: fetchImpl },
+      )).toBe(1);
+      expect(cap.err.join(" ")).toContain("CD-219");
+      expect(cap.err.join(" ")).toContain("Live Persona is blocked in code");
+      expect(fetchImpl).not.toHaveBeenCalled();
+      await expect(readFile(secretFile, "utf8")).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

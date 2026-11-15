@@ -523,12 +523,72 @@ describe("sandbox start-check", () => {
     expect(unsetProduction.status).toBe(409);
     expect(unsetProduction.hits).toBe(0);
     const live = { RENDER_EXTERNAL_HOSTNAME: "currencydeskos.com" };
-    const productionOnLive = await run({ ...live, PERSONA_API_KEY: "persona_production_fixture" });
-    expect(productionOnLive.status).toBe(200);
-    expect(productionOnLive.hits).toBe(1);
     const sandboxOnLive = await run({ ...live, PERSONA_API_KEY: "persona_sandbox_fixture" });
     expect(sandboxOnLive.status).toBe(409);
     expect(sandboxOnLive.hits).toBe(0);
+  });
+
+  let keyIssued = 0;
+  async function keyStart(env: NodeJS.ProcessEnv) {
+    let hits = 0;
+    const local = await buildApp(handle.db, {}, undefined, {
+      env,
+      fetch: async () => {
+        hits += 1;
+        keyIssued += 1;
+        return new Response(JSON.stringify({ data: { id: `inq_guard_${keyIssued}` } }), { status: 201 });
+      },
+      sleep: async () => {}, cap: 1000, ratePerMinute: 1000, rateLimitStore: new Map(),
+    });
+    try {
+      const res = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: {} });
+      return { status: res.statusCode, body: res.json() as { code?: string }, hits };
+    } finally {
+      await local.close();
+    }
+  }
+
+  it("refuses a live key on a live host", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const refused = await keyStart({ RENDER_EXTERNAL_HOSTNAME: "currencydeskos.com", PERSONA_API_KEY: "persona_production_fixture" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("IDV_KEY");
+    expect(refused.hits).toBe(0);
+  });
+
+  it("refuses a live key on staging", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const refused = await keyStart({
+      STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com", PERSONA_API_KEY: "persona_production_fixture",
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("IDV_KEY");
+    expect(refused.hits).toBe(0);
+  });
+
+  it("refuses an unknown key prefix", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const refused = await keyStart({ PERSONA_API_KEY: "persona_other_fixture" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("IDV_KEY");
+    expect(refused.hits).toBe(0);
+  });
+
+  it("refuses a sandbox key on a live host", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const refused = await keyStart({ RENDER_EXTERNAL_HOSTNAME: "currencydeskos.com", PERSONA_API_KEY: "persona_sandbox_fixture" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("IDV_KEY");
+    expect(refused.hits).toBe(0);
+  });
+
+  it("allows a sandbox key on staging", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const allowed = await keyStart({
+      STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com", PERSONA_API_KEY: "persona_sandbox_fixture",
+    });
+    expect(allowed.status).toBe(200);
+    expect(allowed.hits).toBe(1);
   });
 
   it("stops a shop after 10 starts in a minute", async () => {
