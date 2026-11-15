@@ -199,11 +199,11 @@
           <div className="si23-rec">Can’t get in? <button className="si23-lnk" type="button" onClick={onRecover}>Recover access</button></div>
         </form></div><footer className="si23-ft"><Back onBack={onBack} /><span>Every exchange, on the record.</span></footer></div></Surface>;
   }
-  function Password({ identifier, password, onPassword, show, onShow, onBack, onSubmit, onRecover, error, status, busy, disabled, onPasskey }) {
+  function Password({ identifier, password, onPassword, show, onShow, onBack, onSubmit, onRecover, error, status, cooldown, busy, disabled, onPasskey }) {
     return <Frame onBack={onBack}><form className="si23-card" onSubmit={onSubmit} aria-busy={busy}>
       <h2>Enter your password</h2><div className="si23-who-id"><span><b>{identifier}</b></span><button className="si23-lnk" type="button" onClick={onBack}>Change</button></div>
-      <div className="si23-field"><label htmlFor="si23-password">Password</label><div className="si23-inp"><input id="si23-password" aria-describedby={error || status ? 'si23-password-status' : undefined} aria-invalid={!!error} type={show ? 'text' : 'password'} value={password} onChange={e => onPassword(e.target.value)} autoComplete="current-password" placeholder="Your password" autoFocus />
-        <button className="si23-ib" type="button" onClick={onShow}>{show ? 'Hide' : 'Show'}</button></div>{(error || status) && <div id="si23-password-status" className={'si23-hint' + (error ? ' si23-err' : '')} role={error ? 'alert' : 'status'}>{error || status}</div>}</div>
+      <div className="si23-field"><label htmlFor="si23-password">Password</label><div className="si23-inp"><input id="si23-password" aria-describedby={[error || status ? 'si23-password-status' : '', cooldown ? 'si23-password-cooldown' : ''].filter(Boolean).join(' ') || undefined} aria-invalid={!!error} type={show ? 'text' : 'password'} value={password} onChange={e => onPassword(e.target.value)} autoComplete="current-password" placeholder="Your password" autoFocus />
+        <button className="si23-ib" type="button" onClick={onShow}>{show ? 'Hide' : 'Show'}</button></div>{(error || status) && <div id="si23-password-status" className={'si23-hint' + (error ? ' si23-err' : '')} role={error ? 'alert' : 'status'}>{error || status}</div>}{cooldown && <div id="si23-password-cooldown" className="si23-hint" aria-live="off">{cooldown}</div>}</div>
       <button className="si23-cta" type="submit" disabled={disabled}>{busy ? 'Checking…' : 'Continue →'}</button>
       <div className="si23-quiet"><button type="button" className="si23-lnk" onClick={onRecover}>Forgot password?</button><button type="button" className="si23-lnk" disabled={!onPasskey} onClick={onPasskey}>Use a passkey instead</button></div>
     </form></Frame>;

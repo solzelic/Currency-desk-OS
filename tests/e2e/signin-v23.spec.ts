@@ -140,6 +140,8 @@ test.describe('v2.3 bounded presentation', () => {
     const field = page.getByLabel('Email or CurrencyDesk ID');
     await field.pressSequentially('cdbeckham7');
     await page.keyboard.press('Tab');
+    // This is only a visual spelling. The real-account regressions below
+    // assert that Continue and the request preserve cdbeckham7 verbatim.
     await expect(field).toHaveValue('CD-BECK-HAM7');
     await page.keyboard.press('Shift+Tab');
     await expect(field).toHaveValue('cdbeckham7');
@@ -153,7 +155,7 @@ test.describe('v2.3 bounded presentation', () => {
       await expect(field).toHaveValue('CD-YORK-7K42');
     }
     await page.keyboard.press('Enter');
-    await expect(page.locator('.si23-who-id b')).toHaveText('CD-YORK-7K42');
+    await expect(page.locator('.si23-who-id b')).toHaveText('cd york 7k42');
   });
   test('password reset preserves its confirmation and cooldown with a masked empty field', async ({ page }) => {
     await open(page); await password(page);
@@ -166,7 +168,7 @@ test.describe('v2.3 bounded presentation', () => {
     await page.route('**/api/auth/reset', r => r.fulfill({ json: { ok: true } }));
     await page.getByRole('button', { name: 'Set my new password' }).click();
     await expect(page.getByRole('status')).toContainText('Password changed. Sign in with the new one.');
-    await expect(page.getByRole('status')).toContainText(/Another code in \d+s/);
+    await expect(page.getByText(/Another code in \d+s/)).toHaveAttribute('aria-live', 'off');
     await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('type', 'password');
   });
@@ -273,7 +275,7 @@ test.describe('v2.3 bounded presentation', () => {
     expect(calls).toBe(1);
     expect((await page.request.get('/api/auth/me')).status()).toBe(401);
     await page.getByRole('button', { name: '← Back', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText(/Another code in \d+s/);
+    await expect(page.getByText(/Another code in \d+s/)).toHaveAttribute('aria-live', 'off');
     await expect(page.getByRole('button', { name: 'Continue →' })).toBeDisabled();
   });
   test('real password-only server session reaches the existing OS', async ({ page }) => {
@@ -287,6 +289,28 @@ test.describe('v2.3 bounded presentation', () => {
     expect(session.status()).toBe(200);
     expect((await session.json()).user.id).toBe('m.costa');
   });
+  for (const staffId of ['maryjane', 'adam-west', 'cdbeckham7']) {
+    test(`ID-shaped legacy username ${staffId} signs in without rewriting`, async ({ page }) => {
+      const temp = 'disposable-first-password', password = 'disposable-changed-password';
+      expect((await page.request.post('/api/auth/login', { data: { staffId: 'r.haddad', password: 'yorkville' } })).status()).toBe(200);
+      expect((await page.request.post('/api/staff', { data: { staffId, name: 'Synthetic Login', role: 'teller', password: temp } })).status()).toBe(201);
+      await page.context().clearCookies();
+      expect((await page.request.post('/api/auth/login', { data: { staffId, password: temp } })).status()).toBe(200);
+      expect((await page.request.post('/api/auth/change-password', { data: { currentPassword: temp, newPassword: password } })).status()).toBe(200);
+      await page.context().clearCookies();
+      await open(page);
+      await page.getByLabel('Email or CurrencyDesk ID').pressSequentially(staffId);
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(page.locator('.si23-who-id b')).toHaveText(staffId);
+      await page.getByLabel('Password', { exact: true }).fill(password);
+      const response = page.waitForResponse('**/api/auth/login/start');
+      await page.getByRole('button', { name: 'Continue →' }).click();
+      const result = await response;
+      expect(result.status()).toBe(200);
+      expect(result.request().postDataJSON().staffId).toBe(staffId);
+      expect((await (await page.request.get('/api/auth/me')).json()).user.id).toBe(staffId);
+    });
+  }
   test('typing a real server-issued legacy CD-ID signs in', async ({ page }) => {
     await signInAsOperator(page);
     const issued = await page.request.post('/api/admin/staff/tnt-yorkfx%3Am.costa/cd-id');

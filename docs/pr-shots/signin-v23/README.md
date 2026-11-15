@@ -14,8 +14,10 @@ of whole-pack or strict pixel-identical acceptance is made.
 Review correction evidence:
 
 - The five new keystroke/recovery regression cases failed on e847 before fixes.
-- Corrected-source targeted browser suite: 25 passed, zero skips (18 v2.3 and
-  seven existing). This includes an actual server-issued legacy CD-ID login.
+- Corrected-source targeted browser suite: 28 passed, zero skips (21 v2.3 and
+  seven existing). This includes an actual server-issued legacy CD-ID login
+  and real server-created maryjane/adam-west/cdbeckham7 accounts. All three
+  reproduced401 on08818d95 before removing normalization from Continue.
 - Axe on first/password/rejected-password at all five viewports: zero violations.
 - Missing reference elements now fail except the documented provider stand-in
   and absent shop lede. Reports and assertions use identical semantic matching;
@@ -23,10 +25,13 @@ Review correction evidence:
   check width and height on both screens. Wrong-password clearing is asserted.
 - ID captures show formatting after blur, with keyboard focus on Continue.
   The raw text returns on focus; select-all replacement and later @ are tested.
+  Continue/password identity/request preserve the typed value; the display
+  formatter has no authority to choose an account.
 - Reset/cooldown text is retained; busy progress is a neutral status.
+  The per-second countdown is outside the live region (red-first regression).
 
-The original builder e847 server 2007/2007 and ledger 61/61 passes are historical
-only. The successor's full suites, CI and fresh independent review are pending;
+The e847 and08818d95 server2007/2007 and ledger61/61 passes are historical
+only; both full browser runs were interrupted following review rejection. The successor's full suites, CI and fresh independent review are pending;
 its exact-commit results belong in the signed ticket/PR handoff. No merge or
 deployment is claimed. This presentation slice is not all of CD-221.
 

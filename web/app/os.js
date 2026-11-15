@@ -68480,6 +68480,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onRecover,
     error,
     status,
+    cooldown,
     busy,
     disabled,
     onPasskey
@@ -68504,7 +68505,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "si23-inp"
     }, /*#__PURE__*/React.createElement("input", {
       id: "si23-password",
-      "aria-describedby": error || status ? 'si23-password-status' : undefined,
+      "aria-describedby": [error || status ? 'si23-password-status' : '', cooldown ? 'si23-password-cooldown' : ''].filter(Boolean).join(' ') || undefined,
       "aria-invalid": !!error,
       type: show ? 'text' : 'password',
       value: password,
@@ -68520,7 +68521,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       id: "si23-password-status",
       className: 'si23-hint' + (error ? ' si23-err' : ''),
       role: error ? 'alert' : 'status'
-    }, error || status)), /*#__PURE__*/React.createElement("button", {
+    }, error || status), cooldown && /*#__PURE__*/React.createElement("div", {
+      id: "si23-password-cooldown",
+      className: "si23-hint",
+      "aria-live": "off"
+    }, cooldown)), /*#__PURE__*/React.createElement("button", {
       className: "si23-cta",
       type: "submit",
       disabled: disabled
@@ -69370,9 +69375,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (presentation === 'v23' && (step === 'id' || step === 'password')) {
       const {
         FirstScreen,
-        Password,
-        formatIdentifier
+        Password
       } = window.CDOS.SignInV23;
+      // Cosmetic ID formatting must never rewrite a valid legacy username.
       const clearSecret = () => {
         setPw('');
         setShowPw(false);
@@ -69395,10 +69400,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           setErr('');
           setNote('');
         },
-        onContinue: () => {
-          setIdInput(formatIdentifier(idInput));
-          goPassword();
-        },
+        onContinue: goPassword,
         onRecover: recover,
         onSignup: () => window.location.assign('/signup'),
         onBack: () => window.location.assign('/')
@@ -69429,7 +69431,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         },
         onRecover: recover,
         error: locked ? lockSentence : busy ? '' : err,
-        status: busy ? err : [note, idInput.includes('@') && cool > 0 ? 'Another code in ' + cool + 's' : ''].filter(Boolean).join(' ')
+        status: busy ? err : note,
+        cooldown: !busy && !locked && idInput.includes('@') && cool > 0 ? 'Another code in ' + cool + 's' : ''
       });
     }
 

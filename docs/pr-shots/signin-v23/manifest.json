@@ -34,13 +34,13 @@
     ]
   },
   "source_sha256": {
-    "os-src/cdos-signin-v23.jsx": "cb2f6f91d2c85af105c0e288b2402077512e1123cfa31cde677b0df0676d17ea",
-    "os-src/cdos-signin.jsx": "64634d25ed89cc79d002e1c0892adc50539f5a536c396bcf67fc0d3fff6ad3ce",
-    "web/app/os.js": "c2d9a642242043aa7f42603da21b8b31554e0ba39f3967865d1d1df7683b3b02",
-    "tests/e2e/signin-v23.spec.ts": "69a6e59bd01576ac3f6c6a8987fd4345c57152f1123b14c68ffdec59cd636e8e"
+    "os-src/cdos-signin-v23.jsx": "a613018064b018a1d27f9e239626bd3c6795c53a1c6a5828f305f3d3eca640d0",
+    "os-src/cdos-signin.jsx": "4b91470f6750b2efc4b49e2db6a5e7f3c21e18eed677294ed08ac704d15cf485",
+    "web/app/os.js": "761b3b42ef0aaf296c0d7c9824e5760e4529ed066d0bef505f2a0e68c2b30f44",
+    "tests/e2e/signin-v23.spec.ts": "19baea81f2e19825cd59beb2a9d76e8e2dd787f53ab8f77fa906a97d318bf3fd"
   },
-  "targeted_tests": "25 passed, zero skips (18 v2.3 + 7 existing sign-in); corrected working-tree source captured before commit",
+  "targeted_tests": "28 passed, zero skips (21 v2.3 + 7 existing sign-in); corrected working-tree source captured before commit",
   "activation": "pending; test-response composition only",
-  "full_suites": "Successor exact-head full suites pending; e847 results do not cover this revision",
-  "regressions": "Five red-first keystroke/recovery cases reproduced on e847; subsequent green includes raw restoration/autofill selection, reset/cooldown/status and real legacy CD-ID"
+  "full_suites": "Successor exact-head full suites pending; neither e847 nor08818d95 results cover this revision",
+  "regressions": "B1/B2 five red-first cases on e847; B3 three real ID-shaped legacy usernames return401 on08818d95, then pass with raw requests. Cooldown live-region assertion red on08818d95, green after separation."
 }

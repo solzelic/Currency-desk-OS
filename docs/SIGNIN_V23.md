@@ -30,13 +30,17 @@ First Back goes to `/`; Create your desk goes to the existing `/signup` route.
 Change/Back, recovery entry and identifier edits clear the password, visibility
 and local lock state; server lock counters remain authoritative. Reset returns
 a masked empty field and its confirmation/cooldown message. Busy progress is
-a neutral status, not an error. Recovery uses the existing
+a neutral status, not an error. The visible per-second cooldown is outside the
+live region and remains associated with the password field. Recovery uses the existing
 real reset lifecycle. No signup-owned file or migration was changed.
 
 Identifier editing retains raw text, including legacy numeric-tail IDs and email
-local parts beginning with `cd`. Complete v2 IDs format on blur/Continue; focus
+local parts beginning with `cd`. Complete v2 IDs format visually on blur; focus
 restores the raw text so appending `@` never corrupts an email. This deliberately
-delays cosmetic formatting until the field is left. The syntax follows
+delays cosmetic formatting until the field is left. Continue, the password
+identity label and the legacy request retain the typed value (with the existing
+trim/case handling). The browser cannot distinguish an ID-shaped legacy username
+such as `maryjane` from a new ID; formatting never selects an account. The syntax follows
 `server/src/enquiries/cd-id.ts`, with the pack’s prefix-free `york7k42` spelling;
 this cosmetic helper never proves or resolves an account. Server normalization
 and legacy alphanumeric compatibility remain part of returning-auth integration.
@@ -86,7 +90,8 @@ blank, complete ID after blur, typed email, password, rejected password; layout 
 axe, keyboard focus/Enter/Show/Change, reduced motion, unavailable methods,
 keystroke regression cases, recovery round trip, reset/cooldown/progress feedback,
 503/429/network failure, the request latch and legacy code handoff, a real
-password-only server session, real server-issued legacy CD-ID typed login, and
+password-only server session, real server-issued legacy CD-ID typed login, server-created ID-shaped usernames
+(`maryjane`, `adam-west`, `cdbeckham7`), and
 inactive production URL flags. No private data
 is used. Fixture credentials exist only in tests; captures never show passwords.
 
@@ -121,7 +126,8 @@ and lock remain later slices. Q19 owner/money endpoints, Q20 initial no-email PI
 and Q21 idle timing remain in the existing Message Board discussion. No policy
 values have been invented. Before activation: provider full visible labels and
 Microsoft attribution must follow CD-207; unavailable methods need a visible
-explanation/styling; remove remote Google Fonts calls from the shell; replace
+explanation/styling; obtain design preview approval for blur-only formatting
+and consider caret mapping on refocus; remove remote Google Fonts calls from the shell; replace
 legacy lock wording only alongside the server policy. These are recorded Opus
 nonblocking follow-ups, not accepted final design. The /signup navigation uses
 the current live route instead of the caller’s old signup overlay as BUILD §5
