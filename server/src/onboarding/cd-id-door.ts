@@ -136,7 +136,7 @@ export function resendIdEmail(o: { cdId: string; operatingName: string; openUrl:
   return { subject, text, html };
 }
 
-const operatingNameOf = (row: { details: Record<string, unknown> | null; name: string | null }): string => {
+export const operatingNameOf = (row: { details: Record<string, unknown> | null; name: string | null }): string => {
   const shop = String((row.details ?? {}).shopName ?? "").trim();
   return shop || "Your desk";
 };
@@ -225,11 +225,21 @@ export function createIdDoor(deps: DoorDeps) {
     });
   }
 
+  /** A failed step against a real ID (a refused passkey, a wrong account): counts like a miss. */
+  function fail(cdId: string, connection: string, reason: string): void {
+    missesById.hit(cdId);
+    missesByConnection.hit(connection);
+    logRefusal({ reason, id: idTail(cdId), connection });
+  }
+
+  /** Closed for this ID or this connection right now. */
+  const closed = (cdId: string, connection: string): boolean => missesById.locked(cdId) || missesByConnection.locked(connection);
+
   function reset(): void {
     for (const t of [missesById, missesByConnection, resendByEmail, resendByConnection]) t.clear();
   }
 
-  return { state, resend, reset, findByCdId };
+  return { state, resend, reset, findByCdId, fail, closed, logRefusal };
 }
 
 export type IdDoor = ReturnType<typeof createIdDoor>;
