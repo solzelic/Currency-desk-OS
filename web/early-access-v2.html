@@ -1657,8 +1657,8 @@ class Component extends DCLogic {
          output device changing, Safari interrupting it), its clock stops, and what was placed
          would play the moment it runs again. Called off instead, like any sound that cannot play yet */
       /* once it has run, a pause calls off what was placed so it cannot burst when the clock moves again.
-         Until it has run, a pause is just "not started yet" — Firefox often never settles resume(), and
-         WebKit stays suspended when the device has not started — and cancelling then would silence the flow */
+         Until it has run, a pause is just "not started yet". Firefox often never settles resume(), and
+         WebKit stays suspended when the device has not started, and cancelling then would silence the flow */
       ac.addEventListener('statechange', () => { if (ac.state === 'running') this._audioRan = true; else if (this._audioRan) this._cancelPending(); });
       if (ac.state === 'running') this._audioRan = true;
     }
