@@ -94,6 +94,42 @@
     return HELD_NOT_COUNTED;
   }
 
+  var NOTE_DENOMS = [100, 50, 20, 10, 5];
+
+  function formatCents(value) {
+    var abs = Math.abs(value);
+    var whole = Math.floor(abs / 100);
+    var frac = String(abs % 100).padStart(2, "0");
+    return (value < 0 ? "-" : "") + whole + "." + frac;
+  }
+
+  /* Note counts are whole notes. The sum is cents, then compared to the
+     customer-pays figure. Nothing here uses a binary float. */
+  function addMoney(left, right) {
+    var a = cents(left);
+    var b = cents(right);
+    if (a == null || b == null) return null;
+    return formatCents(a + b);
+  }
+
+  function countReceived(counts, customerPays) {
+    var total = 0;
+    for (var i = 0; i < NOTE_DENOMS.length; i += 1) {
+      var denom = NOTE_DENOMS[i];
+      var raw = counts && (counts[denom] != null ? counts[denom] : counts[String(denom)]);
+      var notes = Math.floor(Number(raw));
+      if (!Number.isFinite(notes) || notes < 0) notes = 0;
+      total += notes * denom * 100;
+    }
+    var pays = cents(customerPays);
+    if (pays == null) return { status: "unknown", counted: formatCents(total), difference: null, label: "" };
+    var diff = total - pays;
+    if (diff === 0) return { status: "matches", counted: formatCents(total), difference: "0.00", label: "Matches" };
+    var gap = formatCents(Math.abs(diff));
+    if (diff < 0) return { status: "short", counted: formatCents(total), difference: gap, label: "$" + gap + " short" };
+    return { status: "over", counted: formatCents(total), difference: gap, label: "$" + gap + " over" };
+  }
+
   function addYears(iso, years) {
     var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
     if (!match) return null;
@@ -205,6 +241,9 @@
     occupationAnswer: occupationAnswer,
     holdCounts: holdCounts,
     holdMeterLabel: holdMeterLabel,
+    NOTE_DENOMS: NOTE_DENOMS,
+    addMoney: addMoney,
+    countReceived: countReceived,
     addYears: addYears,
     returningDecision: returningDecision,
     formatCheckedDay: formatCheckedDay,

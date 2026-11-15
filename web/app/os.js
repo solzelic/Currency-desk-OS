@@ -3484,6 +3484,42 @@
     return HELD_NOT_COUNTED;
   }
 
+  var NOTE_DENOMS = [100, 50, 20, 10, 5];
+
+  function formatCents(value) {
+    var abs = Math.abs(value);
+    var whole = Math.floor(abs / 100);
+    var frac = String(abs % 100).padStart(2, "0");
+    return (value < 0 ? "-" : "") + whole + "." + frac;
+  }
+
+  /* Note counts are whole notes. The sum is cents, then compared to the
+     customer-pays figure. Nothing here uses a binary float. */
+  function addMoney(left, right) {
+    var a = cents(left);
+    var b = cents(right);
+    if (a == null || b == null) return null;
+    return formatCents(a + b);
+  }
+
+  function countReceived(counts, customerPays) {
+    var total = 0;
+    for (var i = 0; i < NOTE_DENOMS.length; i += 1) {
+      var denom = NOTE_DENOMS[i];
+      var raw = counts && (counts[denom] != null ? counts[denom] : counts[String(denom)]);
+      var notes = Math.floor(Number(raw));
+      if (!Number.isFinite(notes) || notes < 0) notes = 0;
+      total += notes * denom * 100;
+    }
+    var pays = cents(customerPays);
+    if (pays == null) return { status: "unknown", counted: formatCents(total), difference: null, label: "" };
+    var diff = total - pays;
+    if (diff === 0) return { status: "matches", counted: formatCents(total), difference: "0.00", label: "Matches" };
+    var gap = formatCents(Math.abs(diff));
+    if (diff < 0) return { status: "short", counted: formatCents(total), difference: gap, label: "$" + gap + " short" };
+    return { status: "over", counted: formatCents(total), difference: gap, label: "$" + gap + " over" };
+  }
+
   function addYears(iso, years) {
     var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
     if (!match) return null;
@@ -3595,6 +3631,9 @@
     occupationAnswer: occupationAnswer,
     holdCounts: holdCounts,
     holdMeterLabel: holdMeterLabel,
+    NOTE_DENOMS: NOTE_DENOMS,
+    addMoney: addMoney,
+    countReceived: countReceived,
     addYears: addYears,
     returningDecision: returningDecision,
     formatCheckedDay: formatCheckedDay,
@@ -35721,7 +35760,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onClick: props.onClose
     }, "Not now"))));
   }
-  var css = [".cd-v29-meter{margin-top:10px;padding:12px;border:1px solid var(--cd-line,#e6e1d8);border-radius:12px;background:var(--cd-panel,#fff);font-size:12.5px;line-height:1.4}", ".cd-v29-kicker{font-family:'Space Mono',ui-monospace,monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8a847a;margin-bottom:6px}", ".cd-v29-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0}", ".cd-v29-total{font-weight:700;border-top:1px solid var(--cd-line,#e6e1d8);margin-top:4px;padding-top:6px}", ".cd-v29-held{margin-top:8px;padding-top:6px}", ".cd-v29-footer{margin:8px 0 0;color:#5c564e;font-size:12px}", ".cd-v29-quiet{color:#8a847a}", ".cd-v29-over{position:fixed;inset:0;background:rgba(40,36,30,.45);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;z-index:80;overflow:auto}", ".cd-v29-sheet{width:min(920px,100%);background:#f7f4ed;border-radius:18px;padding:22px 20px 16px;box-shadow:0 18px 50px rgba(0,0,0,.18)}", ".cd-v29-sheet h2{font-size:28px;line-height:1.15;margin:4px 0 8px;font-weight:650}", ".cd-v29-lead{margin:0 0 12px;color:#3f3a34}", ".cd-v29-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}", "@media (max-width:800px){.cd-v29-cards{grid-template-columns:1fr 1fr}}", "@media (max-width:520px){.cd-v29-cards{grid-template-columns:1fr}}", ".cd-v29-card{position:relative;text-align:left;border:1px solid #e4dfd6;background:#fff;border-radius:14px;padding:14px 12px 12px;min-height:180px;cursor:pointer}", ".cd-v29-card.is-rec{border:2px solid #2f6bff;background:#f4f7ff}", ".cd-v29-card.is-off{background:#f3f1ec;color:#8a847a;cursor:not-allowed}", ".cd-v29-badge{position:absolute;top:8px;right:8px;background:#2f6bff;color:#fff;border-radius:999px;font-size:10px;padding:2px 7px}", ".cd-v29-card.is-off .cd-v29-badge{background:#e7e2d8;color:#6d675f}", ".cd-v29-title{font-size:20px;font-weight:650;margin-top:2px}", ".cd-v29-price{font-size:18px;font-weight:650;margin:4px 0}", ".cd-v29-note{font-size:12px;color:#5c564e;margin:12px 0}", ".cd-v29-actions{display:flex;gap:8px}", ".cd-v29-go{flex:1;background:#2f6bff;color:#fff;border:0;border-radius:12px;min-height:46px;font-weight:650}", ".cd-v29-quiet-btn{border:1px solid #e4dfd6;background:#fff;border-radius:12px;min-height:46px;padding:0 16px}", ".cd-v29-panel{padding:16px;border:1px solid #e4dfd6;border-radius:14px;background:#fff}", ".cd-v29-panel h2{font-size:22px;margin:4px 0 8px}", ".cd-v29-reason{display:block;width:100%;text-align:left;margin:4px 0;padding:8px 10px;border-radius:8px;border:1px solid #e4dfd6;background:#fff}", ".cd-v29-reason.is-on{border-color:#2f6bff;background:#f4f7ff}", ".cd-v29-panel textarea,.cd-v29-panel input{width:100%;margin-top:6px;padding:8px;border:1px solid #e4dfd6;border-radius:8px}", ".cd-v29-stamp{margin-top:8px;font-weight:650}", ".cd-v29-dark,.cd-v29-dark .cd-v29-sheet,.cd-v29-dark .cd-v29-meter,.cd-v29-dark .cd-v29-panel{background:#1c1916;color:#f4efe6}", ".cd-v29-dark .cd-v29-card,.cd-v29-dark .cd-v29-reason,.cd-v29-dark .cd-v29-quiet-btn{background:#2a2622;color:#f4efe6;border-color:#3a342c}", ".cd-v29-dark .cd-v29-card.is-off{background:#241f1b;color:#a39b90}", ".cd-v29-dark .cd-v29-kicker,.cd-v29-dark .cd-v29-footer,.cd-v29-dark .cd-v29-note{color:#c8bfb2}"].join("\n");
+  var css = [".cd-v29-meter{margin-top:10px;padding:12px;border:1px solid var(--cd-line,#e6e1d8);border-radius:12px;background:var(--cd-panel,#fff);font-size:12.5px;line-height:1.4}", ".cd-v29-kicker{font-family:'Space Mono',ui-monospace,monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8a847a;margin-bottom:6px}", ".cd-v29-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0}", ".cd-v29-total{font-weight:700;border-top:1px solid var(--cd-line,#e6e1d8);margin-top:4px;padding-top:6px}", ".cd-v29-held{margin-top:8px;padding-top:6px}", ".cd-v29-footer{margin:8px 0 0;color:#5c564e;font-size:12px}", ".cd-v29-quiet{color:#8a847a}", ".cd-v29-over{position:fixed;inset:0;background:rgba(40,36,30,.45);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;z-index:80;overflow:auto}", ".cd-v29-sheet{width:min(920px,100%);background:#f7f4ed;border-radius:18px;padding:22px 20px 16px;box-shadow:0 18px 50px rgba(0,0,0,.18)}", ".cd-v29-sheet h2{font-size:28px;line-height:1.15;margin:4px 0 8px;font-weight:650}", ".cd-v29-lead{margin:0 0 12px;color:#3f3a34}", ".cd-v29-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}", "@media (max-width:800px){.cd-v29-cards{grid-template-columns:1fr 1fr}}", "@media (max-width:520px){.cd-v29-cards{grid-template-columns:1fr}}", ".cd-v29-card{position:relative;text-align:left;border:1px solid #e4dfd6;background:#fff;border-radius:14px;padding:14px 12px 12px;min-height:180px;cursor:pointer}", ".cd-v29-card.is-rec{border:2px solid #2f6bff;background:#f4f7ff}", ".cd-v29-card.is-off{background:#f3f1ec;color:#8a847a;cursor:not-allowed}", ".cd-v29-badge{position:absolute;top:8px;right:8px;background:#2f6bff;color:#fff;border-radius:999px;font-size:10px;padding:2px 7px}", ".cd-v29-card.is-off .cd-v29-badge{background:#e7e2d8;color:#6d675f}", ".cd-v29-title{font-size:20px;font-weight:650;margin-top:2px}", ".cd-v29-price{font-size:18px;font-weight:650;margin:4px 0}", ".cd-v29-note{font-size:12px;color:#5c564e;margin:12px 0}", ".cd-v29-actions{display:flex;gap:8px}", ".cd-v29-go{flex:1;background:#2f6bff;color:#fff;border:0;border-radius:12px;min-height:46px;font-weight:650}", ".cd-v29-quiet-btn{border:1px solid #e4dfd6;background:#fff;border-radius:12px;min-height:46px;padding:0 16px}", ".cd-v29-panel{padding:16px;border:1px solid #e4dfd6;border-radius:14px;background:#fff}", ".cd-v29-panel h2{font-size:22px;margin:4px 0 8px}", ".cd-v29-reason{display:block;width:100%;text-align:left;margin:4px 0;padding:8px 10px;border-radius:8px;border:1px solid #e4dfd6;background:#fff}", ".cd-v29-reason.is-on{border-color:#2f6bff;background:#f4f7ff}", ".cd-v29-panel textarea,.cd-v29-panel input{width:100%;margin-top:6px;padding:8px;border:1px solid #e4dfd6;border-radius:8px}", ".cd-v29-stamp{margin-top:8px;font-weight:650}", ".cd-v29-count{margin-top:8px}", ".cd-v29-count-toggle{background:none;border:0;padding:0;font-weight:650;cursor:pointer;color:inherit}", ".cd-v29-notes{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}", ".cd-v29-count .cd-v29-note{display:flex;flex-direction:column;gap:4px;font-size:12px;margin:0}", ".cd-v29-count .cd-v29-note input{width:64px;padding:6px 8px;border:1px solid #e4dfd6;border-radius:8px}", ".cd-v29-count-result{width:100%;font-weight:650}", ".cd-v29-dark,.cd-v29-dark .cd-v29-sheet,.cd-v29-dark .cd-v29-meter,.cd-v29-dark .cd-v29-panel{background:#1c1916;color:#f4efe6}", ".cd-v29-dark .cd-v29-card,.cd-v29-dark .cd-v29-reason,.cd-v29-dark .cd-v29-quiet-btn{background:#2a2622;color:#f4efe6;border-color:#3a342c}", ".cd-v29-dark .cd-v29-card.is-off{background:#241f1b;color:#a39b90}", ".cd-v29-dark .cd-v29-kicker,.cd-v29-dark .cd-v29-footer,.cd-v29-note{color:#c8bfb2}"].join("\n");
   function Style() {
     return React.createElement("style", null, css);
   }
@@ -35779,6 +35818,38 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-v29-kicker"
     }, "Prepared only. Not filed"), React.createElement("h2", null, "Client already left"), React.createElement("p", null, "Cash in 24 hours reached CAD 10,000. ID was not checked at this shop. The gap is on the LCTR draft and the compliance review list."));
   }
+  var DENOMS = [100, 50, 20, 10, 5];
+  function CountReceived(props) {
+    var rules = R();
+    var pays = props.customerPays || "0";
+    var fee = props.fee || "0";
+    var total = rules.addMoney ? rules.addMoney(pays, fee) : pays;
+    var result = rules.countReceived ? rules.countReceived(props.counts || {}, total) : null;
+    return React.createElement("div", {
+      className: "cd-v29-count"
+    }, React.createElement("button", {
+      type: "button",
+      className: "cd-v29-count-toggle",
+      onClick: props.onToggle,
+      "aria-expanded": props.open ? "true" : "false"
+    }, "Count what they gave"), props.open ? React.createElement("div", {
+      className: "cd-v29-notes"
+    }, DENOMS.map(function (denom) {
+      return React.createElement("label", {
+        key: denom,
+        className: "cd-v29-note"
+      }, React.createElement("span", null, "CAD " + denom), React.createElement("input", {
+        inputMode: "numeric",
+        value: props.counts && props.counts[denom] || "",
+        onChange: function (event) {
+          props.onCount(denom, event.target.value.replace(/\D/g, ""));
+        },
+        "aria-label": "CAD " + denom + " notes"
+      }));
+    }), result && result.label ? React.createElement("div", {
+      className: "cd-v29-count-result"
+    }, result.label) : null) : null);
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
     ExchangeV29: {
       Meter: Meter,
@@ -35788,6 +35859,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       RevealPicker: RevealPicker,
       OccupationRequired: OccupationRequired,
       LctrLeft: LctrLeft,
+      CountReceived: CountReceived,
       NO_EARLIER: NO_EARLIER,
       FOOTER: FOOTER
     }
@@ -37130,6 +37202,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [returnReason, setReturnReason] = useState('No earlier check at this shop. A new check is needed.');
     const [returnOff, setReturnOff] = useState(true);
     const [idStamp, setIdStamp] = useState('');
+    const [countOpen, setCountOpen] = useState(false);
+    const [noteCounts, setNoteCounts] = useState({});
     const [recordId, setRecordId] = useState(false); // the client file's identity editor
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null); // tier string → opens the SendModal chooser
@@ -38582,7 +38656,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...inSty,
         fontVariantNumeric: 'tabular-nums'
       }
-    }))), /*#__PURE__*/React.createElement("div", {
+    })), inCcy === home && window.CDOS && window.CDOS.ExchangeV29 && /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.CountReceived, {
+      open: countOpen,
+      onToggle: () => setCountOpen(v => !v),
+      counts: noteCounts,
+      onCount: (denom, value) => setNoteCounts(current => ({
+        ...current,
+        [denom]: value
+      })),
+      customerPays: inAmt || '0',
+      fee: fee || '0'
+    })), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between gap-1.5 mt-2.5 pt-2.5",
       style: {
         borderTop: `1px solid ${CD.lineSoft}`

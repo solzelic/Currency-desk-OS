@@ -452,6 +452,8 @@
     const [returnReason, setReturnReason] = useState('No earlier check at this shop. A new check is needed.');
     const [returnOff, setReturnOff] = useState(true);
     const [idStamp, setIdStamp] = useState('');
+    const [countOpen, setCountOpen] = useState(false);
+    const [noteCounts, setNoteCounts] = useState({});
     const [recordId, setRecordId] = useState(false); // the client file's identity editor
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
@@ -1245,6 +1247,16 @@
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
+                    {inCcy === home && window.CDOS && window.CDOS.ExchangeV29 && (
+                      <window.CDOS.ExchangeV29.CountReceived
+                        open={countOpen}
+                        onToggle={() => setCountOpen(v => !v)}
+                        counts={noteCounts}
+                        onCount={(denom, value) => setNoteCounts(current => ({ ...current, [denom]: value }))}
+                        customerPays={inAmt || '0'}
+                        fee={fee || '0'}
+                      />
+                    )}
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
                     {tq

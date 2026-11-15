@@ -152,10 +152,16 @@
     ".cd-v29-reason.is-on{border-color:#2f6bff;background:#f4f7ff}",
     ".cd-v29-panel textarea,.cd-v29-panel input{width:100%;margin-top:6px;padding:8px;border:1px solid #e4dfd6;border-radius:8px}",
     ".cd-v29-stamp{margin-top:8px;font-weight:650}",
+    ".cd-v29-count{margin-top:8px}",
+    ".cd-v29-count-toggle{background:none;border:0;padding:0;font-weight:650;cursor:pointer;color:inherit}",
+    ".cd-v29-notes{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}",
+    ".cd-v29-count .cd-v29-note{display:flex;flex-direction:column;gap:4px;font-size:12px;margin:0}",
+    ".cd-v29-count .cd-v29-note input{width:64px;padding:6px 8px;border:1px solid #e4dfd6;border-radius:8px}",
+    ".cd-v29-count-result{width:100%;font-weight:650}",
     ".cd-v29-dark,.cd-v29-dark .cd-v29-sheet,.cd-v29-dark .cd-v29-meter,.cd-v29-dark .cd-v29-panel{background:#1c1916;color:#f4efe6}",
     ".cd-v29-dark .cd-v29-card,.cd-v29-dark .cd-v29-reason,.cd-v29-dark .cd-v29-quiet-btn{background:#2a2622;color:#f4efe6;border-color:#3a342c}",
     ".cd-v29-dark .cd-v29-card.is-off{background:#241f1b;color:#a39b90}",
-    ".cd-v29-dark .cd-v29-kicker,.cd-v29-dark .cd-v29-footer,.cd-v29-dark .cd-v29-note{color:#c8bfb2}",
+    ".cd-v29-dark .cd-v29-kicker,.cd-v29-dark .cd-v29-footer,.cd-v29-note{color:#c8bfb2}",
   ].join("\n");
 
   function Style() {
@@ -207,10 +213,40 @@
     );
   }
 
+  var DENOMS = [100, 50, 20, 10, 5];
+
+  function CountReceived(props) {
+    var rules = R();
+    var pays = props.customerPays || "0";
+    var fee = props.fee || "0";
+    var total = rules.addMoney ? rules.addMoney(pays, fee) : pays;
+    var result = rules.countReceived ? rules.countReceived(props.counts || {}, total) : null;
+    return React.createElement("div", { className: "cd-v29-count" },
+      React.createElement("button", { type: "button", className: "cd-v29-count-toggle", onClick: props.onToggle, "aria-expanded": props.open ? "true" : "false" },
+        "Count what they gave"
+      ),
+      props.open ? React.createElement("div", { className: "cd-v29-notes" },
+        DENOMS.map(function (denom) {
+          return React.createElement("label", { key: denom, className: "cd-v29-note" },
+            React.createElement("span", null, "CAD " + denom),
+            React.createElement("input", {
+              inputMode: "numeric",
+              value: (props.counts && props.counts[denom]) || "",
+              onChange: function (event) { props.onCount(denom, event.target.value.replace(/\D/g, "")); },
+              "aria-label": "CAD " + denom + " notes",
+            })
+          );
+        }),
+        result && result.label ? React.createElement("div", { className: "cd-v29-count-result" }, result.label) : null
+      ) : null
+    );
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
     ExchangeV29: {
       Meter: Meter, Chooser: Chooser, Style: Style, Stamp: Stamp,
       RevealPicker: RevealPicker, OccupationRequired: OccupationRequired, LctrLeft: LctrLeft,
+      CountReceived: CountReceived,
       NO_EARLIER: NO_EARLIER, FOOTER: FOOTER,
     },
   });
