@@ -2,6 +2,7 @@
    response selects the presentation prop; no fixture endpoint/flag ships. */
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { test, expect, signInAsOperator } from './fixtures';
@@ -39,13 +40,8 @@ async function tapTargets(page: Page) {
     expect(box?.width ?? 0, await b.innerText()).toBeGreaterThanOrEqual(44);
   }
 }
-async function capture(page: Page, state: string, size: string) {
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    window.dispatchEvent(new Event('resize'));
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  });
-  const spec = await page.locator('.si23').evaluate(root => {
+async function measure(page: Page, selector: string) {
+  return page.locator(selector).evaluate(root => {
     const elements = [...root.querySelectorAll('*')].flatMap(e => {
       const r = e.getBoundingClientRect(), c = getComputedStyle(e);
       if (r.width < 1 || r.height < 1 || c.visibility === 'hidden') return [];
@@ -59,12 +55,73 @@ async function capture(page: Page, state: string, size: string) {
     return { viewport: [innerWidth, innerHeight], horizontalOverflow: root.scrollWidth > root.clientWidth, pageScrolls: document.documentElement.scrollHeight > innerHeight + 1,
       scrollers: [root, ...root.querySelectorAll('*')].filter(e => /(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight + 1).map(e => ({ what: e.className, extra: e.scrollHeight - e.clientHeight })), elements };
   });
+}
+
+// Keep the supplied measurements immutable for
+// copy/style checks; render the SHA-locked original in this browser for geometry.
+// This fixture is intercepted only here, never served by the application.
+async function referenceInBrowser(page: Page, state: string, size: string) {
+  const hashes: Record<string, string> = JSON.parse(readFileSync('tests/fixtures/signin-v23/font-sha256.json', 'utf8'));
+  for (const [name, hash] of Object.entries(hashes)) {
+    expect(createHash('sha256').update(readFileSync(path.join('web/fonts', name))).digest('hex'), name).toBe(hash);
+  }
+  const html = readFileSync('tests/fixtures/signin-v23/prototype.html');
+  expect(createHash('sha256').update(html).digest('hex')).toBe('9f59182e10a6e817d39314714921b05e15a08acb9349937a6c995929632164cf');
+  const reference = await page.context().newPage();
+  try {
+    await reference.setViewportSize(page.viewportSize()!); // all callers set an explicit viewport
+    await reference.clock.setFixedTime(new Date('2026-11-13T14:00:00-05:00'));
+    await reference.route('**/*', route => {
+      const url = new URL(route.request().url());
+      if (url.origin !== 'http://signin-reference.test') return route.abort();
+      if (url.pathname === '/') return route.fulfill({ contentType:'text/html', body:html });
+      const name = url.pathname.split('/').pop() || '';
+      if (/^(fonts\.css|[a-z0-9-]+\.woff2)$/.test(name)) {
+        return route.fulfill({ path:path.join('web/fonts', name) });
+      }
+      return route.abort();
+    });
+    await reference.goto('http://signin-reference.test/?bare=1&s=' + (state.startsWith('01') ? 'who' : 'pw'));
+    await reference.addStyleTag({ content:'*, *::before, *::after {animation:none!important;transition:none!important}' });
+    if (state === '01-signin-id') await reference.locator('#idf').fill('cd york 7k42');
+    if (state === '01-signin-email') await reference.locator('#idf').fill('daniel@yorkcurrency.ca');
+    if (state === '02-password-wrong') {
+      await reference.locator('#pwf').fill('wrong1');
+      await reference.locator('#pwf').press('Enter');
+      await expect(reference.locator('.hint.err')).toBeVisible();
+    }
+    await reference.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    const result = await measure(reference, '#screen');
+    await test.info().attach(`${state}.${size}.reference.png`, { body:await reference.screenshot(), contentType:'image/png' });
+    if (out) {
+      mkdirSync(out, { recursive:true });
+      writeFileSync(path.join(out, `${state}.${size}.reference.json`), JSON.stringify(result, null, 2));
+    }
+    // Always retain the same-platform oracle, even when a comparison fails.
+    await test.info().attach(`${state}.${size}.reference.json`, { body:JSON.stringify(result), contentType:'application/json' });
+    return result;
+  } finally { await reference.close(); }
+}
+
+async function capture(page: Page, state: string, size: string) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    window.dispatchEvent(new Event('resize'));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  const spec = await measure(page, '.si23');
   expect(spec.pageScrolls).toBe(false);
   expect(spec.horizontalOverflow).toBe(false);
   // Original first-screen phone sheet may scroll; compare its measurements below.
   if (!['small', 'phone'].includes(size) || state.startsWith('02')) expect(spec.scrollers).toEqual([]);
   if (size !== 'compact') {
     const reference: { elements: ElementMeasure[]; scrollers: unknown[] } = JSON.parse(readFileSync(`tests/fixtures/signin-v23/${state}.${size}.json`, 'utf8'));
+    const renderedReference = await referenceInBrowser(page, state, size);
+    await test.info().attach(`${state}.${size}.candidate.png`, { body:await page.screenshot(), contentType:'image/png' });
+    await test.info().attach(`${state}.${size}.candidate.json`, { body:JSON.stringify(spec), contentType:'application/json' });
     const missing = reference.elements.filter(original => !spec.elements.some(actual => sameElement(original, actual)));
     expect(missing.map(e => e.text).sort()).toEqual((state.startsWith('01') ? ['G', ...(state === '01-signin-id' ? ['Signing in to', 'York Currency Exchange'] : [])] : []).sort());
     if (!reference.scrollers.length) expect(spec.scrollers).toEqual([]);
@@ -75,6 +132,9 @@ async function capture(page: Page, state: string, size: string) {
       const original = reference.elements.find(e => sameElement(e, actual));
       expect(original, `${state}.${size} unexpected content: ${actual.text}`).toBeTruthy();
       if (!original) continue; // assertion above gives the missing element
+      const geometry = renderedReference.elements.find(e => sameElement(original, e));
+      expect(geometry, `${state}.${size} original replay missing: ${actual.text}`).toBeTruthy();
+      if (!geometry) continue;
       const phone = ['phone','small'].includes(size);
       const adjustedBox = ['OS','Recommended','Show',''].includes(actual.text)
         || (state === '01-signin-id' && ['Sign in','Open  desk','the'].includes(actual.text))
@@ -82,7 +142,7 @@ async function capture(page: Page, state: string, size: string) {
       if (!adjustedBox) for (const key of ['x','y','w','h'] as const) {
         if (key === 'y' && state === '01-signin-id' && size === 'small') continue; // absent 37px unverified shop lede
         if (key === 'w' && state.startsWith('01') && phone && actual.tag === 'input') continue;
-        expect(Math.abs(actual[key] - original[key]), `${state}.${size} ${actual.text} ${key}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(actual[key] - geometry[key]), `${state}.${size} ${actual.text} ${key}`).toBeLessThanOrEqual(1);
       }
       const font = actual.text === 'OS' ? 'IBM Plex Mono 800 10px/normal ls 1px'
         : actual.text === 'Recommended' ? 'IBM Plex Mono 700 10px/normal ls 1.4px' : original.font;
@@ -248,7 +308,9 @@ test.describe('v2.3 bounded presentation', () => {
     await expect(page.getByRole('alert')).toContainText('Try again at 10:42 AM');
     await expect(page.getByRole('button', { name: 'Continue →' })).toBeDisabled();
   });
-  test('production URLs cannot activate the capture composition', async ({ page }) => {
+  test('production URLs cannot activate the capture composition or serve the prototype', async ({ page }) => {
+    expect((await page.request.get('/tests/fixtures/signin-v23/prototype.html')).status()).toBe(404);
+    expect((await page.request.get('/__signin-reference__/')).status()).toBe(404);
     await page.goto('/login?presentation=v23&test-step=who');
     await expect(page.getByPlaceholder('your-staff-id')).toBeVisible();
     await expect(page.locator('.si23')).toHaveCount(0);

@@ -35,7 +35,7 @@ live region and remains associated with the password field. Recovery uses the ex
 real reset lifecycle. No signup-owned file or migration was changed.
 
 Identifier editing retains raw text, including legacy numeric-tail IDs and email
-local parts beginning with `cd`. Complete v2 IDs format visually on blur; focus
+local parts beginning with `cd`. Complete v2 IDs change the input DOM value on blur; focus
 restores the raw text so appending `@` never corrupts an email. This deliberately
 delays cosmetic formatting until the field is left. Continue, the password
 identity label and the legacy request retain the typed value (with the existing
@@ -114,7 +114,22 @@ SEAM_DATABASE_URL=postgres://127.0.0.1:55431/FRESH_DISPOSABLE_DB \
 
 Every full run needs a fresh disposable database. `SIGNIN_CAPTURE_DIR` is only a
 Node test-process output directory, not a product flag. Reference JSON is committed
-under `tests/fixtures/signin-v23`. Captures and comparison reports live with this
+under `tests/fixtures/signin-v23`. The frozen prototype HTML is test-only and
+SHA-256 checked; all 23 original font binaries and their stylesheet are pinned by
+hash (the existing stylesheet only rebases font URLs to `/web/fonts/`). It is never served by the application. The test replays only the first and
+password states on an intercepted, isolated reference origin, blocking external
+network requests. Its example credential behavior is not production code.
+
+PR735 CI at da69eead failed four supplied-measurement comparisons (10px header
+position and 6px phone wordmark width), despite identical downloaded font bytes.
+The geometry check now compares to the immutable prototype rendered in the same
+browser/OS, still within 1px and with the same named exceptions. Supplied JSON
+continues to check text, type, computed fonts, colors and shape. Candidate and
+reference PNG/JSON are attached before comparing, including on failure. This
+avoids treating cross-platform typography as product drift without widening the
+geometry tolerance; Linux CI must still verify the hypothesis. The supplied
+PNGs/JSON and existing comparison reports remain unchanged for design review.
+Captures and comparison reports live with this
 candidate's review evidence, not as production assets. Full server, PostgreSQL,
 browser and governance results are recorded with the exact candidate handoff;
 this document does not imply unrun suites or CI passed.

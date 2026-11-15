@@ -32,6 +32,9 @@ and resuming expired enrolment still needs a shared reauthentication interface.
 Review corrections preserve raw request identity even for ID-shaped legacy
 usernames, retain keystroke text and clear secrets across recovery;
 full exact-head verification and a fresh independent review remain required.
+PR735's initial Linux CI failed four visual measurement cases; the test now
+replays the SHA-locked original in the same browser for its 1px geometry check,
+retaining the supplied style/copy assertions. CI confirmation remains pending.
 The signup development contract is now frozen at ed371e8e (#727), with CI and
 release acceptance still open. See [SIGNIN_V23.md](SIGNIN_V23.md) for scope, evidence and the next-slice contract.
 
