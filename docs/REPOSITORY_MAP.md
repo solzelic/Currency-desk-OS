@@ -29,6 +29,7 @@ say.
 | `design/emails/` | email design reference | ✅ |
 | `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
 | `design/onboarding/` | onboarding design bundle (build input, `currencydesk-onboarding.html`) | replaced by design exports |
+| `design/onboarding/signup-v2.1/` | Sol's frozen sign-up v2.1 prototype, unchanged (`PROVENANCE.md`), plus `../signup-v2.1-bridge.js` (hand-written: the page ⇄ real server) and `../signup-sso.html` | design file replaced only by a new export; the bridge is source |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
 | `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. Customer HTML does not load unpkg, Babel, or React dev builds. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
@@ -43,6 +44,7 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
+| `design/onboarding/signup-v2.1/*` + `signup-v2.1-bridge.js` + `signup-sso.html` | `npm run build:signup` (asserted patches; agreement hash checked) | `web/signup.html`, `web/signup-sso.html`, `web/signup/{flags,shots}` |
 | `CurrencyDesk OS.html` + `os-src/` + `shared/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
@@ -60,7 +62,8 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | Staging way back to sign-in | `scripts/staging-back-link.mjs`, injected into every site page and the setup page: on a staging hostname only, it asks `GET /api/staging/signin` and, when the door is open, draws a fixed "Staging · Back to sign in" link to `/login` (Sol, 14 Nov). Live never asks. |
 | `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
-| `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`; `asCode` reads anything else typed as a code, `fmtRef` recognises their own ID typed compact or with a typographic dash) |
+| `/onboarding`, `/onboarding/sso`, `/onboarding/<CD-ID>` | sign-up v2.1 (`web/signup.html`; `server/src/routes/signup-page.ts`). The ID is typed on the page, never carried in a link. `/onboarding/sso` is the Google/Microsoft return page. `?step=` opens a state only on a test server (`SIGNUP_TEST_SEED=1`, never production or staging) |
+| `/onboarding/<reference>` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`; `asCode` reads anything else typed as a code, `fmtRef` recognises their own ID typed compact or with a typographic dash) |
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |

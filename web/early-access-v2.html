@@ -194,7 +194,7 @@
       invite code shown are the ones the server issued. The reveal waits for
       them, and a failure takes the applicant back with a line saying so;
     · OPEN_SIGNUP and SAM_CALL come from the server (GET /api/site/early-access);
-    · "Start building your desk" opens /onboarding/<reference>;
+    · "Start building your desk" opens /onboarding (sign-up v2.1; they type the ID);
     · the certificate download and Unlock, which nothing draws, are gone.
 -->
 
@@ -2186,7 +2186,7 @@ class Component extends DCLogic {
       canOpen: !this._filtered(),
       doneSub: s.prov === 'OUT' ? "Early access is Canada only for now. We've emailed you, and you'll be among the first in when we open in " + (this._country() || 'your country') + '.' : s.fintrac === 'Not yet' ? "Early access is for FINTRAC-registered shops. Your address is saved while you register. We emailed you what to do next." : this.SAM_CALL ? 'This is your CurrencyDesk ID. You sign in with it. Each person on your team gets their own.' : (open ? 'Next, open it. It saves as you go, so you can stop and pick up any time.' : 'Accepted. Your desk is reserved and ready to open now. No waiting for an invite.'),
       /* into setup with their reference, the invited applicant's door until the sign-up pack replaces it */
-      openHref: s.issued && s.issued.reference ? '/onboarding/' + encodeURIComponent(s.issued.reference) : '#',
+      openHref: s.issued && s.issued.reference ? '/onboarding' : '#', /* sign-up v2.1: they type the ID shown above; no token in the link (SIGNUP-LOGIC §2.1) */
       nextSteps,
       doneAccepted: step === 4 && !this._filtered(), doneWaitlist: step === 4 && this._filtered(),
       deskId: this._deskId(),

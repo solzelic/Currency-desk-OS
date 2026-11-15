@@ -16,7 +16,7 @@ import { registerSignupDeskRoutes } from "../src/routes/signup-desk.js";
 import { loadAccount, sha256 } from "../src/onboarding/signup-account.js";
 import { priceList } from "../src/onboarding/signup-open.js";
 import { seedAllowed } from "../src/routes/signup-page.js";
-import { sendEmail } from "../src/email.js";
+import { inviteEmail, sendEmail } from "../src/email.js";
 import { testMailbox } from "../src/email-test-mailbox.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -48,6 +48,16 @@ describe("the test seed is never available on a real server", () => {
   });
 });
 
+describe("the \"You're in\" email", () => {
+  it("opens v2.1 plainly, with no token, for an applicant with a CurrencyDesk ID", () => {
+    const v21 = inviteEmail({ origin: "https://www.currencydeskos.com", name: "Daniel", shopName: "Harbour", reference: "CD-H00001", cdId: "CD-HARB-7K42" } as Parameters<typeof inviteEmail>[0]);
+    expect(v21.text).toContain("https://www.currencydeskos.com/onboarding\n");
+    expect(v21.text).not.toContain("/onboarding/CD-H00001");
+    expect(v21.html).not.toContain("/onboarding/CD-H00001");
+    const legacy = inviteEmail({ origin: "https://www.currencydeskos.com", name: "Daniel", shopName: "Harbour", reference: "CD-H00001" } as Parameters<typeof inviteEmail>[0]);
+    expect(legacy.text).toContain("/onboarding/CD-H00001");
+  });
+});
 
 describe("the browser suite's mailbox", () => {
   it("is closed on every real server: a sign-up code is refused, not kept, not logged", async () => {
@@ -115,3 +125,38 @@ describe("prices on the enrolment session", () => {
   });
 });
 
+describe("which page a visitor gets", () => {
+  let handle: DbHandle; let app: FastifyInstance;
+  beforeAll(async () => {
+    process.env.PGLITE_MEMORY = "1";
+    process.env.STATIC_DIR = REPO; process.env.STATIC_INDEX = "CurrencyDesk OS.html"; process.env.SITE_INDEX = "web/index.html";
+    handle = await createDb(); await seed(handle.db);
+    app = await buildApp(handle.db);
+  });
+  afterAll(async () => {
+    await app.close(); await handle.close();
+    delete process.env.STATIC_DIR; delete process.env.STATIC_INDEX; delete process.env.SITE_INDEX;
+  });
+  const title = async (url: string) => {
+    const res = await app.inject({ method: "GET", url, headers: asDocument });
+    return { status: res.statusCode, title: (res.body.match(/<title>([^<]*)/) || [])[1] ?? "", body: res.body };
+  };
+
+  it("/onboarding is sign-up v2.1, and ?step does nothing without the test flag", async () => {
+    const res = await title("/onboarding?step=pay");
+    expect(res.status).toBe(200);
+    expect(res.title).toBe("Open your desk | CurrencyDesk");
+    expect(res.body).not.toContain("__cdSeedStep=");
+    expect(res.body).not.toContain("demo-mode.js");
+    expect(res.body).not.toContain('data-review="true"');
+  });
+  it("an invitation's setup reference keeps the older page; an ID-shaped path is v2.1", async () => {
+    expect((await title("/onboarding/CD-WALKTHRU")).title).toBe("Set up your desk — CurrencyDesk");
+    expect((await title("/onboarding/CD-ABCD-2345")).title).toBe("Open your desk | CurrencyDesk");
+  });
+  it("the provider's return page exists and only hands code + state back to this origin", async () => {
+    const res = await title("/onboarding/sso");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("postMessage({ type: \"cd-sso\", code: code, state: state }, location.origin)");
+  });
+});
