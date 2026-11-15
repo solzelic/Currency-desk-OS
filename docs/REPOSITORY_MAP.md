@@ -119,7 +119,8 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   queue, the decision log, and the client's PEP answer. Migration
   `077_sanctions_review_rules` names the shop's compliance officer, keeps
   decisions for 5 years, and refuses clearing a confirmed match.
-  `POST /api/quotes/:id/post` holds a possible or confirmed match.
+  A quote, a cheque, a remittance, a bill, and a money order all pass
+  one hold. `POST /api/quotes/:id/post` holds a possible or confirmed match.
   `GET /api/screening/reviews` is the named compliance officer. A teller
   gets 403. `POST /api/screening/id-check` runs on every tier. Tiers 1 and
   2 store the client's PEP answer. No vendor is called.

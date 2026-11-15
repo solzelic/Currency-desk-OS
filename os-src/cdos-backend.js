@@ -278,6 +278,9 @@
       screenIdCheck: function (payload) {
         return request("/api/screening/id-check", { method: "POST", body: JSON.stringify(payload) });
       },
+      screeningDesk: function () {
+        return request("/api/screening/desk");
+      },
       listReviews: function () {
         return request("/api/screening/reviews");
       },
@@ -855,6 +858,7 @@
       risk: RISK_OUT[record.riskRating] || "Normal",
       verificationStatus: record.verificationStatus,
       screeningOutcome: record.screeningOutcome || null,
+      screeningOpenReviews: Number(record.screeningOpenReviews) || 0,
       screeningMatched: record.screeningMatched || null,
       incorpDate: record.incorporationDate || "",
       jurisdiction: record.incorporationJurisdiction || "",

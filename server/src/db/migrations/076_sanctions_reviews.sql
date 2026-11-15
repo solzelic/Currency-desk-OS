@@ -14,8 +14,12 @@ CREATE TABLE IF NOT EXISTS sanctions_screenings (
   matched_entry_key text,
   matched_name text,
   matched_source_key text,
+  list_snapshots jsonb NOT NULL DEFAULT '[]',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE sanctions_screenings
+  ADD COLUMN IF NOT EXISTS list_snapshots jsonb NOT NULL DEFAULT '[]';
 
 CREATE INDEX IF NOT EXISTS sanctions_screenings_client_idx
   ON sanctions_screenings (tenant_id, legal_entity_id, client_id, created_at DESC);

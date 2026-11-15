@@ -35,6 +35,7 @@ import { ReportFilingService, type FilingInput } from "./report-filings.js";
 import { StructuringWatchService } from "./structuring-watch.js";
 import { LedgerReportingService } from "./reporting.js";
 import { ObligationService } from "./obligations.js";
+import { guardCustomerMoney, TELLER_HOLD_MESSAGE } from "../screening/gate.js";
 
 /* ============================================================
    A CURRENCY ON A MONEY ROUTE
@@ -333,6 +334,13 @@ export function ledgerPoolFor(app: FastifyInstance): pg.Pool | undefined {
 
 export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: string) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
+  async function screenMoney(actor: LedgerActor, customerId: string, post: () => Promise<unknown>): Promise<unknown> {
+    const plan = await guardCustomerMoney(pool, actor, customerId);
+    if (plan.hold) throw new LedgerError("NEEDS_REVIEW", TELLER_HOLD_MESSAGE);
+    const body = await post();
+    if (plan.outcome === "not_screened" && body && typeof body === "object") return { ...body, screening: "Not screened" };
+    return body;
+  }
   ledgerPools.set(app, pool);
   const service = new LedgerService(pool);
   const provisioning = new LedgerProvisioningService(pool);
@@ -1089,7 +1097,7 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
     try {
       const actor = await actorOrReply(req, reply);
       return actor
-        ? reply.code(201).send(await cheques.cash(actor, parsed.data as ChequeCashInput))
+        ? reply.code(201).send(await screenMoney(actor, parsed.data.customerId, () => cheques.cash(actor, parsed.data as ChequeCashInput)))
         : undefined;
     } catch (error) {
       return failure(reply, error);
@@ -1502,7 +1510,8 @@ export function registerLedgerRoutes(app: FastifyInstance, db: Db, databaseUrl: 
       if (!parsed.success) return reply.code(400).send({ code: "INVALID_REQUEST" });
       try {
         const actor = await actorOrReply(req, reply);
-        return actor ? reply.code(201).send(await post(actor, parsed.data)) : undefined;
+        const input = parsed.data as T & { customerId: string };
+        return actor ? reply.code(201).send(await screenMoney(actor, input.customerId, () => post(actor, parsed.data))) : undefined;
       } catch (error) {
         return failure(reply, error);
       }

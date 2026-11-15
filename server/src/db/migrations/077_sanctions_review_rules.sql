@@ -23,7 +23,7 @@ END $$;
 
 ALTER TABLE desk_clients
   ADD CONSTRAINT desk_clients_screening_outcome_check
-  CHECK (screening_outcome IS NULL OR screening_outcome IN ('clear', 'hit', 'pending', 'not_screened'));
+  CHECK (screening_outcome IS NULL OR screening_outcome IN ('clear', 'hit', 'pending', 'not_screened', 'possible', 'confirmed'));
 
 ALTER TABLE sanctions_review_decisions
   ADD COLUMN IF NOT EXISTS retain_until timestamptz;

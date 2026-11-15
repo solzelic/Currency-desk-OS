@@ -296,29 +296,46 @@
     const note = screeningNote(pack);
     const [queue, setQueue] = useState(null);
     const [canReview, setCanReview] = useState(false);
-    const [reason, setReason] = useState('');
+    const [reasons, setReasons] = useState({});
     const [busy, setBusy] = useState(false);
+    const [actionError, setActionError] = useState('');
+    const [notice, setNotice] = useState('');
+    const [deskLabel, setDeskLabel] = useState('Not screened');
     const load = () => {
       if (!window.CDOS.Backend || !window.CDOS.Backend.listReviews) return;
+      if (window.CDOS.Backend.screeningDesk) {
+        window.CDOS.Backend.screeningDesk()
+          .then((desk) => setDeskLabel(desk && desk.label ? desk.label : 'Not screened'))
+          .catch(() => setDeskLabel('Not screened'));
+      }
       window.CDOS.Backend.listReviews()
-        .then((data) => { setQueue(data); setCanReview(true); })
-        .catch(() => { setQueue(null); setCanReview(false); });
+        .then((data) => { setQueue(data); setCanReview(true); setNotice(''); })
+        .catch((err) => {
+          setQueue(null);
+          setCanReview(false);
+          const message = err && err.message ? err.message : '';
+          setNotice(message.indexOf('Name a compliance officer') === 0 ? message : '');
+        });
     };
     useEffect(load, []);
     const decide = (reviewId, action) => {
-      if (!reason.trim() || busy || !window.CDOS.Backend) return;
+      const reason = (reasons[reviewId] || '').trim();
+      if (!reason || busy || !window.CDOS.Backend) return;
       setBusy(true);
-      window.CDOS.Backend.decideReview(reviewId, action, reason.trim())
-        .then(() => { setReason(''); load(); })
-        .catch(() => {})
+      setActionError('');
+      window.CDOS.Backend.decideReview(reviewId, action, reason)
+        .then(() => { setReasons((prev) => ({ ...prev, [reviewId]: '' })); load(); })
+        .catch(() => setActionError('That did not save. Try again.'))
         .then(() => setBusy(false));
     };
     return (<div className="p-4" data-testid="sanctions-not-connected">
       <div className="px-4 py-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
         <div className="text-sm font-semibold" style={{ color: CD.ink }}>Screening</div>
         <div className="mt-2 text-[13px] leading-relaxed" style={{ color: CD.mute, maxWidth: 520 }}>{note}</div>
-        <div className="mt-3 text-[13px]" data-testid="screening-status-copy" style={{ color: CD.ink }}>Not screened</div>
+        <div className="mt-3 text-[13px]" data-testid="screening-status-copy" style={{ color: CD.ink }}>{deskLabel}</div>
       </div>
+      {notice && <div className="mt-3 text-[13px]" data-testid="screening-name-officer" style={{ color: CD.ink }}>{notice}</div>}
+      {actionError && <div className="mt-3 text-[13px]" data-testid="screening-action-error" role="alert" style={{ color: CD.ink }}>{actionError}</div>}
       {canReview && <div className="mt-3" data-testid="screening-review-queue">
         <div className="text-[12px] mb-2" data-testid="threshold-placeholder" style={{ color: CD.mute }}>The score threshold is a placeholder pending Compliance Officer sign-off.</div>
         {queue && (queue.tasks || []).filter(task => !task.doneAt).map(task => (
@@ -331,7 +348,7 @@
             {item.matchedName && <div className="text-[12px] mt-1" style={{ color: CD.ink }}>{item.matchedName}</div>}
             <div className="text-[12px] mt-1" style={{ color: CD.mute }}>{item.status === 'confirmed' ? 'Confirmed. The deal stays held.' : 'Possible match. Clear it, or confirm it.'}</div>
             {item.status === 'open' && <>
-              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason" className="w-full text-sm px-2.5 py-2 mt-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />
+              <input value={reasons[item.reviewId] || ''} onChange={e => setReasons((prev) => ({ ...prev, [item.reviewId]: e.target.value }))} placeholder="Reason" data-testid="screening-reason" className="w-full text-sm px-2.5 py-2 mt-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={() => decide(item.reviewId, 'clear')} className="px-3 py-2 text-[12px] font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Clear</button>
                 <button type="button" onClick={() => decide(item.reviewId, 'confirm')} className="px-3 py-2 text-[12px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Confirm match</button>
@@ -776,6 +793,13 @@
   /* ===================== ROOT ===================== */
   function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
     const [tab, setTab] = useState(initialTab || 'screening');
+    const [screenTile, setScreenTile] = useState('Not screened');
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk()
+        .then((desk) => setScreenTile(desk && desk.openReviews > 0 ? String(desk.openReviews) : 'Not screened'))
+        .catch(() => setScreenTile('Not screened'));
+    }, [tab]);
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -914,7 +938,7 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="cd-tile-frame"><div className="cd-honest-tiles mt-3">
-          {[['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not screened', 'Not screened', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
+          {[['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', screenTile, screenTile === 'Not screened' ? 'Not screened' : 'to review', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
             <button key={l} data-testid={l === 'Screening' ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>

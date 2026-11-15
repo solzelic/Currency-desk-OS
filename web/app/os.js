@@ -3668,6 +3668,9 @@
       screenIdCheck: function (payload) {
         return request("/api/screening/id-check", { method: "POST", body: JSON.stringify(payload) });
       },
+      screeningDesk: function () {
+        return request("/api/screening/desk");
+      },
       listReviews: function () {
         return request("/api/screening/reviews");
       },
@@ -4245,6 +4248,7 @@
       risk: RISK_OUT[record.riskRating] || "Normal",
       verificationStatus: record.verificationStatus,
       screeningOutcome: record.screeningOutcome || null,
+      screeningOpenReviews: Number(record.screeningOpenReviews) || 0,
       screeningMatched: record.screeningMatched || null,
       incorpDate: record.incorporationDate || "",
       jurisdiction: record.incorporationJurisdiction || "",
@@ -6488,6 +6492,20 @@ if (typeof module !== "undefined" && module.exports) {
     useState,
     useEffect
   } = React;
+  function ScreeningGap() {
+    const [label, setLabel] = useState("Not screened");
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk().then(desk => setLabel(desk && desk.openReviews > 0 ? String(desk.openReviews) : "Not screened")).catch(() => setLabel("Not screened"));
+    }, []);
+    return /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px] px-2.5 py-1.5",
+      "data-testid": "sanctions-screening-gap",
+      style: {
+        color: CD.mute
+      }
+    }, label);
+  }
   const {
     CD,
     Ic,
@@ -13180,13 +13198,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, "List loaded")) : /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions screening",
         desc: window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack) || "Not screened"
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "text-[12px] px-2.5 py-1.5",
-        "data-testid": "sanctions-screening-gap",
-        style: {
-          color: CD.mute
-        }
-      }, "Not screened")), /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement(ScreeningGap, null)), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -14212,6 +14224,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       position: null,
       error: ''
     });
+    const [screenTile, setScreenTile] = useState('Not screened');
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk().then(desk => setScreenTile(desk && desk.openReviews > 0 ? String(desk.openReviews) : 'Not screened')).catch(() => setScreenTile('Not screened'));
+    }, []);
     useEffect(() => {
       const backend = window.CDOS.Backend;
       if (!backend) {
@@ -15163,7 +15180,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', 'Not screened', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Sanctions', screenTile, T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       "data-testid": l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined,
       onClick: () => onOpenApp && onOpenApp('compliance'),
@@ -39057,7 +39074,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.ink
       }
-    }, "This needs review. A supervisor will help."), serverNotScreened && /*#__PURE__*/React.createElement("div", {
+    }, "This needs review. Your compliance officer will review this."), serverNotScreened && /*#__PURE__*/React.createElement("div", {
       "data-testid": "deal-not-screened",
       role: "status",
       className: "px-3 py-2 text-[13px]",
@@ -47897,26 +47914,40 @@ ${(filing.map || []).map(blockHTML).join('')}
     const note = screeningNote(pack);
     const [queue, setQueue] = useState(null);
     const [canReview, setCanReview] = useState(false);
-    const [reason, setReason] = useState('');
+    const [reasons, setReasons] = useState({});
     const [busy, setBusy] = useState(false);
+    const [actionError, setActionError] = useState('');
+    const [notice, setNotice] = useState('');
+    const [deskLabel, setDeskLabel] = useState('Not screened');
     const load = () => {
       if (!window.CDOS.Backend || !window.CDOS.Backend.listReviews) return;
+      if (window.CDOS.Backend.screeningDesk) {
+        window.CDOS.Backend.screeningDesk().then(desk => setDeskLabel(desk && desk.label ? desk.label : 'Not screened')).catch(() => setDeskLabel('Not screened'));
+      }
       window.CDOS.Backend.listReviews().then(data => {
         setQueue(data);
         setCanReview(true);
-      }).catch(() => {
+        setNotice('');
+      }).catch(err => {
         setQueue(null);
         setCanReview(false);
+        const message = err && err.message ? err.message : '';
+        setNotice(message.indexOf('Name a compliance officer') === 0 ? message : '');
       });
     };
     useEffect(load, []);
     const decide = (reviewId, action) => {
-      if (!reason.trim() || busy || !window.CDOS.Backend) return;
+      const reason = (reasons[reviewId] || '').trim();
+      if (!reason || busy || !window.CDOS.Backend) return;
       setBusy(true);
-      window.CDOS.Backend.decideReview(reviewId, action, reason.trim()).then(() => {
-        setReason('');
+      setActionError('');
+      window.CDOS.Backend.decideReview(reviewId, action, reason).then(() => {
+        setReasons(prev => ({
+          ...prev,
+          [reviewId]: ''
+        }));
         load();
-      }).catch(() => {}).then(() => setBusy(false));
+      }).catch(() => setActionError('That did not save. Try again.')).then(() => setBusy(false));
     };
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
@@ -47945,7 +47976,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Not screened")), canReview && /*#__PURE__*/React.createElement("div", {
+    }, deskLabel)), notice && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3 text-[13px]",
+      "data-testid": "screening-name-officer",
+      style: {
+        color: CD.ink
+      }
+    }, notice), actionError && /*#__PURE__*/React.createElement("div", {
+      className: "mt-3 text-[13px]",
+      "data-testid": "screening-action-error",
+      role: "alert",
+      style: {
+        color: CD.ink
+      }
+    }, actionError), canReview && /*#__PURE__*/React.createElement("div", {
       className: "mt-3",
       "data-testid": "screening-review-queue"
     }, /*#__PURE__*/React.createElement("div", {
@@ -47990,9 +48034,13 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute
       }
     }, item.status === 'confirmed' ? 'Confirmed. The deal stays held.' : 'Possible match. Clear it, or confirm it.'), item.status === 'open' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
-      value: reason,
-      onChange: e => setReason(e.target.value),
+      value: reasons[item.reviewId] || '',
+      onChange: e => setReasons(prev => ({
+        ...prev,
+        [item.reviewId]: e.target.value
+      })),
       placeholder: "Reason",
+      "data-testid": "screening-reason",
       className: "w-full text-sm px-2.5 py-2 mt-2 outline-none",
       style: {
         border: `1px solid ${CD.line}`,
@@ -49586,6 +49634,11 @@ ${(filing.map || []).map(blockHTML).join('')}
     initialTab
   }) {
     const [tab, setTab] = useState(initialTab || 'screening');
+    const [screenTile, setScreenTile] = useState('Not screened');
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk().then(desk => setScreenTile(desk && desk.openReviews > 0 ? String(desk.openReviews) : 'Not screened')).catch(() => setScreenTile('Not screened'));
+    }, [tab]);
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -49855,7 +49908,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "cd-tile-frame"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-honest-tiles mt-3"
-    }, [['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not screened', 'Not screened', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
+    }, [['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', screenTile, screenTile === 'Not screened' ? 'Not screened' : 'to review', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
       const bad = numeric && v > 0;
       const col = numeric ? bad ? warn : CD.green : CD.mute;
       return /*#__PURE__*/React.createElement("button", {
@@ -51424,6 +51477,12 @@ ${(filing.map || []).map(blockHTML).join('')}
   /* ====================================================================
      SUBJECT PANEL — embedded at the bottom of a contact profile
      ==================================================================== */
+  function clientScreenLine(rec) {
+    const outcome = rec && rec.screeningOutcome;
+    const word = outcome === "possible" ? "Possible match" : outcome === "confirmed" ? "Confirmed match" : outcome === "clear" ? "Clear" : "Not screened";
+    const open = rec && Number(rec.screeningOpenReviews) > 0 ? Number(rec.screeningOpenReviews) : 0;
+    return open ? word + " · " + open + " to review" : word;
+  }
   function SubjectPanel({
     name,
     kind,
@@ -51500,7 +51559,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Not screened"))), latest && latest.status === 'completed' && (() => {
+    }, clientScreenLine(rec)))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -51751,12 +51810,12 @@ ${(filing.map || []).map(blockHTML).join('')}
             pepAnswer: needsPep ? pepAnswer : undefined
           });
           if (answer && answer.state === 'needs_review') {
-            setCheckNote('This needs review. A supervisor will help.');
+            setCheckNote('This needs review. Your compliance officer will review this.');
             return;
           }
         }
       } catch (err) {
-        setCheckNote('This needs review. A supervisor will help.');
+        setCheckNote('This needs review. Your compliance officer will review this.');
         return;
       } finally {
         setSaving(false);

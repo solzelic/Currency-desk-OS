@@ -76,17 +76,28 @@ list stays.
 ## Hold
 
 A possible match, or a confirmed one, stops `POST /api/quotes/:id/post`.
-The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. A supervisor will help." }`.
-The shop's named compliance officer uses `GET /api/screening/reviews`.
-The owner may do that only when the shop has named them. A teller cannot.
-Decisions are append-only and kept for 5 years. Clearing stores the actor
-and the reason and lets a later post through for that same list entry.
-Confirming keeps the deal held and opens a task to file a listed person
-or entity property report with FINTRAC and to disclose to the RCMP and
-CSIS. The desk records when that task was done and by whom. It does not
-file the report. A confirmed match cannot be cleared. A changed list
-re-screens existing clients. A list with no good fetch in the last 24
-hours, or no good list at all, is recorded as not screened.
+The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. Your compliance officer will review this." }`.
+Only the shop's named compliance officer uses `GET /api/screening/reviews`.
+When nobody is named, nobody can decide, holds stay held, and the owner is told to name a compliance officer in Settings. A teller, a supervisor, an auditor, and a branch manager cannot.
+Decisions are append-only and kept for 5 years. Clearing one listed person
+does not clear the others: every candidate at or above the threshold is
+held and reviewed on its own. Confirming keeps the deal held and opens a
+task, in these words: "File a listed person or entity property report
+(LPEPR) with FINTRAC without delay, and disclose to the RCMP and CSIS."
+The desk records when that task was done and by whom. It does not file
+the report. A confirmed match cannot be cleared. A review or task id from
+another shop is 404. A changed list re-screens existing clients through
+the same pool `listenServer` passes to the daily fetch. Each screening
+row stores the snapshot id and content hash of every list it used.
+While `signed_off` is false the outcome is never `clear`, though a match
+is still held. If any required list is missing or older than 24 hours,
+the outcome is `not_screened` rather than cleared against the lists that
+remain. The same hold runs before a quote post, a cheque cashing, a
+remittance send or receive, a bill payment, and a money order. A blank
+customer name is held. A client's aliases are matched. The client write
+API refuses a caller-supplied `screeningOutcome`. A failed screen opens a
+review instead of posting. The client file and the tiles read the stored
+outcome and the open-review count.
 
 Tiers 1 and 2 (`quick` and `verify` as well as `1` and `2`) record whether
 the client said they are a politically exposed person, and the date.

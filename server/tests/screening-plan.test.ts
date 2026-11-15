@@ -28,6 +28,20 @@ describe("screen plan", () => {
       subject: { name: "Sergei Yepikhov", dob: "1966-05-16" },
       confirmed: false, clearedKeys: ["ca|73"],
     }).hold).toBe(false);
+    const ivan = { key: "ca|ivan", names: ["Ivan Petrov"], dobs: [], sourceKey: "ca-sema" };
+    const longer = { key: "un|ivan", names: ["Ivan Ivanovich Petrov"], dobs: [], sourceKey: "un-sc" };
+    const both = planScreen({
+      entries: [ivan, longer], threshold: SCORE_THRESHOLD_PLACEHOLDER,
+      subject: { name: "Ivan Petrov" }, confirmed: false, clearedKeys: [],
+    });
+    expect(both.hold).toBe(true);
+    expect(both.hits.map((hit) => hit.key).sort()).toEqual(["ca|ivan", "un|ivan"]);
+    const rest = planScreen({
+      entries: [ivan, longer], threshold: SCORE_THRESHOLD_PLACEHOLDER,
+      subject: { name: "Ivan Petrov" }, confirmed: false, clearedKeys: ["ca|ivan"],
+    });
+    expect(rest.hold).toBe(true);
+    expect(rest.hits.map((hit) => hit.key)).toEqual(["un|ivan"]);
   });
 
   it("lets the named compliance officer decide and never a teller", () => {
@@ -35,7 +49,7 @@ describe("screen plan", () => {
     expect(mayReviewScreening("administrator", "j.masri", null)).toBe(false);
     expect(mayReviewScreening("administrator", "j.masri", "c.adebayo")).toBe(false);
     expect(mayReviewScreening("administrator", "j.masri", "j.masri")).toBe(true);
-    expect(mayReviewScreening("compliance_officer", "c.adebayo", null)).toBe(true);
+    expect(mayReviewScreening("compliance_officer", "c.adebayo", null)).toBe(false);
     expect(mayReviewScreening("compliance_officer", "c.adebayo", "c.adebayo")).toBe(true);
     expect(mayReviewScreening("compliance_officer", "c.adebayo", "j.masri")).toBe(false);
   });

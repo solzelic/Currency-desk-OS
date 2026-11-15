@@ -1,6 +1,7 @@
 /* The deal hold is the server's. A teller response carries the neutral
    sentence and nothing about the list. A list change re-screens clients. */
 import { readFileSync } from "node:fs";
+import { sql } from "drizzle-orm";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -24,7 +25,9 @@ postgres("sanctions hold and review", () => {
       method: "POST", url: "/api/auth/login",
       payload: { staffId, password: DEMO.password },
     });
-    return { cdos_session: login.cookies.find((item) => item.name === "cdos_session")!.value };
+    const session = login.cookies.find((item) => item.name === "cdos_session");
+    if (!session) throw new Error(`${staffId} login ${login.statusCode} ${login.body}`);
+    return { cdos_session: session.value };
   };
 
   beforeAll(async () => {
@@ -135,7 +138,7 @@ postgres("sanctions hold and review", () => {
   it("holds the deal on the server and does not tell the teller why", async () => {
     const stamp = Date.now();
     const customerId = `cust-${stamp}`;
-    const name = `Hold Subject ${stamp}`;
+    const name = `Listed Person ${stamp}`;
     await pool.query(
       `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
        VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
@@ -211,7 +214,7 @@ postgres("sanctions hold and review", () => {
     expect(confirmed.statusCode).toBe(200);
     const still = await postDeal("m.costa", "cust-confirm");
     expect(still.statusCode).toBe(422);
-    expect(still.json()).toEqual({ code: "NEEDS_REVIEW", message: "This needs review. A supervisor will help." });
+    expect(still.json()).toEqual({ code: "NEEDS_REVIEW", message: "This needs review. Your compliance officer will review this." });
     expect(JSON.stringify(still.json())).not.toMatch(/LPEPR|FINTRAC|RCMP|CSIS/);
     const refused = await app.inject({
       method: "POST", url: `/api/screening/reviews/${reviewId}/clear`, cookies: owner,
@@ -293,7 +296,12 @@ postgres("sanctions hold and review", () => {
     await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = NULL WHERE id = $1", [DEMO.legalEntityId]);
     const owner = await cookie("j.masri");
     const teller = await cookie("m.costa");
-    expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner })).statusCode).toBe(403);
+    const unnamed = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
+    expect(unnamed.statusCode).toBe(403);
+    expect(unnamed.json()).toEqual({
+      error: "name_compliance_officer",
+      message: "Name a compliance officer in Settings to review holds.",
+    });
     expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: teller })).statusCode).toBe(403);
     await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = 'j.masri' WHERE id = $1", [DEMO.legalEntityId]);
     expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner })).statusCode).toBe(200);
@@ -333,5 +341,281 @@ postgres("sanctions hold and review", () => {
       `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
        VALUES ('snp-hold','ca|hold','["Hold Subject"]','[]')`,
     );
+  });
+
+  it("holds every other candidate after the best match is cleared", async () => {
+    const stamp = Date.now();
+    const customerId = `cust-two-${stamp}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,'Ivan Petrov','Normal','verified')`,
+      [customerId, ...scope],
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs) VALUES
+        ('snp-hold',$1,'["Ivan Petrov"]','[]'),
+        ('snp-hold',$2,'["Ivan Ivanovich Petrov"]','[]')`,
+      [`ca|ivan-${stamp}`, `ca|ivanovich-${stamp}`],
+    );
+    const held = await postDeal("m.costa", customerId);
+    expect(held.statusCode, held.body).toBe(422);
+    const owner = await cookie("j.masri");
+    const reviews = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
+    const items = reviews.json().items.filter((row: { subjectName: string; status: string }) => row.subjectName === "Ivan Petrov" && row.status === "open");
+    expect(items).toHaveLength(2);
+    const first = await app.inject({
+      method: "POST", url: `/api/screening/reviews/${items[0].reviewId}/clear`, cookies: owner,
+      payload: { reason: "The first listed person is a different man." },
+    });
+    expect(first.statusCode).toBe(200);
+    const still = await postDeal("m.costa", customerId);
+    expect(still.statusCode).toBe(422);
+    const second = await app.inject({
+      method: "POST", url: `/api/screening/reviews/${items[1].reviewId}/clear`, cookies: owner,
+      payload: { reason: "The second listed person is a different man." },
+    });
+    expect(second.statusCode).toBe(200);
+    const posted = await postDeal("m.costa", customerId);
+    expect(posted.statusCode, posted.body).toBe(201);
+  });
+
+  it("refuses teller, supervisor, auditor, and branch manager on every queue route", async () => {
+    await handle.db.execute(sql`
+      INSERT INTO staff_users (id, tenant_id, legal_entity_id, branch_id, staff_id, name, role, authorized_branch_ids, password_hash, active)
+      SELECT ${DEMO.tenantId} || ':l.berg', tenant_id, legal_entity_id, branch_id, 'l.berg', 'L. Berg', 'auditor', authorized_branch_ids, password_hash, true
+        FROM staff_users WHERE staff_id = 'm.costa'
+      ON CONFLICT (id) DO UPDATE
+        SET password_hash = EXCLUDED.password_hash, role = 'auditor', active = true
+    `);
+    const roles = ["m.costa", "a.singh", "l.berg", "r.haddad"];
+    for (const staffId of roles) {
+      const cookies = await cookie(staffId);
+      expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies })).statusCode, staffId).toBe(403);
+      expect((await app.inject({
+        method: "POST", url: "/api/screening/reviews/rev-missing/clear", cookies,
+        payload: { reason: "Not this person." },
+      })).statusCode, staffId).toBe(403);
+      expect((await app.inject({
+        method: "POST", url: "/api/screening/reviews/rev-missing/confirm", cookies,
+        payload: { reason: "Not this person." },
+      })).statusCode, staffId).toBe(403);
+      expect((await app.inject({ method: "POST", url: "/api/screening/tasks/task-missing/done", cookies })).statusCode, staffId).toBe(403);
+    }
+  });
+
+  it("returns 404 for a review or task that belongs to another shop", async () => {
+    await pool.query(
+      `INSERT INTO sanctions_reviews
+        (review_id, tenant_id, legal_entity_id, screening_id, subject_name, status)
+       VALUES ('rev-other-shop','other-tenant','other-entity','scr-other','Other Shop','open')
+       ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO sanctions_officer_tasks (task_id, review_id, tenant_id, legal_entity_id, instruction)
+       VALUES ('task-other-shop','rev-other-shop','other-tenant','other-entity','Do not show this.')
+       ON CONFLICT DO NOTHING`,
+    );
+    const owner = await cookie("j.masri");
+    const clear = await app.inject({
+      method: "POST", url: "/api/screening/reviews/rev-other-shop/clear", cookies: owner,
+      payload: { reason: "Wrong shop." },
+    });
+    expect(clear.statusCode).toBe(404);
+    const missing = await app.inject({
+      method: "POST", url: "/api/screening/reviews/rev-does-not-exist/clear", cookies: owner,
+      payload: { reason: "Nobody." },
+    });
+    expect(missing.statusCode).toBe(404);
+    const task = await app.inject({ method: "POST", url: "/api/screening/tasks/task-other-shop/done", cookies: owner });
+    expect(task.statusCode).toBe(404);
+  });
+
+  it("does not record a clear while the score is unsigned, and not when one list is stale", async () => {
+    await pool.query(
+      `INSERT INTO sanctions_list_snapshots
+        (snapshot_id,source_key,source_url,fetched_at,last_checked_at,content_sha256,entry_count,status)
+       VALUES
+        ('snp-un','un-sc','https://example.test/un',now(),now(),'un',1,'good'),
+        ('snp-cc','ca-cc','https://example.test/cc',now(),now(),'cc',1,'good')
+       ON CONFLICT DO NOTHING`,
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs) VALUES
+        ('snp-un','un|quiet','["Somebody Else"]','[]'),
+        ('snp-cc','cc|quiet','["Somebody Else"]','[]')
+       ON CONFLICT DO NOTHING`,
+    );
+    await pool.query("UPDATE sanctions_list_snapshots SET last_checked_at = now() WHERE snapshot_id IN ('snp-hold','snp-un','snp-cc')");
+    const quiet = `cust-quiet-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,'Quiet Person','Normal','verified')`,
+      [quiet, ...scope],
+    );
+    const unsigned = await postDeal("m.costa", quiet);
+    expect(unsigned.statusCode, unsigned.body).toBe(201);
+    expect(unsigned.json().screening).toBe("Not screened");
+    const unsignedRow = await pool.query(
+      "SELECT outcome FROM sanctions_screenings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [quiet],
+    );
+    expect(unsignedRow.rows[0].outcome).toBe("not_screened");
+    await pool.query(
+      `INSERT INTO sanctions_score_settings (legal_entity_id, score_threshold, signed_off)
+       VALUES ($1, 0.92, true)
+       ON CONFLICT (legal_entity_id) DO UPDATE SET signed_off = true`,
+      [DEMO.legalEntityId],
+    );
+    const signed = await postDeal("m.costa", quiet);
+    expect(signed.statusCode, signed.body).toBe(201);
+    expect(signed.json().screening).toBeUndefined();
+    const signedRow = await pool.query(
+      "SELECT outcome FROM sanctions_screenings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [quiet],
+    );
+    expect(signedRow.rows[0].outcome).toBe("clear");
+    await pool.query("UPDATE sanctions_list_snapshots SET last_checked_at = now() - interval '25 hours' WHERE snapshot_id = 'snp-un'");
+    const stale = await postDeal("m.costa", quiet);
+    expect(stale.statusCode, stale.body).toBe(201);
+    expect(stale.json().screening).toBe("Not screened");
+    const staleRow = await pool.query(
+      "SELECT outcome FROM sanctions_screenings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [quiet],
+    );
+    expect(staleRow.rows[0].outcome).toBe("not_screened");
+    await pool.query("UPDATE sanctions_score_settings SET signed_off = false WHERE legal_entity_id = $1", [DEMO.legalEntityId]);
+    await pool.query("UPDATE sanctions_list_snapshots SET last_checked_at = now() WHERE snapshot_id = 'snp-un'");
+  });
+
+  it("holds cheque, remittance, bill, and money order posts with one guard", async () => {
+    const stamp = Date.now();
+    const customerId = `cust-money-${stamp}`;
+    const name = `Money Subject ${stamp}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
+      [customerId, ...scope, name],
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold',$1,$2::jsonb,'[]')`,
+      [`ca|money-${stamp}`, JSON.stringify([name])],
+    );
+    const cookies = await cookie("m.costa");
+    const routes: Array<[string, Record<string, unknown>, string]> = [
+      ["/api/ledger/cheques", {
+        customerId, chequeNumber: "004821", maker: "Northbridge", draweeBank: "RBC",
+        chequeType: "business", typeLabel: "Business", currency: "CAD", faceAmount: "100.00",
+        feeAmount: "0.00", holdDays: 0,
+      }, "ledger_cheques"],
+      ["/api/ledger/remittances/send", {
+        customerId, reference: "RM-1", principalAmount: "10.00", feeAmount: "0.00",
+        payoutCurrency: "USD", payoutAmount: "7.00", corridor: "US", partner: "Partner",
+        beneficiaryName: "Ann", purpose: "Family support", sourceOfFunds: "Salary",
+      }, "ledger_obligations"],
+      ["/api/ledger/remittances/receive", {
+        customerId, reference: "RR-1", sentCurrency: "USD", sentAmount: "10.00",
+        payoutAmount: "10.00", feeAmount: "0.00", corridor: "US", partner: "Partner",
+      }, "ledger_obligations"],
+      ["/api/ledger/bill-payments", {
+        customerId, reference: "BP-1", billAmount: "10.00", feeAmount: "0.00",
+        biller: "Hydro", accountRef: "acct-1",
+      }, "ledger_obligations"],
+      ["/api/ledger/money-orders", {
+        customerId, reference: "MO-1", faceAmount: "10.00", feeAmount: "0.00",
+        payee: "Ann Payee", serial: `MO-${stamp}`,
+      }, "ledger_obligations"],
+    ];
+    for (const [url, payload, table] of routes) {
+      const before = await pool.query(`SELECT count(*)::int AS n FROM ${table}`);
+      const held = await app.inject({
+        method: "POST", url, cookies,
+        payload: { ...payload, idempotencyKey: `money-${url}-${stamp}` },
+      });
+      expect(held.statusCode, `${url} ${held.body}`).toBe(422);
+      expect(held.json()).toEqual({ code: "NEEDS_REVIEW", message: TELLER_HOLD_MESSAGE });
+      const after = await pool.query(`SELECT count(*)::int AS n FROM ${table}`);
+      expect(after.rows[0].n, url).toBe(before.rows[0].n);
+    }
+  });
+
+  it("opens a review when the screen fails, matches an alias, and holds a blank name", async () => {
+    const teller = await cookie("m.costa");
+    const created = await app.inject({
+      method: "POST", url: "/api/clients", cookies: teller,
+      payload: { legalName: "Alias Person", dateOfBirth: "1981-02-02" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const clientId = created.json().clientId as string;
+    const refused = await app.inject({
+      method: "PATCH", url: `/api/clients/${clientId}`, cookies: teller,
+      payload: { screeningOutcome: "clear" },
+    });
+    expect(refused.statusCode).toBe(422);
+    const aliased = await app.inject({
+      method: "POST", url: `/api/clients/${clientId}/aliases`, cookies: teller,
+      payload: { alias: "Hold Subject" },
+    });
+    expect(aliased.statusCode, aliased.body).toBe(200);
+    expect(aliased.json().screeningOutcome).toBe("possible");
+    const aliasReviews = await pool.query(
+      "SELECT count(*)::int AS n FROM sanctions_reviews WHERE client_id = $1 AND status = 'open'",
+      [clientId],
+    );
+    expect(aliasReviews.rows[0].n).toBeGreaterThan(0);
+
+    const blank = `cust-blank-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,' ','Normal','verified')`,
+      [blank, ...scope],
+    );
+    const unnamed = await postDeal("m.costa", blank);
+    expect(unnamed.statusCode, unnamed.body).toBe(422);
+    expect(unnamed.json().code).toBe("NEEDS_REVIEW");
+
+    const broken = `cust-broken-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,'Broken Subject','Normal','verified')`,
+      [broken, ...scope],
+    );
+    (globalThis as { __cdScreeningFail?: boolean }).__cdScreeningFail = true;
+    try {
+      const failed = await postDeal("m.costa", broken);
+      expect(failed.statusCode, failed.body).toBe(422);
+    } finally {
+      delete (globalThis as { __cdScreeningFail?: boolean }).__cdScreeningFail;
+    }
+    const opened = await pool.query(
+      "SELECT count(*)::int AS n FROM sanctions_reviews WHERE customer_id = $1 AND status = 'open'",
+      [broken],
+    );
+    expect(opened.rows[0].n).toBeGreaterThan(0);
+  });
+
+  it("agrees the open-review count with the client file and the desk tile", async () => {
+    const owner = await cookie("j.masri");
+    const desk = await app.inject({ method: "GET", url: "/api/screening/desk", cookies: owner });
+    expect(desk.statusCode).toBe(200);
+    const counted = await pool.query(
+      "SELECT count(*)::int AS n FROM sanctions_reviews WHERE tenant_id = $1 AND legal_entity_id = $2 AND status = 'open'",
+      [DEMO.tenantId, DEMO.legalEntityId],
+    );
+    expect(desk.json().openReviews).toBe(counted.rows[0].n);
+    expect(desk.json().label).toBe(counted.rows[0].n > 0 ? `${counted.rows[0].n} to review` : "Not screened");
+    const teller = await cookie("m.costa");
+    const listed = await app.inject({ method: "GET", url: "/api/clients", cookies: teller });
+    const alias = listed.json().clients.find((row: { legalName: string }) => row.legalName === "Alias Person");
+    expect(alias.screeningOutcome).toBe("possible");
+    const openFor = await pool.query(
+      "SELECT count(*)::int AS n FROM sanctions_reviews WHERE client_id = $1 AND status = 'open'",
+      [alias.clientId],
+    );
+    expect(alias.screeningOpenReviews).toBe(openFor.rows[0].n);
+    const screened = await pool.query(
+      "SELECT list_snapshots FROM sanctions_screenings WHERE customer_id LIKE 'cust-two-%' ORDER BY created_at DESC LIMIT 1",
+    );
+    expect(JSON.stringify(screened.rows[0].list_snapshots)).toMatch(/snp-hold/);
   });
 });

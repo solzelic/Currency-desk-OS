@@ -8,7 +8,7 @@ import pg from "pg";
 import { z } from "zod";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import type { Db } from "../db/index.js";
-import { LPEPR_TASK, mayReviewScreening, screenSubject, TELLER_HOLD_MESSAGE } from "./gate.js";
+import { LPEPR_TASK, mayReviewScreening, NAME_OFFICER_MESSAGE, screenSubject, TELLER_HOLD_MESSAGE } from "./gate.js";
 import type { ScreeningProvider } from "./provider.js";
 import { SCORE_THRESHOLD_PLACEHOLDER, THRESHOLD_SIGNOFF } from "./names.js";
 
@@ -50,8 +50,11 @@ export function registerScreeningRoutes(
     return typeof value === "string" && value.length > 0 ? value : null;
   }
 
-  async function canReview(who: { role: string; staffId: string; legalEntityId: string }): Promise<boolean> {
-    return mayReviewScreening(who.role, who.staffId, await namedOfficer(who.legalEntityId));
+  async function reviewRefusal(who: { role: string; staffId: string; legalEntityId: string }): Promise<{ error: string; message?: string } | null> {
+    const named = await namedOfficer(who.legalEntityId);
+    if (mayReviewScreening(who.role, who.staffId, named)) return null;
+    if (who.role === "administrator" && !named) return { error: "name_compliance_officer", message: NAME_OFFICER_MESSAGE };
+    return { error: "forbidden" };
   }
 
   app.post("/api/screening/id-check", async (req, reply) => {
@@ -108,10 +111,31 @@ export function registerScreeningRoutes(
     }
   });
 
+  app.get("/api/screening/desk", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const open = await pool.query(
+      `SELECT count(*)::int AS n FROM sanctions_reviews
+        WHERE tenant_id = $1 AND legal_entity_id = $2 AND status = 'open'`,
+      [who.tenantId, who.legalEntityId],
+    );
+    const setting = await pool.query(
+      "SELECT signed_off FROM sanctions_score_settings WHERE legal_entity_id = $1",
+      [who.legalEntityId],
+    );
+    const openReviews = Number(open.rows[0]?.n ?? 0);
+    return {
+      signedOff: setting.rows[0]?.signed_off === true,
+      openReviews,
+      label: openReviews > 0 ? `${openReviews} to review` : "Not screened",
+    };
+  });
+
   app.get("/api/screening/reviews", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
+    const refusal = await reviewRefusal(who);
+    if (refusal) return reply.code(403).send(refusal);
     const setting = await pool.query(
       "SELECT score_threshold, signed_off FROM sanctions_score_settings WHERE legal_entity_id = $1",
       [who.legalEntityId],
@@ -165,12 +189,26 @@ export function registerScreeningRoutes(
   async function decide(action: "clear" | "confirm", req: FastifyRequest<{ Params: { reviewId: string } }>, reply: FastifyReply) {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
+    const refusal = await reviewRefusal(who);
+    if (refusal) return reply.code(403).send(refusal);
     const body = decisionBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "reason_required" });
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      const owned = await client.query(
+        `SELECT status, tenant_id, legal_entity_id FROM sanctions_reviews WHERE review_id = $1`,
+        [req.params.reviewId],
+      );
+      const row = owned.rows[0];
+      if (!row || row.tenant_id !== who.tenantId || row.legal_entity_id !== who.legalEntityId) {
+        await client.query("ROLLBACK");
+        return reply.code(404).send({ error: "not_found" });
+      }
+      if (row.status !== "open") {
+        await client.query("ROLLBACK");
+        return reply.code(409).send({ error: "not_open" });
+      }
       const updated = await client.query(
         `UPDATE sanctions_reviews
             SET status = $4
@@ -212,7 +250,17 @@ export function registerScreeningRoutes(
   app.post<{ Params: { taskId: string } }>("/api/screening/tasks/:taskId/done", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
+    const refusal = await reviewRefusal(who);
+    if (refusal) return reply.code(403).send(refusal);
+    const owned = await pool.query(
+      `SELECT tenant_id, legal_entity_id, done_at FROM sanctions_officer_tasks WHERE task_id = $1`,
+      [req.params.taskId],
+    );
+    const row = owned.rows[0];
+    if (!row || row.tenant_id !== who.tenantId || row.legal_entity_id !== who.legalEntityId) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    if (row.done_at) return reply.code(409).send({ error: "already_recorded" });
     const updated = await pool.query(
       `UPDATE sanctions_officer_tasks
           SET done_at = now(), done_by = $4

@@ -1451,7 +1451,7 @@
                     `record` — a money order or a bill payment the server
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
-                {serverHeld && <div data-testid="deal-needs-review" role="status" className="px-3 py-2 text-[13px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink }}>This needs review. A supervisor will help.</div>}
+                {serverHeld && <div data-testid="deal-needs-review" role="status" className="px-3 py-2 text-[13px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink }}>This needs review. Your compliance officer will review this.</div>}
                 {serverNotScreened && <div data-testid="deal-not-screened" role="status" className="px-3 py-2 text-[13px]" style={{ color: CD.ink }}>Not screened</div>}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
                 {serverBacked && isExchange ? <>

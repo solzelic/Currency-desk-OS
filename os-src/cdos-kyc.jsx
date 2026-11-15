@@ -520,6 +520,15 @@
   /* ====================================================================
      SUBJECT PANEL — embedded at the bottom of a contact profile
      ==================================================================== */
+  function clientScreenLine(rec) {
+    const outcome = rec && rec.screeningOutcome;
+    const word = outcome === "possible" ? "Possible match"
+      : outcome === "confirmed" ? "Confirmed match"
+      : outcome === "clear" ? "Clear"
+      : "Not screened";
+    const open = rec && Number(rec.screeningOpenReviews) > 0 ? Number(rec.screeningOpenReviews) : 0;
+    return open ? word + " · " + open + " to review" : word;
+  }
   function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
     useStore();
     const applied = useRef({});
@@ -545,7 +554,7 @@
         <div>
           <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Not screened." /></div>
           <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
-          <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>Not screened</div>
+          <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>{clientScreenLine(rec)}</div>
         </div>
       </div>
 
@@ -687,12 +696,12 @@
             pepAnswer: needsPep ? pepAnswer : undefined,
           });
           if (answer && answer.state === 'needs_review') {
-            setCheckNote('This needs review. A supervisor will help.');
+            setCheckNote('This needs review. Your compliance officer will review this.');
             return;
           }
         }
       } catch (err) {
-        setCheckNote('This needs review. A supervisor will help.');
+        setCheckNote('This needs review. Your compliance officer will review this.');
         return;
       } finally {
         setSaving(false);

@@ -9,6 +9,16 @@
    ============================================================ */
 (function () {
   const { useState, useEffect } = React;
+  function ScreeningGap() {
+    const [label, setLabel] = useState("Not screened");
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk()
+        .then((desk) => setLabel(desk && desk.openReviews > 0 ? String(desk.openReviews) : "Not screened"))
+        .catch(() => setLabel("Not screened"));
+    }, []);
+    return <span className="text-[12px] px-2.5 py-1.5" data-testid="sanctions-screening-gap" style={{ color: CD.mute }}>{label}</span>;
+  }
   const { CD, Ic, fmt, CCY, crossRate, spreadOf, buyUnitCad, sellUnitCad, STAFF, ROLE_CAPS } = window.CDOS;
   const CURX = (typeof CUR !== 'undefined' ? CUR : []).map(c => c.code);
   const BASE_OPTS = ['CAD', 'USD', 'EUR', 'GBP', 'AUD'].filter(c => CURX.includes(c) || ['CAD', 'USD', 'EUR', 'GBP', 'AUD'].includes(c));
@@ -2395,7 +2405,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* sanctionsListShips is false for every pack, including PH, SG and HK. */}
           {(window.CDOS._compliance && window.CDOS._compliance.sanctionsListShips(pack))
             ? <Row title="Sanctions screening" desc="Names are matched against the list this pack loaded."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>List loaded</span></Row>
-            : <Row title="Sanctions screening" desc={(window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack)) || "Not screened"}><span className="text-[12px] px-2.5 py-1.5" data-testid="sanctions-screening-gap" style={{ color: CD.mute }}>Not screened</span></Row>}
+            : <Row title="Sanctions screening" desc={(window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack)) || "Not screened"}><ScreeningGap /></Row>}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>
