@@ -43,7 +43,11 @@ const rawStored = (page: Page) => page.evaluate((key) => localStorage.getItem(ke
 /* Opens the page on screen `i` with `data` already saved, the way a
    person who reloads mid sign-up arrives. */
 async function openAt(page: Page, i: number, data: Record<string, unknown>) {
-  await page.goto("/onboarding");
+  /* The bare /onboarding is sign-up v2.1 now (it keeps nothing in the browser;
+     tests/e2e/signup-v21.spec.ts). The older page is still what an invitation
+     with a setup reference opens, so its #431 guarantees are checked on it,
+     through a path that is neither a reference nor a CurrencyDesk ID. */
+  await page.goto("/onboarding/older-setup");
   await page.evaluate(([key, value]) => localStorage.setItem(key, value), [KEY, JSON.stringify({ i, data })] as const);
   await page.reload();
 }

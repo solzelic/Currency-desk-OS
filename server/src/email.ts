@@ -166,7 +166,10 @@ export function inviteEmail(o: InviteOpts): { subject: string; text: string; htm
      never type it. NOT /signup — that is the application they have already
      filled in, and sending an accepted operator back to it is the one thing
      this email must not do. */
-  const setupUrl = `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
+  /* A v2.1 applicant has a CurrencyDesk ID: the button opens sign-up plainly,
+     with no token, and they type their ID there (SIGNUP-LOGIC §2.1). The older
+     setup page, opened by reference, refuses a v2.1 reservation. */
+  const setupUrl = o.cdId ? `${o.origin}/onboarding` : `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
   return youreIn({
     name: o.name, shopName: o.shopName, reference: o.reference, setupUrl,
     cohortNo: o.cohortNo, place: o.place, issuedOn: o.issuedOn, cdId: o.cdId, call: o.call,

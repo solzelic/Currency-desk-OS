@@ -99,7 +99,8 @@ test.describe("the onboarding ticker is labelled", () => {
     await page.addInitScript(() => {
       localStorage.setItem("cdos_onb_v2", JSON.stringify({ i: 15, data: {} }));
     });
-    await page.goto("/onboarding");
+    /* the older setup page (setup-reference invitations); /onboarding is v2.1 now */
+    await page.goto("/onboarding/older-setup");
     await expectSampleInside(page, '[data-hero-rates="onboarding"]');
   });
 });
