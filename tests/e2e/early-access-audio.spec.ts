@@ -31,7 +31,13 @@ function instrument() {
   W.__aud = { starts: [], disc: [], t0: null, claim: null, next: null, suspendedAt: null, resumedAt: null };
   const AC = window.AudioContext || W.webkitAudioContext;
   if (AC) {
-    const Kept = class extends AC { constructor(o?: AudioContextOptions) { super(o); W.__ac = this; } };
+    const Kept = class extends AC {
+      constructor(o?: AudioContextOptions) { super(o); W.__ac = this; }
+      /* The suspended-context test sets __holdSuspended. A class getter is what WebKit will honour; defining it on the instance is refused. */
+      get state() {
+        return (window as unknown as { __holdSuspended?: boolean }).__holdSuspended ? "suspended" : super.state;
+      }
+    };
     window.AudioContext = Kept as typeof AudioContext;
     if (W.webkitAudioContext) W.webkitAudioContext = Kept as typeof AudioContext;
   }
@@ -127,6 +133,13 @@ const untilMail = async (page: Page) => {
     { timeout: 40_000, message: "the reveal played through to the mail sound" }).toBeGreaterThan(0);
   await page.waitForTimeout(1200);
 };
+
+/* The context reports suspended for the whole test, which is what Firefox does when resume()
+   never settles, and what WebKit does when the audio device has not started. currentTime stays put.
+   start() is still legal. The page used to return before start(), so nothing was scheduled. */
+function holdSuspended() {
+  (window as unknown as { __holdSuspended?: boolean }).__holdSuspended = true;
+}
 
 test.describe("Early Access v2.1 sounds", () => {
   test("the logo's three beats are heard on its animation's beats, even when the page stalls", async ({ page }) => {
@@ -226,5 +239,48 @@ test.describe("Early Access v2.1 sounds", () => {
     const log = await read(page);
     expect(await page.evaluate(() => (window as unknown as { __ac: AudioContext }).__ac.state)).toBe("running");
     expect(log.starts.filter((s) => s.hz === 1567.98 && s.type === "triangle" && s.perf > log.suspendedAt!).length, "the ID's ticks were heard after the pause").toBeGreaterThan(0);
+  });
+
+  /* Sol, 15 Nov, laptop: no sound at all, presses included. The context stayed suspended
+     (Firefox never settles resume(); WebKit stays suspended until the device starts) and
+     every cue returned before start(). Two presses must not both stay armed. */
+  test("a context that has never reached running still starts the press and the reveal, and a second press replaces the first", async ({ page }) => {
+    await page.addInitScript(holdSuspended);
+    await page.addInitScript(instrument);
+    await page.goto("/early-access");
+    await page.getByPlaceholder("you@yourexchange.com").click();
+    await page.getByPlaceholder("you@yourexchange.com").fill(`snd-${unique()}@example.com`);
+    await page.getByPlaceholder("you@yourexchange.com").press("Enter");
+    await expect.poll(async () => (await read(page)).starts.some((s) => s.hz === 659.3 || s.hz === 987.8), { timeout: 5000, message: "the Enter chime was scheduled while the context was still suspended" }).toBe(true);
+    const armed = await page.evaluate(() => {
+      const el = document.querySelector("[data-sc-name]");
+      const key = el && Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      type Fiber = { return?: Fiber; stateNode?: { logic?: { _tone: (k: string, w?: number) => void; _cueAt: (k: string, at: number) => void } } };
+      let fiber: Fiber | null = key ? (el as unknown as Record<string, Fiber>)[key] : null;
+      let logic: NonNullable<NonNullable<Fiber["stateNode"]>["logic"]> | null = null;
+      while (fiber) {
+        const found = fiber.stateNode && fiber.stateNode.logic;
+        if (found && found._tone && found._cueAt) { logic = found; break; }
+        fiber = fiber.return || null;
+      }
+      if (!logic) return null;
+      const W = window as unknown as { __aud: Log };
+      const before = W.__aud.disc.length;
+      const ac = (logic as unknown as { _ac?: { state: string } })._ac;
+      logic._tone("tap");
+      logic._tone("tap");
+      /* a reveal beat whose moment is close: placed at once, on the same path as the logo */
+      logic._cueAt("bloom", performance.now() + 250);
+      return { before, state: ac ? ac.state : "none" };
+    });
+    expect(armed, "the page logic was there to play").not.toBeNull();
+    expect(armed!.state, "the test context stayed suspended").toBe("suspended");
+    await expect.poll(async () => (await read(page)).starts.some((s) => s.hz === 65.41), { timeout: 5000, message: "the reveal's bloom was scheduled while the context was still suspended" }).toBe(true);
+    const log = await read(page);
+    const taps = log.starts.filter((s) => s.hz === 1760);
+    expect(taps.length, "both taps asked the audio clock to start").toBeGreaterThanOrEqual(2);
+    /* A frozen clock would put both presses on the same instant. That is the burst. The first must have been disconnected. */
+    const stacked = taps.filter((s) => Math.abs(s.when - taps[0]!.when) < 0.002);
+    if (stacked.length >= 2) expect(log.disc.length, "the first press was called off so the two could not stack").toBeGreaterThan(armed!.before);
   });
 });
