@@ -67,7 +67,7 @@ describe("POST /pin", () => {
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toEqual({ ok: true, strength: "strong" });
     const account = await loadAccount(handle.db, r.id);
-    expect(account.pinHash).not.toContain("4821");
+    expect(account.pinHash).toMatch(/^\$argon2id\$/);
     expect(await verifyPassword("4821", account.pinHash!)).toBe(true);
     expect(account.pinSetAt).not.toBeNull();
   });

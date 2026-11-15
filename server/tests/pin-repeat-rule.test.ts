@@ -121,7 +121,7 @@ describe("PIN writers", () => {
          refused, the rest labelled), SIGNUP-LOGIC §3.3, asserted below. */
       /* the desk opening copies that same checked hash to the owner's staff row */
       ["onboarding/signup-open.ts", "account.pinHash"],
-      ["onboarding/signup-pin.ts", "await hashPin(pin)"],
+      ["onboarding/signup-pin.ts", "await hashSignupSecret(pin)"],
       ["routes/admin.ts", "await hashPin(pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],

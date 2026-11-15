@@ -24,7 +24,7 @@ import { schema } from "../db/index.js";
 import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { clientIp } from "../auth/client-ip.js";
-import { hashPassword } from "../auth/password.js";
+import { hashSignupSecret } from "../auth/password.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { idTail, operatingNameOf, type IdDoor } from "../onboarding/cd-id-door.js";
 import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredential, type Account } from "../onboarding/signup-account.js";
@@ -99,7 +99,9 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/passkey/options", async (req, reply) => {
     const r = await reservation(req, reply);
     if (!r) return;
-    const options = await passkeyOptions(db, relyingParty(env), {
+    const rp = relyingParty(env);
+    if (!rp) return reply.code(503).send({ error: "passkey_unavailable", detail: "Passkeys aren't configured here yet. Choose another way." });
+    const options = await passkeyOptions(db, rp, {
       enquiryId: r.row.id, accountId: r.account.accountId, cdId: r.cdId, operatingName: operatingNameOf(r.row), attemptHash: attemptOf(req, reply),
     });
     return { options };
@@ -113,7 +115,9 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!parsed.success || !attempt) return reply.code(400).send({ error: "invalid_request" });
     /* zod has checked every field the library reads; the type is the library's. */
     const response = parsed.data.response as unknown as RegistrationResponseJSON;
-    const result = await verifyPasskey(db, relyingParty(env), { enquiryId: r.row.id, attemptHash: attempt, response });
+    const rp = relyingParty(env);
+    if (!rp) return reply.code(503).send({ error: "passkey_unavailable" });
+    const result = await verifyPasskey(db, rp, { enquiryId: r.row.id, attemptHash: attempt, response });
     if (!result.ok) {
       door.fail(r.cdId, r.connection, `passkey_${result.reason}`);
       return reply.code(400).send({ error: "passkey_not_saved", detail: "The passkey wasn't created. Nothing was saved. Try again, or choose another way." });
@@ -178,7 +182,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       return reply.code(verdict.reason === "check_unavailable" ? 503 : 422).send({ error: `password_${verdict.reason}`, detail: verdict.detail });
     }
     const saved = await saveCredential(db, r.row.id, {
-      kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashPassword(parsed.data.password),
+      kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashSignupSecret(parsed.data.password),
     });
     return { ok: true, kind: "password", state: saved.state, codeSent: await codeAfterSave(r) };
   });

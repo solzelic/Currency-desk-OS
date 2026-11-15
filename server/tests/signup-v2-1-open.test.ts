@@ -101,7 +101,7 @@ beforeAll(async () => {
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });
   door = createIdDoor({ db: handle.db, logRefusal: () => {} });
   const mail = async (to: string, _s: string, body: { text: string }) => { inbox.push({ to, text: body.text }); return "simulated" as const; };
-  registerCredentialRoutes(app, handle.db, door, { breachRange: async () => "", mail });
+  registerCredentialRoutes(app, handle.db, door, { breachRange: async () => "00000000000000000000000000000000000:0", mail });
   registerSignupEmailRoutes(app, handle.db, door, { mail });
   registerSignupDeskRoutes(app, handle.db, door, { stripe: () => fakeStripe });
   registerBillingRoutes(app, handle.db);

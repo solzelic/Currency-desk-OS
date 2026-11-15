@@ -28,10 +28,18 @@ export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 export type RelyingParty = { id: string; name: string; origins: string[] };
 
-export function relyingParty(env: NodeJS.ProcessEnv = process.env): RelyingParty {
-  const id = (env.WEBAUTHN_RP_ID ?? "currencydeskos.com").trim();
-  const listed = (env.WEBAUTHN_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean);
-  const origins = listed.length ? listed : [`https://${id}`, `https://www.${id}`];
+/** RP binding is permanent. Missing or invalid deployment config fails closed. */
+export function relyingParty(env: NodeJS.ProcessEnv = process.env): RelyingParty | null {
+  const id = env.WEBAUTHN_RP_ID?.trim().toLowerCase();
+  const origins = (env.WEBAUTHN_ORIGINS ?? "").split(",").map(o => o.trim()).filter(Boolean);
+  if (!id || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id) || !origins.length) return null;
+  for (const origin of origins) {
+    let url: URL;
+    try { url = new URL(origin); } catch { return null; }
+    if (url.origin !== origin || url.username || url.password
+      || !(url.hostname === id || url.hostname.endsWith(`.${id}`))
+      || !(url.protocol === "https:" || (id === "localhost" && url.protocol === "http:" && env.NODE_ENV !== "production"))) return null;
+  }
   return { id, name: "CurrencyDesk", origins };
 }
 
@@ -98,7 +106,7 @@ export async function verifyPasskey(
       supportedAlgorithmIDs: [-7, -257],
     });
   } catch (err) {
-    console.warn(`[signup passkey] refused: ${err instanceof Error ? err.message.slice(0, 120) : "error"}`);
+    console.warn(`[signup passkey] refused: ${err instanceof Error ? err.name : "error"}`);
     return { ok: false, reason: "not_verified" };
   }
   const info = verification.registrationInfo;

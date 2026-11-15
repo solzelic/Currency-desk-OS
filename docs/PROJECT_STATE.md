@@ -1,3 +1,11 @@
+<!-- CD-206 review in progress; not whole-slice acceptance. -->
+**2026-11-15 — sign-up credential review corrections.** New v2.1 password and
+PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
+hashes. WebAuthn now requires explicit RP/origin configuration. Malformed breach
+responses fail closed, and OIDC parses provider responses and rejects future
+validity/other authorized parties. The page, Day 1, provider/device verification,
+remaining server review and protected-surface CTO approval remain outstanding.
+
 # PROJECT_STATE — what is true now
 
 This document describes the present. It is not a changelog (git history and

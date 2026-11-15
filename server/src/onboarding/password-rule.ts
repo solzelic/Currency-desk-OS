@@ -51,7 +51,11 @@ export async function isBreached(pw: string, fetchRange: RangeFetch, timeoutMs =
   const prefix = hex.slice(0, 5);
   const suffix = hex.slice(5);
   const body = await fetchRange(prefix, AbortSignal.timeout(timeoutMs));
-  for (const line of body.split(/\r?\n/)) {
+  const lines = body.trim().split(/\r?\n/);
+  if (body.length > 2_000_000 || !lines.every(line => /^[0-9A-F]{35}:[0-9]+$/.test(line.trim()))) {
+    throw new Error("invalid breach-range response");
+  }
+  for (const line of lines) {
     const [s, count] = line.trim().split(":");
     if (s === suffix && Number(count) > 0) return true;
   }
