@@ -51530,7 +51530,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       body: configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
-      "data-testid": "persona-connection",
+      "data-testid": configured ? 'persona-connection' : 'persona-not-connected',
       style: {
         color: CD.mute
       }

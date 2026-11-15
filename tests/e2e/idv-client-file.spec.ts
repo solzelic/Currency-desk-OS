@@ -65,15 +65,17 @@ test("a stored check does not say Persona is not connected", async ({ page }) =>
        VALUES ($1, 'le-yorkfx-canada', 'br-yorkville', 'tnt-yorkfx:m.costa', 'persona', $2, 'approved', $3)`,
       [`ref_${clientId}`, `inq_${clientId}`, clientId],
     );
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText("Passed Check Client", { exact: true }).click();
+    const file = page.locator(".client-file");
+    await expect(file.getByTestId("identity-check")).toContainText("Check passed");
+    await expect(file.getByTestId("identity-check")).toContainText("ID details are not saved from this check yet.");
+    await expect(file.getByTestId("identity-check").getByRole("button", { name: "Start identity check" })).toHaveCount(0);
+    await expect(file.getByTestId("client-identity")).not.toContainText("Persona is not connected");
+    await expect(file).toContainText("Missing ID");
   } finally {
+    await db.query(`DELETE FROM idv_inquiries WHERE client_id = $1`, [clientId]);
+    await db.query(`UPDATE idv_shop_config SET checks_enabled = false WHERE shop_id = 'le-yorkfx-canada'`);
     await db.end();
   }
-  await page.locator('[data-app="clients"]').click();
-  await page.getByText("Passed Check Client", { exact: true }).click();
-  const file = page.locator(".client-file");
-  await expect(file.getByTestId("identity-check")).toContainText("Check passed");
-  await expect(file.getByTestId("identity-check")).toContainText("ID details are not saved from this check yet.");
-  await expect(file.getByTestId("identity-check").getByRole("button", { name: "Start identity check" })).toHaveCount(0);
-  await expect(file.getByTestId("client-identity")).not.toContainText("Persona is not connected");
-  await expect(file).toContainText("Missing ID");
 });
