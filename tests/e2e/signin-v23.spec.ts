@@ -113,15 +113,17 @@ async function capture(page: Page, state: string, size: string) {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
   const spec = await measure(page, '.si23');
+  // Preserve candidate evidence even if overflow, viewport or fixture hashes fail.
+  await test.info().attach(`${state}.${size}.candidate.png`, { body:await page.screenshot(), contentType:'image/png' });
+  await test.info().attach(`${state}.${size}.candidate.json`, { body:JSON.stringify(spec), contentType:'application/json' });
   expect(spec.pageScrolls).toBe(false);
   expect(spec.horizontalOverflow).toBe(false);
   // Original first-screen phone sheet may scroll; compare its measurements below.
   if (!['small', 'phone'].includes(size) || state.startsWith('02')) expect(spec.scrollers).toEqual([]);
   if (size !== 'compact') {
-    const reference: { elements: ElementMeasure[]; scrollers: unknown[] } = JSON.parse(readFileSync(`tests/fixtures/signin-v23/${state}.${size}.json`, 'utf8'));
+    const reference: { viewport: number[]; elements: ElementMeasure[]; scrollers: unknown[] } = JSON.parse(readFileSync(`tests/fixtures/signin-v23/${state}.${size}.json`, 'utf8'));
+    expect(spec.viewport, `${state}.${size} supplied viewport`).toEqual(reference.viewport);
     const renderedReference = await referenceInBrowser(page, state, size);
-    await test.info().attach(`${state}.${size}.candidate.png`, { body:await page.screenshot(), contentType:'image/png' });
-    await test.info().attach(`${state}.${size}.candidate.json`, { body:JSON.stringify(spec), contentType:'application/json' });
     const missing = reference.elements.filter(original => !spec.elements.some(actual => sameElement(original, actual)));
     expect(missing.map(e => e.text).sort()).toEqual((state.startsWith('01') ? ['G', ...(state === '01-signin-id' ? ['Signing in to', 'York Currency Exchange'] : [])] : []).sort());
     if (!reference.scrollers.length) expect(spec.scrollers).toEqual([]);
@@ -142,7 +144,12 @@ async function capture(page: Page, state: string, size: string) {
       if (!adjustedBox) for (const key of ['x','y','w','h'] as const) {
         if (key === 'y' && state === '01-signin-id' && size === 'small') continue; // absent 37px unverified shop lede
         if (key === 'w' && state.startsWith('01') && phone && actual.tag === 'input') continue;
-        expect(Math.abs(actual[key] - geometry[key]), `${state}.${size} ${actual.text} ${key}`).toBeLessThanOrEqual(1);
+        // Prototype fit() stores a vertical margin before web fonts load.
+        // Its fallback-font-dependent y is not a portable oracle. Keep the
+        // supplied y for these hero lines; x/width/height still use the replay.
+        const frozenHeroY = key === 'y' && state.startsWith('01') && !phone
+          && ['Sign in','Open  desk','the'].includes(actual.text);
+        expect(Math.abs(actual[key] - (frozenHeroY ? original[key] : geometry[key])), `${state}.${size} ${actual.text} ${key}`).toBeLessThanOrEqual(1);
       }
       const font = actual.text === 'OS' ? 'IBM Plex Mono 800 10px/normal ls 1px'
         : actual.text === 'Recommended' ? 'IBM Plex Mono 700 10px/normal ls 1.4px' : original.font;

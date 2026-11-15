@@ -157,3 +157,13 @@ legacy lock wording only alongside the server policy. These are recorded Opus
 nonblocking follow-ups, not accepted final design. The /signup navigation uses
 the current live route instead of the caller’s old signup overlay as BUILD §5
 allows. Also, Back reuses CD-208 semantics without claiming it Done.
+
+The prototype computes its desktop/laptop hero's vertical margin before web
+fonts load. That margin depends on the operating system's fallback fonts. For
+first-screen “Sign in”, “Open desk” and “the”, the asserted y position therefore
+remains the supplied JSON value at 1px tolerance. Their x, width and height use
+the same-browser replay; no box check is dropped. The existing complete-ID
+exception for the omitted, unverified shop line remains unchanged. Tests also
+assert the actual viewport equals the supplied JSON viewport. Candidate PNG/JSON
+is attached before overflow, viewport and reference-hash assertions; reference
+evidence is attached after the fixture passes integrity checks.
