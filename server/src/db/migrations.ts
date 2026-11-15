@@ -107,6 +107,11 @@ export const migrations: readonly Migration[] = [
      the placeholder score threshold. 074 is the Persona inquiry client
      on PR 722, so this file follows it. */
   ["075_sanctions_lists", "src/db/migrations/075_sanctions_lists.sql"],
+  /* 076 is the screen result, the review queue, and the PEP answer. */
+  ["076_sanctions_reviews", "src/db/migrations/076_sanctions_reviews.sql"],
+  /* 077 names the shop's compliance officer, keeps review decisions for
+     5 years, and refuses clearing a confirmed match. */
+  ["077_sanctions_review_rules", "src/db/migrations/077_sanctions_review_rules.sql"],
 ] as const;
 
 type MigrationReader = {

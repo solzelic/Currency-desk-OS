@@ -1,6 +1,8 @@
+import type pg from "pg";
 import type { ListEntry } from "./match.js";
 import type { ListSource } from "./sources.js";
 import { LIST_SOURCES } from "./sources.js";
+import { rescreenAll } from "./gate.js";
 import { latestGood, markUnchanged, sha256, storeFailed, storeGood, type SqlDb } from "./store.js";
 
 export type FetchBody = (url: string) => Promise<{ ok: boolean; status: number; body: string }>;
@@ -64,7 +66,12 @@ export function listShrank(previousCount: number, nextCount: number): boolean {
   return nextCount * 10 < previousCount * 9;
 }
 
-export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): Promise<"good" | "unchanged" | "failed"> {
+export async function fetchOne(
+  db: SqlDb,
+  source: ListSource,
+  get: FetchBody,
+  pool?: pg.Pool | null,
+): Promise<"good" | "unchanged" | "failed"> {
   const previous = await latestGood(db, source.key);
   let downloaded: { ok: boolean; status: number; body: string };
   try {
@@ -101,37 +108,55 @@ export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): P
     await markUnchanged(db, previous.snapshotId, source.key);
     return "unchanged";
   }
+  let stored: { added: number; removed: number };
   try {
-    await storeGood(db, source, downloaded.body, entries, previous);
+    stored = await storeGood(db, source, downloaded.body, entries, previous);
   } catch (err) {
     await storeFailed(db, source, err instanceof Error ? err.message : "store failed", previous);
     return "failed";
   }
+  if ((stored.added > 0 || stored.removed > 0) && pool) {
+    try { await rescreenAll(pool); }
+    catch (err) { console.error(`[sanctions] rescreen failed: ${err instanceof Error ? err.name : "Error"}`); }
+  }
   return "good";
 }
 
-export async function fetchAll(db: SqlDb, get: FetchBody = fetchOfficial, sources: readonly ListSource[] = LIST_SOURCES): Promise<void> {
+export async function fetchAll(
+  db: SqlDb,
+  get: FetchBody = fetchOfficial,
+  sources: readonly ListSource[] = LIST_SOURCES,
+  pool?: pg.Pool | null,
+): Promise<void> {
   for (const source of sources) {
     try {
-      await fetchOne(db, source, get);
+      await fetchOne(db, source, get, pool);
     } catch (err) {
       console.error(`[sanctions] ${source.key} store failed: ${err instanceof Error ? err.name : "Error"}`);
     }
   }
 }
 
-export function startSanctionsFetch(db: SqlDb, get: FetchBody = fetchOfficial): () => void {
+export function startSanctionsFetch(
+  db: SqlDb,
+  pool: pg.Pool | null,
+  get: FetchBody = fetchOfficial,
+): { stop: () => void; ready: Promise<void> } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
-  const run = () => {
-    void fetchAll(db, get).finally(() => {
+  const run = (): Promise<void> => {
+    const ready = fetchAll(db, get, LIST_SOURCES, pool).finally(() => {
       if (stopped) return;
       timer = setTimeout(run, DAY_MS);
     });
+    return ready;
   };
-  run();
-  return () => {
-    stopped = true;
-    if (timer) clearTimeout(timer);
+  const ready = run();
+  return {
+    ready,
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
   };
 }

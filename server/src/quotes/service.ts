@@ -19,6 +19,7 @@ import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
 import { RATES_SYNC_HEADROOM_SECONDS, ratesSyncIntervalMs } from "../rates/sync-interval.js";
 import { dealMarginPct, enforceOf, floorFor, readDeskSettings } from "../rates/guardrails.js";
+import { holdForCustomer, TELLER_HOLD_MESSAGE } from "../screening/gate.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -766,7 +767,11 @@ export class QuoteService {
          post without a reason, or a manager's rate override and its reason.
          "warn" posts. Either way it is logged once the deal has posted. */
       const belowFloor = await this.belowFloor(client, actor, value, capture?.marginOverrideReason);
+      const screen = await holdForCustomer(client, actor, String(q.customer_id), quoteId);
       await client.query("COMMIT");
+      client.release();
+      released = true;
+      if (screen.hold) throw new LedgerError("NEEDS_REVIEW", TELLER_HOLD_MESSAGE);
       /* The quote check is its own transaction, and it has committed.
          The deal is the next transaction, on its own connection, inside
          postFrozenQuote: the frozen terms, the idempotency row, and the
@@ -774,8 +779,6 @@ export class QuoteService {
          retries there. Holding this connection while that one is
          acquired waits forever once every connection is in the same
          wait. The pool has no acquire timeout. */
-      client.release();
-      released = true;
       const posted = await this.ledger.postFrozenQuote(
         actor,
         {
@@ -817,7 +820,9 @@ export class QuoteService {
             JSON.stringify({ quoteId, transactionRef: (posted as { transactionRef?: string }).transactionRef ?? null, ...belowFloor })],
         );
       }
-      return this.forReader(role, posted, false);
+      const body = this.forReader(role, posted, false);
+      if (screen.outcome === "not_screened") return { ...body, screening: "Not screened" };
+      return body;
     } catch (e) {
       if (!released) await client.query("ROLLBACK");
       throw e;

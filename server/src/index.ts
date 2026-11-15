@@ -33,7 +33,7 @@ for (const key of ["QUOTE_TTL_SECONDS", "RATE_BOARD_MAX_AGE_SECONDS", "QUOTE_OVE
 if (process.env.NODE_ENV === "production" && (!process.env.DATABASE_URL || !process.env.SEED_PASSWORD)) throw new Error("DATABASE_URL and SEED_PASSWORD are required in production.");
 if (process.env.NODE_ENV === "production" && !process.env.PLATFORM_MFA_KEY?.trim()) throw new Error("PLATFORM_MFA_KEY is required in production.");
 
-export async function bootServer(): Promise<{ app: FastifyInstance; db: Db }> {
+export async function bootServer(): Promise<{ app: FastifyInstance; db: Db; pool: import("pg").Pool | null }> {
   const handle = await createDb();
 // seed on every boot — it's idempotent (onConflictDoNothing throughout), so
 // an empty database gets the demo tenant/staff/board and an existing one is
@@ -139,10 +139,10 @@ if (shouldPopulateDemoDesk()) {
   // database edit. The gap is 30 minutes to 24 hours
   // (SITE_DOMAIN_REFRESH_MINUTES) so an idle Neon database can suspend.
   startSiteDomainRefresh(handle.db, siteDomainRefreshIntervalMs(process.env.SITE_DOMAIN_REFRESH_MINUTES));
-  return { app, db: handle.db };
+  return { app, db: handle.db, pool: handle.pool };
 }
 
-export async function listenServer(app: FastifyInstance, db: Db): Promise<void> {
+export async function listenServer(app: FastifyInstance, db: Db, pool: import("pg").Pool | null = null): Promise<void> {
   const port = Number(process.env.PORT ?? 8787);
   // bind all interfaces in production (Render/Railway route external traffic);
   // loopback-only in dev
@@ -163,7 +163,7 @@ export async function listenServer(app: FastifyInstance, db: Db): Promise<void> 
   /* Daily official-list fetch. A failure keeps the last good list.
      SCREENING_FETCH=off is the test harness. Production leaves it unset. */
   if (process.env.SCREENING_FETCH !== "off") {
-    startSanctionsFetch(db);
+    startSanctionsFetch(db, pool);
   }
 }
 
@@ -173,5 +173,5 @@ const invokedDirectly = process.argv[1] !== undefined
   && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   const started = await bootServer();
-  await listenServer(started.app, started.db);
+  await listenServer(started.app, started.db, started.pool);
 }

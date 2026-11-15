@@ -75,6 +75,38 @@ does not fetch that file. If the numbered headings or either label
 disappear, the parser throws and the fetch is a failure. The last good
 list stays.
 
+## Hold
+
+A possible match, or a confirmed one, stops `POST /api/quotes/:id/post`.
+The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. Your compliance officer will review this." }`.
+Only the shop's named compliance officer uses `GET /api/screening/reviews`.
+When nobody is named, nobody can decide and holds stay held. The hold prompt is exactly "Name your compliance officer. Every MSB must have one." and it opens the Settings field. The owner may name themselves there, and then they decide. A teller, a supervisor, an auditor, and a branch manager cannot.
+Decisions are append-only and kept for 5 years. Clearing one listed person
+does not clear the others: every candidate at or above the threshold is
+held and reviewed on its own. Confirming keeps the deal held and opens a
+task, in these words: "File a listed person or entity property report
+(LPEPR) with FINTRAC without delay, and disclose to the RCMP and CSIS."
+The desk records when that task was done and by whom. It does not file
+the report. A confirmed match cannot be cleared. A review or task id from
+another shop is 404. A changed list re-screens existing clients through
+the same pool `listenServer` passes to the daily fetch. Each screening
+row stores the snapshot id and content hash of every list it used.
+While `signed_off` is false the outcome is never `clear`, though a match
+is still held. If any required list is missing or older than 24 hours,
+the outcome is `not_screened` rather than cleared against the lists that
+remain. The same hold runs before a quote post, a cheque cashing, a
+remittance send or receive, a bill payment, a money order, and paying out an
+open obligation. A blank
+customer name is held. A client's aliases are matched. The client write
+API refuses a caller-supplied `screeningOutcome`. A failed screen opens a
+review instead of posting. The client file and the tiles read the stored
+outcome and the open-review count.
+
+Tiers 1 and 2 (`quick` and `verify` as well as `1` and `2`) record whether
+the client said they are a politically exposed person, and the date.
+`server/src/screening/provider.ts` is the later vendor seam for PEP and
+adverse media. Nothing calls it.
+
 ## Schedule
 
 `listenServer` fetches these three once a day. `SCREENING_FETCH=off` skips

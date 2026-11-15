@@ -12,26 +12,45 @@ export type NameHit = {
   matchedName: string;
 };
 
+function subjectNames(subject: { name: string; aliases?: readonly string[] }): string[] {
+  const names = [subject.name, ...(subject.aliases ?? [])];
+  return names.map((name) => name.trim()).filter(Boolean);
+}
+
+/** Every list entry at or above the threshold. A cleared key is the caller's to skip. */
+export function matchesAbove(
+  subject: { name: string; aliases?: readonly string[]; dob?: string | null },
+  entries: readonly ListEntry[],
+  threshold: number,
+): NameHit[] {
+  const names = subjectNames(subject);
+  const hits: NameHit[] = [];
+  for (const entry of entries) {
+    if (!names.length) continue;
+    let top = 0;
+    let matchedName = entry.names[0] ?? "";
+    for (const name of names) {
+      for (const listed of entry.names) {
+        const score = scoreNames(name, listed);
+        if (score > top) {
+          top = score;
+          matchedName = listed;
+        }
+      }
+    }
+    if (dobConflict(subject.dob, entry.dobs)) continue;
+    if (top >= threshold) hits.push({ score: top, entry, matchedName });
+  }
+  hits.sort((left, right) => right.score - left.score);
+  return hits;
+}
+
 export function bestMatch(
-  subject: { name: string; dob?: string | null },
+  subject: { name: string; aliases?: readonly string[]; dob?: string | null },
   entries: readonly ListEntry[],
   threshold: number,
 ): NameHit | null {
-  let best: NameHit | null = null;
-  for (const entry of entries) {
-    let top = 0;
-    let matchedName = entry.names[0] ?? "";
-    for (const name of entry.names) {
-      const score = scoreNames(subject.name, name);
-      if (score > top) {
-        top = score;
-        matchedName = name;
-      }
-    }
-    if (dobConflict(subject.dob, entry.dobs)) top = 0;
-    if (top >= threshold && (!best || top > best.score)) best = { score: top, entry, matchedName };
-  }
-  return best;
+  return matchesAbove(subject, entries, threshold)[0] ?? null;
 }
 
 export function diffKeys(previous: readonly string[], next: readonly string[]): { added: string[]; removed: string[] } {

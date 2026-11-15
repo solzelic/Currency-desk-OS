@@ -275,6 +275,24 @@
       postQuote: function (quoteId, payload) {
         return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", body: JSON.stringify(payload) });
       },
+      screenIdCheck: function (payload) {
+        return request("/api/screening/id-check", { method: "POST", body: JSON.stringify(payload) });
+      },
+      screeningDesk: function () {
+        return request("/api/screening/desk");
+      },
+      screeningOfficer: function () {
+        return request("/api/screening/officer");
+      },
+      nameSelfOfficer: function () {
+        return request("/api/screening/officer", { method: "PUT", body: "{}" });
+      },
+      listReviews: function () {
+        return request("/api/screening/reviews");
+      },
+      decideReview: function (reviewId, action, reason) {
+        return request("/api/screening/reviews/" + encodeURIComponent(reviewId) + "/" + action, { method: "POST", body: JSON.stringify({ reason: reason }) });
+      },
       reverseTransaction: function (transactionId, payload) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/reversal", { method: "POST", body: JSON.stringify(payload) });
       },
@@ -846,6 +864,7 @@
       risk: RISK_OUT[record.riskRating] || "Normal",
       verificationStatus: record.verificationStatus,
       screeningOutcome: record.screeningOutcome || null,
+      screeningOpenReviews: Number(record.screeningOpenReviews) || 0,
       screeningMatched: record.screeningMatched || null,
       incorpDate: record.incorporationDate || "",
       jurisdiction: record.incorporationJurisdiction || "",

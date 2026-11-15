@@ -118,6 +118,15 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   The list addresses and the placeholder threshold are
   `docs/SANCTIONS_LISTS.md`. The daily fetch starts in `listenServer`
   unless `SCREENING_FETCH` is `off`.
+- Migration `076_sanctions_reviews` adds the screen result, the review
+  queue, the decision log, and the client's PEP answer. Migration
+  `077_sanctions_review_rules` names the shop's compliance officer, keeps
+  decisions for 5 years, and refuses clearing a confirmed match.
+  A quote, a cheque, a remittance, a bill, and a money order all pass
+  one hold. `POST /api/quotes/:id/post` holds a possible or confirmed match.
+  `GET /api/screening/reviews` is the named compliance officer. A teller
+  gets 403. `POST /api/screening/id-check` runs on every tier. Tiers 1 and
+  2 store the client's PEP answer. No vendor is called.
 - Migration `072_enquiry_v2_1` adds `enquiries.cd_id` (unique), `waitlist_reason`
   (checked: `outside-canada` or `not-fintrac-registered`), `invite_code`
   (unique) and `place_in_line` for Early Access v2.1 (CD-179 to CD-183). The

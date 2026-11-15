@@ -294,12 +294,67 @@
   function Screening() {
     const pack = window.CDOS.deskPack ? window.CDOS.deskPack() : null;
     const note = screeningNote(pack);
+    const [queue, setQueue] = useState(null);
+    const [canReview, setCanReview] = useState(false);
+    const [reasons, setReasons] = useState({});
+    const [busy, setBusy] = useState(false);
+    const [actionError, setActionError] = useState('');
+    const [officerNamed, setOfficerNamed] = useState(null);
+    const [deskLabel, setDeskLabel] = useState('Not screened');
+    const load = () => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.listReviews) return;
+      if (window.CDOS.Backend.screeningDesk) {
+        window.CDOS.Backend.screeningDesk()
+          .then((desk) => {
+            setDeskLabel(desk && desk.label ? desk.label : 'Not screened');
+            setOfficerNamed(!!(desk && desk.officerNamed));
+          })
+          .catch(() => setDeskLabel('Not screened'));
+      }
+      window.CDOS.Backend.listReviews()
+        .then((data) => { setQueue(data); setCanReview(true); })
+        .catch(() => { setQueue(null); setCanReview(false); });
+    };
+    useEffect(load, []);
+    const decide = (reviewId, action) => {
+      const reason = (reasons[reviewId] || '').trim();
+      if (!reason || busy || !window.CDOS.Backend) return;
+      setBusy(true);
+      setActionError('');
+      window.CDOS.Backend.decideReview(reviewId, action, reason)
+        .then(() => { setReasons((prev) => ({ ...prev, [reviewId]: '' })); load(); })
+        .catch(() => setActionError('That did not save. Try again.'))
+        .then(() => setBusy(false));
+    };
     return (<div className="p-4" data-testid="sanctions-not-connected">
-      <div className="flex flex-col items-center justify-center text-center py-16 px-6" style={{ border: `1px dashed ${CD.line}`, borderRadius: 12 }}>
-        <span className="grid place-items-center" style={{ width: 44, height: 44, borderRadius: '50%', background: CD.lineSoft }}><Ic n="shield" s={22} c={CD.faint} /></span>
-        <div className="mt-3 text-sm font-semibold" style={{ color: CD.ink }}>Sanctions screening</div>
-        <div className="mt-2 text-[13px] leading-relaxed" style={{ color: CD.mute, maxWidth: 460 }}>{note}</div>
+      <div className="px-4 py-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
+        <div className="text-sm font-semibold" style={{ color: CD.ink }}>Screening</div>
+        <div className="mt-2 text-[13px] leading-relaxed" style={{ color: CD.mute, maxWidth: 520 }}>{note}</div>
+        <div className="mt-3 text-[13px]" data-testid="screening-status-copy" style={{ color: CD.ink }}>{deskLabel}</div>
       </div>
+      {officerNamed === false && <button type="button" data-testid="screening-name-officer" onClick={() => window.CDOS.openSettingsTab && window.CDOS.openSettingsTab('compliance')} className="mt-3 text-[13px] text-left" style={{ color: CD.ink, background: 'none', padding: 0, border: 0, textDecoration: 'underline', cursor: 'pointer' }}>Name your compliance officer. Every MSB must have one.</button>}
+      {actionError && <div className="mt-3 text-[13px]" data-testid="screening-action-error" role="alert" style={{ color: CD.ink }}>{actionError}</div>}
+      {canReview && <div className="mt-3" data-testid="screening-review-queue">
+        <div className="text-[12px] mb-2" data-testid="threshold-placeholder" style={{ color: CD.mute }}>The score threshold is a placeholder pending Compliance Officer sign-off.</div>
+        {queue && (queue.tasks || []).filter(task => !task.doneAt).map(task => (
+          <div key={task.taskId} data-testid="officer-task" className="text-[12px] mb-2" style={{ color: CD.ink }}>{task.instruction}</div>
+        ))}
+        {queue && queue.items && queue.items.length === 0 && <div className="text-[13px]" style={{ color: CD.mute }}>No reviews waiting.</div>}
+        {queue && (queue.items || []).map(item => (
+          <div key={item.reviewId} data-testid="screening-review-item" className="mb-2 px-3 py-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 10 }}>
+            <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{item.subjectName}</div>
+            {item.matchedName && <div className="text-[12px] mt-1" style={{ color: CD.ink }}>{item.matchedName}</div>}
+            <div className="text-[12px] mt-1" style={{ color: CD.mute }}>{item.status === 'confirmed' ? 'Confirmed. The deal stays held.' : 'Possible match. Clear it, or confirm it.'}</div>
+            {item.status === 'open' && <>
+              <input value={reasons[item.reviewId] || ''} onChange={e => setReasons((prev) => ({ ...prev, [item.reviewId]: e.target.value }))} placeholder="Reason" data-testid="screening-reason" className="w-full text-sm px-2.5 py-2 mt-2 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }} />
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => decide(item.reviewId, 'clear')} className="px-3 py-2 text-[12px] font-semibold" style={{ border: `1px solid ${CD.line}`, borderRadius: 8 }}>Clear</button>
+                <button type="button" onClick={() => decide(item.reviewId, 'confirm')} className="px-3 py-2 text-[12px] font-semibold" style={{ background: CD.ink, color: 'var(--cd-on-ink)', borderRadius: 8 }}>Confirm match</button>
+              </div>
+            </>}
+          </div>
+        ))}
+      </div>}
     </div>);
   }
 
@@ -736,6 +791,13 @@
   /* ===================== ROOT ===================== */
   function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
     const [tab, setTab] = useState(initialTab || 'screening');
+    const [screenTile, setScreenTile] = useState('Not screened');
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk()
+        .then((desk) => setScreenTile(desk && desk.openReviews > 0 ? String(desk.openReviews) : 'Not screened'))
+        .catch(() => setScreenTile('Not screened'));
+    }, [tab]);
     // Sealed filings (subs) are owned by the OS shell when present, so the menu-bar
     // compliance badge updates the instant a report seals here. Falls back to local
     // state + persistence when Compliance is mounted on its own.
@@ -874,7 +936,7 @@
         </div>
         {/* headline risk trio — mirrors the Dashboard's Compliance tiles so the two never disagree */}
         <div className="cd-tile-frame"><div className="cd-honest-tiles mt-3">
-          {[['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not connected', 'No list loaded', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
+          {[['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', screenTile, screenTile === 'Not screened' ? 'Not screened' : 'to review', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => { const bad = numeric && v > 0; const col = numeric ? (bad ? warn : CD.green) : CD.mute; return (
             <button key={l} data-testid={l === 'Screening' ? 'sanctions-screening-tile' : undefined} onClick={() => setTab(go)} className="text-left px-3 py-2.5" style={{ background: CD.panel, border: `1px solid ${bad ? col : CD.line}`, borderRadius: 11, transition: 'border-color .12s, box-shadow .12s' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 6px 16px -12px var(--cd-shade)'; }} onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; }}>
               <div className="flex items-center justify-between"><span className="text-[9.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</span><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} /></div>
