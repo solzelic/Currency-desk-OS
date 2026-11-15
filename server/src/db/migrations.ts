@@ -106,6 +106,8 @@ export const migrations: readonly Migration[] = [
   /* 075 is sign-up v2.1's owner account before the desk exists: its state,
      its credentials and one-use challenges. 074 is held by open PR #707. */
   ["075_signup_accounts", "src/db/migrations/075_signup_accounts.sql"],
+  /* 076 is sign-up v2.1's email code and enrolment session. */
+  ["076_signup_email_code", "src/db/migrations/076_signup_email_code.sql"],
 ] as const;
 
 type MigrationReader = {

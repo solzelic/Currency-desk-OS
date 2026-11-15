@@ -31,11 +31,13 @@ import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredentia
 import { passkeyOptions, relyingParty, verifyPasskey } from "../onboarding/passkey.js";
 import { checkPassword, pwnedRange, type RangeFetch } from "../onboarding/password-rule.js";
 import { PROVIDERS, fetchJson, finishSso, providerConfig, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
+import { sendSignupCode, type Mailer } from "../onboarding/email-code.js";
+import { sendEmail } from "../email.js";
 
 type Enquiry = typeof schema.enquiries.$inferSelect;
 type Reservation = { cdId: string; row: Enquiry; account: Account; connection: string };
 
-export type CredentialDeps = { breachRange?: RangeFetch; http?: FetchJson; env?: NodeJS.ProcessEnv };
+export type CredentialDeps = { breachRange?: RangeFetch; http?: FetchJson; env?: NodeJS.ProcessEnv; mail?: Mailer };
 
 const b64url = z.string().min(1).max(4096).regex(/^[A-Za-z0-9_-]+$/);
 const passkeyBody = z.object({
@@ -57,6 +59,15 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
   const env = deps.env ?? process.env;
   const http = deps.http ?? fetchJson;
   const breachRange = deps.breachRange ?? pwnedRange;
+  const mail = deps.mail ?? sendEmail;
+
+  /* The moment a credential is saved, the code goes to the email on file
+     (§3.2). A send refused for coming too soon still leaves the credential
+     saved; the inbox screen offers "Send it again" when the wait is over. */
+  async function codeAfterSave(r: Reservation): Promise<boolean> {
+    const result = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
+    return result.sent;
+  }
 
   /* The reservation this ID names, if it still takes a credential. Replies
      (404 / 409 / 429) and returns undefined otherwise. */
@@ -110,7 +121,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const saved = await saveCredential(db, r.row.id, {
       kind: "passkey", attemptHash: attempt, passkey: { ...result.passkey, deviceLabel: parsed.data.deviceLabel || "This device" },
     });
-    return { ok: true, kind: "passkey", state: saved.state };
+    return { ok: true, kind: "passkey", state: saved.state, codeSent: await codeAfterSave(r) };
   });
 
   app.get<{ Params: { ref: string; provider: string } }>("/api/onboarding/:ref/sso/:provider/start", async (req, reply) => {
@@ -150,7 +161,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       return reply.code(400).send({ error: "sso_not_saved", detail: "That sign-in didn't finish. Nothing was saved. Try again, or choose another way." });
     }
     const saved = await saveCredential(db, r.row.id, { kind: provider, attemptHash: attempt, sso: { subject: result.subject, tenant: result.tenant } });
-    return { ok: true, kind: provider, state: saved.state };
+    return { ok: true, kind: provider, state: saved.state, codeSent: await codeAfterSave(r) };
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/password", async (req, reply) => {
@@ -169,6 +180,6 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const saved = await saveCredential(db, r.row.id, {
       kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashPassword(parsed.data.password),
     });
-    return { ok: true, kind: "password", state: saved.state };
+    return { ok: true, kind: "password", state: saved.state, codeSent: await codeAfterSave(r) };
   });
 }

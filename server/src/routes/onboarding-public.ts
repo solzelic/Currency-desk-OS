@@ -39,6 +39,9 @@ import { clientIp } from "../auth/client-ip.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "./signup-credential.js";
+import { ownerDetails, registerSignupEmailRoutes } from "./signup-email.js";
+import { enrolmentFor } from "../onboarding/email-code.js";
+import { loadAccount } from "../onboarding/signup-account.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
   setVerifyState, verifyStateOf, type VerifyState,
@@ -197,6 +200,7 @@ const signUpUrl = (): string =>
 export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): void {
   const door = (idDoor = createIdDoor({ db }));
   registerCredentialRoutes(app, db, door);
+  registerSignupEmailRoutes(app, db, door);
 
   /* "Can't find your ID? Send it again." Always 202, whatever the email,
      before any lookup happens (SIGNUP-LOGIC §2.1). */
@@ -402,7 +406,15 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
        that exists always means the older page. */
     if (normalizeCdIdInput(req.params.ref) && !(await referenceExists(req.params.ref))) {
       const answer = await door.state(req.params.ref, clientIp(req));
-      return reply.code(answer.status).send(answer.body);
+      if (answer.status !== 200) return reply.code(answer.status).send(answer.body);
+      /* With this reservation's enrolment session (the email code has
+         passed), the owner's own details and where they stopped. Without
+         it, the shop's name and nothing else. */
+      const row = await door.findByCdId(normalizeCdIdInput(req.params.ref)!);
+      const enrolled = row ? await enrolmentFor(db, req, reply, row.id) : null;
+      if (!row || !enrolled) return answer.body;
+      const account = await loadAccount(db, row.id);
+      return { ...answer.body, signup: account.state, you: ownerDetails(row), lastStep: account.lastStep };
     }
     const a = await gateFor(req.params.ref, req.ip, reply);
     if (!a) return;
