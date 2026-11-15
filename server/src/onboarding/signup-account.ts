@@ -103,16 +103,15 @@ export function existingAttempt(req: FastifyRequest): string | null {
   return existing && /^[A-Za-z0-9_-]{43}$/.test(existing) ? sha256(existing) : null;
 }
 
-export type NewCredential = {
-  kind: CredentialKind;
-  attemptHash: string;
-  passkey?: {
-    id: string; publicKey: string; signCount: number; transports: string[];
-    aaguid: string; backupEligible: boolean; backupState: boolean; deviceLabel: string;
-  };
-  sso?: { subject: string; tenant: string | null };
-  passwordHash?: string;
+type PasskeyCredential = {
+  id: string; publicKey: string; signCount: number; transports: string[];
+  aaguid: string; backupEligible: boolean; backupState: boolean; deviceLabel: string;
 };
+export type NewCredential = { attemptHash: string } & (
+  | { kind: "password"; passwordHash: string; passkey?: never; sso?: never }
+  | { kind: "passkey"; passkey: PasskeyCredential; passwordHash?: never; sso?: never }
+  | { kind: Exclude<CredentialKind, "password" | "passkey">; sso: { subject: string; tenant: string | null }; passwordHash?: never; passkey?: never }
+);
 
 /* Save a candidate credential and move reserved → enrolling. The caller has
    already checked the account is not past enrolling. */

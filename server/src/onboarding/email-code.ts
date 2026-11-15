@@ -38,6 +38,7 @@ type Enquiry = typeof schema.enquiries.$inferSelect;
 export type Mailer = (to: string, subject: string, body: { text: string; html: string; sensitive?: boolean }) => Promise<EmailStatus>;
 
 export function signupCodeEmail(code: string, operatingName: string) {
+  // The replacement regexp matches exactly the five keys in this escape map.
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
   const subject = "Your CurrencyDesk code";
   const text = `Your code for ${operatingName} is ${code}.\n\nIt works for 10 minutes. Type it on the screen that asked for it.\n\nDidn't ask for this? You can ignore it; nothing opens without the code.`;

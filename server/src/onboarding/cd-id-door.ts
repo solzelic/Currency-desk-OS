@@ -121,6 +121,7 @@ export interface DoorDeps {
 }
 
 const escapeHtml = (s: string): string =>
+  // The regexp matches only the five defined map entries.
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /* "Send it again": the same ID, to the email they applied with. No link and

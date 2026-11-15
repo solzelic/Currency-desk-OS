@@ -72,7 +72,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
   /* Not configured → null → 503 with a plain line; nothing pretends to take a card. */
   const stripe = deps.stripe ?? (() => {
     const config = stripeBillingConfig();
-    return config ? (signupStripeClient(config) as unknown as SignupStripe) : null;
+    return config ? signupStripeClient(config) : null;
   });
   const enrolled = enrolledGuard(db, door);
 
@@ -95,7 +95,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
   /* What the application already told us fills a blank, never an answer
      they have since changed (the older page's rule too). */
   function seeded(row: Enquiry, saved: Record<string, unknown>): Record<string, unknown> {
-    const d = (row.details ?? {}) as Record<string, unknown>;
+    const d = row.details ?? {};
     const from: Record<string, unknown> = {
       operatingName: typeof d.shopName === "string" ? d.shopName : undefined,
       msbNumber: typeof d.msbNumber === "string" ? d.msbNumber : undefined,
@@ -130,12 +130,12 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const r = await enrolled(req, reply);
     if (!r) return;
     const row = await loadOrCreateOnboarding(db, r.row.id);
-    const d = (r.row.details ?? {}) as Record<string, unknown>;
+    const d = r.row.details ?? {};
     return {
       state: r.account.state,
       lastStep: r.account.lastStep ?? (r.account.pinHash ? "08-shop-name" : "06-pin-intro"),
       pinSet: !!r.account.pinHash,
-      answers: resumable(seeded(r.row, (row.answers ?? {}) as Record<string, unknown>)),
+      answers: resumable(seeded(r.row, row.answers ?? {})),
       pack: signupPack(typeof d.jurisdiction === "string" ? d.jurisdiction : null),
       you: ownerDetails(r.row),
       workspace: typeof d.workspace === "string" ? d.workspace.split(".")[0] : null,
@@ -148,8 +148,8 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const body = confirmBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: "Tick the declaration and sign with your name." });
     if (!r.account.pinHash) return reply.code(409).send({ error: "no_pin", detail: "Set your counter PIN first." });
-    if (!(await confirmDesk(db, r.row.id, body.data.name))) return reply.code(409).send({ error: "not_verified" });
-    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers as Record<string, unknown>;
+    if (!(await confirmDesk(db, r.row.id, body.data.name))) return reply.code(409).send({ error: "desk_incomplete", detail: "Complete your shop details and name your compliance officer before signing." });
+    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers ?? {};
     const legal = String(answers.bizName ?? answers.operatingName ?? "");
     return { ok: true, declaration: `I confirm these details are true, and I'm authorised to open this desk for ${declarationName(legal)}.` };
   });
@@ -167,7 +167,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (body.data.extras.website) return reply.code(409).send({ error: "website_coming_soon" });
     const client = stripe();
     if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });
-    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers as Record<string, unknown>;
+    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers ?? {};
     const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
     const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };
     try {
@@ -211,7 +211,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const { ob, session } = result;
     reply.setCookie(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", expires: session.expiresAt });
     reply.clearCookie(ENROLMENT_COOKIE, { path: "/api/onboarding" });
-    const answers = (ob.answers ?? {}) as Record<string, unknown>;
-    return { ok: true, tenantId: ob.tenantId, cdId, operatingName: String(answers.operatingName ?? (row.details as Record<string, unknown> | null)?.shopName ?? "") };
+    const answers = ob.answers ?? {};
+    return { ok: true, tenantId: ob.tenantId, cdId, operatingName: String(answers.operatingName ?? row.details?.shopName ?? "") };
   });
 }

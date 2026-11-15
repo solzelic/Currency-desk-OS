@@ -121,13 +121,14 @@ describe("PIN writers", () => {
          refused, the rest labelled), SIGNUP-LOGIC §3.3, asserted below. */
       /* the desk opening copies that same checked hash to the owner's staff row */
       ["onboarding/signup-open.ts", "account.pinHash"],
-      ["onboarding/signup-pin.ts", "await hashSignupSecret(pin)"],
+      ["onboarding/signup-pin.ts", "pinHash"],
       ["routes/admin.ts", "await hashPin(pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/staff.ts", "await hashPin(pin)"],
     ]);
+    expect(readFileSync(join(root, "onboarding/signup-pin.ts"), "utf8")).toContain("const pinHash = await hashSignupSecret(pin);");
     const pin = readFileSync(join(root, "routes/pin.ts"), "utf8");
     expect(pin.match(/weakPinDetail\(parsed\.data\.pin\)/g)).toHaveLength(3);
     for (const f of ["routes/admin.ts", "routes/staff.ts"]) expect(readFileSync(join(root, f), "utf8")).toMatch(/const pin = generatePin\(\);/);
@@ -160,7 +161,7 @@ describe("PIN writers", () => {
     expect(named(/seeded_by\s*=/i)).toEqual(["staging/pin-reset.ts"]);
     /* is_test_shop: provisioning from the two staging fresh-shop doors, and the reset marking the seed shop. */
     expect(named(/isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|isTestShop\s*=(?!=)|is_test_shop\s*=\s*true/)).toEqual(
-      ["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
+      ["db/schema.ts", "onboarding/provision.ts", "onboarding/signup-open.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
   });
 });
 

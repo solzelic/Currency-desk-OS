@@ -78,6 +78,7 @@ async function readyToPay() {
     ["08-shop-name", { operatingName: `Harbour Exchange ${n}`, bizName: "Harbour Exchange Inc." }],
     ["09-address", { street: "1420 Dundas St W", city: "Toronto", region: "ON", postal: "M6J 1Y5", addrManual: true }],
     ["14-currencies", { currencies: ["USD", "EUR"] }],
+    ["18-officer", { complianceMode: "me" }],
     ["19-idline", { idOver: "1000" }],
     ["20-team", { team: [{ first: "Samira", last: "Haddad", role: "Manager", email: "samira@harbourfx.test" }] }],
   ] as const) expect((await call("PUT", `${base}/answers`, { step, answers })).statusCode).toBe(200);
@@ -241,6 +242,26 @@ describe("activation consistency regressions", () => {
     const results = await Promise.all(Array.from({ length: 6 }, () => app.inject({ method: "POST", url: `${r.base}/open`, cookies })));
     expect(results.filter(response => response.statusCode === 200)).toHaveLength(1);
     expect(results.filter(response => response.cookies.some(c => c.name === "cdos_session"))).toHaveLength(1);
+  });
+
+  it("the server prices the saved three-location shop count and refuses a client quantity", async () => {
+    const r = await readyToPay();
+    await call("PUT", `${r.base}/answers`, { step: "11-shops-more", answers: { shops: "more", shopCount: 3 } });
+    await call("POST", `${r.base}/confirm`, { signed: true, name: "Daniel Okafor" });
+    expect((await call("POST", `${r.base}/plan`, { ...PLAN, locations: 99 })).statusCode).toBe(400);
+    const response = await call("POST", `${r.base}/plan`, { ...PLAN, plan: "full", term: "annual" });
+    expect(response.json().price).toMatchObject({ currency: "CAD", totalMinor: 161730, dueTodayMinor: 0 });
+    expect((await loadAccount(handle.db, r.id)).planChoice?.locations).toBe(3);
+  });
+  it("an unsupported billing country and an unnamed officer refuse without opening", async () => {
+    const r = await readyToPay();
+    await call("PUT", `${r.base}/answers`, { step: "18-officer", answers: { complianceMode: "else", compName: "" } });
+    expect((await call("POST", `${r.base}/confirm`, { signed: true, name: "Daniel Okafor" })).json().error).toBe("desk_incomplete");
+    await call("PUT", `${r.base}/answers`, { step: "18-officer", answers: { complianceMode: "me" } });
+    await call("POST", `${r.base}/confirm`, { signed: true, name: "Daniel Okafor" });
+    await handle.db.update(schema.enquiries).set({ details: { jurisdiction: "GB" } }).where(eq(schema.enquiries.id, r.id));
+    expect((await call("POST", `${r.base}/plan`, PLAN)).json().error).toBe("billing_country_unavailable");
+    expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
   });
 
 });

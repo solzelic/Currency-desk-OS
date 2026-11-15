@@ -14,6 +14,7 @@
    Hashed with Argon2id (the existing PIN verifier accepts both formats), never logged. The owner's PIN is local
    re-auth on a live session only (§3.3); it signs nobody in.
    ============================================================ */
+import { withSignupAccount } from "./signup-account.js";
 import { hashSignupSecret } from "../auth/password.js";
 import { and, eq } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
@@ -42,11 +43,15 @@ export function checkPin(pin: string, confirm: string): PinVerdict {
 
 /** Save the PIN for a verified account. False when the account is not verified. */
 export async function savePin(db: Db, enquiryId: string, pin: string): Promise<boolean> {
+  const pinHash = await hashSignupSecret(pin);
+  return withSignupAccount(db, enquiryId, async (db, account) => {
+  if (account.state !== "verified") return false;
   const saved = await db.update(schema.signupAccounts)
-    .set({ pinHash: await hashSignupSecret(pin), pinSetAt: new Date(), updatedAt: new Date() })
+    .set({ pinHash: pinHash, pinSetAt: new Date(), updatedAt: new Date() })
     .where(and(eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.state, "verified")))
     .returning();
   if (!saved.length) return false;
   await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", action: "signup.pin_set", detail: { enquiryId } });
   return true;
+  });
 }
