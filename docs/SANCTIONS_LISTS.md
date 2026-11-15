@@ -78,7 +78,7 @@ list stays.
 A possible match, or a confirmed one, stops `POST /api/quotes/:id/post`.
 The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. Your compliance officer will review this." }`.
 Only the shop's named compliance officer uses `GET /api/screening/reviews`.
-When nobody is named, nobody can decide, holds stay held, and the owner is told to name a compliance officer in Settings. A teller, a supervisor, an auditor, and a branch manager cannot.
+When nobody is named, nobody can decide and holds stay held. The hold prompt is exactly "Name your compliance officer. Every MSB must have one." and it opens the Settings field. The owner may name themselves there, and then they decide. A teller, a supervisor, an auditor, and a branch manager cannot.
 Decisions are append-only and kept for 5 years. Clearing one listed person
 does not clear the others: every candidate at or above the threshold is
 held and reviewed on its own. Confirming keeps the deal held and opens a

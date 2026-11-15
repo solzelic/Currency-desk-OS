@@ -9,6 +9,35 @@
    ============================================================ */
 (function () {
   const { useState, useEffect } = React;
+  function NameSelfOfficer() {
+    const [self, setSelf] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState("");
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningOfficer) return;
+      window.CDOS.Backend.screeningOfficer()
+        .then((row) => setSelf(!!(row && row.self)))
+        .catch(() => {});
+    }, []);
+    const nameSelf = () => {
+      if (busy || !window.CDOS.Backend || !window.CDOS.Backend.nameSelfOfficer) return;
+      setBusy(true);
+      window.CDOS.Backend.nameSelfOfficer()
+        .then(() => { setSelf(true); setErr(""); })
+        .catch(() => setErr("That did not save. Try again."))
+        .then(() => setBusy(false));
+    };
+    return (
+      <div id="compliance-officer-field" data-testid="compliance-officer-field" className="mb-4 px-3 py-3" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
+        <div className="text-sm font-semibold" style={{ color: CD.ink }}>Compliance officer</div>
+        <div className="text-[12px] mt-1" style={{ color: CD.mute }}>In most small shops the owner is the compliance officer.</div>
+        {self
+          ? <div className="text-[13px] mt-2" style={{ color: CD.ink }}>You are the compliance officer.</div>
+          : <button type="button" data-testid="name-self-compliance-officer" onClick={nameSelf} disabled={busy} className="mt-2 px-3 py-2 text-[12px] font-semibold" style={{ background: CD.ink, color: "var(--cd-on-ink)", borderRadius: 8 }}>I am the compliance officer</button>}
+        {err && <div className="text-[12px] mt-2" role="alert" style={{ color: CD.ink }}>{err}</div>}
+      </div>
+    );
+  }
   function ScreeningGap() {
     const [label, setLabel] = useState("Not screened");
     useEffect(() => {
@@ -1267,6 +1296,11 @@
     const [icfg, setIcfg] = useState(() => (window.CDOS.importCfg ? window.CDOS.importCfg.load() : {}));
     const setIc = (patch, note) => { const next = window.CDOS.importCfg ? window.CDOS.importCfg.save(patch) : Object.assign({}, icfg, patch); setIcfg(next); if (note) log('Import setting changed', note); };
     useEffect(() => { if (jump && jump.t) setTab(jump.t); }, [jump && jump.n]);
+    useEffect(() => {
+      if (tab !== "compliance") return;
+      const field = document.getElementById("compliance-officer-field");
+      if (field) field.scrollIntoView({ block: "center" });
+    }, [tab, jump && jump.n]);
     // jurisdiction follows Localization: when the operating country resolves to exactly
     // one regulator pack, apply it automatically so the picker, threshold and codes agree.
     useEffect(() => {
@@ -2257,6 +2291,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const applyRegime = (id) => { const r = REGIMES[id]; if (!r) return; setSettings(s => ({ ...s, regime: id, threshold: r.threshold, baseCurrency: r.currency, idRequiredOver: r.idAt, aggHours: r.aggHours })); log('Jurisdiction pack applied', `${r.authority} · ${r.country}`); };
           return (<div data-testid="compliance-jurisdiction" data-facts={deskFacts}>
           <SectionTitle icon="shield" title="Compliance & jurisdiction" sub={baseline ? "These are the international rules. Check they match your country's laws." : "Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."} />
+          {isOwner && <NameSelfOfficer />}
 
           {/* one-click jurisdiction packs. Hidden when this country has no pack,
               so the desk is not offered Canada's rules to apply instead. */}

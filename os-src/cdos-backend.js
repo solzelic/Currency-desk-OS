@@ -281,6 +281,12 @@
       screeningDesk: function () {
         return request("/api/screening/desk");
       },
+      screeningOfficer: function () {
+        return request("/api/screening/officer");
+      },
+      nameSelfOfficer: function () {
+        return request("/api/screening/officer", { method: "PUT", body: "{}" });
+      },
       listReviews: function () {
         return request("/api/screening/reviews");
       },

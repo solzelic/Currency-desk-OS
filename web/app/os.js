@@ -3671,6 +3671,12 @@
       screeningDesk: function () {
         return request("/api/screening/desk");
       },
+      screeningOfficer: function () {
+        return request("/api/screening/officer");
+      },
+      nameSelfOfficer: function () {
+        return request("/api/screening/officer", { method: "PUT", body: "{}" });
+      },
       listReviews: function () {
         return request("/api/screening/reviews");
       },
@@ -6492,6 +6498,65 @@ if (typeof module !== "undefined" && module.exports) {
     useState,
     useEffect
   } = React;
+  function NameSelfOfficer() {
+    const [self, setSelf] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState("");
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningOfficer) return;
+      window.CDOS.Backend.screeningOfficer().then(row => setSelf(!!(row && row.self))).catch(() => {});
+    }, []);
+    const nameSelf = () => {
+      if (busy || !window.CDOS.Backend || !window.CDOS.Backend.nameSelfOfficer) return;
+      setBusy(true);
+      window.CDOS.Backend.nameSelfOfficer().then(() => {
+        setSelf(true);
+        setErr("");
+      }).catch(() => setErr("That did not save. Try again.")).then(() => setBusy(false));
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      id: "compliance-officer-field",
+      "data-testid": "compliance-officer-field",
+      className: "mb-4 px-3 py-3",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12,
+        background: CD.panel
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Compliance officer"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, "In most small shops the owner is the compliance officer."), self ? /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] mt-2",
+      style: {
+        color: CD.ink
+      }
+    }, "You are the compliance officer.") : /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "name-self-compliance-officer",
+      onClick: nameSelf,
+      disabled: busy,
+      className: "mt-2 px-3 py-2 text-[12px] font-semibold",
+      style: {
+        background: CD.ink,
+        color: "var(--cd-on-ink)",
+        borderRadius: 8
+      }
+    }, "I am the compliance officer"), err && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-2",
+      role: "alert",
+      style: {
+        color: CD.ink
+      }
+    }, err));
+  }
   function ScreeningGap() {
     const [label, setLabel] = useState("Not screened");
     useEffect(() => {
@@ -9001,6 +9066,13 @@ if (typeof module !== "undefined" && module.exports) {
     useEffect(() => {
       if (jump && jump.t) setTab(jump.t);
     }, [jump && jump.n]);
+    useEffect(() => {
+      if (tab !== "compliance") return;
+      const field = document.getElementById("compliance-officer-field");
+      if (field) field.scrollIntoView({
+        block: "center"
+      });
+    }, [tab, jump && jump.n]);
     // jurisdiction follows Localization: when the operating country resolves to exactly
     // one regulator pack, apply it automatically so the picker, threshold and codes agree.
     useEffect(() => {
@@ -12800,7 +12872,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         icon: "shield",
         title: "Compliance & jurisdiction",
         sub: baseline ? "These are the international rules. Check they match your country's laws." : "Set your regulator once — the whole rulebook auto-fills. Changing the pack is owner-only; the Compliance desk only reads it."
-      }), rulesNotice ? /*#__PURE__*/React.createElement("div", {
+      }), isOwner && /*#__PURE__*/React.createElement(NameSelfOfficer, null), rulesNotice ? /*#__PURE__*/React.createElement("div", {
         role: "status",
         "data-rules-notice": true,
         className: "mb-4 px-3 py-2 text-[13px]",
@@ -47917,22 +47989,22 @@ ${(filing.map || []).map(blockHTML).join('')}
     const [reasons, setReasons] = useState({});
     const [busy, setBusy] = useState(false);
     const [actionError, setActionError] = useState('');
-    const [notice, setNotice] = useState('');
+    const [officerNamed, setOfficerNamed] = useState(null);
     const [deskLabel, setDeskLabel] = useState('Not screened');
     const load = () => {
       if (!window.CDOS.Backend || !window.CDOS.Backend.listReviews) return;
       if (window.CDOS.Backend.screeningDesk) {
-        window.CDOS.Backend.screeningDesk().then(desk => setDeskLabel(desk && desk.label ? desk.label : 'Not screened')).catch(() => setDeskLabel('Not screened'));
+        window.CDOS.Backend.screeningDesk().then(desk => {
+          setDeskLabel(desk && desk.label ? desk.label : 'Not screened');
+          setOfficerNamed(!!(desk && desk.officerNamed));
+        }).catch(() => setDeskLabel('Not screened'));
       }
       window.CDOS.Backend.listReviews().then(data => {
         setQueue(data);
         setCanReview(true);
-        setNotice('');
-      }).catch(err => {
+      }).catch(() => {
         setQueue(null);
         setCanReview(false);
-        const message = err && err.message ? err.message : '';
-        setNotice(message.indexOf('Name a compliance officer') === 0 ? message : '');
       });
     };
     useEffect(load, []);
@@ -47976,13 +48048,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, deskLabel)), notice && /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 text-[13px]",
+    }, deskLabel)), officerNamed === false && /*#__PURE__*/React.createElement("button", {
+      type: "button",
       "data-testid": "screening-name-officer",
+      onClick: () => window.CDOS.openSettingsTab && window.CDOS.openSettingsTab('compliance'),
+      className: "mt-3 text-[13px] text-left",
       style: {
-        color: CD.ink
+        color: CD.ink,
+        background: 'none',
+        padding: 0,
+        border: 0,
+        textDecoration: 'underline',
+        cursor: 'pointer'
       }
-    }, notice), actionError && /*#__PURE__*/React.createElement("div", {
+    }, "Name your compliance officer. Every MSB must have one."), actionError && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[13px]",
       "data-testid": "screening-action-error",
       role: "alert",

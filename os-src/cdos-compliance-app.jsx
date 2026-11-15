@@ -299,23 +299,21 @@
     const [reasons, setReasons] = useState({});
     const [busy, setBusy] = useState(false);
     const [actionError, setActionError] = useState('');
-    const [notice, setNotice] = useState('');
+    const [officerNamed, setOfficerNamed] = useState(null);
     const [deskLabel, setDeskLabel] = useState('Not screened');
     const load = () => {
       if (!window.CDOS.Backend || !window.CDOS.Backend.listReviews) return;
       if (window.CDOS.Backend.screeningDesk) {
         window.CDOS.Backend.screeningDesk()
-          .then((desk) => setDeskLabel(desk && desk.label ? desk.label : 'Not screened'))
+          .then((desk) => {
+            setDeskLabel(desk && desk.label ? desk.label : 'Not screened');
+            setOfficerNamed(!!(desk && desk.officerNamed));
+          })
           .catch(() => setDeskLabel('Not screened'));
       }
       window.CDOS.Backend.listReviews()
-        .then((data) => { setQueue(data); setCanReview(true); setNotice(''); })
-        .catch((err) => {
-          setQueue(null);
-          setCanReview(false);
-          const message = err && err.message ? err.message : '';
-          setNotice(message.indexOf('Name a compliance officer') === 0 ? message : '');
-        });
+        .then((data) => { setQueue(data); setCanReview(true); })
+        .catch(() => { setQueue(null); setCanReview(false); });
     };
     useEffect(load, []);
     const decide = (reviewId, action) => {
@@ -334,7 +332,7 @@
         <div className="mt-2 text-[13px] leading-relaxed" style={{ color: CD.mute, maxWidth: 520 }}>{note}</div>
         <div className="mt-3 text-[13px]" data-testid="screening-status-copy" style={{ color: CD.ink }}>{deskLabel}</div>
       </div>
-      {notice && <div className="mt-3 text-[13px]" data-testid="screening-name-officer" style={{ color: CD.ink }}>{notice}</div>}
+      {officerNamed === false && <button type="button" data-testid="screening-name-officer" onClick={() => window.CDOS.openSettingsTab && window.CDOS.openSettingsTab('compliance')} className="mt-3 text-[13px] text-left" style={{ color: CD.ink, background: 'none', padding: 0, border: 0, textDecoration: 'underline', cursor: 'pointer' }}>Name your compliance officer. Every MSB must have one.</button>}
       {actionError && <div className="mt-3 text-[13px]" data-testid="screening-action-error" role="alert" style={{ color: CD.ink }}>{actionError}</div>}
       {canReview && <div className="mt-3" data-testid="screening-review-queue">
         <div className="text-[12px] mb-2" data-testid="threshold-placeholder" style={{ color: CD.mute }}>The score threshold is a placeholder pending Compliance Officer sign-off.</div>

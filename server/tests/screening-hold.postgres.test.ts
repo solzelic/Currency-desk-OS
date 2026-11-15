@@ -300,7 +300,7 @@ postgres("sanctions hold and review", () => {
     expect(unnamed.statusCode).toBe(403);
     expect(unnamed.json()).toEqual({
       error: "name_compliance_officer",
-      message: "Name a compliance officer in Settings to review holds.",
+      message: "Name your compliance officer. Every MSB must have one.",
     });
     expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: teller })).statusCode).toBe(403);
     await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = 'j.masri' WHERE id = $1", [DEMO.legalEntityId]);
@@ -617,5 +617,59 @@ postgres("sanctions hold and review", () => {
       "SELECT list_snapshots FROM sanctions_screenings WHERE customer_id LIKE 'cust-two-%' ORDER BY created_at DESC LIMIT 1",
     );
     expect(JSON.stringify(screened.rows[0].list_snapshots)).toMatch(/snp-hold/);
+  });
+
+  it("keeps holds until the owner names themselves, and a manager still cannot decide", async () => {
+    await pool.query("UPDATE rate_boards SET published_at = now()");
+    await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = NULL WHERE id = $1", [DEMO.legalEntityId]);
+    const stamp = Date.now();
+    const customerId = `cust-self-${stamp}`;
+    const name = `Self Officer ${stamp}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
+      [customerId, ...scope, name],
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold',$1,$2::jsonb,'[]')`,
+      [`ca|self-${stamp}`, JSON.stringify([name])],
+    );
+    const held = await postDeal("m.costa", customerId);
+    expect(held.statusCode, held.body).toBe(422);
+    const again = await postDeal("m.costa", customerId);
+    expect(again.statusCode).toBe(422);
+
+    const owner = await cookie("j.masri");
+    const prompt = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
+    expect(prompt.statusCode).toBe(403);
+    expect(prompt.json()).toEqual({
+      error: "name_compliance_officer",
+      message: "Name your compliance officer. Every MSB must have one.",
+    });
+    const desk = await app.inject({ method: "GET", url: "/api/screening/desk", cookies: owner });
+    expect(desk.json().officerNamed).toBe(false);
+
+    const manager = await cookie("r.haddad");
+    expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: manager })).statusCode).toBe(403);
+    expect((await app.inject({ method: "PUT", url: "/api/screening/officer", cookies: manager, payload: {} })).statusCode).toBe(403);
+
+    const named = await app.inject({ method: "PUT", url: "/api/screening/officer", cookies: owner, payload: {} });
+    expect(named.statusCode, named.body).toBe(200);
+    expect(named.json().staffId).toBe("j.masri");
+    const reviews = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
+    expect(reviews.statusCode).toBe(200);
+    const item = reviews.json().items.find((row: { subjectName: string; status: string }) => row.subjectName === name && row.status === "open");
+    if (!item) throw new Error("missing review");
+    const cleared = await app.inject({
+      method: "POST", url: `/api/screening/reviews/${item.reviewId}/clear`, cookies: owner,
+      payload: { reason: "The owner is the compliance officer and this is not the listed person." },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect((await app.inject({
+      method: "POST", url: `/api/screening/reviews/${item.reviewId}/confirm`, cookies: manager,
+      payload: { reason: "A manager must not decide." },
+    })).statusCode).toBe(403);
+    await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = 'j.masri' WHERE id = $1", [DEMO.legalEntityId]);
   });
 });

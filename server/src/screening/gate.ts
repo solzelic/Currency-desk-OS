@@ -6,7 +6,7 @@ import { LIST_SOURCES } from "./sources.js";
 
 export const TELLER_HOLD_MESSAGE = "This needs review. Your compliance officer will review this.";
 
-export const NAME_OFFICER_MESSAGE = "Name a compliance officer in Settings to review holds.";
+export const NAME_OFFICER_MESSAGE = "Name your compliance officer. Every MSB must have one.";
 
 type Row = Record<string, unknown>;
 type Queryable = {

@@ -124,11 +124,34 @@ export function registerScreeningRoutes(
       [who.legalEntityId],
     );
     const openReviews = Number(open.rows[0]?.n ?? 0);
+    const named = await namedOfficer(who.legalEntityId);
     return {
       signedOff: setting.rows[0]?.signed_off === true,
       openReviews,
+      officerNamed: !!named,
       label: openReviews > 0 ? `${openReviews} to review` : "Not screened",
     };
+  });
+
+  app.get("/api/screening/officer", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (who.role !== "administrator") return reply.code(403).send({ error: "forbidden" });
+    const named = await namedOfficer(who.legalEntityId);
+    return { named: !!named, self: named === who.staffId };
+  });
+
+  app.put("/api/screening/officer", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (who.role !== "administrator") return reply.code(403).send({ error: "forbidden" });
+    const body = z.object({}).strict().safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    await pool.query(
+      "UPDATE legal_entities SET compliance_officer_staff_id = $2 WHERE id = $1",
+      [who.legalEntityId, who.staffId],
+    );
+    return { ok: true, staffId: who.staffId };
   });
 
   app.get("/api/screening/reviews", async (req, reply) => {

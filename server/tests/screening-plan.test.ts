@@ -54,6 +54,17 @@ describe("screen plan", () => {
     expect(mayReviewScreening("compliance_officer", "c.adebayo", "j.masri")).toBe(false);
   });
 
+  it("shows the unnamed-officer prompt and lets the owner name themselves in Settings", () => {
+    const screen = readFileSync(new URL("../../os-src/cdos-compliance-app.jsx", import.meta.url), "utf8");
+    const settings = readFileSync(new URL("../../os-src/cdos-settings.jsx", import.meta.url), "utf8");
+    const prompt = "Name your compliance officer. Every MSB must have one.";
+    expect(screen).toContain(prompt);
+    expect(screen).toContain("openSettingsTab('compliance')");
+    expect(screen).toContain('data-testid="screening-name-officer"');
+    expect(settings).toContain('id="compliance-officer-field"');
+    expect(settings).toContain('data-testid="name-self-compliance-officer"');
+  });
+
   it("does not call a PEP or adverse media vendor from the id check route", () => {
     const source = readFileSync(new URL("../src/screening/routes.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/\.screenPep\s*\(/);
