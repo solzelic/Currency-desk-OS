@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
+import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -81,6 +82,27 @@ describe("exchange v2.9 rules", () => {
     expect(rules.maskIdNumber("PA-4471902")).toBe("...1902");
     expect(rules.riskLabel("high", null)).toBe("Suggested: High");
     expect(rules.riskLabel("high", "medium")).toBe("Medium");
+  });
+
+  it("counts CAD notes against customer pays without blocking", () => {
+    expect(rules.countReceived({ 100: 2, 50: 1, 20: 0, 10: 0, 5: 0 }, "250.00")).toMatchObject({
+      status: "matches",
+      label: "Matches",
+      difference: "0.00",
+    });
+    expect(rules.countReceived({ 100: 2 }, "250.00")).toMatchObject({
+      status: "short",
+      label: "$50.00 short",
+    });
+    expect(rules.countReceived({ 100: 3 }, "250.00")).toMatchObject({
+      status: "over",
+      label: "$50.00 over",
+    });
+    expect(rules.countReceived({ 100: 1, 50: 1, 20: 2, 10: 1, 5: 2 }, "210.00").label).toBe("Matches");
+    const counted = new Decimal(100).times(2).plus(new Decimal(50)).minus("250.00");
+    expect(counted.toFixed(2)).toBe("0.00");
+    expect(new Decimal(100).times(2).minus("250.00").abs().toFixed(2)).toBe("50.00");
+    expect(new Decimal(100).times(3).minus("250.00").toFixed(2)).toBe("50.00");
   });
 
   it("reads the reveal note length from the reason, not a fixed list", () => {
