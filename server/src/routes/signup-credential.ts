@@ -27,7 +27,7 @@ import { clientIp } from "../auth/client-ip.js";
 import { hashSignupSecret } from "../auth/password.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { idTail, operatingNameOf, type IdDoor } from "../onboarding/cd-id-door.js";
-import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredential, type Account } from "../onboarding/signup-account.js";
+import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredential, withSignupAccount, signupReservationMatches, type Account } from "../onboarding/signup-account.js";
 import { passkeyOptions, relyingParty, verifyPasskey } from "../onboarding/passkey.js";
 import { checkPassword, pwnedRange, type RangeFetch } from "../onboarding/password-rule.js";
 import { PROVIDERS, fetchJson, finishSso, providerConfig, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
@@ -64,6 +64,11 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
   /* The moment a credential is saved, the code goes to the email on file
      (§3.2). A send refused for coming too soon still leaves the credential
      saved; the inbox screen offers "Send it again" when the wait is over. */
+  async function current<T>(r: Reservation, work: (tx: Db) => Promise<T>): Promise<T | null> {
+    return withSignupAccount(db, r.row.id, async (tx, account) =>
+      takesCredential(account.state) && await signupReservationMatches(tx, r.row.id, r.cdId) ? work(tx) : null);
+  }
+
   async function codeAfterSave(r: Reservation): Promise<boolean> {
     const result = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
     return result.sent && result.delivery !== "failed";
@@ -76,6 +81,10 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const cdId = normalizeCdIdInput(req.params.ref);
     if (!cdId) { reply.code(404).send({ error: "no_such_id" }); return undefined; }
     if (door.closed(cdId, connection)) { reply.code(429).send({ error: "slow_down" }); return undefined; }
+    if (!door.takeCredential(cdId, connection)) {
+      door.logRefusal({ reason: "credential_rate_limit", id: idTail(cdId), connection });
+      reply.code(429).send({ error: "slow_down" }); return undefined;
+    }
     const row = await door.findByCdId(cdId);
     if (!row) {
       door.fail(cdId, connection, "credential_unknown_id");
@@ -101,9 +110,10 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!r) return;
     const rp = relyingParty(env);
     if (!rp) return reply.code(503).send({ error: "passkey_unavailable", detail: "Passkeys aren't configured here yet. Choose another way." });
-    const options = await passkeyOptions(db, rp, {
+    const options = await current(r, (tx) => passkeyOptions(tx, rp, {
       enquiryId: r.row.id, accountId: r.account.accountId, cdId: r.cdId, operatingName: operatingNameOf(r.row), attemptHash: attemptOf(req, reply),
-    });
+    }));
+    if (!options) return reply.code(409).send({ error: "reservation_changed" });
     return { options };
   });
 
@@ -124,7 +134,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     }
     const saved = await saveCredential(db, r.row.id, {
       kind: "passkey", attemptHash: attempt, passkey: { ...result.passkey, deviceLabel: parsed.data.deviceLabel || "This device" },
-    });
+    }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: "passkey", state: saved.state, codeSent: await codeAfterSave(r) };
   });
@@ -136,7 +146,9 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!cfg) return reply.code(503).send({ error: "sso_unavailable", detail: "That way in isn't available yet. Choose another." });
     const r = await reservation(req, reply);
     if (!r) return;
-    return { url: await startSso(db, cfg, { enquiryId: r.row.id, attemptHash: attemptOf(req, reply) }) };
+    const url = await current(r, (tx) => startSso(tx, cfg, { enquiryId: r.row.id, attemptHash: attemptOf(req, reply) }));
+    if (!url) return reply.code(409).send({ error: "reservation_changed" });
+    return { url };
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/sso/callback", async (req, reply) => {
@@ -165,7 +177,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       }
       return reply.code(400).send({ error: "sso_not_saved", detail: "That sign-in didn't finish. Nothing was saved. Try again, or choose another way." });
     }
-    const saved = await saveCredential(db, r.row.id, { kind: provider, attemptHash: attempt, sso: { subject: result.subject, tenant: result.tenant } });
+    const saved = await saveCredential(db, r.row.id, { kind: provider, attemptHash: attempt, sso: { subject: result.subject, tenant: result.tenant } }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: provider, state: saved.state, codeSent: await codeAfterSave(r) };
   });
@@ -185,7 +197,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     }
     const saved = await saveCredential(db, r.row.id, {
       kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashSignupSecret(parsed.data.password),
-    });
+    }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: "password", state: saved.state, codeSent: await codeAfterSave(r) };
   });

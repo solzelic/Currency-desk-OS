@@ -221,4 +221,26 @@ describe("activation consistency regressions", () => {
     await stripeSays("setup_intent.succeeded", { ...intent, customer: "cus_wrong", status: "succeeded", payment_method: "pm_test" });
     expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
   });
+  it("SAM opt-out uses the existing stop record even when card processing is unavailable", async () => {
+    const r = await readyToPay();
+    const bare = Fastify();
+    await bare.register(cookie);
+    registerSignupDeskRoutes(bare, handle.db, door, { stripe: () => null });
+    const res = await bare.inject({ method: "POST", url: `${r.base}/plan`, cookies: { ...jar }, payload: { ...PLAN, extras: { ...PLAN.extras, call: false } } });
+    expect(res.statusCode).toBe(503);
+    expect((await handle.db.select().from(schema.enquiryCallConsents).where(eq(schema.enquiryCallConsents.enquiryId, r.id)))[0]?.event).toBe("stop");
+    await bare.close();
+  });
+
+  it("concurrent browser upgrades consume the enrolment session once", async () => {
+    const r = await readyToPay();
+    await call("POST", `${r.base}/plan`, PLAN);
+    const intent = intents.at(-1)!;
+    await stripeSays("setup_intent.succeeded", { ...intent, status: "succeeded", payment_method: "pm_test" });
+    const cookies = { ...jar };
+    const results = await Promise.all(Array.from({ length: 6 }, () => app.inject({ method: "POST", url: `${r.base}/open`, cookies })));
+    expect(results.filter(response => response.statusCode === 200)).toHaveLength(1);
+    expect(results.filter(response => response.cookies.some(c => c.name === "cdos_session"))).toHaveLength(1);
+  });
+
 });

@@ -84,7 +84,7 @@ export function registerSignupEmailRoutes(app: FastifyInstance, db: Db, door: Id
     const parsed = codeBody.safeParse(req.body);
     const attempt = existingAttempt(req);
     if (!parsed.success || !attempt) return reply.code(400).send({ error: "invalid_request" });
-    const result = await verifySignupCode(db, r.row.id, attempt, parsed.data.code);
+    const result = await verifySignupCode(db, r.row.id, attempt, parsed.data.code, Date.now(), r.cdId);
     if (!result.ok) {
       door.fail(r.cdId, ip, `code_${result.error}`);
       return reply.code(result.status).send({ error: result.error, detail: DETAIL[result.error] });

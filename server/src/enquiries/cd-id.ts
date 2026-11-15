@@ -27,7 +27,8 @@
    letter: "34343" at 34343-exchange is EXCH, "東京両替" at tokyo-ryogae
    is TOKY.
    ============================================================ */
-import { eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 
 export const CD_ID_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -95,6 +96,9 @@ export async function issueCdId(db: Db, sources: string | string[], random: Rand
     if (asApplication.length) continue;
     const asStaff = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.cdId, id)).limit(1);
     if (asStaff.length) continue;
+    const retired = createHash("sha256").update(id).digest("hex");
+    const past = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(sql`${schema.enquiries.details}->'retiredCdIdHashes' @> ${JSON.stringify([retired])}::jsonb`).limit(1);
+    if (past.length) continue;
     return id;
   }
   throw new Error(`No free CurrencyDesk ID for ${cdIdLetters(sources)} after 8 tries`);
