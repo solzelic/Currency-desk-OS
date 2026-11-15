@@ -7,14 +7,52 @@ export type FetchBody = (url: string) => Promise<{ ok: boolean; status: number; 
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export async function fetchOfficial(url: string): Promise<{ ok: boolean; status: number; body: string }> {
-  const response = await fetch(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(45_000),
-    headers: { "user-agent": "CurrencyDesk-list-fetch" },
-  });
-  const body = await response.text();
-  return { ok: response.ok, status: response.status, body };
+/** Official HTTPS hosts. A redirect to any other host fails the fetch. */
+export const OFFICIAL_HTTPS_HOSTS = new Set([
+  "www.international.gc.ca",
+  "scsanctions.un.org",
+  "www.publicsafety.gc.ca",
+]);
+
+/** A list larger than this is refused. The live files on 15 Nov 2026 were under 3 MB. */
+export const LIST_BYTE_CAP = 12_000_000;
+
+const REDIRECT = new Set([301, 302, 303, 307, 308]);
+
+export function pinnedRedirect(currentUrl: string, location: string | null): string {
+  if (!location) throw new Error("redirect had no location");
+  const next = new URL(location, currentUrl);
+  if (next.protocol !== "https:") throw new Error("redirect was not https");
+  if (!OFFICIAL_HTTPS_HOSTS.has(next.hostname)) throw new Error("redirect left the official host");
+  return next.toString();
+}
+
+export async function fetchOfficial(
+  url: string,
+  doFetch: typeof fetch = fetch,
+): Promise<{ ok: boolean; status: number; body: string }> {
+  let current = url;
+  for (let hop = 0; hop < 4; hop += 1) {
+    const response = await doFetch(current, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(45_000),
+      headers: { "user-agent": "CurrencyDesk-list-fetch" },
+    });
+    if (REDIRECT.has(response.status)) {
+      current = pinnedRedirect(current, response.headers.get("location"));
+      continue;
+    }
+    const body = await response.text();
+    if (body.length > LIST_BYTE_CAP) throw new Error("list exceeded the byte cap");
+    return { ok: response.ok, status: response.status, body };
+  }
+  throw new Error("too many redirects");
+}
+
+/** More than 10 percent fewer rows than the last good snapshot. */
+export function listShrank(previousCount: number, nextCount: number): boolean {
+  if (previousCount <= 0) return false;
+  return nextCount * 10 < previousCount * 9;
 }
 
 export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): Promise<"good" | "unchanged" | "failed"> {
@@ -30,6 +68,10 @@ export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): P
     await storeFailed(db, source, `HTTP ${downloaded.status}`, previous);
     return "failed";
   }
+  if (downloaded.body.length > LIST_BYTE_CAP) {
+    await storeFailed(db, source, "list exceeded the byte cap", previous);
+    return "failed";
+  }
   let entries: ListEntry[];
   try {
     entries = source.parse(downloaded.body);
@@ -41,12 +83,21 @@ export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): P
     await storeFailed(db, source, "parsed list was empty", previous);
     return "failed";
   }
+  if (previous && listShrank(previous.keys.length, entries.length)) {
+    await storeFailed(db, source, "list shrank by more than 10 percent", previous);
+    return "failed";
+  }
   const hash = sha256(downloaded.body);
   if (previous && previous.hash === hash) {
     await markUnchanged(db, previous.snapshotId, source.key);
     return "unchanged";
   }
-  await storeGood(db, source, downloaded.body, entries, previous);
+  try {
+    await storeGood(db, source, downloaded.body, entries, previous);
+  } catch (err) {
+    await storeFailed(db, source, err instanceof Error ? err.message : "store failed", previous);
+    return "failed";
+  }
   return "good";
 }
 

@@ -59,7 +59,77 @@ function jaccard(left: readonly string[], right: readonly string[]): number {
   return union === 0 ? 0 : shared / union;
 }
 
-/** 1 is the same tokens. 0.97 is a transliteration fold. 0.93 is a vowel skeleton. */
+/** One substitution, insertion, or deletion. Longer distances stop at 2. */
+function levenshtein(left: string, right: string): number {
+  if (left === right) return 0;
+  if (Math.abs(left.length - right.length) > 1) return 2;
+  const prev = new Array<number>(right.length + 1);
+  const next = new Array<number>(right.length + 1);
+  for (let j = 0; j <= right.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= left.length; i += 1) {
+    next[0] = i;
+    let rowMin = next[0] ?? i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+      const del = (prev[j] ?? 0) + 1;
+      const ins = (next[j - 1] ?? 0) + 1;
+      const sub = (prev[j - 1] ?? 0) + cost;
+      const best = Math.min(del, ins, sub);
+      next[j] = best;
+      if (best < rowMin) rowMin = best;
+    }
+    if (rowMin > 1) return 2;
+    for (let j = 0; j <= right.length; j += 1) prev[j] = next[j] ?? 0;
+  }
+  return (prev[right.length] ?? 2) > 1 ? 2 : prev[right.length] ?? 2;
+}
+
+/** Exact, a transliteration fold, or one edit on a token of at least 6 letters. */
+function tokenClose(left: string, right: string): boolean {
+  if (left === right) return true;
+  const a = translitToken(left);
+  const b = translitToken(right);
+  if (a === b) return true;
+  if (a.length < 6 || b.length < 6) return false;
+  return levenshtein(a, b) <= 1;
+}
+
+/** A shorter name whose every token is on the longer name. One token is not enough. */
+function subsetScore(left: readonly string[], right: readonly string[]): number | null {
+  const short = left.length <= right.length ? left : right;
+  const long = left.length <= right.length ? right : left;
+  if (short.length < 2 || short.length >= long.length) return null;
+  const used = new Set<number>();
+  for (const token of short) {
+    const index = long.findIndex((other, i) => !used.has(i) && tokenClose(token, other));
+    if (index < 0) return null;
+    used.add(index);
+  }
+  return 0.95;
+}
+
+/** The same number of tokens, with at least one one-edit difference. */
+function alignedScore(left: readonly string[], right: readonly string[]): number | null {
+  if (left.length !== right.length) return null;
+  const used = new Set<number>();
+  let edits = 0;
+  for (const token of left) {
+    const exact = right.findIndex((other, i) => !used.has(i) && (token === other || translitToken(token) === translitToken(other)));
+    if (exact >= 0) {
+      used.add(exact);
+      continue;
+    }
+    const near = right.findIndex((other, i) => !used.has(i) && tokenClose(token, other));
+    if (near < 0) return null;
+    used.add(near);
+    edits += 1;
+  }
+  return edits > 0 ? 0.94 : null;
+}
+
+/** 1 is the same tokens. 0.97 is a transliteration fold. 0.95 is a missing
+    middle name or a shorter name against a multi-part list name. 0.94 is
+    one edit on a token. 0.93 is a vowel skeleton. */
 export function scoreNames(left: string, right: string): number {
   const a = nameTokens(left);
   const b = nameTokens(right);
@@ -68,6 +138,10 @@ export function scoreNames(left: string, right: string): number {
   const foldedA = a.map(translitToken).sort();
   const foldedB = b.map(translitToken).sort();
   if (foldedA.join(" ") === foldedB.join(" ")) return 0.97;
+  const subset = subsetScore(a, b);
+  if (subset !== null) return subset;
+  const aligned = alignedScore(a, b);
+  if (aligned !== null) return aligned;
   const boneA = skeleton(a);
   const boneB = skeleton(b);
   if (boneA.length >= 3 && boneA === boneB) return 0.93;
@@ -113,13 +187,19 @@ export function dobAgrees(subjectDob: string | null | undefined, constraints: re
   });
 }
 
-/** A full date on both sides, and none of those days are the same.
-    A missing date, a year-only date, or any one matching day is not a conflict. */
+/** A full date on both sides, and none of the listed days, months, or years agree.
+    A missing date or a year-only list is not a conflict. One agreeing day or
+    year, including a full day plus an alternative year, keeps the match. */
 export function dobConflict(subjectDob: string | null | undefined, constraints: readonly DobConstraint[]): boolean {
   if (!subjectDob || !constraints.length) return false;
   const dob = subjectDob.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
   const full = constraints.filter((item) => item.kind === "date");
   if (!full.length) return false;
-  return !full.some((item) => item.value === dob);
+  if (full.some((item) => item.value === dob)) return false;
+  const year = dob.slice(0, 4);
+  const month = dob.slice(0, 7);
+  if (constraints.some((item) => item.kind === "year" && item.value === year)) return false;
+  if (constraints.some((item) => item.kind === "month" && item.value === month)) return false;
+  return true;
 }

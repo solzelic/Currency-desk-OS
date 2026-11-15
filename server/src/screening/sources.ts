@@ -8,7 +8,8 @@ export type ListSource = {
 };
 
 /* Official addresses checked on 15 Nov 2026. See docs/SANCTIONS_LISTS.md.
-   The Security Council address redirects. Store this URL, not the redirect. */
+   A redirect is followed only when it stays on one of these HTTPS hosts.
+   A cross-host redirect fails the fetch. Store this URL, not a redirect. */
 export const LIST_SOURCES: readonly ListSource[] = [
   {
     key: "ca-sema",

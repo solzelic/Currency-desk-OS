@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS sanctions_list_snapshots (
   last_checked_at timestamptz NOT NULL,
   content_sha256 text NOT NULL,
   entry_count integer NOT NULL,
-  status text NOT NULL CHECK (status IN ('good', 'failed')),
+  status text NOT NULL CHECK (status IN ('writing', 'good', 'failed')),
   error_text text,
   added_count integer NOT NULL DEFAULT 0,
   removed_count integer NOT NULL DEFAULT 0,

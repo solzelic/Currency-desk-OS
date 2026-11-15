@@ -776,7 +776,7 @@ export async function createDb(): Promise<DbHandle> {
   );
   /* Official-list snapshots. PGlite does not run the SQL migrations. */
   await client.exec(
-    await readFile(new URL("./migrations/074_sanctions_lists.sql", import.meta.url), "utf8"),
+    await readFile(new URL("./migrations/075_sanctions_lists.sql", import.meta.url), "utf8"),
   );
   const db = drizzlePglite(client, { schema });
   return { db, close: () => client.close() };
