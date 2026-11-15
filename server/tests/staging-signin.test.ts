@@ -11,7 +11,7 @@ const HOST = "staging.currencydeskos.com";
 const PREVIEW = "currencydesk-staging-pr-5.onrender.com";
 const DAY = 24 * 60 * 60 * 1000;
 const PEOPLE = {
-  administrator: "j.masri",
+  administrator: "j.subotic",
   branch_manager: "r.haddad",
   supervisor: "a.singh",
   compliance_officer: "c.adebayo",
@@ -200,8 +200,11 @@ describe("quick sign-in on the demo shop", () => {
       expect(JSON.stringify(event.detail)).not.toMatch(/password|token|cookie|secret|yorkville/i);
     }
 
-    const normal = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: HOST }, payload: { staffId: "j.masri", password: "yorkville", tenantId: DEMO.tenantId } });
+    const blocked = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: HOST }, payload: { staffId: "j.masri", password: "yorkville", tenantId: DEMO.tenantId } });
+    expect(blocked.statusCode).toBe(401);
+    const normal = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: HOST }, payload: { staffId: "j.subotic", password: "yorkville", tenantId: DEMO.tenantId } });
     expect(normal.statusCode).toBe(200);
+    expect(normal.json().user).toMatchObject({ id: "j.subotic", name: "Jakob Subotic", role: "administrator", tenantId: DEMO.tenantId });
     const normalLife = new Date(normal.cookies.find((c) => c.name === "cdos_session")!.expires!).getTime() - Date.now();
     expect(normalLife).toBeGreaterThan(11 * 60 * 60 * 1000);
     expect(normalLife).toBeLessThan(13 * 60 * 60 * 1000);

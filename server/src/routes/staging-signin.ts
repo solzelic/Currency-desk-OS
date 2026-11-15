@@ -21,10 +21,10 @@ import { DEMO } from "../seed.js";
 export const STAGING_COOKIE = "cdos_staging";
 export const STAGING_SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
-/* One person per role on the demo shop. The four that seed.ts
-   already had keep their ids. Compliance and auditor are added there. */
+/* One person per role on the demo shop. Owner is Jakob on a
+   staging runtime (seed.ts). The others keep their ids. */
 const ROLE_STAFF = {
-  administrator: "j.masri",
+  administrator: "j.subotic",
   branch_manager: "r.haddad",
   supervisor: "a.singh",
   compliance_officer: "c.adebayo",

@@ -55,15 +55,17 @@ async function enterAs(page: Page, role: string): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
-test("a staging door person switches to the owner with 0000", async ({ page }) => {
+test("a staging door person switches to the manager with 0000", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await enterAs(page, "Teller");
   await page.locator(".mb-acct:visible").first().click();
   const menu = page.locator(".acct-menu:visible");
   await expect(menu.getByText("Switch account", { exact: true })).toBeVisible();
-  await menu.getByRole("button", { name: /J\. Masri/ }).click();
+  /* The owner on this runtime is Jakob. The desk directory still lists
+     J. Masri, and that sign-in is off, so the switch goes to the manager. */
+  await menu.getByRole("button", { name: /R\. Haddad/ }).click();
   const switched = page.waitForResponse((r) => r.url().endsWith("/api/auth/switch"));
   for (const digit of "0000") await page.getByRole("button", { name: digit, exact: true }).click();
   expect((await switched).status()).toBe(200);
-  await expect(page.locator(".mb-acct:visible").first()).toContainText("J. Masri");
+  await expect(page.locator(".mb-acct:visible").first()).toContainText("R. Haddad");
 });
