@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { planScreen } from "../src/screening/gate.js";
+import { mayReviewScreening, planScreen } from "../src/screening/gate.js";
 import { SCORE_THRESHOLD_PLACEHOLDER } from "../src/screening/names.js";
 
 const entry = {
@@ -28,6 +28,16 @@ describe("screen plan", () => {
       subject: { name: "Sergei Yepikhov", dob: "1966-05-16" },
       confirmed: false, clearedKeys: ["ca|73"],
     }).hold).toBe(false);
+  });
+
+  it("lets the named compliance officer decide and never a teller", () => {
+    expect(mayReviewScreening("teller", "m.costa", "m.costa")).toBe(false);
+    expect(mayReviewScreening("administrator", "j.masri", null)).toBe(false);
+    expect(mayReviewScreening("administrator", "j.masri", "c.adebayo")).toBe(false);
+    expect(mayReviewScreening("administrator", "j.masri", "j.masri")).toBe(true);
+    expect(mayReviewScreening("compliance_officer", "c.adebayo", null)).toBe(true);
+    expect(mayReviewScreening("compliance_officer", "c.adebayo", "c.adebayo")).toBe(true);
+    expect(mayReviewScreening("compliance_officer", "c.adebayo", "j.masri")).toBe(false);
   });
 
   it("does not call a PEP or adverse media vendor from the id check route", () => {

@@ -103,10 +103,14 @@ async function entries(client: Queryable): Promise<StoredEntry[]> {
       JOIN sanctions_list_snapshots s ON s.snapshot_id = e.snapshot_id
      WHERE s.status = 'good'
        AND s.snapshot_id IN (
-         SELECT DISTINCT ON (source_key) snapshot_id
-           FROM sanctions_list_snapshots
-          WHERE status = 'good'
-          ORDER BY source_key, fetched_at DESC
+         SELECT latest.snapshot_id
+           FROM (
+             SELECT DISTINCT ON (source_key) snapshot_id, last_checked_at
+               FROM sanctions_list_snapshots
+              WHERE status = 'good'
+              ORDER BY source_key, fetched_at DESC
+           ) latest
+          WHERE latest.last_checked_at >= now() - interval '24 hours'
        )
   `);
   return found.rows.map((row) => ({
@@ -196,24 +200,20 @@ async function record(client: Queryable, actor: ActorScope, subject: ScreenSubje
       `UPDATE desk_clients
           SET screening_outcome = $2, screening_matched = NULL
         WHERE client_id = $1 AND tenant_id = $3 AND legal_entity_id = $4`,
-      [subject.clientId, plan.outcome === "clear" ? "clear" : null, actor.tenantId, actor.legalEntityId],
+      [subject.clientId, clientScreening(plan.outcome), actor.tenantId, actor.legalEntityId],
     );
   }
   return screeningId;
 }
 
+function clientScreening(outcome: ScreenPlan["outcome"]): string | null {
+  if (outcome === "clear") return "clear";
+  if (outcome === "not_screened") return "not_screened";
+  return null;
+}
+
 export async function screenSubject(client: Queryable, actor: ActorScope, subject: ScreenSubject): Promise<ScreenPlan> {
   const plan = await evaluateSubject(client, actor, subject);
-  if (plan.outcome === "not_screened" && !plan.hold) {
-    if (subject.clientId) {
-      await client.query(
-        `UPDATE desk_clients SET screening_outcome = NULL, screening_matched = NULL
-          WHERE client_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
-        [subject.clientId, actor.tenantId, actor.legalEntityId],
-      );
-    }
-    return plan;
-  }
   await record(client, actor, subject, plan);
   return plan;
 }
@@ -223,7 +223,7 @@ export async function holdForCustomer(
   actor: ActorScope,
   customerId: string,
   quoteId: string,
-): Promise<boolean> {
+): Promise<ScreenPlan> {
   const found = await client.query(
     `SELECT c.name, c.client_id, d.date_of_birth
        FROM ledger_customers c
@@ -232,16 +232,27 @@ export async function holdForCustomer(
     [customerId, actor.tenantId, actor.legalEntityId],
   );
   const row = found.rows[0];
-  if (!row || typeof row.name !== "string" || !row.name.trim()) return false;
-  const plan = await screenSubject(client, actor, {
+  if (!row || typeof row.name !== "string" || !row.name.trim()) {
+    return { hold: false, outcome: "not_screened", hit: null };
+  }
+  return screenSubject(client, actor, {
     name: row.name,
     dob: dobText(row.date_of_birth),
     clientId: row.client_id ? String(row.client_id) : null,
     customerId,
     quoteId,
   });
-  return plan.hold;
 }
+
+/** The owner may decide only when the shop has named them as its compliance officer.
+    A teller never may, even if that column names them. */
+export function mayReviewScreening(role: string, staffId: string, namedStaffId: string | null): boolean {
+  if (role === "teller" || role === "supervisor" || role === "auditor" || role === "branch_manager") return false;
+  if (namedStaffId && namedStaffId === staffId && (role === "administrator" || role === "compliance_officer")) return true;
+  return !namedStaffId && role === "compliance_officer";
+}
+
+export const LPEPR_TASK = "File a listed person or entity property report (LPEPR) with FINTRAC without delay, and disclose to the RCMP and CSIS.";
 
 export async function rescreenAll(pool: pg.Pool): Promise<number> {
   const clients = await pool.query(

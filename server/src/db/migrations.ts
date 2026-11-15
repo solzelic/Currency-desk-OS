@@ -109,6 +109,9 @@ export const migrations: readonly Migration[] = [
   /* 075 is the screen result, the review queue, and the PEP answer.
      074 is the list snapshot on this branch. */
   ["075_sanctions_reviews", "src/db/migrations/075_sanctions_reviews.sql"],
+  /* 076 names the shop's compliance officer, keeps review decisions for
+     5 years, and refuses clearing a confirmed match. */
+  ["076_sanctions_review_rules", "src/db/migrations/076_sanctions_review_rules.sql"],
 ] as const;
 
 type MigrationReader = {

@@ -13179,14 +13179,14 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         }
       }, "List loaded")) : /*#__PURE__*/React.createElement(Row, {
         title: "Sanctions screening",
-        desc: window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack) || "Screening runs on this desk. A teller does not see why a deal is held."
+        desc: window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack) || "Not screened"
       }, /*#__PURE__*/React.createElement("span", {
         className: "text-[12px] px-2.5 py-1.5",
         "data-testid": "sanctions-screening-gap",
         style: {
           color: CD.mute
         }
-      }, "Running")), /*#__PURE__*/React.createElement("div", {
+      }, "Not screened")), /*#__PURE__*/React.createElement("div", {
         className: "mt-6 mb-5",
         style: {
           border: `1.5px solid ${CD.ink}`,
@@ -15163,7 +15163,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       style: {
         borderTop: `1px solid ${T.hair}`
       }
-    }, [['Sanctions', 'Running', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
+    }, [['Sanctions', 'Not screened', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : (X.regime.aggHours || 24) + 'h'} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => /*#__PURE__*/React.createElement("button", {
       key: l,
       "data-testid": l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined,
       onClick: () => onOpenApp && onOpenApp('compliance'),
@@ -36769,6 +36769,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [serverHeld, setServerHeld] = useState(false);
+    const [serverNotScreened, setServerNotScreened] = useState(false);
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -37364,6 +37365,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setServerBusy(true);
       setServerError('');
       setServerHeld(false);
+      setServerNotScreened(false);
       try {
         const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
         const serbia = packId === 'pack-rs-v1';
@@ -37387,6 +37389,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
             usdNoteSerials: usdLargeNotes ? usdSerials.split(/[\s,]+/).filter(Boolean) : undefined
           } : {})
         });
+        if (posted && posted.screening === "Not screened") setServerNotScreened(true);
         const row = window.CDOS.Backend.transactionToRow(posted, customer, {
           purpose: purpose.trim(),
           sourceOfFunds: cap.source.trim(),
@@ -39054,7 +39057,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderRadius: 9,
         color: CD.ink
       }
-    }, "This needs review. A supervisor will help."), serverError && !isExchange && /*#__PURE__*/React.createElement("div", {
+    }, "This needs review. A supervisor will help."), serverNotScreened && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "deal-not-screened",
+      role: "status",
+      className: "px-3 py-2 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Not screened"), serverError && !isExchange && /*#__PURE__*/React.createElement("div", {
       role: "alert",
       className: "px-3 py-2 text-[11px]",
       style: {
@@ -45632,7 +45642,7 @@ var CDOS_CHEQUE_FEE = (function () {
      (pack-hk-v1). `pack` is read so a later feed can return true for
      one id without each screen growing its own pack check. */
   const WATCHLISTS = [];
-  const NOT_CONNECTED = "Screening runs on this desk. A teller does not see why a deal is held.";
+  const NOT_CONNECTED = "Not screened.";
   /* The duty those three packs already state, after the sentence above.
      The sentence does not name a sanctions list. Filing stays outside the desk. */
   const PACK_DUTY = {
@@ -47929,13 +47939,13 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute,
         maxWidth: 520
       }
-    }, note), !canReview && /*#__PURE__*/React.createElement("div", {
+    }, note), /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[13px]",
-      "data-testid": "teller-screening-note",
+      "data-testid": "screening-status-copy",
       style: {
         color: CD.ink
       }
-    }, "This needs review. A supervisor will help.")), canReview && /*#__PURE__*/React.createElement("div", {
+    }, "Not screened")), canReview && /*#__PURE__*/React.createElement("div", {
       className: "mt-3",
       "data-testid": "screening-review-queue"
     }, /*#__PURE__*/React.createElement("div", {
@@ -47944,7 +47954,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "The score threshold is a placeholder pending Compliance Officer sign-off."), queue && queue.items && queue.items.length === 0 && /*#__PURE__*/React.createElement("div", {
+    }, "The score threshold is a placeholder pending Compliance Officer sign-off."), queue && (queue.tasks || []).filter(task => !task.doneAt).map(task => /*#__PURE__*/React.createElement("div", {
+      key: task.taskId,
+      "data-testid": "officer-task",
+      className: "text-[12px] mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, task.instruction)), queue && queue.items && queue.items.length === 0 && /*#__PURE__*/React.createElement("div", {
       className: "text-[13px]",
       style: {
         color: CD.mute
@@ -49838,7 +49855,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "cd-tile-frame"
     }, /*#__PURE__*/React.createElement("div", {
       className: "cd-honest-tiles mt-3"
-    }, [['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Running', 'On this desk', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
+    }, [['Reports to file', philippines ? 0 : draftN, philippines ? 'Not filed here' : 'Filings due', 'submissions', CD.amber, true], ['Structuring', strN, 'Patterns to watch', 'structuring', CD.amber, true], ['Screening', 'Not screened', 'Not screened', 'screening', CD.mute, false]].map(([l, v, sub, go, warn, numeric]) => {
       const bad = numeric && v > 0;
       const col = numeric ? bad ? warn : CD.green : CD.mute;
       return /*#__PURE__*/React.createElement("button", {
@@ -51470,14 +51487,20 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Screening runs on this desk. A teller does not see why a deal is held."
+      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Not screened."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       "data-testid": "persona-not-connected",
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet."))), latest && latest.status === 'completed' && (() => {
+    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11px]",
+      "data-testid": "client-not-screened",
+      style: {
+        color: CD.mute
+      }
+    }, "Not screened"))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -52086,10 +52109,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       onCapture: setPhoto
     }), needsPep && /*#__PURE__*/React.createElement("div", {
       className: "mt-3 text-[12.5px]",
+      "data-testid": "pep-client-answer",
       style: {
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("div", null, "Ask the client: are they a politically exposed person?"), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", null, "The client's own answer."), /*#__PURE__*/React.createElement("div", {
+      className: "mt-1"
+    }, "Ask the client: are they a politically exposed person?"), /*#__PURE__*/React.createElement("div", {
       className: "flex gap-2 mt-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",

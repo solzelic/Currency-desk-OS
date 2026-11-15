@@ -502,6 +502,7 @@
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [serverHeld, setServerHeld] = useState(false);
+    const [serverNotScreened, setServerNotScreened] = useState(false);
 
     /* Anything the teller put on this ticket. Closing from the phone is
        the X alone, so that gesture asks before it throws the ticket away.
@@ -880,6 +881,7 @@
       setServerBusy(true);
       setServerError('');
       setServerHeld(false);
+      setServerNotScreened(false);
       try {
         const packId = window.CDOS.deskPack && window.CDOS.deskPack() && window.CDOS.deskPack().packId;
         const serbia = packId === 'pack-rs-v1';
@@ -901,6 +903,7 @@
               }
             : {}),
         });
+        if (posted && posted.screening === "Not screened") setServerNotScreened(true);
         const row = window.CDOS.Backend.transactionToRow(posted, customer, { purpose: purpose.trim(), sourceOfFunds: cap.source.trim(), thirdParty: !!cap.thirdParty, thirdPartyName: cap.thirdParty ? cap.thirdPartyName.trim() : '' });
         setRows(current => window.CDOS.Backend.mergeRows(current, [row]));
         log('Transaction recorded', `${posted.transactionRef} · Exchange · ${customer} · ${posted.inputAmount} ${posted.from} · server ledger`);
@@ -1449,6 +1452,7 @@
                     turned down, where the teller would otherwise get a
                     button that simply did nothing. */}
                 {serverHeld && <div data-testid="deal-needs-review" role="status" className="px-3 py-2 text-[13px]" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink }}>This needs review. A supervisor will help.</div>}
+                {serverNotScreened && <div data-testid="deal-not-screened" role="status" className="px-3 py-2 text-[13px]" style={{ color: CD.ink }}>Not screened</div>}
                 {serverError && !isExchange && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}><b>Nothing was posted.</b> {serverError}</div>}
                 {serverBacked && isExchange ? <>
                   {serverQuote && <div className="px-3 py-2 text-[11px]" style={{ background: CD.greenSoft, borderRadius: 9, color: CD.green }}>

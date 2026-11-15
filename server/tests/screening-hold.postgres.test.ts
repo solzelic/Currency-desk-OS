@@ -42,8 +42,6 @@ postgres("sanctions hold and review", () => {
   });
 
   afterAll(async () => {
-    await pool.query("DELETE FROM sanctions_review_decisions");
-    await pool.query("DELETE FROM sanctions_reviews");
     await pool.query("DELETE FROM sanctions_screenings");
     await pool.query("DELETE FROM sanctions_list_entries");
     await pool.query("DELETE FROM sanctions_list_snapshots");
@@ -106,16 +104,21 @@ postgres("sanctions hold and review", () => {
     );
     await pool.query(
       `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
-       VALUES ('snp-hold','ca|hold','["Hold Subject"]','[]')`,
+       VALUES ('snp-hold',$1,'["Hold Subject"]','[]')`,
+      [`ca|hold-${Date.now()}`],
+    );
+    await pool.query(
+      "UPDATE legal_entities SET compliance_officer_staff_id = 'j.masri' WHERE id = $1",
+      [DEMO.legalEntityId],
     );
   }
 
-  async function postDeal(staffId = "m.costa") {
+  async function postDeal(staffId = "m.costa", customerId = "cust-hold") {
     const cookies = await cookie(staffId);
     const made = await app.inject({
       method: "POST", url: "/api/quotes", cookies,
       payload: {
-        customerId: "cust-hold", from: "CAD", to: "USD", inputAmount: "100.00",
+        customerId, from: "CAD", to: "USD", inputAmount: "100.00",
         feeCad: "0.00", direction: "customer_buy_foreign",
       },
     });
@@ -130,14 +133,28 @@ postgres("sanctions hold and review", () => {
   }
 
   it("holds the deal on the server and does not tell the teller why", async () => {
-    const held = await postDeal();
+    const stamp = Date.now();
+    const customerId = `cust-${stamp}`;
+    const name = `Hold Subject ${stamp}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,$6,'Normal','verified')`,
+      [customerId, ...scope, name],
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold',$1,$2::jsonb,'[]')`,
+      [`ca|${stamp}`, JSON.stringify([name])],
+    );
+    const beforeHold = await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE customer_id = $1", [customerId]);
+    const held = await postDeal("m.costa", customerId);
     expect(held.statusCode).toBe(422);
     const body = held.json();
     expect(body).toEqual({ code: "NEEDS_REVIEW", message: TELLER_HOLD_MESSAGE });
     const raw = JSON.stringify(body);
     expect(raw).not.toMatch(/ca-sema|sourceKey|score|sanctions|Hold Subject/i);
-    const posted = await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE tenant_id=$1", [DEMO.tenantId]);
-    expect(posted.rows[0].n).toBe(0);
+    const posted = await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE customer_id = $1", [customerId]);
+    expect(posted.rows[0].n).toBe(beforeHold.rows[0].n);
 
     const teller = await cookie("m.costa");
     const queue = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: teller });
@@ -147,9 +164,10 @@ postgres("sanctions hold and review", () => {
     const owner = await cookie("j.masri");
     const reviews = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
     expect(reviews.statusCode).toBe(200);
-    const item = reviews.json().items[0];
-    expect(item.subjectName).toBe("Hold Subject");
-    expect(item.matchedName).toBe("Hold Subject");
+    const item = reviews.json().items.find((row: { subjectName: string; status: string }) => row.subjectName === name && row.status === "open");
+    if (!item) throw new Error("missing review");
+    expect(item.subjectName).toBe(name);
+    expect(item.matchedName).toBe(name);
     expect(reviews.json().threshold.signedOff).toBe(false);
     expect(reviews.json().threshold.note).toMatch(/pending Compliance Officer sign-off/);
 
@@ -165,14 +183,23 @@ postgres("sanctions hold and review", () => {
     expect(decision.rows[0]).toMatchObject({ actor_id: "j.masri", action: "clear" });
     expect(decision.rows[0].reason).toMatch(/different date of birth/);
 
-    const again = await postDeal();
+    const again = await postDeal("m.costa", customerId);
     expect(again.statusCode, again.body).toBe(201);
   });
 
-  it("keeps a confirmed match held", async () => {
-    await pool.query("DELETE FROM sanctions_review_decisions");
-    await pool.query("DELETE FROM sanctions_reviews");
-    const held = await postDeal();
+  it("keeps a confirmed match held and tells the teller the same neutral line", async () => {
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ('cust-confirm',$1,$2,$3,$4,'Confirm Subject','Normal','verified')
+       ON CONFLICT (customer_id) DO NOTHING`,
+      scope,
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold','ca|confirm','["Confirm Subject"]','[]')
+       ON CONFLICT DO NOTHING`,
+    );
+    const held = await postDeal("m.costa", "cust-confirm");
     expect(held.statusCode).toBe(422);
     const owner = await cookie("j.masri");
     const reviews = await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner });
@@ -182,14 +209,34 @@ postgres("sanctions hold and review", () => {
       payload: { reason: "The name and the date of birth agree." },
     });
     expect(confirmed.statusCode).toBe(200);
-    const still = await postDeal();
+    const still = await postDeal("m.costa", "cust-confirm");
     expect(still.statusCode).toBe(422);
-    expect(still.json()).toEqual({ code: "NEEDS_REVIEW", message: TELLER_HOLD_MESSAGE });
+    expect(still.json()).toEqual({ code: "NEEDS_REVIEW", message: "This needs review. A supervisor will help." });
+    expect(JSON.stringify(still.json())).not.toMatch(/LPEPR|FINTRAC|RCMP|CSIS/);
+    const refused = await app.inject({
+      method: "POST", url: `/api/screening/reviews/${reviewId}/clear`, cookies: owner,
+      payload: { reason: "Trying to clear a confirmed match." },
+    });
+    expect(refused.statusCode).toBe(409);
+    const task = await pool.query(
+      "SELECT task_id, instruction, retain_until > now() + interval '4 years' AS kept FROM sanctions_officer_tasks WHERE review_id = $1",
+      [reviewId],
+    );
+    expect(task.rows[0].instruction).toBe("File a listed person or entity property report (LPEPR) with FINTRAC without delay, and disclose to the RCMP and CSIS.");
+    expect(task.rows[0].kept).toBe(true);
+    const done = await app.inject({
+      method: "POST", url: `/api/screening/tasks/${task.rows[0].task_id}/done`, cookies: owner,
+    });
+    expect(done.statusCode).toBe(200);
+    expect(done.json().doneBy).toBe("j.masri");
+    const again = await app.inject({
+      method: "POST", url: `/api/screening/tasks/${task.rows[0].task_id}/done`, cookies: owner,
+    });
+    expect(again.statusCode).toBe(409);
+    await expect(pool.query("UPDATE sanctions_review_decisions SET reason = 'changed'")).rejects.toThrow(/append-only/);
   });
 
   it("re-screens clients when a list changes and screens every id check tier", async () => {
-    await pool.query("DELETE FROM sanctions_review_decisions");
-    await pool.query("DELETE FROM sanctions_reviews");
     const teller = await cookie("m.costa");
     const created = await app.inject({
       method: "POST", url: "/api/clients", cookies: teller,
@@ -240,5 +287,51 @@ postgres("sanctions hold and review", () => {
     expect(pep.rows[0].is_pep).toBe(false);
     expect(pep.rows[0].answered_by).toBe("m.costa");
     expect(readFileSync(new URL("../src/screening/provider.ts", import.meta.url), "utf8")).not.toMatch(/fetch\(/);
+  });
+
+  it("refuses the owner until the shop names them, and a teller always", async () => {
+    await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = NULL WHERE id = $1", [DEMO.legalEntityId]);
+    const owner = await cookie("j.masri");
+    const teller = await cookie("m.costa");
+    expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: teller })).statusCode).toBe(403);
+    await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = 'j.masri' WHERE id = $1", [DEMO.legalEntityId]);
+    expect((await app.inject({ method: "GET", url: "/api/screening/reviews", cookies: owner })).statusCode).toBe(200);
+  });
+
+  it("records not_screened when the list is missing or older than 24 hours", async () => {
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ('cust-stale',$1,$2,$3,$4,'Stale Subject','Normal','verified')
+       ON CONFLICT (customer_id) DO NOTHING`,
+      scope,
+    );
+    await pool.query("UPDATE sanctions_list_snapshots SET last_checked_at = now() - interval '25 hours' WHERE status = 'good'");
+    const stale = await postDeal("m.costa", "cust-stale");
+    expect(stale.statusCode, stale.body).toBe(201);
+    expect(stale.json().screening).toBe("Not screened");
+    const staleRow = await pool.query("SELECT outcome FROM sanctions_screenings ORDER BY created_at DESC LIMIT 1");
+    expect(staleRow.rows[0].outcome).toBe("not_screened");
+    await pool.query("DELETE FROM sanctions_list_entries WHERE snapshot_id = 'snp-hold'");
+    await pool.query("DELETE FROM sanctions_list_snapshots WHERE snapshot_id = 'snp-hold'");
+    const missing = await postDeal("m.costa", "cust-stale");
+    expect(missing.statusCode, missing.body).toBe(201);
+    expect(missing.json().screening).toBe("Not screened");
+    const teller = await cookie("m.costa");
+    const created = await app.inject({
+      method: "POST", url: "/api/clients", cookies: teller,
+      payload: { legalName: "Unscreened Person" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    expect(created.json().screeningOutcome).toBe("not_screened");
+    await pool.query(
+      `INSERT INTO sanctions_list_snapshots
+        (snapshot_id,source_key,source_url,fetched_at,last_checked_at,content_sha256,entry_count,status,added_count,removed_count)
+       VALUES ('snp-hold','ca-sema','https://example.test/list',now(),now(),'abc',1,'good',1,0)`,
+    );
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold','ca|hold','["Hold Subject"]','[]')`,
+    );
   });
 });

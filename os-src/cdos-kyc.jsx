@@ -543,8 +543,9 @@
       <div className="flex items-center gap-2.5 mb-3">
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Screening runs on this desk. A teller does not see why a deal is held." /></div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Not screened." /></div>
           <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+          <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>Not screened</div>
         </div>
       </div>
 
@@ -761,8 +762,9 @@
 
           {step === 'choose' && <>
             <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />
-            {needsPep && <div className="mt-3 text-[12.5px]" style={{ color: CD.ink }}>
-              <div>Ask the client: are they a politically exposed person?</div>
+            {needsPep && <div className="mt-3 text-[12.5px]" data-testid="pep-client-answer" style={{ color: CD.ink }}>
+              <div>The client's own answer.</div>
+              <div className="mt-1">Ask the client: are they a politically exposed person?</div>
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={() => setPepAnswer(true)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === true ? CD.ink : 'transparent', color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink }}>Yes</button>
                 <button type="button" onClick={() => setPepAnswer(false)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === false ? CD.ink : 'transparent', color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink }}>No</button>

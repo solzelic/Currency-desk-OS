@@ -62,10 +62,16 @@ list stays.
 
 A possible match, or a confirmed one, stops `POST /api/quotes/:id/post`.
 The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. A supervisor will help." }`.
-The owner or a compliance officer uses `GET /api/screening/reviews`.
-Clearing stores the actor and the reason and lets a later post through
-for that same list entry. Confirming keeps the deal held. A changed list
-re-screens existing clients.
+The shop's named compliance officer uses `GET /api/screening/reviews`.
+The owner may do that only when the shop has named them. A teller cannot.
+Decisions are append-only and kept for 5 years. Clearing stores the actor
+and the reason and lets a later post through for that same list entry.
+Confirming keeps the deal held and opens a task to file a listed person
+or entity property report with FINTRAC and to disclose to the RCMP and
+CSIS. The desk records when that task was done and by whom. It does not
+file the report. A confirmed match cannot be cleared. A changed list
+re-screens existing clients. A list with no good fetch in the last 24
+hours, or no good list at all, is recorded as not screened.
 
 Tiers 1 and 2 (`quick` and `verify` as well as `1` and `2`) record whether
 the client said they are a politically exposed person, and the date.

@@ -97,13 +97,13 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   /* Screening is not connected on this desk either. The copy still
      states the owner's duty. It does not name a sanctions list, it
      does not show the sample names, and it does not show a count. */
-  expect(words).toMatch(/Screening runs on this desk/);
+  expect(words).toMatch(/Not screened/);
   expect(words).toMatch(/ATC list/);
   expect(words).toMatch(/freeze without delay/);
   expect(words).toMatch(/tell the AMLC the same day/);
   expect(words).toMatch(/file an STR/);
   expect(words).toMatch(/outside the desk/);
-  expect(words).toMatch(/Running/);
+  expect(words).not.toMatch(/\bRunning\b/);
   expect(words).not.toMatch(/No sanctions list is loaded/);
   expect(words).not.toMatch(/Not on this desk/);
   expect(bannedNameHits(words)).toEqual([]);
@@ -112,7 +112,8 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
   const screening = page.getByTestId("sanctions-not-connected");
   await expect(screening).toBeVisible();
   const screeningWords = await screening.innerText();
-  expect(screeningWords).toMatch(/Screening runs on this desk/);
+  expect(screeningWords).toMatch(/Not screened/);
+  expect(screeningWords).not.toMatch(/Screening runs on this desk/);
   expect(screeningWords).toMatch(/ATC list/);
   expect(bannedNameHits(screeningWords)).toEqual([]);
   expect(screeningWords).toMatch(/freeze without delay/);
@@ -123,14 +124,14 @@ test("a Philippines desk shows the Philippines pack and a banking day, not a 24-
 
   const tile = page.getByTestId("sanctions-screening-tile");
   await expect(tile).toBeVisible();
-  await expect(tile).toContainText("Running");
+  await expect(tile).toContainText("Not screened");
   await expect(tile).not.toContainText("0");
 
   await page.locator('[data-app="dashboard"]').click();
   const dashboard = page.locator(".win.show.active");
   await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
   const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
-  await expect(dashTile).toContainText("Running");
+  await expect(dashTile).toContainText("Not screened");
   expect(await dashTile.innerText()).not.toMatch(/\d/);
 
   await page.locator('[data-app="compliance"]').click();

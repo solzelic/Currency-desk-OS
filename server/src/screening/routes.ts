@@ -6,10 +6,9 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import pg from "pg";
 import { z } from "zod";
-import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import type { Db } from "../db/index.js";
-import { screenSubject, TELLER_HOLD_MESSAGE } from "./gate.js";
+import { LPEPR_TASK, mayReviewScreening, screenSubject, TELLER_HOLD_MESSAGE } from "./gate.js";
 import type { ScreeningProvider } from "./provider.js";
 import { SCORE_THRESHOLD_PLACEHOLDER, THRESHOLD_SIGNOFF } from "./names.js";
 
@@ -41,6 +40,19 @@ export function registerScreeningRoutes(
   void options?.provider;
   const pool = new pg.Pool({ connectionString: databaseUrl });
   app.addHook("onClose", async () => { await pool.end(); });
+
+  async function namedOfficer(legalEntityId: string): Promise<string | null> {
+    const found = await pool.query(
+      "SELECT compliance_officer_staff_id FROM legal_entities WHERE id = $1",
+      [legalEntityId],
+    );
+    const value = found.rows[0]?.compliance_officer_staff_id;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  }
+
+  async function canReview(who: { role: string; staffId: string; legalEntityId: string }): Promise<boolean> {
+    return mayReviewScreening(who.role, who.staffId, await namedOfficer(who.legalEntityId));
+  }
 
   app.post("/api/screening/id-check", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
@@ -99,9 +111,7 @@ export function registerScreeningRoutes(
   app.get("/api/screening/reviews", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    if (!hasBackendPermission(who.role, "screening:review")) {
-      return reply.code(403).send({ error: "forbidden" });
-    }
+    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
     const setting = await pool.query(
       "SELECT score_threshold, signed_off FROM sanctions_score_settings WHERE legal_entity_id = $1",
       [who.legalEntityId],
@@ -116,12 +126,27 @@ export function registerScreeningRoutes(
         LIMIT 100`,
       [who.tenantId, who.legalEntityId],
     );
+    const tasks = await pool.query(
+      `SELECT task_id, review_id, instruction, done_at, done_by
+         FROM sanctions_officer_tasks
+        WHERE tenant_id = $1 AND legal_entity_id = $2
+        ORDER BY created_at DESC
+        LIMIT 100`,
+      [who.tenantId, who.legalEntityId],
+    );
     return {
       threshold: {
         score: stored ? Number(stored.score_threshold) : SCORE_THRESHOLD_PLACEHOLDER,
         signedOff: stored ? stored.signed_off === true : false,
         note: THRESHOLD_SIGNOFF,
       },
+      tasks: tasks.rows.map((row) => ({
+        taskId: row.task_id,
+        reviewId: row.review_id,
+        instruction: row.instruction,
+        doneAt: row.done_at,
+        doneBy: row.done_by,
+      })),
       items: items.rows.map((row) => ({
         reviewId: row.review_id,
         subjectName: row.subject_name,
@@ -140,9 +165,7 @@ export function registerScreeningRoutes(
   async function decide(action: "clear" | "confirm", req: FastifyRequest<{ Params: { reviewId: string } }>, reply: FastifyReply) {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
-    if (!hasBackendPermission(who.role, "screening:review")) {
-      return reply.code(403).send({ error: "forbidden" });
-    }
+    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
     const body = decisionBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "reason_required" });
     const client = await pool.connect();
@@ -164,6 +187,14 @@ export function registerScreeningRoutes(
          VALUES ($1,$2,$3,$4,$5)`,
         [`dec_${randomUUID()}`, req.params.reviewId, who.staffId, action, body.data.reason],
       );
+      if (action === "confirm") {
+        await client.query(
+          `INSERT INTO sanctions_officer_tasks
+            (task_id, review_id, tenant_id, legal_entity_id, instruction)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [`task_${randomUUID()}`, req.params.reviewId, who.tenantId, who.legalEntityId, LPEPR_TASK],
+        );
+      }
       await client.query("COMMIT");
       return { ok: true, status: action === "clear" ? "cleared" : "confirmed" };
     } catch (err) {
@@ -177,4 +208,19 @@ export function registerScreeningRoutes(
 
   app.post<{ Params: { reviewId: string } }>("/api/screening/reviews/:reviewId/clear", async (req, reply) => decide("clear", req, reply));
   app.post<{ Params: { reviewId: string } }>("/api/screening/reviews/:reviewId/confirm", async (req, reply) => decide("confirm", req, reply));
+
+  app.post<{ Params: { taskId: string } }>("/api/screening/tasks/:taskId/done", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (!(await canReview(who))) return reply.code(403).send({ error: "forbidden" });
+    const updated = await pool.query(
+      `UPDATE sanctions_officer_tasks
+          SET done_at = now(), done_by = $4
+        WHERE task_id = $1 AND tenant_id = $2 AND legal_entity_id = $3 AND done_at IS NULL
+        RETURNING done_at, done_by`,
+      [req.params.taskId, who.tenantId, who.legalEntityId, who.staffId],
+    );
+    if (!updated.rowCount) return reply.code(409).send({ error: "already_recorded" });
+    return { ok: true, doneAt: updated.rows[0]?.done_at, doneBy: updated.rows[0]?.done_by };
+  });
 }

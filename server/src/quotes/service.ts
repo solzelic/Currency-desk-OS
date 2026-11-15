@@ -767,11 +767,11 @@ export class QuoteService {
          post without a reason, or a manager's rate override and its reason.
          "warn" posts. Either way it is logged once the deal has posted. */
       const belowFloor = await this.belowFloor(client, actor, value, capture?.marginOverrideReason);
-      const held = await holdForCustomer(client, actor, String(q.customer_id), quoteId);
+      const screen = await holdForCustomer(client, actor, String(q.customer_id), quoteId);
       await client.query("COMMIT");
       client.release();
       released = true;
-      if (held) throw new LedgerError("NEEDS_REVIEW", TELLER_HOLD_MESSAGE);
+      if (screen.hold) throw new LedgerError("NEEDS_REVIEW", TELLER_HOLD_MESSAGE);
       /* The quote check is its own transaction, and it has committed.
          The deal is the next transaction, on its own connection, inside
          postFrozenQuote: the frozen terms, the idempotency row, and the
@@ -820,7 +820,9 @@ export class QuoteService {
             JSON.stringify({ quoteId, transactionRef: (posted as { transactionRef?: string }).transactionRef ?? null, ...belowFloor })],
         );
       }
-      return this.forReader(role, posted, false);
+      const body = this.forReader(role, posted, false);
+      if (screen.outcome === "not_screened") return { ...body, screening: "Not screened" };
+      return body;
     } catch (e) {
       if (!released) await client.query("ROLLBACK");
       throw e;

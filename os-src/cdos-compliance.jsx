@@ -393,7 +393,7 @@
      (pack-hk-v1). `pack` is read so a later feed can return true for
      one id without each screen growing its own pack check. */
   const WATCHLISTS = [];
-  const NOT_CONNECTED = "Screening runs on this desk. A teller does not see why a deal is held.";
+  const NOT_CONNECTED = "Not screened.";
   /* The duty those three packs already state, after the sentence above.
      The sentence does not name a sanctions list. Filing stays outside the desk. */
   const PACK_DUTY = {

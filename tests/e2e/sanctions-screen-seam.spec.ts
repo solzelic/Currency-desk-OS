@@ -14,8 +14,9 @@ test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no led
 
 /** The compliance window must say screening is not connected, and nothing else about a list. */
 function expectHonestScreening(text: string) {
-  expect(text).toMatch(/Screening runs on this desk/);
-  expect(text).toMatch(/A teller does not see why a deal is held/);
+  expect(text).toMatch(/Not screened/);
+  expect(text).not.toMatch(/Screening runs on this desk/);
+  expect(text).not.toMatch(/\bRunning\b/);
   expect(text).not.toMatch(/Every client and beneficiary screened against/i);
   expect(bannedNameHits(text)).toEqual([]);
   expect(text).not.toMatch(/Lin Wei/);
@@ -65,10 +66,10 @@ test("a Canada desk says sanctions screening is not connected and shows no count
 
   const tile = compliance.locator("button").filter({ hasText: "Screening" }).first();
   const tileText = await tile.innerText();
-  expect(tileText).toContain("Running");
+  expect(tileText).toContain("Not screened");
   expect(tileText).not.toMatch(/\d/);
-  await expect(compliance.getByTestId("sanctions-screening-tile")).toContainText("Running");
-  await expect(compliance.getByTestId("sanctions-not-connected")).toContainText("Screening runs on this desk");
+  await expect(compliance.getByTestId("sanctions-screening-tile")).toContainText("Not screened");
+  await expect(compliance.getByTestId("sanctions-not-connected")).toContainText("Not screened");
 
   await compliance.locator(".fld-tab", { hasText: "Filings" }).click();
   await expect(compliance.getByText("Brooke Lawson")).toHaveCount(0);
@@ -79,7 +80,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   const dashboard = page.locator(".win.show.active");
   await expect(dashboard.getByText(/Cash position/i)).toBeVisible();
   const dashTile = dashboard.getByTestId("dashboard-sanctions-tile");
-  await expect(dashTile).toContainText("Running");
+  await expect(dashTile).toContainText("Not screened");
   await expect(dashTile).toContainText("Sanctions");
   expect(await dashTile.innerText()).not.toMatch(/\d/);
   const wireTile = dashboard.locator("button").filter({ hasText: /to file/ }).first();
@@ -96,7 +97,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   const settings = page.locator(".win.show.active");
   await expect(settings.getByText(/Reporting & thresholds/i)).toBeVisible();
   expectHonestScreening(await settings.innerText());
-  await expect(settings.getByTestId("sanctions-screening-gap")).toContainText("Running");
+  await expect(settings.getByTestId("sanctions-screening-gap")).toContainText("Not screened");
 
   await page.locator('[data-app="clients"]').click();
   const clients = page.locator(".win.show.active");
@@ -138,11 +139,10 @@ test("a teller sees the same not-connected screening state", async ({ page }) =>
   expectHonestScreening(await compliance.innerText());
 
   const tile = compliance.getByTestId("sanctions-screening-tile");
-  await expect(tile).toContainText("Running");
-  await expect(tile).toContainText("On this desk");
+  await expect(tile).toContainText("Not screened");
   expect(await tile.innerText()).not.toMatch(/\d/);
-  await expect(compliance.getByTestId("sanctions-not-connected")).toContainText("Screening runs on this desk");
-  await expect(compliance.getByTestId("teller-screening-note")).toContainText("This needs review. A supervisor will help.");
+  await expect(compliance.getByTestId("sanctions-not-connected")).toContainText("Not screened");
+  await expect(compliance.getByText("Screening runs on this desk")).toHaveCount(0);
 
   await compliance.locator(".fld-tab", { hasText: "Filings" }).click();
   const filings = await compliance.innerText();
