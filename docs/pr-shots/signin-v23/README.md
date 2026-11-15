@@ -11,20 +11,25 @@ has no supplied original, so it is checked for layout/scroll/accessibility only.
 The provider/OS-font/control/accessibility differences are intentional; no claim
 of whole-pack or strict pixel-identical acceptance is made.
 
-Pre-commit observed verification:
+Review correction evidence:
 
-- `npm run build`, `npm run check:parse`, `npm run check:sanctions`: passed.
-- `npm run typecheck --prefix server`: passed.
-- Full server suite with fresh PostgreSQL16: 198 files / 2,007 tests passed, zero skips.
-- Targeted browser suite: 17 passed, zero skips (10 new and seven existing).
+- The five new keystroke/recovery regression cases failed on e847 before fixes.
+- Corrected-source targeted browser suite: 25 passed, zero skips (18 v2.3 and
+  seven existing). This includes an actual server-issued legacy CD-ID login.
 - Axe on first/password/rejected-password at all five viewports: zero violations.
-- Keyboard, reduced motion, real password-only server session, challenge handoff,
-  duplicate-submit latch, network failure, lock, 503 and inactive URL flags: passed.
-- T3 shared preview read the actual production components at 1100×700 and observed
-  scroll/client height 700/700, with unavailable providers disabled. Two snapshot
-  calls failed with “Preview automation snapshot timed out after 15000ms.” The
-  PNG evidence here is from successful Playwright capture, not the failed tool.
+- Missing reference elements now fail except the documented provider stand-in
+  and absent shop lede. Reports and assertions use identical semantic matching;
+  geometry exceptions no longer suppress font/colour assertions. Tap targets
+  check width and height on both screens. Wrong-password clearing is asserted.
+- ID captures show formatting after blur, with keyboard focus on Continue.
+  The raw text returns on focus; select-all replacement and later @ are tested.
+- Reset/cooldown text is retained; busy progress is a neutral status.
 
-The coordinator handoff records **post-commit** verification against the exact
-candidate SHA. CI and independent review are pending. No merge or deployment,
-and no external PR publication. This presentation slice is not all of CD-221.
+The original builder e847 server 2007/2007 and ledger 61/61 passes are historical
+only. The successor's full suites, CI and fresh independent review are pending;
+its exact-commit results belong in the signed ticket/PR handoff. No merge or
+deployment is claimed. This presentation slice is not all of CD-221.
+
+Prior shared preview observed 1100×700 without scroll. Its snapshot calls twice
+failed with “Preview automation snapshot timed out after 15000ms.” The images
+here are successful Playwright captures, regenerated with the corrected source.

@@ -50,5 +50,9 @@
     "actualFont": "IBM Plex Mono 700 10px/normal ls 1px",
     "originalColor": "rgb(115, 108, 98)",
     "actualColor": "rgb(115, 108, 98)"
+  },
+  {
+    "text": "G",
+    "difference": "missing reference content (documented exception)"
   }
 ]

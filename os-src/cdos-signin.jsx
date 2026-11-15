@@ -362,6 +362,7 @@
            so proving the new password is both the next step and the proof
            it took. */
         setIdInput(resetEmail); setPw(''); setCode(''); setNewPw('');
+        if (presentation === 'v23') { setShowPw(false); clearLock(); }
         setStep('password');
         setNote('Password changed. Sign in with the new one.');
         setErr('');
@@ -448,17 +449,19 @@
     // CD-221: explicit composition seam, not a public activation switch.
     // Default callers keep the shipped flow until returning-auth is ready.
     if (presentation === 'v23' && (step === 'id' || step === 'password')) {
-      const { FirstScreen, Password } = window.CDOS.SignInV23;
-      const recover = () => { if (busy) return; setResetEmail(idInput.includes('@') ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); };
+      const { FirstScreen, Password, formatIdentifier } = window.CDOS.SignInV23;
+      const clearSecret = () => { setPw(''); setShowPw(false); clearLock(); };
+      const recover = () => { if (busy) return; clearSecret(); setResetEmail(idInput.includes('@') ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); };
       if (step === 'id') return <FirstScreen identifier={idInput} error={err}
-        onIdentifier={value => { setIdInput(value); setErr(''); }} onContinue={goPassword}
+        onIdentifier={value => { clearSecret(); setIdInput(value); setErr(''); setNote(''); }} onContinue={() => { setIdInput(formatIdentifier(idInput)); goPassword(); }}
         onRecover={recover} onSignup={() => window.location.assign('/signup')} onBack={() => window.location.assign('/')} />;
       const disabled = busy || !!(locked && lockUntil) || pw.length < 4 || (idInput.includes('@') && cool > 0);
       return <Password identifier={idInput} password={pw} show={showPw} busy={busy} disabled={disabled}
         onPassword={value => { setPw(value); if (!locked) setErr(''); }} onShow={() => setShowPw(value => !value)}
         onBack={() => { if (busy) return; setStep('id'); setPw(''); setShowPw(false); setErr(''); clearLock(); }}
         onSubmit={event => { event.preventDefault(); if (!disabled) submitPassword(event); }} onRecover={recover}
-        error={locked ? lockSentence : err} />;
+        error={locked ? lockSentence : busy ? '' : err}
+        status={busy ? err : [note, idInput.includes('@') && cool > 0 ? 'Another code in ' + cool + 's' : ''].filter(Boolean).join(' ')} />;
     }
 
     // ---- A1 · CurrencyDesk ID -----------------------------------------

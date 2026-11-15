@@ -29,7 +29,10 @@ the existing server/session lifecycle; unavailable passkey/OIDC controls are
 disabled. Returning-auth/CD-ID lookup, 30-day known-device trust and the rest of
 the pack remain unfinished. CD-206's sliding 24-hour enrolment is not that trust,
 and resuming expired enrolment still needs a shared reauthentication interface.
-See [SIGNIN_V23.md](SIGNIN_V23.md) for scope, evidence and the next-slice contract.
+Review corrections preserve keystroke identity and clear secrets across recovery;
+full exact-head verification and a fresh independent review remain required.
+The signup development contract is now frozen at ed371e8e (#727), with CI and
+release acceptance still open. See [SIGNIN_V23.md](SIGNIN_V23.md) for scope, evidence and the next-slice contract.
 
 One shop, one full operating loop, provable end to end: an approved operator
 can go from Early Access → approval → onboarding → configured desk and rates

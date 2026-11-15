@@ -2,7 +2,7 @@
    The existing SignIn owns requests and session handoff. Activation waits for
    returning-auth contracts; tests select this view through a component prop. */
 (function () {
-  const { useEffect, useRef, useId } = React;
+  const { useEffect, useRef, useId, useState } = React;
   const CSS = `
     .si23 { --f:'Schibsted Grotesk',system-ui,sans-serif; --m:'IBM Plex Mono',monospace; --serif:'Instrument Serif',serif;
       --ink:#17140F; --mute:#6E675E; --faint:#736C62; --green:#1D6B45; --green-deep:#17583A; --flag:#C2452D; --line:rgba(23,20,15,.1);
@@ -141,16 +141,29 @@
       <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4M9 6.8a6 6 0 0 1 9 5.2v2M2 12a10 10 0 0 1 18-6M14 13.12c0 2.38 0 6.38-1 8.88M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2M21.8 16c.2-2 .13-5.35 0-6M17.29 21.02c.12-.6.43-2.3.5-3.02M8.65 22c.21-.66.45-1.32.57-2M2 16h.01" />
     </svg>;
   }
-  // Formatting is presentation, never proof of an account. Do not rewrite an
-  // email beginning with cd or any existing legacy staff identifier.
+  // Complete v2 syntax follows enquiries/cd-id.ts; this is cosmetic, not an
+  // account lookup. Preserve raw editing text: an ID-shaped email local part
+  // may still gain an @. Legacy numeric-tail IDs pass through unchanged.
   function formatIdentifier(value) {
-    if (!/^cd(?:[\s-]|[a-z]{4}[\s-]?[2-9a-hjkmnp-z]{4}$)/i.test(value) || value.includes('@')) return value;
-    const raw = value.toUpperCase().replace(/[\s-]/g, '');
-    if (!/^CD[A-Z0-9]{0,8}$/.test(raw)) return value;
-    return 'CD' + (raw.length > 2 ? '-' + raw.slice(2, 6) : '') + (raw.length > 6 ? '-' + raw.slice(6) : '');
+    if (/^CD-[A-Z]{2,6}-\d{4,}$/i.test(value)) return value;
+    const match = /^(?:CD[ -]*)?([A-Z]{4})[ -]*([2-9A-HJKMNP-Z]{4})$/i.exec(value);
+    return match ? ('CD-' + match[1] + '-' + match[2]).toUpperCase() : value;
   }
   function FirstScreen({ identifier, onIdentifier, onContinue, onRecover, onSignup, onBack, error = '', shopName = '', methods = {} }) {
     const land = useRef(null);
+    const [editing, setEditing] = useState(true);
+    // Let the browser finish its focus/select operation, then restore raw
+    // text and the selection together. Otherwise autofill/select-all can
+    // lose the selection when React replaces the formatted value.
+    const editIdentifier = event => {
+      const input = event.target;
+      queueMicrotask(() => {
+        if (document.activeElement !== input) return;
+        const start = input.selectionStart, end = input.selectionEnd, length = input.value.length;
+        ReactDOM.flushSync(() => setEditing(true));
+        input.setSelectionRange(start === length ? identifier.length : start, end === length ? identifier.length : end);
+      });
+    };
     useEffect(() => {
       let active = true;
       const fit = () => {
@@ -181,16 +194,16 @@
           <div className="si23-two">{['google', 'microsoft'].map(provider => <button key={provider} type="button" className="si23-ab" disabled={!methods[provider]} onClick={methods[provider]} aria-label={'Sign in with ' + (provider === 'google' ? 'Google' : 'Microsoft')} title={!methods[provider] ? 'Provider sign-in is not connected yet' : undefined}>
             <span className="si23-ic"><img alt="" src={'/assets/signin/' + (provider === 'google' ? 'google-g-logo.png' : 'microsoft-logo.svg')} /></span>{provider === 'google' ? 'Google' : 'Microsoft'}</button>)}</div>
           <div className="si23-or">or</div><div className="si23-field"><label htmlFor="si23-id">Email or CurrencyDesk ID</label><div className="si23-inp">
-            <input id="si23-id" value={identifier} onChange={e => onIdentifier(formatIdentifier(e.target.value))} autoFocus autoComplete="username webauthn" autoCapitalize="off" spellCheck={false} placeholder="Your email or ID" />
+            <input id="si23-id" value={editing ? identifier : formatIdentifier(identifier)} onChange={e => onIdentifier(e.target.value)} onFocus={editIdentifier} onBlur={() => setEditing(false)} autoFocus autoComplete="username webauthn" autoCapitalize="off" spellCheck={false} placeholder="Your email or ID" />
             <button className="si23-ib si23-arrow" type="submit" aria-label="Continue" disabled={identifier.trim().length < 3}><Arrow /></button></div></div>
           <div className="si23-rec">Can’t get in? <button className="si23-lnk" type="button" onClick={onRecover}>Recover access</button></div>
         </form></div><footer className="si23-ft"><Back onBack={onBack} /><span>Every exchange, on the record.</span></footer></div></Surface>;
   }
-  function Password({ identifier, password, onPassword, show, onShow, onBack, onSubmit, onRecover, error, busy, disabled, onPasskey }) {
+  function Password({ identifier, password, onPassword, show, onShow, onBack, onSubmit, onRecover, error, status, busy, disabled, onPasskey }) {
     return <Frame onBack={onBack}><form className="si23-card" onSubmit={onSubmit} aria-busy={busy}>
       <h2>Enter your password</h2><div className="si23-who-id"><span><b>{identifier}</b></span><button className="si23-lnk" type="button" onClick={onBack}>Change</button></div>
-      <div className="si23-field"><label htmlFor="si23-password">Password</label><div className="si23-inp"><input id="si23-password" aria-describedby={error ? 'si23-password-status' : undefined} aria-invalid={!!error && !busy} type={show ? 'text' : 'password'} value={password} onChange={e => onPassword(e.target.value)} autoComplete="current-password" placeholder="Your password" autoFocus />
-        <button className="si23-ib" type="button" onClick={onShow}>{show ? 'Hide' : 'Show'}</button></div>{error && <div id="si23-password-status" className="si23-hint si23-err" role={busy ? 'status' : 'alert'}>{error}</div>}</div>
+      <div className="si23-field"><label htmlFor="si23-password">Password</label><div className="si23-inp"><input id="si23-password" aria-describedby={error || status ? 'si23-password-status' : undefined} aria-invalid={!!error} type={show ? 'text' : 'password'} value={password} onChange={e => onPassword(e.target.value)} autoComplete="current-password" placeholder="Your password" autoFocus />
+        <button className="si23-ib" type="button" onClick={onShow}>{show ? 'Hide' : 'Show'}</button></div>{(error || status) && <div id="si23-password-status" className={'si23-hint' + (error ? ' si23-err' : '')} role={error ? 'alert' : 'status'}>{error || status}</div>}</div>
       <button className="si23-cta" type="submit" disabled={disabled}>{busy ? 'Checking…' : 'Continue →'}</button>
       <div className="si23-quiet"><button type="button" className="si23-lnk" onClick={onRecover}>Forgot password?</button><button type="button" className="si23-lnk" disabled={!onPasskey} onClick={onPasskey}>Use a passkey instead</button></div>
     </form></Frame>;

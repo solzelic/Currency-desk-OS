@@ -27,8 +27,19 @@ authoritative future lookup; the adapter displays no local-directory shop/person
 name before authentication. The existing legacy staff-ID resolution is retained
 inside its password request handler, not promoted as the new CD-ID contract.
 First Back goes to `/`; Create your desk goes to the existing `/signup` route.
-Change/Back clears the password and its visibility. Recovery uses the existing
+Change/Back, recovery entry and identifier edits clear the password, visibility
+and local lock state; server lock counters remain authoritative. Reset returns
+a masked empty field and its confirmation/cooldown message. Busy progress is
+a neutral status, not an error. Recovery uses the existing
 real reset lifecycle. No signup-owned file or migration was changed.
+
+Identifier editing retains raw text, including legacy numeric-tail IDs and email
+local parts beginning with `cd`. Complete v2 IDs format on blur/Continue; focus
+restores the raw text so appending `@` never corrupts an email. This deliberately
+delays cosmetic formatting until the field is left. The syntax follows
+`server/src/enquiries/cd-id.ts`, with the pack’s prefix-free `york7k42` spelling;
+this cosmetic helper never proves or resolves an account. Server normalization
+and legacy alphanumeric compatibility remain part of returning-auth integration.
 
 ## Original source and intentional differences
 
@@ -45,7 +56,10 @@ Classes have a `si23-` prefix because shared site `.hero` styles otherwise leak
 into a scoped descendant. No shared styles are changed.
 
 The comparison uses supplied JSON with a ±1px box threshold and exact font,
-foreground, background and radius checks on matching elements. Named exceptions:
+foreground, background and radius checks. Missing original elements fail unless
+they are the explicit provider stand-in or unverified shop lede. Assertions and
+reports share the same semantic anchor/button mapping. Position exceptions do
+not exempt font/colour checks, and both tap-target dimensions are checked. Named exceptions:
 
 - Official CD-207 provider artwork replaces prototype letter/square stand-ins.
 - `OS`/Recommended use the requested 10px minimum rather than 9.5px. The phone
@@ -68,10 +82,12 @@ foreground, background and radius checks on matching elements. Named exceptions:
 ## Verification and reproduction
 
 `tests/e2e/signin-v23.spec.ts` covers all four supplied viewports plus 1100×700:
-blank, typed ID, typed email, password, rejected password; layout measurements,
+blank, complete ID after blur, typed email, password, rejected password; layout measurements,
 axe, keyboard focus/Enter/Show/Change, reduced motion, unavailable methods,
+keystroke regression cases, recovery round trip, reset/cooldown/progress feedback,
 503/429/network failure, the request latch and legacy code handoff, a real
-password-only server session, and inactive production URL flags. No private data
+password-only server session, real server-issued legacy CD-ID typed login, and
+inactive production URL flags. No private data
 is used. Fixture credentials exist only in tests; captures never show passwords.
 
 Run after `npm ci`, `npm ci --prefix server`, and `npm run build`:
@@ -91,8 +107,10 @@ this document does not imply unrun suites or CI passed.
 
 ## Next slice, owned by the coordinator
 
-Reconcile a stable CD-206 source/contract first. #721 and unpublished signup heads
-are provisional, not acceptance dependencies. Returning credential assertion,
+CD-206 supplies `fix/signup-shop-handoff` at
+`ed371e8e4514dbabab86126333eb0ddbf25d4e25` (#727) as a stable development
+source, not release acceptance. Its CI and full integration remain open; read
+the ownership matrix before consuming it. Migrations 074–080 are reserved. Returning credential assertion,
 OIDC state/callback and account mapping, CD-ID lookup/error behavior, authoritative
 shop selection and 30-day known-device trust must exist before default activation.
 CD-206's 24h sliding enrolment is not known-device trust; expired enrolment lacks
@@ -101,5 +119,10 @@ a reauthentication/resume interface. Do not duplicate signup modules/migrations.
 Code, shop/device approval, names/PIN, invited enrolment, recovery v2.3, step-up
 and lock remain later slices. Q19 owner/money endpoints, Q20 initial no-email PIN
 and Q21 idle timing remain in the existing Message Board discussion. No policy
-values have been invented. Provider full visible labels need reconciliation with
-CD-207 before activation; Back reuses CD-208 semantics without claiming it Done.
+values have been invented. Before activation: provider full visible labels and
+Microsoft attribution must follow CD-207; unavailable methods need a visible
+explanation/styling; remove remote Google Fonts calls from the shell; replace
+legacy lock wording only alongside the server policy. These are recorded Opus
+nonblocking follow-ups, not accepted final design. The /signup navigation uses
+the current live route instead of the caller’s old signup overlay as BUILD §5
+allows. Also, Back reuses CD-208 semantics without claiming it Done.

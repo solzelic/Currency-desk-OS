@@ -34,12 +34,13 @@
     ]
   },
   "source_sha256": {
-    "os-src/cdos-signin-v23.jsx": "700c706fb1e23c3d5e4b92aea534ff794aae6c210d336e6319afdcabae50d5de",
-    "os-src/cdos-signin.jsx": "4efa86e787b0a04ee658c4bc8272d3f6015bbe48b68c73a0303698b6bc77bd40",
-    "web/app/os.js": "e07f566e30b69629d268e1a2875a69cf645be4c430a04a2b9030463160962067",
-    "tests/e2e/signin-v23.spec.ts": "c3028fdd9ba16124d06255cadc9793af2f51155f4e1ef6d6914c8fe2bee492d9"
+    "os-src/cdos-signin-v23.jsx": "cb2f6f91d2c85af105c0e288b2402077512e1123cfa31cde677b0df0676d17ea",
+    "os-src/cdos-signin.jsx": "64634d25ed89cc79d002e1c0892adc50539f5a536c396bcf67fc0d3fff6ad3ce",
+    "web/app/os.js": "c2d9a642242043aa7f42603da21b8b31554e0ba39f3967865d1d1df7683b3b02",
+    "tests/e2e/signin-v23.spec.ts": "69a6e59bd01576ac3f6c6a8987fd4345c57152f1123b14c68ffdec59cd636e8e"
   },
-  "targeted_tests": "17 passed, zero skips (10 new + 7 existing sign-in)",
-  "full_server_precommit": "198 files / 2007 tests passed, zero skips; disposable PostgreSQL16",
-  "activation": "pending; test-response composition only"
+  "targeted_tests": "25 passed, zero skips (18 v2.3 + 7 existing sign-in); corrected working-tree source captured before commit",
+  "activation": "pending; test-response composition only",
+  "full_suites": "Successor exact-head full suites pending; e847 results do not cover this revision",
+  "regressions": "Five red-first keystroke/recovery cases reproduced on e847; subsequent green includes raw restoration/autofill selection, reset/cooldown/status and real legacy CD-ID"
 }

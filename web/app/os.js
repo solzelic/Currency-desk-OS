@@ -68083,7 +68083,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const {
     useEffect,
     useRef,
-    useId
+    useId,
+    useState
   } = React;
   const CSS = `
     .si23 { --f:'Schibsted Grotesk',system-ui,sans-serif; --m:'IBM Plex Mono',monospace; --serif:'Instrument Serif',serif;
@@ -68308,13 +68309,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       d: "M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4M9 6.8a6 6 0 0 1 9 5.2v2M2 12a10 10 0 0 1 18-6M14 13.12c0 2.38 0 6.38-1 8.88M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2M21.8 16c.2-2 .13-5.35 0-6M17.29 21.02c.12-.6.43-2.3.5-3.02M8.65 22c.21-.66.45-1.32.57-2M2 16h.01"
     }));
   }
-  // Formatting is presentation, never proof of an account. Do not rewrite an
-  // email beginning with cd or any existing legacy staff identifier.
+  // Complete v2 syntax follows enquiries/cd-id.ts; this is cosmetic, not an
+  // account lookup. Preserve raw editing text: an ID-shaped email local part
+  // may still gain an @. Legacy numeric-tail IDs pass through unchanged.
   function formatIdentifier(value) {
-    if (!/^cd(?:[\s-]|[a-z]{4}[\s-]?[2-9a-hjkmnp-z]{4}$)/i.test(value) || value.includes('@')) return value;
-    const raw = value.toUpperCase().replace(/[\s-]/g, '');
-    if (!/^CD[A-Z0-9]{0,8}$/.test(raw)) return value;
-    return 'CD' + (raw.length > 2 ? '-' + raw.slice(2, 6) : '') + (raw.length > 6 ? '-' + raw.slice(6) : '');
+    if (/^CD-[A-Z]{2,6}-\d{4,}$/i.test(value)) return value;
+    const match = /^(?:CD[ -]*)?([A-Z]{4})[ -]*([2-9A-HJKMNP-Z]{4})$/i.exec(value);
+    return match ? ('CD-' + match[1] + '-' + match[2]).toUpperCase() : value;
   }
   function FirstScreen({
     identifier,
@@ -68328,6 +68329,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     methods = {}
   }) {
     const land = useRef(null);
+    const [editing, setEditing] = useState(true);
+    // Let the browser finish its focus/select operation, then restore raw
+    // text and the selection together. Otherwise autofill/select-all can
+    // lose the selection when React replaces the formatted value.
+    const editIdentifier = event => {
+      const input = event.target;
+      queueMicrotask(() => {
+        if (document.activeElement !== input) return;
+        const start = input.selectionStart,
+          end = input.selectionEnd,
+          length = input.value.length;
+        ReactDOM.flushSync(() => setEditing(true));
+        input.setSelectionRange(start === length ? identifier.length : start, end === length ? identifier.length : end);
+      });
+    };
     useEffect(() => {
       let active = true;
       const fit = () => {
@@ -68427,8 +68443,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "si23-inp"
     }, /*#__PURE__*/React.createElement("input", {
       id: "si23-id",
-      value: identifier,
-      onChange: e => onIdentifier(formatIdentifier(e.target.value)),
+      value: editing ? identifier : formatIdentifier(identifier),
+      onChange: e => onIdentifier(e.target.value),
+      onFocus: editIdentifier,
+      onBlur: () => setEditing(false),
       autoFocus: true,
       autoComplete: "username webauthn",
       autoCapitalize: "off",
@@ -68461,6 +68479,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     onSubmit,
     onRecover,
     error,
+    status,
     busy,
     disabled,
     onPasskey
@@ -68485,8 +68504,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "si23-inp"
     }, /*#__PURE__*/React.createElement("input", {
       id: "si23-password",
-      "aria-describedby": error ? 'si23-password-status' : undefined,
-      "aria-invalid": !!error && !busy,
+      "aria-describedby": error || status ? 'si23-password-status' : undefined,
+      "aria-invalid": !!error,
       type: show ? 'text' : 'password',
       value: password,
       onChange: e => onPassword(e.target.value),
@@ -68497,11 +68516,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "si23-ib",
       type: "button",
       onClick: onShow
-    }, show ? 'Hide' : 'Show')), error && /*#__PURE__*/React.createElement("div", {
+    }, show ? 'Hide' : 'Show')), (error || status) && /*#__PURE__*/React.createElement("div", {
       id: "si23-password-status",
-      className: "si23-hint si23-err",
-      role: busy ? 'status' : 'alert'
-    }, error)), /*#__PURE__*/React.createElement("button", {
+      className: 'si23-hint' + (error ? ' si23-err' : ''),
+      role: error ? 'alert' : 'status'
+    }, error || status)), /*#__PURE__*/React.createElement("button", {
       className: "si23-cta",
       type: "submit",
       disabled: disabled
@@ -69182,6 +69201,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setPw('');
         setCode('');
         setNewPw('');
+        if (presentation === 'v23') {
+          setShowPw(false);
+          clearLock();
+        }
         setStep('password');
         setNote('Password changed. Sign in with the new one.');
         setErr('');
@@ -69347,10 +69370,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (presentation === 'v23' && (step === 'id' || step === 'password')) {
       const {
         FirstScreen,
-        Password
+        Password,
+        formatIdentifier
       } = window.CDOS.SignInV23;
+      const clearSecret = () => {
+        setPw('');
+        setShowPw(false);
+        clearLock();
+      };
       const recover = () => {
         if (busy) return;
+        clearSecret();
         setResetEmail(idInput.includes('@') ? idInput : '');
         setErr('');
         setNote('');
@@ -69360,10 +69390,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         identifier: idInput,
         error: err,
         onIdentifier: value => {
+          clearSecret();
           setIdInput(value);
           setErr('');
+          setNote('');
         },
-        onContinue: goPassword,
+        onContinue: () => {
+          setIdInput(formatIdentifier(idInput));
+          goPassword();
+        },
         onRecover: recover,
         onSignup: () => window.location.assign('/signup'),
         onBack: () => window.location.assign('/')
@@ -69393,7 +69428,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           if (!disabled) submitPassword(event);
         },
         onRecover: recover,
-        error: locked ? lockSentence : err
+        error: locked ? lockSentence : busy ? '' : err,
+        status: busy ? err : [note, idInput.includes('@') && cool > 0 ? 'Another code in ' + cool + 's' : ''].filter(Boolean).join(' ')
       });
     }
 

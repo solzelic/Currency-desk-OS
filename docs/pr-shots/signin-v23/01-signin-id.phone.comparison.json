@@ -50,5 +50,17 @@
     "actualFont": "IBM Plex Mono 700 10px/normal ls 1px",
     "originalColor": "rgb(255, 255, 255)",
     "actualColor": "rgb(255, 255, 255)"
+  },
+  {
+    "text": "Signing in to",
+    "difference": "missing reference content (documented exception)"
+  },
+  {
+    "text": "York Currency Exchange",
+    "difference": "missing reference content (documented exception)"
+  },
+  {
+    "text": "G",
+    "difference": "missing reference content (documented exception)"
   }
 ]
