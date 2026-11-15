@@ -709,6 +709,14 @@ export const signupAccounts = pgTable("signup_accounts", {
   /* 077: the counter PIN, hashed. */
   pinHash: text("pin_hash"),
   pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
+  /* 078: the signed declaration, the plan, the card's SetupIntent. */
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  confirmedName: text("confirmed_name"),
+  declarationVersion: text("declaration_version"),
+  answersHash: text("answers_hash"),
+  planChoice: jsonb("plan_choice").$type<Record<string, unknown>>(),
+  stripeCustomerId: text("stripe_customer_id"),
+  setupIntentId: text("setup_intent_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
