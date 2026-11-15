@@ -192,6 +192,7 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `ledger_lock_watch_customer(tenant, entity, branch, customer)`.
   An insert into `ledger_reversals` calls it for the reversed deal.
   A new deal does not take the lock. 053 is on main, so this file is 054.
+- Migration `074_exchange_v29` adds the Canada exchange v2.9 tables: `client_id_checks` (this shop only, append-only), `id_reveal_reasons` (the reveal list, including Other), `id_number_access` (append-only reveal and export log), `exchange_holds` (no rate, kept in the log), `compliance_review_items`, `lctr_prepare_drafts` (status can only be prepared), `exchange_deal_facts`, `shop_risk_ratings`, and `fx_occupation_options`. Routes under `/api/exchange/` read the cash window, record an in-person ID check, reveal a number, and prepare the client-left LCTR flag. 073 is the previous file, so this one is 074.
 - Migration `056_tenant_test_shop` adds `tenants.is_test_shop`
   (`boolean not null default false`). The shared boot DDL does not
   add the column. Postgres adds it only here, and raises when a

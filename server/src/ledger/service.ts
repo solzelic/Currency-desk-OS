@@ -72,6 +72,7 @@ import {
   aePurposeDecision,
 } from "./uae-exchange.js";
 import { assertTradeable, fixedIn, parseMoney, roundTo } from "./currencies.js";
+import { prepareCanadaExchange, supersedeHold, writeCanadaExchangeFacts } from "../exchange/canada-post.js";
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -100,6 +101,10 @@ export type PostRequest = {
   feeCad: string;
   purpose: string;
   sourceOfFunds: string;
+  occupationCode?: string | null;
+  occupationText?: string | null;
+  clientLeft?: boolean | null;
+  holdId?: string | null;
   thirdParty?: boolean;
   thirdPartyName?: string;
   identityNumber?: string | null;
@@ -129,6 +134,10 @@ export type FrozenQuote = {
   quoteOverrideId: string | null;
   purpose: string;
   sourceOfFunds: string;
+  occupationCode?: string | null;
+  occupationText?: string | null;
+  clientLeft?: boolean | null;
+  holdId?: string | null;
   thirdParty?: boolean;
   thirdPartyName?: string | null;
   identityNumber?: string | null;
@@ -848,6 +857,22 @@ export class LedgerService {
       /* Cash for a sale of foreign exchange, India only. The rupee the
          customer pays, not the fee. A purchase is not this check. */
       assertIndiaSaleCash(pack, quote.from, quote.to, input);
+      const canadaPlan = await prepareCanadaExchange(client, {
+        packId: pack.packId,
+        home,
+        kind: "exchange",
+        amountHome: inputHome,
+        legalEntityId: actor.legalEntityId,
+        customerId: quote.customerId,
+        purpose: quote.purpose,
+        sourceOfFunds: quote.sourceOfFunds,
+        occupationCode: quote.occupationCode,
+        occupationText: quote.occupationText,
+        clientLeft: quote.clientLeft === true,
+        holdId: quote.holdId,
+      });
+      const postedPurpose = canadaPlan.applies ? canadaPlan.purpose : quote.purpose;
+      const postedSource = canadaPlan.applies ? canadaPlan.sourceOfFunds : quote.sourceOfFunds;
       /* Philippine limits use a peso leg, or a market rate. The board
          mid above is the shop's price. It is not the legal rate. */
       const phValue = await philippinesExchangeGuard(client, pack, {
@@ -872,6 +897,7 @@ export class LedgerService {
           onBehalfOf: quote.thirdParty ? quote.thirdPartyName : null,
           purpose: quote.purpose,
           sourceOfFunds: quote.sourceOfFunds,
+          clientLeft: quote.clientLeft === true,
         },
       );
       if (phValue) {
@@ -1133,8 +1159,8 @@ export class LedgerService {
           fixed(rate, 12),
           fixed(fee),
           fixed(spread),
-          quote.purpose,
-          quote.sourceOfFunds,
+          postedPurpose,
+          postedSource,
           !!quote.thirdParty,
           quote.thirdParty ? quote.thirdPartyName?.trim() || null : null,
           actor.userId,
@@ -1171,6 +1197,8 @@ export class LedgerService {
           compliance.source,
         ],
       );
+      await writeCanadaExchangeFacts(client, actor, transactionId, quote.customerId, canadaPlan);
+      await supersedeHold(client, actor.legalEntityId, quote.holdId, transactionId);
       for (const [account, side, value] of journal)
         await client.query(
           "INSERT INTO ledger_journal_entries (transaction_id,account_code,side,amount_cad,created_at) VALUES ($1,$2,$3,$4,$5)",
@@ -1400,6 +1428,22 @@ export class LedgerService {
       const outputCad = roundTo(output.div(toRate), pack.homeCurrency);
       const spread = inputHome.sub(outputCad);
       assertIndiaSaleCash(pack, request.from, request.to, input);
+      const canadaPlan = await prepareCanadaExchange(client, {
+        packId: pack.packId,
+        home: pack.homeCurrency,
+        kind: "exchange",
+        amountHome: inputHome,
+        legalEntityId: actor.legalEntityId,
+        customerId: request.customerId,
+        purpose: request.purpose,
+        sourceOfFunds: request.sourceOfFunds,
+        occupationCode: request.occupationCode,
+        occupationText: request.occupationText,
+        clientLeft: request.clientLeft === true,
+        holdId: request.holdId,
+      });
+      const postedPurpose = canadaPlan.applies ? canadaPlan.purpose : request.purpose;
+      const postedSource = canadaPlan.applies ? canadaPlan.sourceOfFunds : request.sourceOfFunds;
       const phValue = await philippinesExchangeGuard(client, pack, {
         from: request.from,
         to: request.to,
@@ -1422,6 +1466,7 @@ export class LedgerService {
           onBehalfOf: request.thirdParty ? request.thirdPartyName : null,
           purpose: request.purpose,
           sourceOfFunds: request.sourceOfFunds,
+          clientLeft: request.clientLeft === true,
         },
       );
       if (phValue) {
@@ -1458,7 +1503,7 @@ export class LedgerService {
          at its own due-diligence line, above. A Philippines desk already
          applied "more than 500,000 PHP" in philippinesExchangeGuard.
          The generic test is "at or above", which would catch 500,000. */
-      if (pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
+      if (!canadaPlan.applies && pack.packId !== EU_AMLR_PACK_ID && !isPhilippinesPack(pack.packId)) {
         await requirePurposeAndSource(
           client,
           actor.legalEntityId,
@@ -1548,8 +1593,8 @@ export class LedgerService {
           fixed(rate, 12),
           fixed(fee),
           fixed(spread),
-          request.purpose,
-          request.sourceOfFunds,
+          postedPurpose,
+          postedSource,
           !!request.thirdParty,
           request.thirdParty ? request.thirdPartyName?.trim() || null : null,
           actor.userId,
@@ -1574,6 +1619,8 @@ export class LedgerService {
           compliance.source,
         ],
       );
+      await writeCanadaExchangeFacts(client, actor, transactionId, request.customerId, canadaPlan);
+      await supersedeHold(client, actor.legalEntityId, request.holdId, transactionId);
       for (const [account, side, value] of journal)
         await client.query(
           "INSERT INTO ledger_journal_entries (transaction_id,account_code,side,amount_cad,created_at) VALUES ($1,$2,$3,$4,$5)",

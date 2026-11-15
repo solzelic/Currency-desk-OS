@@ -59,7 +59,7 @@ export const OWNER_ONLY_GROUPS = {
     "reportingEntityNumber", "locationNumber", "activitySector", "fintracContactName",
   ],
   compliance: [
-    "threshold", "idRequiredOver", "retentionYears", "aggHours", "aggWindowStart", "regime",
+    "threshold", "idRequiredOver", "retentionYears", "aggHours", "aggWindowStart", "regime", "reviewLockSeconds",
     "largeTxCheck", "structuringDays", "escalateHighRisk", "requireIdPhoto",
     "reverifyDays", "recheckDays", "kycProvider", "screenSanctions",
   ],
