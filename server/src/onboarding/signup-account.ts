@@ -17,7 +17,7 @@
    the ID can add a candidate, never a verified credential.
    ============================================================ */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { schema, type Db } from "../db/index.js";
 import type { CredentialKind, SignupState } from "../db/schema.js";
@@ -45,7 +45,23 @@ export async function loadAccount(db: Db, enquiryId: string): Promise<Account> {
   const found = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, enquiryId)).limit(1))[0];
   if (found) return found;
   await db.insert(schema.signupAccounts).values({ enquiryId, accountId: randomUUID() }).onConflictDoNothing();
-  return (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, enquiryId)).limit(1))[0]!;
+  const created = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, enquiryId)).limit(1))[0];
+  if (!created) throw new Error("signup_account_unavailable");
+  return created;
+}
+
+/** Serialize decisions and their writes on the reservation's account row.
+ * The transaction provides the same query methods as Db; the cast bridges
+ * Drizzle's driver-specific transaction union, never unvalidated input. */
+export async function withSignupAccount<T>(db: Db, enquiryId: string, work: (tx: Db, account: Account) => Promise<T>): Promise<T> {
+  await loadAccount(db, enquiryId);
+  return db.transaction(async (transaction) => {
+    const tx = transaction as unknown as Db;
+    const account = (await tx.select().from(schema.signupAccounts)
+      .where(eq(schema.signupAccounts.enquiryId, enquiryId)).for("update"))[0];
+    if (!account) throw new Error("signup_account_unavailable");
+    return work(tx, account);
+  });
 }
 
 /** Move the account, only from a state the table allows. True when it moved. */
@@ -94,7 +110,12 @@ export type NewCredential = {
 
 /* Save a candidate credential and move reserved → enrolling. The caller has
    already checked the account is not past enrolling. */
-export async function saveCredential(db: Db, enquiryId: string, c: NewCredential): Promise<{ id: string; state: SignupState }> {
+export async function saveCredential(db: Db, enquiryId: string, c: NewCredential): Promise<{ id: string; state: SignupState } | null> {
+  return withSignupAccount(db, enquiryId, async (db, account) => {
+  if (!takesCredential(account.state)) return null;
+  await db.delete(schema.signupCredentials).where(and(
+    eq(schema.signupCredentials.enquiryId, enquiryId), eq(schema.signupCredentials.attemptHash, c.attemptHash), isNull(schema.signupCredentials.verifiedAt),
+  ));
   const id = `cred-${randomUUID()}`;
   await db.insert(schema.signupCredentials).values({
     id, enquiryId, kind: c.kind, attemptHash: c.attemptHash,
@@ -111,8 +132,8 @@ export async function saveCredential(db: Db, enquiryId: string, c: NewCredential
     tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-",
     action: "credential.added", detail: { enquiryId, kind: c.kind, credential: id, verified: false },
   });
-  const account = await loadAccount(db, enquiryId);
-  return { id, state: account.state };
+  return { id, state: "enrolling" };
+  });
 }
 
 /** A reservation's account may take a new candidate credential only before the code. */

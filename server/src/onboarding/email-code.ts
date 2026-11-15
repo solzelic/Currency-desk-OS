@@ -26,7 +26,7 @@ import { codeMatches, hashCode, makeCode, sendEmail, type EmailStatus } from "..
 import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { CODE_TTL_MS, MAX_CODE_ATTEMPTS } from "./verify.js";
-import { sha256 } from "./signup-account.js";
+import { sha256, withSignupAccount } from "./signup-account.js";
 
 export const SENDS_PER_WINDOW = 3;
 export const SEND_WINDOW_MS = 15 * 60 * 1000;
@@ -49,21 +49,25 @@ export function signupCodeEmail(code: string, operatingName: string) {
   return { subject, text, html };
 }
 
-export type SendResult = { sent: true; delivery: EmailStatus } | { sent: false; reason: "too_soon"; retryInMs: number };
+export type SendResult = { sent: true; delivery: EmailStatus } | { sent: false; reason: "too_soon"; retryInMs: number } | { sent: false; reason: "not_enrolling" };
 
 /** Issue a fresh code (replacing any other) and send it to the email on file. */
 export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string, mail: Mailer = sendEmail, now = Date.now()): Promise<SendResult> {
-  const account = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, row.id)).limit(1))[0];
-  if (!account) throw new Error(`no sign-up account for ${row.id}`);
-  const recent = (account.codeSends ?? []).filter((t) => now - t < SEND_WINDOW_MS);
-  if (recent.length >= SENDS_PER_WINDOW) {
-    return { sent: false, reason: "too_soon", retryInMs: SEND_WINDOW_MS - (now - Math.min(...recent)) };
-  }
-  const code = makeCode();
-  await db.update(schema.signupAccounts).set({
-    codeHash: hashCode(code), codeExpiresAt: new Date(now + CODE_TTL_MS), codeAttempts: 0,
-    codeSends: [...recent, now], updatedAt: new Date(now),
-  }).where(eq(schema.signupAccounts.enquiryId, row.id));
+  const prepared = await withSignupAccount(db, row.id, async (tx, account) => {
+    if (account.state !== "enrolling") return { sent: false, reason: "not_enrolling" } as const;
+    const recent = (account.codeSends ?? []).filter((t) => now - t < SEND_WINDOW_MS);
+    if (recent.length >= SENDS_PER_WINDOW) {
+      return { sent: false, reason: "too_soon", retryInMs: SEND_WINDOW_MS - (now - Math.min(...recent)) } as const;
+    }
+    const code = makeCode();
+    await tx.update(schema.signupAccounts).set({
+      codeHash: hashCode(code), codeExpiresAt: new Date(now + CODE_TTL_MS), codeAttempts: 0,
+      codeSends: [...recent, now], updatedAt: new Date(now),
+    }).where(eq(schema.signupAccounts.enquiryId, row.id));
+    return { sent: true, code } as const;
+  });
+  if (!prepared.sent) return prepared;
+  const code = prepared.code;
   const message = signupCodeEmail(code, operatingName);
   const delivery = await mail(row.email, message.subject, { text: message.text, html: message.html });
   return { sent: true, delivery };
@@ -74,7 +78,7 @@ export type VerifyResult =
   | { ok: false; status: 400 | 401 | 409 | 410 | 423; error: "no_candidate" | "no_code" | "wrong_code" | "expired" | "too_many_attempts" | "not_enrolling" };
 
 export async function verifySignupCode(db: Db, enquiryId: string, attemptHash: string, entered: string, now = Date.now()): Promise<VerifyResult> {
-  const account = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, enquiryId)).limit(1))[0];
+  return withSignupAccount(db, enquiryId, async (db, account): Promise<VerifyResult> => {
   if (!account || account.state !== "enrolling") return { ok: false, status: 409, error: "not_enrolling" };
   const candidate = (await db.select().from(schema.signupCredentials).where(and(
     eq(schema.signupCredentials.enquiryId, enquiryId), eq(schema.signupCredentials.attemptHash, attemptHash), isNull(schema.signupCredentials.verifiedAt),
@@ -82,7 +86,7 @@ export async function verifySignupCode(db: Db, enquiryId: string, attemptHash: s
   if (!candidate) return { ok: false, status: 400, error: "no_candidate" };
   if (!account.codeHash) return { ok: false, status: 409, error: "no_code" };
   if (account.codeAttempts >= MAX_CODE_ATTEMPTS) return { ok: false, status: 423, error: "too_many_attempts" };
-  if (!account.codeExpiresAt || account.codeExpiresAt.getTime() < now) return { ok: false, status: 410, error: "expired" };
+  if (!account.codeExpiresAt || account.codeExpiresAt.getTime() <= now) return { ok: false, status: 410, error: "expired" };
   if (!/^\d{6}$/.test(entered.trim()) || !codeMatches(entered, account.codeHash)) {
     const tries = account.codeAttempts + 1;
     await db.update(schema.signupAccounts).set({
@@ -95,26 +99,26 @@ export async function verifySignupCode(db: Db, enquiryId: string, attemptHash: s
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(now + ENROLMENT_TTL_MS);
-  const won = await db.transaction(async (tx) => {
+  const tx = db;
+  {
     const spent = await tx.update(schema.signupAccounts).set({
       codeHash: null, codeExpiresAt: null, codeAttempts: 0, emailVerifiedAt: new Date(now), state: "verified", updatedAt: new Date(now),
     }).where(and(
-      eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.codeHash, account.codeHash!), eq(schema.signupAccounts.state, "enrolling"),
+      eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.codeHash, account.codeHash), eq(schema.signupAccounts.state, "enrolling"),
     )).returning();
-    if (!spent.length) return false;
+    if (!spent.length) return { ok: false, status: 409, error: "not_enrolling" };
     await tx.update(schema.signupCredentials).set({ verifiedAt: new Date(now) }).where(eq(schema.signupCredentials.id, candidate.id));
     await tx.delete(schema.signupCredentials).where(and(
       eq(schema.signupCredentials.enquiryId, enquiryId), isNull(schema.signupCredentials.verifiedAt), ne(schema.signupCredentials.id, candidate.id),
     ));
     await tx.insert(schema.enrolmentSessions).values({ tokenHash: sha256(token), enquiryId, expiresAt });
-    return true;
-  });
-  if (!won) return { ok: false, status: 409, error: "not_enrolling" };
+  }
   await audit(db, {
     tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-",
     action: "signup.email_verified", detail: { enquiryId, credential: candidate.id, kind: candidate.kind },
   });
   return { ok: true, token, expiresAt };
+  });
 }
 
 export function setEnrolmentCookie(reply: FastifyReply, token: string): void {
