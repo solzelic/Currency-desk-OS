@@ -44,6 +44,7 @@ const EXPECTED: Record<string, { status: number; reason: string }> = {
   "/api/public/rate-pages/:slug/logo": { status: 404, reason: "No shop has a live rate page at the sweep slug." },
   "/api/public/screens/:token/logo": { status: 404, reason: "No window screen holds the sweep token." },
   "/api/rate-page/logo": { status: 404, reason: "The sweep shop has not uploaded a logo." },
+  "/api/onboarding/:ref/resume": { status: 404, reason: "The sweep's ref is a setup reference, not a CurrencyDesk ID, so sign-up v2.1's resume does not know it." },
   "/api/onboarding/:ref/sso/:provider/start": { status: 503, reason: "No Google client is configured in tests, so sign-up v2.1's SSO door is closed." },
 };
 type Hit = { route: string; field: string; sample: string };
