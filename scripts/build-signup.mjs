@@ -39,7 +39,7 @@ const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -148,6 +148,12 @@ patch("remove names", "          onDel: () => this.delMember(k),", "          on
 patch("desk apps reachable", '<div data-deskapps="true" style=', '<div data-deskapps="true" tabindex="0" role="region" aria-label="Desk apps" style=');
 /* every button at least 44px on a phone (build doc §5); the count's two tabs were 40 */
 patch("phone tap targets", "</helmet>", "<style>@media (max-width: 720px) { [data-card] [role=\"tab\"] { min-height: 44px !important; } }</style>\n</helmet>");
+
+/* ======== CHAPTERS (signup-v2.1-chapters.js) ======== */
+/* ---- the address: Google Places through our server, by hand otherwise ---- */
+patch("places list", "const list = ql.length < 3 ? [] : this.ADDR.filter(", "const list = window.__cdOnb ? window.__cdOnb.places(this, ql) : this.ADDR.filter(");
+patch("places line", "sub: a[4] + ', ' + a[1] + ', ' + a[2] + ', Canada'", "sub: a.sub || (a[4] + ', ' + a[1] + ', ' + a[2])");
+patch("places pick", "  _adPick(a) {", "  _adPick(a) { if (a && a.placeId) return window.__cdOnb.pickPlace(this, a);");
 
 /* ======== END OF SECTIONS ======== */
 /* ---- nothing review-only survived ------------------------------------- */
