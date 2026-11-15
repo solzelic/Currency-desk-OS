@@ -58,7 +58,7 @@ describe("the PIN routes", () => {
   });
   beforeEach(async () => {
     await handle.db.update(schema.staffUsers).set({ pinHash: null, pinMustChange: false }).where(eq(schema.staffUsers.tenantId, "tnt-yorkfx"));
-    for (const id of ["a.singh", "m.costa", "j.masri"]) clearPinAttempts((await row(id)).id);
+    for (const id of ["a.singh", "m.costa", "j.subotic"]) clearPinAttempts((await row(id)).id);
   });
 
   it("refuses all ten repeats on set, change, a manager's set and reset, on a live and a staging Host", async () => {
@@ -67,7 +67,7 @@ describe("the PIN routes", () => {
       for (const pin of REPEATS) {
         const set = await post(singh, "/api/staff/pin", { pin }, host);
         expect([set.statusCode, set.json().detail], `set ${pin} ${host}`).toEqual([422, REPEAT]);
-        const issued = await post(await as("j.masri"), "/api/staff/pin", { staffId: "m.costa", pin }, host);
+        const issued = await post(await as("j.subotic"), "/api/staff/pin", { staffId: "m.costa", pin }, host);
         expect([issued.statusCode, issued.json().detail], `issue ${pin} ${host}`).toEqual([422, REPEAT]);
         const reset = await post(singh, "/api/staff/pin/reset", { password: "yorkville", pin }, host);
         expect([reset.statusCode, reset.json().detail], `reset ${pin} ${host}`).toEqual([422, REPEAT]);

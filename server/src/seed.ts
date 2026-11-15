@@ -11,7 +11,10 @@ import { randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { seedWalkthrough } from "./onboarding/walkthrough.js";
 import { createDb, schema } from "./db/index.js";
+import { audit } from "./audit.js";
 import { hashPassword } from "./auth/password.js";
+import { revokeAllSessions } from "./auth/sessions.js";
+import { isStagingRuntime } from "./auth/staging-runtime.js";
 import { ensureDefaultChequeSchedule } from "./state/default-cheque-schedule.js";
 
 export const DEMO = {
@@ -127,6 +130,26 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
   };
   for (const s of staff) await insertStaff(s, passwordHash);
   for (const s of stagingStaff) await insertStaff(s, stagingPasswordHash);
+
+  /* One role per person. Jakob is the Owner, and only when this
+     process is a staging host with STAGING exactly "1". The insert
+     does not touch a row that already exists. j.masri stays, with
+     the same id and password, and cannot sign in. */
+  if (!isStagingRuntime(undefined)) return;
+  await insertStaff({ staffId: "j.subotic", name: "Jakob Subotic", role: "administrator" }, stagingPasswordHash);
+  const masriId = `${DEMO.tenantId}:j.masri`;
+  const masri = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, masriId)).limit(1).then((rows) => rows[0]);
+  if (!masri?.active) return;
+  await db.update(schema.staffUsers).set({ active: false }).where(and(eq(schema.staffUsers.id, masriId), eq(schema.staffUsers.active, true)));
+  await revokeAllSessions(db, masriId);
+  await audit(db, {
+    tenantId: masri.tenantId,
+    legalEntityId: masri.legalEntityId,
+    branchId: masri.branchId,
+    actorId: "system",
+    action: "staff.deactivated",
+    detail: { staffId: "j.masri", reason: "staging_owner" },
+  });
 }
 
 // CLI: npm run seed

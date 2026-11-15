@@ -68,7 +68,13 @@ The login page calls `GET /api/staging/signin`. When that answers `{enabled:true
 
 The routes pass the request Host into `isStagingRuntime`. It has to agree with `RENDER_EXTERNAL_HOSTNAME`: `staging.currencydeskos.com`, `currencydesk-staging.onrender.com`, or `currencydesk-staging-pr-<digits>.onrender.com` while `IS_PULL_REQUEST=true`. `currencydeskos.com` and `www.currencydeskos.com` are refused. The shop has to be `tnt-yorkfx`. The body is only the role. Any other key is refused.
 
-The people are `j.masri`, `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. A boot with `STAGING` exactly `1` adds the compliance officer and the auditor when they are missing, including on a database that already has the other demo staff. An existing row is not overwritten.
+The people on the six buttons are `j.subotic` (Owner), `r.haddad`, `a.singh`, `c.adebayo`, `m.costa`, and `l.berg`. A person has one role. There is no role switch on one login. Jakob Subotic is the Owner (`administrator`), which is the widest role. The other five buttons are the other people, so those views stay separate logins. A boot with `STAGING` exactly `1` adds the compliance officer and the auditor when they are missing. An existing row is not overwritten.
+
+`j.subotic` (display name Jakob Subotic) is added only when `isStagingRuntime` is true: `STAGING` exactly `1` and `RENDER_EXTERNAL_HOSTNAME` is a staging host. The password is `SEED_PASSWORD` on that first insert. When `SEED_PASSWORD` is unset, the password is random and password sign-in is off. A later boot does not rewrite the row.
+
+`j.masri` is still in the seed, so local and CI keep that owner. On a staging runtime the row stays, with the same id, role, and password, and `active` is set false. Sign-in stops, and existing sessions stop. One `staff.deactivated` audit row records it. A second boot writes nothing more. A live host, or `STAGING` unset, does not add `j.subotic` and does not deactivate `j.masri`.
+
+Password sign-in uses the CurrencyDesk ID box, then the password. Jakob types `j.subotic`. That is a username, not an email. The six buttons still show when the staging door is open. Enter as Owner is Jakob.
 
 The banner reads "Staging. Demo data only. Never enter a real customer." It is on the sign-in page while the staging door is open, and on every screen for that session. A later password sign-in clears it. The audit row for `auth.staging_enter` records the role, the host, the time, the client address from `clientIp`, and the user agent capped at 500 characters.
 
@@ -86,5 +92,7 @@ If Resend, Twilio, ElevenLabs, Persona or Stripe is ever added to staging with a
   are inserted only when `STAGING` is exactly `1`. A live boot does not
   create them. If `SEED_PASSWORD` is unset, their password is random and
   password sign-in is off. A later staging boot does not rewrite a password.
+  Deactivating `j.masri` on a staging runtime does not change that password.
+  `j.subotic` uses the same first-create password and is not created on a live boot.
 - Not a second book. The browser still only renders what the ledger
   posted.

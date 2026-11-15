@@ -199,7 +199,94 @@ describe("demo seed adds the two roles only when STAGING=1", () => {
       const again = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, officerId)).then((rows) => rows[0]);
       expect(again!.passwordHash).toBe("already-chosen");
       expect(again!.role).toBe("compliance_officer");
+      expect(await ids(handle)).not.toContain("j.subotic");
+      const ownerStill = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:j.masri`)).then((rows) => rows[0]);
+      expect(ownerStill?.active).toBe(true);
     } finally {
+      await handle.close();
+    }
+  });
+
+  it("a live host or STAGING unset does not add Jakob or deactivate j.masri", async () => {
+    const cases: Array<{ staging?: string; host?: string }> = [
+      { host: "currencydesk-staging.onrender.com" },
+      { staging: "1", host: "currencydeskos.com" },
+      { staging: "1", host: "www.currencydeskos.com" },
+      { staging: "1" },
+      { staging: "1", host: PREVIEW },
+    ];
+    for (const c of cases) {
+      if (c.staging === undefined) delete process.env.STAGING;
+      else process.env.STAGING = c.staging;
+      if (c.host === undefined) delete process.env.RENDER_EXTERNAL_HOSTNAME;
+      else process.env.RENDER_EXTERNAL_HOSTNAME = c.host;
+      delete process.env.IS_PULL_REQUEST;
+      process.env.PGLITE_MEMORY = "1";
+      process.env.SEED_PASSWORD = "yorkville";
+      const handle = await createDb();
+      try {
+        await seed(handle.db);
+        const rows = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.tenantId, DEMO.tenantId));
+        expect(rows.map((row) => row.staffId), JSON.stringify(c)).not.toContain("j.subotic");
+        expect(rows.find((row) => row.staffId === "j.masri")?.active, JSON.stringify(c)).toBe(true);
+        const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "staff.deactivated"));
+        expect(audits, JSON.stringify(c)).toHaveLength(0);
+      } finally {
+        await handle.close();
+      }
+    }
+  }, 30_000);
+
+  it("a staging runtime adds Jakob once and stops j.masri signing in", async () => {
+    delete process.env.STAGING;
+    delete process.env.RENDER_EXTERNAL_HOSTNAME;
+    process.env.PGLITE_MEMORY = "1";
+    process.env.SEED_PASSWORD = "yorkville";
+    const handle = await createDb();
+    try {
+      await seed(handle.db);
+      const before = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:j.masri`)))[0]!;
+      process.env.STAGING = "1";
+      process.env.RENDER_EXTERNAL_HOSTNAME = "currencydesk-staging.onrender.com";
+      await seed(handle.db);
+      const masri = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, before.id)))[0]!;
+      expect(masri).toMatchObject({ active: false, passwordHash: before.passwordHash, name: before.name, role: "administrator", id: before.id });
+      const jakob = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:j.subotic`)))[0]!;
+      expect(jakob).toMatchObject({ staffId: "j.subotic", name: "Jakob Subotic", role: "administrator", tenantId: DEMO.tenantId, active: true, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId });
+      expect(jakob.role).toBe("administrator");
+      expect(await verifyPassword("yorkville", jakob.passwordHash)).toBe(true);
+      const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "staff.deactivated"));
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ actorId: "system", tenantId: DEMO.tenantId, detail: { staffId: "j.masri", reason: "staging_owner" } });
+      expect(JSON.stringify(audits[0]!.detail)).not.toMatch(/password|yorkville|secret/i);
+      await handle.db.update(schema.staffUsers).set({ passwordHash: "kept", name: "Kept" }).where(eq(schema.staffUsers.id, jakob.id));
+      await seed(handle.db);
+      const again = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, jakob.id)))[0]!;
+      expect(again).toMatchObject({ passwordHash: "kept", name: "Kept", role: "administrator", active: true });
+      const masriAgain = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, before.id)))[0]!;
+      expect(masriAgain).toMatchObject({ active: false, passwordHash: before.passwordHash });
+      expect(await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "staff.deactivated"))).toHaveLength(1);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("does not use the yorkville fallback or log a password when SEED_PASSWORD is unset", async () => {
+    delete process.env.SEED_PASSWORD;
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = "currencydesk-staging.onrender.com";
+    process.env.PGLITE_MEMORY = "1";
+    const lines: string[] = [];
+    const orig = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
+    const handle = await createDb();
+    try {
+      await seed(handle.db);
+      const jakob = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, `${DEMO.tenantId}:j.subotic`)))[0]!;
+      expect(await verifyPassword("yorkville", jakob.passwordHash)).toBe(false);
+      expect(lines).toEqual(["Password sign-in is off for staging staff."]);
+    } finally {
+      console.log = orig;
       await handle.close();
     }
   });
