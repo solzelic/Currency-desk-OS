@@ -38,6 +38,7 @@ import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { clientIp } from "../auth/client-ip.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
+import { registerCredentialRoutes } from "./signup-credential.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
   setVerifyState, verifyStateOf, type VerifyState,
@@ -195,6 +196,7 @@ const signUpUrl = (): string =>
 
 export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): void {
   const door = (idDoor = createIdDoor({ db }));
+  registerCredentialRoutes(app, db, door);
 
   /* "Can't find your ID? Send it again." Always 202, whatever the email,
      before any lookup happens (SIGNUP-LOGIC §2.1). */

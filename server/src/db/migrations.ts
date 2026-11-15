@@ -103,6 +103,9 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
+  /* 075 is sign-up v2.1's owner account before the desk exists: its state,
+     its credentials and one-use challenges. 074 is held by open PR #707. */
+  ["075_signup_accounts", "src/db/migrations/075_signup_accounts.sql"],
 ] as const;
 
 type MigrationReader = {

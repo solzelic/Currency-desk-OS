@@ -6,7 +6,7 @@
    os-src/cdos-signin.jsx and os-src/cdos-os.jsx).
    ============================================================ */
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, doublePrecision, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const staffRole = pgEnum("staff_role", [
   "teller",
@@ -687,6 +687,63 @@ export const enquiryCallConsents = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("enquiry_call_consents_idx").on(t.enquiryId, t.at)],
+);
+
+/* Sign-up v2.1 (migration 075): the owner's account before the desk exists,
+   what they chose to sign in with, and one-use challenges. */
+export type SignupState = "reserved" | "enrolling" | "verified" | "active";
+export type CredentialKind = "passkey" | "google" | "microsoft" | "password";
+export type ChallengePurpose = "passkey" | "google" | "microsoft";
+
+export const signupAccounts = pgTable("signup_accounts", {
+  enquiryId: text("enquiry_id").primaryKey().references(() => enquiries.id),
+  accountId: text("account_id").notNull().unique(),
+  state: text("state").$type<SignupState>().notNull().default("reserved"),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  lastStep: text("last_step"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const signupCredentials = pgTable(
+  "signup_credentials",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    kind: text("kind").$type<CredentialKind>().notNull(),
+    attemptHash: text("attempt_hash").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    passkeyId: text("passkey_id").unique(),
+    publicKey: text("public_key"),
+    signCount: bigint("sign_count", { mode: "number" }),
+    transports: jsonb("transports").$type<string[]>(),
+    aaguid: text("aaguid"),
+    backupEligible: boolean("backup_eligible"),
+    backupState: boolean("backup_state"),
+    deviceLabel: text("device_label"),
+    ssoSubject: text("sso_subject"),
+    ssoTenant: text("sso_tenant"),
+    passwordHash: text("password_hash"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("signup_credentials_enquiry_idx").on(t.enquiryId)],
+);
+
+export const signupChallenges = pgTable(
+  "signup_challenges",
+  {
+    id: text("id").primaryKey(),
+    enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+    purpose: text("purpose").$type<ChallengePurpose>().notNull(),
+    challenge: text("challenge").notNull(),
+    verifier: text("verifier"),
+    nonce: text("nonce"),
+    attemptHash: text("attempt_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("signup_challenges_idx").on(t.enquiryId, t.createdAt)],
 );
 
 /* One immutable snapshot per research attempt. A re-run adds a row; it never

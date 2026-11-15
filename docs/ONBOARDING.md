@@ -180,3 +180,11 @@ The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, n
 - Reissue is a platform action (`POST /api/admin/enquiries/:id/reissue-cd-id`); the old ID stops matching at once.
 - Logs: IDs as their last four characters, emails as a 16-character SHA-256 prefix.
 
+## Sign-up v2.1: choosing a credential (PR 2 of 8)
+
+- `POST /api/onboarding/:id/passkey/options` then `…/passkey/verify`; `GET …/sso/:provider/start` (returns the provider URL) then `POST …/sso/callback { provider, code, state }`; `POST …/password { password, confirm }`.
+- Every one needs the browser's `cd_enrol_attempt` cookie for its second half, and saves a candidate credential (`verified_at` null). The email code (PR 3) verifies only the candidate whose attempt matches the browser that typed the code.
+- Configuration: `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS` (comma list); `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `SSO_REDIRECT_URI`. None are set on any service yet, so SSO answers 503 and the page hides those buttons.
+- Microsoft: the app registration must emit `email_verified` (optional claim) or every Microsoft account is refused.
+- Timeouts: OIDC token and keys 8 s, breach range 3 s.
+
