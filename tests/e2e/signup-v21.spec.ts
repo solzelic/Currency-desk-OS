@@ -133,7 +133,7 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await expect(page.getByText("Okafor")).toHaveCount(0);
   });
 
-  test("password, the code, the PIN, every chapter, and signed", async ({ page, request }) => {
+  test("password, the code, the PIN, every chapter, signed, and the plan screen tells the truth about cards", async ({ page, request }) => {
     const email = `owner-${unique()}@synthetic.example`;
     const shop = `Harbour Exchange ${unique()}`;
     const { cdId } = await apply(request, email, shop);
@@ -209,6 +209,20 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     });
     expect((held.answers.count as Record<string, { mode: string; notes: Record<string, number> }>).CAD).toMatchObject({ mode: "notes", notes: { "100": 400 } });
     await expect(page.getByText("Confirmed. Now, open it.")).toBeVisible();
+    await press(page, /^Choose my plan/);
+
+    /* the plan: the server's prices, in the pack's billing currency */
+    await expect(page.getByText(`Open ${shop}.`)).toBeVisible();
+    await expect(page.getByText("$750").first()).toBeVisible();
+    await page.getByRole("button", { name: "Annual" }).click();
+    await expect(page.getByText("$539.10").first()).toBeVisible();
+
+    /* no Stripe keys on this server: the card step says so, and nothing opens */
+    await page.locator("[data-paybody] button, [data-card] button, button").filter({ hasText: /^Continue$/ }).first().click();
+    await page.locator("button").filter({ hasText: /^Continue$/ }).first().click();
+    await expect(page.getByText(/Card payments aren['’]t switched on here yet\. Nothing was charged\./).first()).toBeVisible();
+    const after = await request.get(`/api/onboarding/${cdId}/state`);
+    expect(((await after.json()) as { state: string }).state).not.toBe("active");
   });
 
   test("the code is wrong five times, then it is burnt; a 1234 PIN is refused", async ({ page, request }) => {
