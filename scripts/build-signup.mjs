@@ -39,7 +39,7 @@ const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -154,6 +154,49 @@ patch("phone tap targets", "</helmet>", "<style>@media (max-width: 720px) { [dat
 patch("places list", "const list = ql.length < 3 ? [] : this.ADDR.filter(", "const list = window.__cdOnb ? window.__cdOnb.places(this, ql) : this.ADDR.filter(");
 patch("places line", "sub: a[4] + ', ' + a[1] + ', ' + a[2] + ', Canada'", "sub: a.sub || (a[4] + ', ' + a[1] + ', ' + a[2])");
 patch("places pick", "  _adPick(a) {", "  _adPick(a) { if (a && a.placeId) return window.__cdOnb.pickPlace(this, a);");
+
+/* ======== OPEN (signup-v2.1-open.js): plan, card, Day 1, tour ======== */
+/* ---- the plan: the server's prices, Stripe's card ---------------------- */
+patch("card complete", "(d.cardNum || '').replace(/\\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && ",
+  "!!window.__cdOnb.cardComplete && ", 2);
+patch("no last four", "const last4 = (d.cardNum || '').replace(/\\s/g, '').slice(-4);", "const last4 = '';");
+patch("no backup promised", "'Card, billing address, a backup if you like'", "'Card and billing address'");
+patch("card summary", "'Card •••• ' + last4 + ' · '", "'Card ready · '");
+patch("not while paying", "this._payValid = this._payValid && read;", "this._payValid = this._payValid && read && !window.__cdOnb._paying;");
+patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "R.promoMsg = 'That code isn\\u2019t one we recognise.';");
+/* a backup card needs its own SetupIntent, which the server does not make
+   yet: not shown, rather than collected and dropped */
+patch("no backup yet", "R.showBackup = !!d.showBackup; R.notShowBackup = !d.showBackup;", "R.showBackup = false; R.notShowBackup = false;");
+patch("pay", "  goLive() {", "  goLive() { if (window.__cdOnb) { if (this._payValid) window.__cdOnb.pay(this); return; }");
+patch("prices and day one", "    return Object.assign(R, this._railVals(), this._tourVals());",
+  "    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));");
+patch("setup week price", ">$5,000 once<", ">{{ xSetupPrice }}<");
+patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
+
+/* card number, expiry and CVC: Stripe's frame instead of our inputs */
+{
+  const lines = html.split("\n");
+  const num = lines.findIndex((l) => l.includes('<input value="{{ cardNum }}"'));
+  const exp = lines.findIndex((l) => l.includes('<input value="{{ cardExp }}"'));
+  if (num < 0 || exp < 0 || !lines[exp - 1].includes("grid-template-columns: 1fr 1fr") || !lines[exp + 1].includes('value="{{ cardCvc }}"') || lines[exp + 2].trim() !== "</div>")
+    throw new Error("build-signup: card fields moved");
+  lines[num] = '                <div data-stripe-card="true" aria-label="Card details" style="min-height: 46px;"></div>';
+  lines.splice(exp - 1, 4);
+  const note = lines.findIndex((l) => l.includes("A backup card is worth adding."));
+  if (note < 0) throw new Error("build-signup: backup note moved");
+  lines.splice(note, 1);
+  html = lines.join("\n");
+}
+
+/* ---- the tour follows the pack ---------------------------------------- */
+patch("tour values", "tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',",
+  "tourHome: this.jurisOf(this.state.data.country).home, tourReport: this.jurisOf(this.state.data.country).report || 'cash report', tourOfficer: (this.state.data.complianceMode === 'other' ? this.state.data.compName : this.state.data.ownerName) || 'your compliance officer', tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',");
+patchRegion("tour currency", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", " CAD", " {{ tourHome }}");
+patchRegion("tour officer", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", "Checked by Daniel Osei", "Checked by {{ tourOfficer }}");
+patchRegion("tour report", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", ">Large Cash Transaction Report<", ">{{ tourReport }}<");
+
+/* ---- Day 1: the real desk behind the welcome --------------------------- */
+patch("build my desk", "R.onDkWalk = ", "R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : ");
 
 /* ======== END OF SECTIONS ======== */
 /* ---- nothing review-only survived ------------------------------------- */

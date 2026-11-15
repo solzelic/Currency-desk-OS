@@ -579,6 +579,196 @@
   }
 })();
 </script>
+<script>
+/* ============================================================
+   Sign-up v2.1, chapter 5 · Open (build doc §6): the plan at the server's
+   prices, Stripe's card frame and a $0 SetupIntent, the desk opening once
+   Stripe's webhook has told the server, and Day 1 over the real Home.
+   Extends the bridge in signup-v2.1-bridge.js.
+   ============================================================ */
+(function () {
+  "use strict";
+  var CD = window.__cdOnb, h = CD.h, call = h.call, api = h.api, why = h.why, NET = h.NET, tabSet = h.tabSet, STEP_OF = h.STEP_OF;
+  /* ---- money, as the server sent it ------------------------------------ */
+  var SYMBOL = { CAD: "$", USD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£" };
+  function money(minor, currency) {
+    if (typeof minor !== "number" || !isFinite(minor)) return "";
+    var whole = Math.floor(minor / 100), cents = minor % 100;
+    var s = (SYMBOL[currency] || "") + whole.toLocaleString("en-CA");
+    return cents ? s + "." + (cents < 10 ? "0" : "") + cents : s;
+  }
+
+  Object.assign(CD, {
+    /* ---- the plan and the card (screen 24) ------------------------------- */
+    loadPrices: function (c) {
+      if (CD._pricing || CD._priceFailed) return;
+      CD._pricing = true;
+      /* the seeded review page has no session: it shows the public list price */
+      (CD.seeded ? call("GET", "/api/onboarding/prices") : api("GET", "/prices")).then(function (r) {
+        if (r.status !== 200) CD._priceFailed = true;
+        CD._pricing = false;
+        if (r.status === 200 && r.body.plans) { CD.prices = r.body; c.forceUpdate(); }
+        else { CD.err = why(r, "We couldn’t load the prices just now."); c.forceUpdate(); }
+      });
+    },
+    quote: function (plan, term) {
+      var p = CD.prices; if (!p) return null;
+      var q = (p.plans[plan] || {})[term];
+      return q ? { currency: p.currency, locations: p.locations, per: q.perLocationMinor, perYear: q.perLocationYearMinor, perDay: q.aboutPerDayMinor,
+        total: q.totalMinor, year: q.yearMinor, saveYear: q.annualSavingMinor, setup: p.setupWeekMinor, dueToday: q.dueTodayMinor } : null;
+    },
+    /* After every render: what the server knows replaces what the prototype
+       drew from its own numbers, and the screen says why when the server said no. */
+    priced: function (c, R) {
+      var i = c.state.i;
+      if (CD._errAt !== i) { CD._errAt = i; if (CD.err && i !== 0) CD.err = ""; }
+      if (CD.err && i !== 14 && i !== 0) R.help = CD.err;
+      if (i === 0 && CD.err) R.cdIdHint = CD.err;
+      if (i !== 15) return R;
+      var d = c.state.data, an = (d.term || "monthly") === "annual";
+      if (!CD.prices) { CD.loadPrices(c); }
+      var cur = " " + ((CD.prices && CD.prices.currency) || c.PRICE_CCY);
+      var f = function (m) { return money(m, CD.prices && CD.prices.currency); };
+      var blank = "—";
+      (R.planCards || []).forEach(function (card, k) {
+        var q = CD.quote(c.PLANS[k].id, an ? "annual" : "monthly");
+        card.cur = (CD.prices && CD.prices.currency) || c.PRICE_CCY;
+        card.priceBig = q ? f(q.per) : blank;
+        card.perNote = !q ? "" : an ? "billed " + f(q.perYear) + " a year · per location" : "per location · about " + f(Math.round(q.perDay / 100) * 100) + " a day"; /* "about": whole units, as designed */
+      });
+      var sel = CD.quote(d.plan || "ai", an ? "annual" : "monthly");
+      var selMonthly = CD.quote(d.plan || "ai", "monthly");
+      var once = (d.addons || {}).onsite && sel ? sel.setup : 0;
+      if (sel) {
+        R.orderRecur = an ? f(sel.year) + cur + "/yr" : f(sel.total) + cur + "/mo";
+        R.locsMath = sel.locations + " × " + (an ? f(sel.perYear) + cur + "/yr" : f(sel.per) + cur + "/mo");
+        R.orderOnce = f(once); R.hasOnce = once > 0;
+        R.pf0Sum = c.PLANS.find(function (p) { return p.id === (d.plan || "ai"); }).name + " · " + f(sel.per) + cur + "/mo per location" + (an ? ", billed yearly" : "");
+        R.dueToday = money(sel.dueToday, CD.prices.currency) + (sel.dueToday % 100 ? "" : ".00");
+        R.goLiveSub = money(sel.dueToday, CD.prices.currency) + " today · billing starts with your first transaction · then " + R.orderRecur + (once ? " · " + f(once) + " one-time" : "") + " · cancel any time";
+      } else { R.orderRecur = blank; R.goLiveSub = ""; }
+      if (selMonthly) {
+        var save = CD.quote(d.plan || "ai", "annual");
+        if (save) { R.annualBadge = "Save " + f(save.saveYear); R.annualNudge = "Pay yearly instead and save " + f(save.saveYear) + " a year"; R.annualSaveStr = "You save " + f(save.saveYear) + " a year vs monthly"; }
+      }
+      R.xSetupPrice = CD.prices ? f(CD.prices.setupWeekMinor) + " once" : blank;
+      R.xWebPrice = "$99" + cur + "/mo"; /* coming soon: shown by the design, never sold (the server refuses it) */
+      (R.addonRows || []).forEach(function (a) { if (/setup week/i.test(a.name) && CD.prices) a.priceStr = f(CD.prices.setupWeekMinor) + cur + " once"; });
+      if (CD.payErr) R.goLiveSub = CD.payErr;
+      if (CD._paying) { R.goLiveLabel = "Opening " + (d.operatingName || "your desk") + "…"; }
+      if (R.pf2Open && !CD.seeded) { CD.card(c); setTimeout(CD.mountCard, 0); setTimeout(CD.cardNote, 0); }
+      return R;
+    },
+    fmt: money,
+    /* The card: Stripe's Payment Element, in Stripe's frame, mounted into
+       the empty box the build leaves where the prototype drew card fields.
+       It needs a SetupIntent, which needs the plan the person chose, so it
+       starts when the Payment section opens and restarts if that changes. */
+    card: function (c) {
+      var d = c.state.data;
+      var choice = { plan: d.plan || "ai", term: d.term || "monthly",
+        extras: { brief: d.brief !== false, call: d.call !== false, website: !!(d.addons || {}).website, setupWeek: !!(d.addons || {}).onsite }, agreed: true };
+      var key = JSON.stringify(choice);
+      if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD.payErr)) return;
+      if (CD._pe) { try { CD._pe.destroy(); } catch (e) { /* already gone with its box */ } CD._pe = null; CD._elements = null; }
+      CD._cardKey = key; CD._cardBusy = true; CD.cardComplete = false; CD.payErr = "";
+      api("POST", "/plan", choice, 20000).then(function (r) {
+        CD._cardBusy = false;
+        if (r.status !== 200 || !r.body.clientSecret) { CD.payErr = why(r, "Card payments aren’t available just now. Nothing was charged."); c.forceUpdate(); return; }
+        CD._secret = r.body.clientSecret;
+        return stripeJs().then(function () {
+          var pk = r.body.publishableKey;
+          if (!window.Stripe || !pk) { CD.payErr = "Card payments aren’t switched on here yet. Nothing was charged."; c.forceUpdate(); return; }
+          CD._stripe = CD._stripe || window.Stripe(pk);
+          CD._elements = CD._stripe.elements({ clientSecret: CD._secret, appearance: { theme: "stripe", variables: { colorPrimary: "#1D6B45", colorText: "#17140F", borderRadius: "10px", fontFamily: "Schibsted Grotesk, system-ui, sans-serif" } } });
+          CD._pe = CD._elements.create("payment", { layout: "tabs", fields: { billingDetails: { name: "never", address: "never" } }, wallets: { applePay: "never", googlePay: "never" } });
+          CD._pe.on("change", function (e) { CD.cardComplete = !!e.complete; c.forceUpdate(); });
+          CD.mountCard();
+        }, function () { CD.payErr = "The card form didn’t load. Check your connection and try again. Nothing was charged."; c.forceUpdate(); });
+      });
+    },
+    /* No card form (Stripe off, or unreachable): say why where the card would be. */
+    cardNote: function () {
+      var box = document.querySelector("[data-stripe-card]");
+      if (!box || box.getAttribute("data-mounted") === "1") return;
+      box.setAttribute("role", "status");
+      box.style.cssText = "min-height: 46px; display: flex; align-items: center; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--line); font-size: 13px; line-height: 1.45; color: var(--mute);";
+      box.textContent = CD.payErr || (CD._cardBusy ? "Loading the card form\u2026" : "");
+    },
+    mountCard: function () {
+      var box = document.querySelector("[data-stripe-card]");
+      if (!box || !CD._pe || box.getAttribute("data-mounted") === "1") return;
+      /* the section folds and opens again with a new box: move the frame */
+      if (CD._box && CD._box !== box) { try { CD._pe.unmount(); } catch (e) { /* the old box went with the fold */ } }
+      CD._box = box; box.setAttribute("data-mounted", "1");
+      try { CD._pe.mount(box); } catch (e) { console.error("[signup] card form did not mount", e && e.name); }
+    },
+    /* Open {Shop}: Stripe confirms the SetupIntent (no money moves; a bank
+       may ask the person to approve). Then the desk opens when Stripe's
+       webhook has told the server, and only then; the page asks until it
+       has, and says so if it is taking a while. */
+    pay: function (c) {
+      if (!CD._stripe || !CD._elements || CD._paying) return;
+      var d = c.state.data;
+      CD._paying = true; CD.payErr = ""; c.forceUpdate();
+      var billing = d.billSame !== false
+        ? { name: d.cardName || d.ownerName, address: { line1: d.street, line2: d.unit || undefined, city: d.city, state: d.region, postal_code: d.postal, country: (CD.pack && CD.pack.code) || undefined } }
+        : { name: d.cardName || d.ownerName, address: { line1: d.billStreet, city: d.billCity, state: d.billRegion, postal_code: d.billPostal } };
+      CD._stripe.confirmSetup({ elements: CD._elements, redirect: "if_required", confirmParams: { payment_method_data: { billing_details: billing }, return_url: location.origin + "/onboarding" } })
+        .then(function (res) {
+          if (res.error) { CD._paying = false; CD.payErr = res.error.message || "The card wasn’t accepted. Nothing was charged."; c.forceUpdate(); return; }
+          CD.waitOpen(c, 0);
+        }, function () { CD._paying = false; CD.payErr = NET; c.forceUpdate(); });
+    },
+    waitOpen: function (c, n) {
+      api("POST", "/open", {}).then(function (r) {
+        if (r.status === 200 && r.body.ok) {
+          CD._paying = false; CD.launched = true; tabSet("");
+          c.set("cdId", r.body.cdId || CD.code); if (r.body.operatingName) c.set("operatingName", r.body.operatingName);
+          c.setState({ paid: true, landKey: c.state.landKey + 1 });
+          setTimeout(function () { c.setState({ i: 16 }); CD.realHome(); }, 1000);
+          return;
+        }
+        if (r.status === 202 || r.status === 0) {
+          if (n === 10) { CD.payErr = "Your card is saved. The desk is still opening; this can take a minute. Stay on this page."; c.forceUpdate(); }
+          if (n < 60) { setTimeout(function () { CD.waitOpen(c, n + 1); }, n < 10 ? 1000 : 3000); return; }
+          CD._paying = false; CD.payErr = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Come back to this page in a few minutes; we’ll pick up from here."; c.forceUpdate(); return;
+        }
+        CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
+      });
+    },
+    /* Day 1: the real Home, signed in, dimmed behind the welcome. */
+    realHome: function () {
+      var host = document.querySelector("[data-desk]");
+      if (!host || host.querySelector("iframe[data-real-home]")) return;
+      var f = document.createElement("iframe");
+      f.src = "/app"; f.title = "Your desk"; f.setAttribute("data-real-home", "1"); f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
+      f.setAttribute("inert", "");
+      f.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0;z-index:0;pointer-events:none;filter:saturate(0.85) brightness(0.92);";
+      host.style.position = "relative";
+      host.insertBefore(f, host.firstChild);
+      host.setAttribute("data-real", "1");
+    },
+    walk: function () { location.assign("/app"); },
+
+  });
+
+  var stripeLoading = null;
+  function stripeJs() {
+    if (window.Stripe) return Promise.resolve();
+    if (stripeLoading) return stripeLoading;
+    stripeLoading = new Promise(function (ok, no) {
+      var s = document.createElement("script");
+      s.src = "https://js.stripe.com/v3/"; s.async = true;
+      var t = setTimeout(function () { no(new Error("stripe_timeout")); }, 15000);
+      s.onload = function () { clearTimeout(t); ok(); }; s.onerror = function () { clearTimeout(t); stripeLoading = null; no(new Error("stripe_load")); };
+      document.head.appendChild(s);
+    });
+    return stripeLoading;
+  }
+
+})();
+</script>
 <script src="/web/support.js"></script>
 
 
@@ -1046,11 +1236,11 @@
               <div style="display: flex; flex-direction: column; gap: 12px;">
                 <div style="animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 3.5s both; border: 1.5px solid #E4DCCD; border-radius: 16px; background: #FFFDF8; padding: 18px;">
                   <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6459;">They give · they get</div>
-                  <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 10px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 700;">2,000 USD</span><span style="color: #6B6459;">→</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 700; color: #17583A; animation: cdScType 0.9s cubic-bezier(0.2,0.9,0.3,1) 4.4s both;">2,742.00 CAD</span></div>
+                  <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 10px;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 700;">2,000 USD</span><span style="color: #6B6459;">→</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 700; color: #17583A; animation: cdScType 0.9s cubic-bezier(0.2,0.9,0.3,1) 4.4s both;">2,742.00 {{ tourHome }}</span></div>
                   <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #6B6459;"><span>Rate 1.3710 · from today’s board</span><span>Margin in the rate</span></div>
                 </div>
-                <div style="animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7s both; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid rgba(29,107,69,0.4); background: rgba(46,163,107,0.07); font-size: 13px;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #2EA36B; display: grid; place-items: center; flex: none;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span><span><b>Over your 1,000 CAD ID line.</b> ID on file and verified, so nothing to ask.</span></div>
-                <div style="animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7.8s both; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid #E4DCCD; background: #FFFDF8; font-size: 13px; color: #6B6459;"><span style="width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #CFC6B5; flex: none;"></span>Same client, last 24 hours: 0 CAD. No report needed.</div>
+                <div style="animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7s both; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid rgba(29,107,69,0.4); background: rgba(46,163,107,0.07); font-size: 13px;"><span style="width: 22px; height: 22px; border-radius: 50%; background: #2EA36B; display: grid; place-items: center; flex: none;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span><span><b>Over your 1,000 {{ tourHome }} ID line.</b> ID on file and verified, so nothing to ask.</span></div>
+                <div style="animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7.8s both; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid #E4DCCD; background: #FFFDF8; font-size: 13px; color: #6B6459;"><span style="width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #CFC6B5; flex: none;"></span>Same client, last 24 hours: 0 {{ tourHome }}. No report needed.</div>
               </div>
             </div>
             <div style="display: grid; grid-template-columns: 1.25fr 1fr; gap: 22px; padding: 0 30px;">
@@ -1079,7 +1269,7 @@
             </div>
             <div style="position: absolute; left: 30px; right: 30px; bottom: 26px; display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 14px; background: #17140F; color: #F1ECE1; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 13.2s both;">
               <span style="width: 26px; height: 26px; border-radius: 50%; background: #2EA36B; display: grid; place-items: center; flex: none;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#06130C" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
-              <span style="flex: 1;"><b>Posted.</b> Receipt R-0412 ready to print · Till 1 updated: −2,742 CAD, +2,000 USD</span>
+              <span style="flex: 1;"><b>Posted.</b> Receipt R-0412 ready to print · Till 1 updated: −2,742 {{ tourHome }}, +2,000 USD</span>
               <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: rgba(241,236,225,0.6);">2:14 pm</span>
             </div>
           </div>
@@ -1089,15 +1279,15 @@
             <div style="display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 18px; background: rgba(255,255,255,0.7); border-bottom: 1px solid #E4DCCD;"><svg viewBox="0 0 200 140" width="26" height="18"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#fff"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg><span style="font-weight: 800; font-size: 13px;">CurrencyDesk</span><span style="width: 1px; height: 14px; background: #E4DCCD;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Reports</span><span style="flex: 1;"></span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #6B6459;">Till 1 · Maya Chen</span></div>
             <div style="padding: 26px 30px;">
               <div style="display: flex; align-items: center; gap: 10px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 0.2s both;"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; background: #FBEFD2; color: #8A5A0E; font-weight: 700;">Draft · due in 6 days</span><span style="font-size: 12.5px; color: #6B6459;">Drafted from Monday’s deals</span></div>
-              <div style="font-family: 'Instrument Serif', serif; font-size: 30px; margin-top: 10px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 0.4s both;">Large Cash Transaction Report</div>
+              <div style="font-family: 'Instrument Serif', serif; font-size: 30px; margin-top: 10px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 0.4s both;">{{ tourReport }}</div>
               <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px;">
                 <div style="border: 1.5px solid #E4DCCD; border-radius: 12px; background: #FFFDF8; padding: 12px 14px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 1.2s both;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Client</div><div style="font-weight: 700; margin-top: 4px;">R. Mensah · ID verified</div></div>
-                <div style="border: 1.5px solid #E4DCCD; border-radius: 12px; background: #FFFDF8; padding: 12px 14px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 1.8s both;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Amount</div><div style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; margin-top: 4px;">12,400.00 CAD cash</div></div>
+                <div style="border: 1.5px solid #E4DCCD; border-radius: 12px; background: #FFFDF8; padding: 12px 14px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 1.8s both;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Amount</div><div style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; margin-top: 4px;">12,400.00 {{ tourHome }} cash</div></div>
                 <div style="border: 1.5px solid #E4DCCD; border-radius: 12px; background: #FFFDF8; padding: 12px 14px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 2.4s both;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Conducted by</div><div style="font-weight: 700; margin-top: 4px;">Maya Chen · Till 1</div></div>
                 <div style="border: 1.5px solid #E4DCCD; border-radius: 12px; background: #FFFDF8; padding: 12px 14px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 3s both;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6459;">Date and time</div><div style="font-weight: 700; margin-top: 4px;">Mon 9 Nov · 11:42 am</div></div>
               </div>
               <div style="display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid rgba(169,121,28,0.45); background: rgba(169,121,28,0.08); font-size: 13px; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 4.6s both; animation: cdScIn 0.6s ease 4.6s both, cdScHi 1.6s ease 5.2s 2;"><b>One thing to check:</b> the client’s occupation is from 2024. Still right?</div>
-              <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: #17583A; font-weight: 600; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7.4s both;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#2EA36B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Checked by Daniel Osei</div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: #17583A; font-weight: 600; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 7.4s both;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#2EA36B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Checked by {{ tourOfficer }}</div>
               <div style="display: flex; align-items: center; gap: 14px; margin-top: 18px;">
                 <span style="position: relative; display: inline-flex; align-items: center; height: 46px; padding: 0 22px; border-radius: 999px; background: #1D6B45; color: #FCFAF5; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 8.2s both;">{{ tourFileLabel }}</span>
                 <span style="font-size: 13px; color: #17583A; font-weight: 700; animation: cdScIn 0.6s cubic-bezier(0.2,0.9,0.3,1) 9.6s both;">Filed · receipt saved to the record</span>
@@ -2403,7 +2593,7 @@
                     <button onClick="{{ onXWeb }}" style="display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);">
                       <span style="{{ xWebBox }}"><sc-if value="{{ xWeb }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg></sc-if></span>
                       <span style="flex: 1; min-width: 0;"><span style="display: flex; align-items: center; gap: 7px; flex-wrap: wrap;"><b style="font-weight: 800; font-size: 14px;">Your own rate website</b><span style="font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: #8A5A0E; background: #FBEFD2; padding: 3px 6px; border-radius: 5px;">Coming soon</span></span><span style="display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;">Your address, your live rates, a converter and a map.</span></span>
-                      <span style="flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;">$99 CAD/mo</span>
+                      <span style="flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;">{{ xWebPrice }}</span>
                     </button>
                     <sc-if value="{{ xWebOpen }}" hint-placeholder-val="{{ false }}">
                       <div style="padding: 0 14px 14px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;">
@@ -2426,7 +2616,7 @@
                   <button onClick="{{ onXSite }}" style="{{ xSiteS }}">
                     <span style="{{ xSiteBox }}"><sc-if value="{{ xSite }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"></path></svg></sc-if></span>
                     <span style="flex: 1; min-width: 0;"><b style="font-weight: 800; font-size: 14px;">A setup week, on site</b><span style="display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;">We come to your shop for five days: board, tills, rules, your team trained, your records brought across.</span></span>
-                    <span style="flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;">$5,000 once</span>
+                    <span style="flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;">{{ xSetupPrice }}</span>
                   </button>
 
 
@@ -2445,12 +2635,8 @@
             <div>
               
               <div style="display: grid; grid-template-columns: 1fr; gap: 11px;">
-                <div style="display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff;"><input value="{{ cardNum }}" onChange="{{ onCardNum }}" inputmode="numeric" placeholder="Card number" data-focus="true" style="flex: 1; min-width: 0; border: 0; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: transparent; color: var(--ink);"><span style="padding: 0 13px; display: grid; place-items: center; border-left: 1px solid var(--line);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--mute)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"></rect><path d="M2.5 9.5h19"></path></svg></span></div>
+                <div data-stripe-card="true" aria-label="Card details" style="min-height: 46px;"></div>
                 <input value="{{ cardName }}" onChange="{{ onCardName }}" placeholder="Name on card" style="width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);" style-focus="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(29,107,69,0.14);">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 11px;">
-                  <input value="{{ cardExp }}" onChange="{{ onCardExp }}" inputmode="numeric" placeholder="MM / YY" style="width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);" style-focus="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(29,107,69,0.14);">
-                  <input value="{{ cardCvc }}" onChange="{{ onCardCvc }}" inputmode="numeric" placeholder="CVC" style="width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);" style-focus="border-color: var(--primary); box-shadow: 0 0 0 4px rgba(29,107,69,0.14);">
-                </div>
               </div>
               <div style="margin-top: 16px;">
                 <div style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px;">Billing address</div>
@@ -2468,7 +2654,6 @@
                   </div>
                 </sc-if>
               </div>
-              <div style="font-size: 11.5px; color: var(--mute); line-height: 1.45; margin-top: 12px;"><b style="color: var(--ink); font-weight: 700;">A backup card is worth adding.</b> If a payment fails, it keeps the desk open.</div>
               <sc-if value="{{ showBackup }}" hint-placeholder-val="{{ false }}">
                 <div style="margin-top: 12px;">
                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;"><span style="font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);">Backup card</span><button onClick="{{ onToggleBackup }}" title="Remove backup card" style="display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px 4px 6px; cursor: pointer;" style-hover="border-color: var(--clay); color: var(--clay);"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path></svg>Remove</button></div>
@@ -2598,7 +2783,7 @@
               <div style="display: flex; gap: 10px; align-items: center; margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: #1D6B45; color: #fff;"><span style="flex: none; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,255,255,0.16); display: grid; place-items: center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="13" rx="2"></rect><path d="M12 8v13M3 12h18M12 8S10.5 3 7.5 3.8C5 4.5 6.5 8 12 8zM12 8s1.5-5 4.5-4.2C19 4.5 17.5 8 12 8z"></path></svg></span><span style="font-size: 12.5px; line-height: 1.45;"><b style="font-weight: 800;">Nothing is due until your first transaction.</b> You’re part of the founding cohort: your plan starts the day your desk makes its first exchange.</span></div>
               <div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px;">{{ fromLive }}</div>
               <div style="display: flex; align-items: center; justify-content: space-between;"><span style="font-size: 12.5px; font-weight: 700; color: var(--primary-deep);">{{ orderPlan }}</span><span style="font-family: var(--m); font-size: 14px; font-weight: 700; color: var(--primary-deep);">{{ orderRecur }}</span></div>
-              <sc-if value="{{ hasWeb }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;"><span style="font-size: 12px; color: var(--mute);">Rate website · reserved, billed from launch</span><span style="font-family: var(--m); font-size: 12px; color: var(--mute);">$99 CAD/mo</span></div></sc-if>
+              <sc-if value="{{ hasWeb }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;"><span style="font-size: 12px; color: var(--mute);">Rate website · reserved, billed from launch</span><span style="font-family: var(--m); font-size: 12px; color: var(--mute);">{{ xWebPrice }}</span></div></sc-if>
               <sc-if value="{{ hasFree }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;"><span style="font-size: 12px; color: var(--mute);">Included: {{ freeLine }}</span><span style="font-family: var(--m); font-size: 12px; font-weight: 700; color: var(--primary);">Free</span></div></sc-if>
               <sc-if value="{{ hasLocs }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;"><span style="font-size: 12px; color: var(--mute);">{{ locsLabel }}</span><span style="font-family: var(--m); font-size: 12px; color: var(--mute);">{{ locsMath }}</span></div></sc-if>
               <sc-if value="{{ promoOk }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);"><span style="font-size: 12px; color: var(--primary-deep); font-weight: 700;">{{ promoRowLabel }}</span><span style="font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--primary-deep);">{{ promoRowValue }}</span></div></sc-if>
@@ -3148,7 +3333,7 @@ class Component extends DCLogic {
   copyEmbed(str) { try { navigator.clipboard && navigator.clipboard.writeText(str); } catch (e) {} this.setState({ copied: true }); setTimeout(() => this.setState({ copied: false }), 1600); }
   useOwnerAsCompliance() { this.setState(s => ({ data: { ...s.data, compName: s.data.ownerName, compEmail: s.data.ownerEmail, complianceMode: 'me' } })); }
   pickCompOther() { this.setState(s => { const d = s.data; const patch = { complianceMode: 'other' }; if (d.compName && d.compName === d.ownerName) { patch.compName = ''; patch.compEmail = ''; } return { data: { ...d, ...patch } }; }); }
-  goLive() {
+  goLive() { if (window.__cdOnb) { if (this._payValid) window.__cdOnb.pay(this); return; }
     if (!this._payValid || this._launching) return;
     if (!(this.state.data.lockMode === 'passkey' && this.state.data.passkeyDone) && !(this.state.data.ssoDone && this.state.data.ssoDone === this.state.data.lockMode) && !this.passOk(this.state.data)) {
       if (window.__cdOnb) window.__cdOnb.passNote = 'Set your password once more \u2014 we never store it, so it doesn\u2019t follow you between devices.';
@@ -3535,14 +3720,14 @@ class Component extends DCLogic {
     R.orderRecur = annual ? mny(recurMo * 12 * 0.9) + CUR + '/yr' : mny(recurMo) + CUR + '/mo';
     R.hasOnce = oneTime > 0; R.orderOnce = mny(oneTime);
     R.hasLocs = nLoc > 1; R.locsLabel = nLoc + ' locations · up to 10 people each · add the others inside'; R.locsMath = nLoc + ' × ' + (annual ? mny(selPlan.mo * 12 * 0.9) + CUR + '/yr' : mny(selPlan.mo) + CUR + '/mo');
-    R.showBackup = !!d.showBackup; R.notShowBackup = !d.showBackup;
+    R.showBackup = false; R.notShowBackup = false;
     R.onToggleBackup = () => this.set('showBackup', !d.showBackup);
     R.backupNum = (d.backup || {}).num || ''; R.backupExp = (d.backup || {}).exp || ''; R.backupCvc = (d.backup || {}).cvc || ''; R.backupName = (d.backup || {}).name || '';
     R.onBackupName = (e) => this.setBk('name', e.target.value);
     R.onBackupNum = (e) => this.setBk('num', this.formatCard(e.target.value));
     R.onBackupExp = (e) => this.setBk('exp', this.formatExp(e.target.value));
     R.onBackupCvc = (e) => this.setBk('cvc', e.target.value.replace(/\D/g, '').slice(0, 4));
-    this._payValid = (d.cardNum || '').replace(/\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
+    this._payValid = !!window.__cdOnb.cardComplete && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
     const seen = true;
     const read = !!this.state.termsRead;
     R.termsRead = read;
@@ -3565,7 +3750,7 @@ class Component extends DCLogic {
     R.termsLabel = read
       ? 'You\u2019ve read the agreement. Opening your desk accepts it.'
       : 'Scroll to the end of the agreement, or tick here to accept it.';
-    this._payValid = this._payValid && read;
+    this._payValid = this._payValid && read && !window.__cdOnb._paying;
     R.payDisabled = !this._payValid;
     R.recapChips = [ (selCcy.length + 1) + ' currencies on your board', 'Rate page live', (d.team.length ? (d.team.length + 1) + ' people set up' : 'Your account set up'), 'Compliance on' ]; R._rcOld = [ 'Compliance configured' ];
     R.onceLabel = 'One-time setup services';
@@ -3583,7 +3768,7 @@ class Component extends DCLogic {
     R.onApplyPromo = () => this.setState({ promoTried: true, promoOpen: !((d.promo || '').trim().toUpperCase() === 'FOUNDING100') });
     R.promoOk = pOk;
     R.promoMsgShow = pTried || pOk;
-    R.promoMsg = 'Stripe checkout is not connected yet.';
+    R.promoMsg = 'That code isn\u2019t one we recognise.';
     R.promoMsgStyle = 'margin-top:9px;font-size:12.5px;line-height:1.45;font-weight:600;color:' + (pOk ? 'var(--primary-deep)' : 'var(--clay)') + ';';
     R.promoInputStyle = 'flex:1;min-width:0;box-sizing:border-box;padding:12px 13px;border-radius:10px;background:#fff;outline:none;font-family:var(--m);font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink);border:1px solid ' + (pTried && !pOk ? 'var(--clay)' : 'var(--line)') + ';';
     R.promoBtnStyle = 'flex:none;padding:0 18px;border:0;border-radius:10px;background:var(--ink);color:#fff;font-family:var(--m);font-size:11px;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;cursor:pointer;';
@@ -3592,16 +3777,16 @@ class Component extends DCLogic {
 
     {
       const pOpenK = this.state.payOpen != null ? this.state.payOpen : 0, seen = this.state.paySeen || {};
-      const cardOk = (d.cardNum || '').replace(/\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
+      const cardOk = !!window.__cdOnb.cardComplete && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
       const done = [!!seen[0], !!seen[1], cardOk && !!seen[2], !!this.state.termsRead];
       const pl = this.PLANS.find(p => p.id === (d.plan || 'ai')) || this.PLANS[0], an = (d.term || 'monthly') === 'annual', nL = this.locCount();
       const mny2 = (n) => '$' + Math.round(n).toLocaleString('en-CA');
       const sel = this.ADDONS.filter(a => (d.addons || {})[a.id]);
-      const last4 = (d.cardNum || '').replace(/\s/g, '').slice(-4);
+      const last4 = '';
       const sums = [
         pl.name + ' · ' + (an ? mny2(pl.mo * 0.9) + ' CAD/mo per location, billed yearly' : mny2(pl.mo) + ' CAD/mo per location'),
         [d.brief !== false ? 'Desk Brief' : '', d.call !== false ? 'SAM call' : ''].filter(Boolean).join(' + ') + ((d.brief !== false || d.call !== false) ? ' free' : '') + (sel.length ? (((d.brief !== false || d.call !== false) ? ' · ' : '') + sel.map(a => a.id === 'website' ? 'rate website' : 'setup week').join(' + ')) : '') || 'Nothing extra',
-        cardOk ? ('Card •••• ' + last4 + ' · ' + (d.billSame !== false ? 'billed to the shop address' : 'billed to ' + (d.billCity || 'another address')) + ((d.backup || {}).num ? ' · backup added' : '')) : 'Card, billing address, a backup if you like',
+        cardOk ? ('Card ready · ' + (d.billSame !== false ? 'billed to the shop address' : 'billed to ' + (d.billCity || 'another address')) + ((d.backup || {}).num ? ' · backup added' : '')) : 'Card and billing address',
         this.state.termsRead ? 'Read and accepted' : 'Plain English. Compliance stays yours'
       ];
       const nexts = ['Continue', 'Continue', 'Continue', 'Accept'];
@@ -3753,7 +3938,7 @@ class Component extends DCLogic {
       R.dkWelcome = 'Welcome to CurrencyDesk.'; /* the greeting above already says their name */
       R.dkSub = (d.operatingName || 'Your desk') + ' is open. You’re a Founding Operator.' + (d.cdId ? ' Your CurrencyDesk ID is ' + (/^CD-/.test(d.cdId) ? d.cdId : 'CD-' + d.cdId) + '.' : '') + ' The apps up there are still locked: next we build the desk around you, one app at a time, and you choose which ones you need.';
       R.dkCta = 'Build my desk →';
-      R.onDkWalk = () => { this._tone('next'); this.setState({ dkToast: true }); setTimeout(() => this.setState({ dkToast: false }), 3200); };
+      R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : () => { this._tone('next'); this.setState({ dkToast: true }); setTimeout(() => this.setState({ dkToast: false }), 3200); };
       R.dkToast = !!this.state.dkToast;
       R.dkGhost = [0, 1, 2, 3].map(() => ({ s: 'height: 150px; border-radius: 18px; background: #FBF9F4; border: 1px solid #ECE6DA; box-shadow: 0 10px 30px -22px rgba(23,20,15,0.4); filter: blur(5px); opacity: 0.5;' }));
       const cols = ['#1D6B45', '#2EA36B', '#E9C77B', '#C2452D', '#17140F', '#7BE0A8', '#F3D58C'];
@@ -4141,7 +4326,7 @@ class Component extends DCLogic {
     }
 
     this._prevI = this.state.i;
-    return Object.assign(R, this._railVals(), this._tourVals());
+    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));
   }
 
   RAIL = [{"i": 17, "title": "Welcome. Let\u2019s open your desk.", "when": "First \u00b7 before the ID", "v1": "Not in v1.", "discuss": ["Moved in front of the ID (Sol, 6 Nov): the pitch comes first, then the key. Nobody is named yet, so it speaks to everyone.", "Watch the tour (Sol, 6 Nov): a two-minute film cut from the real recordings, with the script in captions. More air around it now, and it fits a short laptop screen and a phone.", "Whether a voice reads the script: to discuss.", "Icons instead of dots (Sol, 6 Nov, comment): the app's own icon set, plus three drawn to match (TV, link, keypad)."], "tag": "decided"}, {"i": 0, "title": "Let's build your desk.", "when": "Second \u00b7 the key", "v1": "Enter the CurrencyDesk ID from the invite email. A link from the email fills it in.", "discuss": ["Typed, even straight from the ticket (Sol, 6 Nov): it's the key to everything, so it should feel important and be remembered.", "Now comes after the welcome. Back goes to the welcome."], "tag": "decided"}, {"i": 20, "title": "Reserved for Daniel.", "when": "Chapter 1 \u00b7 personal", "v1": "Not in v1.", "discuss": ["The ID just found their reservation, so this is the first personal moment: their shop's name, and the four things we already know, so they see they won't be asked twice.", "Then the three account steps. No separate text-only intro for chapter 1 any more.", "Typed ID shows the reservation masked (d\u2022\u2022\u2022\u2022@, \u2022\u2022\u2022 0142): the ID is a handle, not a secret. The email link proves the inbox and shows it in full. The whole chain is in design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5", "title": "How will you sign in?", "when": "4 \u00b7 standard sign-in chooser", "v1": "Owner name, email, password (6+), mobile.", "discuss": ["Standard practice (Sol, 6 Nov): one screen, every option always visible as a full-width 'Continue with \u2026' button, in the order most products use: passkey (recommended), Google, Microsoft, then email and password. Nothing hides another option.", "Each button opens its own window (passkey: the device's sheet; Google/Microsoft: their account chooser, in a popup on desktop and a redirect on phone). Success moves on by itself; cancelling shows one red line and leaves every option there.", "Button styling follows Google's and Microsoft's sign-in button rules (white, grey border, their label text). The official logos drop into the data-logo slots.", "Server side: design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5a", "pk": "asking", "title": "The passkey window", "when": "4a \u00b7 your device asks", "v1": "Not in v1.", "discuss": ["Designed as the device's own window. Desktop: a dialog that drops from the top (key icon, 'Create a passkey for currencydesk.app?', where it's saved, the account, the Touch ID glyph, Cancel / Continue). Phone: a bottom sheet that slides up (grabber, key, title, account, one big Continue).", "Continue \u2192 the glyph scans as a ring draws (1s) \u2192 a tick draws, 'Passkey saved' \u2192 the window slides away and the button behind is already green \u2192 on to the inbox. Cancel \u2192 back, one red line.", "In the real product the OS draws this window; ours mirrors it closely so the prototype flows the same."], "tag": "decided"}, {"i": 5, "key": "5b", "pk": "sso", "title": "The Google window", "when": "4b \u00b7 provider account chooser", "v1": "Not in v1.", "discuss": ["Their account, matching the reservation email \u2192 signed in, on to the inbox. 'Use another account' shows what a mismatch looks like: refused, with one red line."], "tag": "decided"}, {"i": 5, "key": "5c", "pk": "failed", "title": "Cancelled", "when": "4c \u00b7 back on the chooser", "v1": "Not in v1.", "discuss": ["One red line above the buttons. Every option still there."], "tag": "decided"}, {"i": 14, "title": "Check your inbox.", "when": "Account \u00b7 after sign-in", "v1": "Was screen 15 of 17, at the very end.", "discuss": ["Moved after sign-in (Sol, 6 Nov): by now they've half forgotten they gave us the email, and the code is already there. That's the small magic.", "No 'go back and change it': this email already carried their desk ID."], "tag": "decided"}, {"i": 27, "title": "Now, your PIN. It\u2019s yours alone.", "when": "Account \u00b7 before the PIN", "v1": "Not in v1.", "discuss": ["A moment before the keypad (Sol, 6 Nov): what the PIN is, where it works (unlock the desk, hand over the till, approve voids and overrides, move cash), that it's theirs and nobody at CurrencyDesk sees it. The picture is the desk's own lock screen over a blurred desk, dots filling in.", "It doesn't say how a PIN is reset; that lives in Settings."], "tag": "decided"}, {"i": 18, "title": "Your counter PIN.", "when": "Account \u00b7 the till's keypad", "v1": "Not in v1 (PIN was set at first sign-in).", "discuss": ["The pill is gone (Sol, 6 Nov): two small bars instead, 1 \u00b7 Choose and 2 \u00b7 Confirm, filling as they type and turning green with a tick when each is done. The title follows: Choose your PIN \u2192 Once more, to be sure \u2192 That's your PIN.", "Typed twice, checked digit by digit; a mismatch shakes and starts over; 1111 refused; a match moves on by itself. Keyboard digits work too."], "tag": "decided"}, {"i": 2, "title": "What\u2019s your shop called?", "when": "Shop \u00b7 two confirmations", "v1": "Shop name and registered legal name.", "discuss": ["Built in Early Access's own language (Sol, 6 Nov): the folding question rows from 'Who runs the shop?'. Number badge, question and hint, a green check that pops when it's answered, the answer shown under the question, a Next pill. The '0 of 2' count and the bar above, as there.", "1 \u00b7 What's on the door? opens already filled from the reservation: Next (or Enter) confirms it. 2 \u00b7 What's the registered legal name? opens next, with quick picks: Same as on the door, + Inc., + Ltd., + Corp. Tap an answered row to change it."], "tag": "decided"}, {"i": 3, "title": "Where\u2019s the shop?", "when": "Shop \u00b7 found and verified", "v1": "Storefront address.", "discuss": ["Google Places autocomplete (Sol, 6 Nov), in Early Access's inputs: the same cream box and green focus ring, suggestions in a folding list, 'powered by Google' as Google requires. Pick one: the address fills in, a pin drops on the map preview, the green check pops, 'Verified by Google'. Unit / suite is the one thing to add. Arrow keys and Enter work.", "Can't find it: 'Enter it by hand' opens the plain form; it's marked 'Entered by hand' and we double-check it before the first report.", "Real build: v1 already proxies Places through the server with a session token (/api/onboarding/:id/places/suggest + details), so the key never reaches the browser. The prototype uses a short list of real-looking Toronto addresses; try 1420 Dundas.", "The note under the card now says: first shop, vault and one till. The question of other shops moves to its own screen, next."], "tag": "decided"}, {"i": 29, "title": "Just the one shop?", "when": "Shop \u00b7 the question", "v1": "Not in v1: one address, full stop.", "discuss": ["Rethought (Sol, 6 Nov): sign-up sets up the main shop only. Two tiles: Just the one, or We have more than one. The first is one tap and on. The second goes to the break.", "Nothing else is collected here for the other shops: no addresses, no names. They're opened inside, after payment, each from its own counter.", "To design next, inside: the multi-shop walk-through. After go-live, the head office gets a Shops step in the walk-through; each other shop is issued its own desk ID by email (the same email the first one got), and that shop's manager runs the same ten-minute setup from there: address, vault count, tills, people. Which of these the owner does centrally (address, people) and which the shop does itself (the count): to decide."], "tag": "discuss"}, {"i": 30, "title": "More than one shop. Good.", "when": "Shop \u00b7 the break, when there's more than one", "v1": "Not in v1.", "discuss": ["No price here (Sol, 6 Nov): the AI bundle is what everyone picks, so the break sells the network, not the number. What a shop is (its own vault, tills, window and rate page, up to ten people), what stays shared (one login, one board, one set of reports), and that each other shop is opened from inside, by its own desk ID.", "One thing to take: how many shops, counting this one. A plus and minus. It sets the plan (per location) and how many desk IDs go out after go-live.", "Price per location (Sol, 6 Nov): $750 a month, up to 10 users each. The plan screen prices per location and multiplies by the count; the website needs the same per-location wording.", "Beyond ten people at one location: not priced yet."], "tag": "discuss"}, {"i": 4, "title": "Your FINTRAC registration number?", "when": "Shop", "v1": "Skippable.", "discuss": ["Skip now reads I'll add this inside.", "With more than one shop the help line says one registration covers them all."], "tag": "decided"}, {"i": 22, "title": "The money.", "when": "Chapter 3 intro \u00b7 the money, in half a minute", "v1": "Not in v1.", "discuss": ["Educational (Sol, 6 Nov): a 40-second film on the recording, the same player as the tour. A title card; Rates \u203a Board (every currency is a row; on board means customers can buy and sell it; flipping one off takes it off the site and window; so right now, tell us which you trade); Rates \u203a Cost & stock (on hand split between vault and tills; the vault is the safe, a till a drawer, cash floats vault \u2192 till and back, PIN-signed; recording cash bought from the wholesaler, into the vault at cost); Settings \u203a Cash on hand \u00b7 Vault (a floor per currency; the opening balance is what's in the safe today); an end card that says exactly what to do next: Pick my currencies.", "The vault screen's own line now says the same in one sentence."], "tag": "discuss"}, {"i": 6, "title": "Which currencies do you trade?", "when": "Money \u00b7 the full list", "v1": "Unchanged.", "discuss": ["Every currency a Canadian desk is likely to trade, 64 of them (Sol, 6 Nov), in the order they're most traded: USD, EUR, GBP, MXN, JPY, INR, CNY, PHP, AUD, CHF, AED, HKD\u2026 down to the Gulf dinars and the Pacific. Quick buttons top right: Top 20, Top 50, All, Clear. A search box for the rest. Count pill shows what's selected.", "Flags: the app's own flag files where they exist; a plain tile for the others until the set is complete.", "The rate board inside is where they're put on board and priced."], "tag": "discuss"}, {"i": 8, "title": "Count the vault.", "when": "Money \u00b7 a checklist, counted by note", "v1": "Was Starting cash? (optional), 'in the drawer'.", "discuss": ["A checklist, not a form (Sol, 6 Nov, comment): one row per currency with a tick. Open a row and count the notes by denomination, the right notes for each currency ($100 \u2026 $5 for CAD, \u20ac500 \u2026 \u20ac5, \u00a510,000 \u2026 \u00a51,000, and so on, 40-odd currencies covered). The total adds itself and shows on the row. Coins & other is one field. Already counted? Type the total instead.", "Tick it off: the row goes green and the count reads 2 of 5 counted. Skipping is fine; the first count inside trues it up. The green bar under the list still shows the whole vault in CAD.", "Inside, the same count screen does the daily open and close, so this is the first one they do."], "tag": "discuss"}, {"i": 26, "title": "Your rates, online. Free.", "when": "Money \u00b7 advertising piece, nothing to fill in", "v1": "Was 'Your public rate board' (screen 13 of 17): a question, how rates go online.", "discuss": ["Back, as an advert, not a question (Sol, 6 Nov): what comes free with the desk, shown moving (Website & Window, the public rate page with its converter, the window screen going full screen), with 'you'll set it up inside'.", "Decisions about what to do with it: later."], "tag": "discuss"}, {"i": 23, "title": "Your rules. The desk keeps them.", "when": "Chapter 4 intro \u00b7 Settings, moving", "v1": "Not in v1.", "discuss": ["A real recording of Settings \u203a Compliance: margin-floor rules and who may override. The point: set once, enforced at the counter."], "tag": "discuss"}, {"i": 9, "title": "Who's your compliance officer?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 10, "title": "When should the desk ask for ID?", "when": "Rules \u00b7 the ID line", "v1": "Unchanged.", "discuss": ["The actual rules (Sol, 8 Nov), checked against the team's own Notion research (Compliance Officer \u203a Canada \u2014 FINTRAC report and data verification, 7 Nov) and FINTRAC's MSB guidance. On top, a locked card, 'What FINTRAC requires \u00b7 always on': any amount, a record of every exchange; 3,000 CAD, check ID and record name, address, date of birth and occupation; 10,000 CAD cash, check ID and file a Large Cash Transaction Report within 15 days, cash adding up over 24 hours; any amount, a Suspicious Transaction Report when something seems wrong. A shop in Qu\u00e9bec also sees Revenu Qu\u00e9bec's rule: name, address and phone before any exchange.", "The touch (Sol, 8 Nov): 'The rules you're agreeing to. The desk follows every one.' The card arrives closed, then opens itself with a soft chime (a beat after the screen lands); its arrow is a green button that pulses while they read. It sits open five seconds, every time the screen is reached, then folds itself back down to one line ('4 rules you've agreed to \u00b7 tap to read them again'), and the arrow gives a small wiggle every few seconds to say it opens again. The Bank of Canada line is gone: shops choose their own rate source.", "Why not 10,000 for ID: 10,000 is the large-cash report (and an ID check on that cash). For a currency exchange of any payment type, FINTRAC's ID line is 3,000 CAD. The research page says it in so many words: do not convert these into a single 'KYC above $10,000' setting.", "Under the card, one choice: 3,000 CAD (the law), 1,000 CAD (recommended, the default), every deal, or your own amount. Own amount can go above 3,000: the row turns red, a red block says 'Not FINTRAC compliant' and what it means (exchanges between 3,000 and their amount go through without the ID the law requires; the desk warns them on every one; CurrencyDesk can step in and switch it back. That's how the back end works today: warnings in the desk, then a manual block from our side), and the button becomes a red 'Use it anyway'. The review repeats it.", "Always on, mentioned not switched: the desk adds up a customer's deals within 24 hours toward the shop's line. That part is our rule, not FINTRAC's for exchange (FINTRAC's 24-hour rule is for the cash report), and it's labelled as the desk's.", "US pack: over 1,000 USD record with ID, Currency Transaction Report over 10,000 USD cash, Suspicious Activity Report from 2,000 USD. Other packs fall back to their two numbers and stay 'to be confirmed'.", "A small note at the foot (Sol, 8 Nov): 'More rules inside, in Settings \u203a Compliance: sanctions screening, politically exposed persons, third parties, approval over your own limits, and how long records are kept.'"], "tag": "discuss"}, {"i": 11, "title": "Who else works the counter?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 31, "title": "Add a person.", "when": "Rules \u00b7 from the team screen", "v1": "An inline form on the team screen: name, role, email.", "discuss": ["Its own page (Sol, 8 Nov). First name and last name, side by side (stacked on a phone). Their email, required: a green tick appears once it's a real address, and the line under it says the invite and their CurrencyDesk ID go there when the desk opens. Mobile number, optional ('Optional \u00b7 skip it'), used only for a sign-in code if they lose their device. Then What do they do? as six role tiles with what the role can and can't do. The title and button follow the first name: 'Add Samira.' The button stays dark until first name, last name and a valid email are in.", "On Add: a dark circle with their initials, a green ring spinning round it. 'Creating Samira's CurrencyDesk ID' \u2192 'Writing the invite to samira@\u2026' \u2192 the ring closes, a tick pops, the circle turns green, their role drops in as a pill (MANAGER), 'Samira is on the team. The invite goes out the moment your desk opens.' Then the circle grows out to fill the card and you're back on the team screen, where her card lands with a glow. About three seconds.", "Nothing is sent during sign-up: invites go out when the desk opens, so a half-finished sign-up never emails anyone.", "No email, no person (Sol, 8 Nov): the 'no email at work / setup code' route is gone from sign-up. The logic doc's setup-code idea stays open for the team to decide inside.", "A small note at the foot (Sol, 8 Nov): 'More roles inside. These six cover most counters. In Settings \u203a Employees you can make your own role, or fine-tune what any role can see and do.'"], "tag": "discuss"}, {"i": 13, "title": "Confirm your desk.", "when": "Open \u00b7 the sign-off", "v1": "Summary cards, then Secure & open my desk.", "discuss": ["Official (Sol, 8 Nov). The green flash is gone. After the team screen the card turns ink, a gold ring draws itself round the CurrencyDesk mark, a warm rising chord plays: 'Your desk is built. One careful look, then you sign it off.' About two and a half seconds, then this.", "A desk record, not a list of cards: desk ID and today's date at the top, one row per part (Business, Shop, Owner, Currencies, Vault count, ID line, Team), Edit on each. At the bottom a declaration: 'I confirm these details are true, and I'm authorised to open this desk for York Foreign Exchange Inc.' Tick it and the owner's name appears as a signature with the date. Confirm my desk stays dark until it's ticked.", "Confirm: a soft stamp sound and CONFIRMED lands on the record, then the last chapter.", "Found: the review showed spreads (2.0% on all) that are no longer asked here. Now it says rates and spreads are set inside."], "tag": "discuss"}, {"i": 24, "title": "Confirmed. Now, open it.", "when": "Open \u00b7 the pitch, finished", "v1": "Not in v1.", "discuss": ["After the sign-off, the last chapter closes the pitch (Sol, 8 Nov): what the desk carries from the first deal. Rates that follow the market; every deal checks itself; reports ready to file; the rest at your pace inside. Button: Choose my plan."], "tag": "discuss"}, {"i": 15, "title": "Open York Currency Exchange.", "when": "Open \u00b7 the plan, folded", "v1": "Plans, add-ons, card, billing address, over the frosted desk.", "discuss": ["For conversion (Sol, 8 Nov), built around how an owner feels at this exact moment: they've just spent ten minutes building something, and the only thing between them and it is a card number.", "Cleaner (Sol, 8 Nov): one line under the title, '$0 today. Nothing is charged until you go live.' Monthly first ($750/mo, about $25 a day; annual one tap away as $675/mo with 'Save $900'). The summary opens with DUE TODAY $0.00, then what starts at go-live, then 'Pay yearly instead and save $900 a year'. The chips of what they built, the Founding Operator strip and the talk-to-us card are gone.", "Plan cards, cleaner (Sol, 8 Nov, comment): name, one line, price, and a small green 'What's included' under each that opens on its own without choosing the plan. Inside: the monthly allowances as two quiet tiles (50 ID checks a month on both full plans, 250 AI drafts and answers on the AI plan) and a ticked list of what the plan does. The allowance is worded as what's included, 'your first ones every month are on us', then billed as you go, and the counter never stops for a limit. Revenue driver (Sol, 8 Nov): 50 checks covers roughly a busy shop's first week, then usage billing starts. 250 AI requests is set on the same logic. To confirm: the price of an extra ID check and an extra AI request.", "Nothing due until the first transaction (Sol, 8 Nov): right under DUE TODAY $0.00, a green band: 'Nothing is due until your first transaction. You're part of the founding cohort: your plan starts the day your desk makes its first exchange.' The lines below read 'From your first transaction'; the button line says '$0 today \u00b7 billing starts with your first transaction \u00b7 then $750/mo'; the top line and the guarantee say the same. Server: the subscription is created at payment with a trial that ends on the first posted deal (per location).", "Card check (Sol, 8 Nov): at the foot of the green band, 'We'll place a $1 hold to check your card works. It's released straight away.' Server: a $1 authorisation on the SetupIntent card, voided at once (or Stripe's own card verification); nothing is captured.", "Folds, Early Access style (Sol, 8 Nov): four rows, one open at a time, each closing to a one-line summary with a green tick. 1 Your plan (monthly / annual, three plans). 2 Extras. 3 Payment: card, billing address, backup card. 4 The agreement. Below them the promo code, the order summary and Open York Currency Exchange.", "Prices: $750 a month per location is the whole desk with AI (it was the $749 AI tier), now first, chosen by default and marked Most chosen. The whole desk without AI $599, rates only $299: to confirm. Every plan: up to 10 people per location.", "To decide: three promises sit on this screen at once: nothing charged until you go live, a 30-day money-back guarantee, and a founding code with three months free. Pick the one or two that are true.", "Extras (Sol, 8 Nov), built to convert: two free things already ticked, so keeping them costs nothing and unticking takes a decision. The weekly Desk Brief (every Monday: rule changes, what's new in the desk, one tip) keeps them reading. A setup call (45 minutes on video in week one, then a live Q&A every Thursday), shown as Free with $250 struck through, gets them using the desk properly in the week churn is decided.", "Then two add-ons. Your own rate website, $99 a month, marked Coming soon: ticking it opens a small advert with three designs (Classic, Bold, Minimal) drawn with the shop's own name and live rates, 'Pick a design inside, make it yours', and 'nothing is billed until it's live'. It reserves the site; the order box shows it as reserved, billed from launch. And the on-site setup week, $5,000 once, as agreed.", "To decide: whether the $99 website is per account (one site listing every shop, as designed) or per location; and who runs the Thursday Q&A."], "tag": "discuss"}, {"i": 16, "title": "Welcome to CurrencyDesk, Daniel.", "when": "Open \u00b7 the welcome, then the hand-over", "v1": "Greeting, then four first jobs.", "discuss": ["The welcome, not 'ready' (Sol, 8 Nov): the desk isn't ready yet, so this screen doesn't pretend. The real Home opens behind, full page, every app in the row dim and locked, the day's cards blurred, the status pill 'Open \u00b7 setting up'.", "Big and happy: confetti falls across the whole page, the CurrencyDesk mark pops in, the seal chord plays. 'Founding Operator \u00b7 Day 1. Welcome to CurrencyDesk, Daniel. York Currency Exchange is open. You're a Founding Operator, desk CD-12345. The apps up there are still locked: next we build the desk around you, one app at a time, and you choose which ones you need.' Button: Build my desk.", "Build my desk hands over to the next page, Walk-through and onboarding (new, to design from scratch): built on the Home journey but for the first setup, playful, each app arrives one at a time and asks its question first (do you cash cheques? no, and it isn't added), and the desk builds itself around them."], "tag": "discuss"}];
@@ -4181,7 +4366,7 @@ class Component extends DCLogic {
     let cap = '', ci = 0; (st.caps || []).forEach((c, k) => { if (el >= c[0]) { cap = c[1]; ci = k; } });
     return {
       tourOn: true, tourKey: 'tour' + t.k, tourIsClip: st.kind === 'clip', tourIsCard: st.kind === 'card', tourIsEnd: !!st.end,
-      tourSceneDeal: st.kind === 'scene' && st.scene === 'deal', tourSceneFile: st.kind === 'scene' && st.scene === 'file', tourFileLabel: 'File with ' + ((((this.jurisOf && this.jurisOf(this.state.data.country)) || {}).reg) || 'the regulator') + ' →',
+      tourHome: this.jurisOf(this.state.data.country).home, tourReport: this.jurisOf(this.state.data.country).report || 'cash report', tourOfficer: (this.state.data.complianceMode === 'other' ? this.state.data.compName : this.state.data.ownerName) || 'your compliance officer', tourSceneDeal: st.kind === 'scene' && st.scene === 'deal', tourSceneFile: st.kind === 'scene' && st.scene === 'file', tourFileLabel: 'File with ' + ((((this.jurisOf && this.jurisOf(this.state.data.country)) || {}).reg) || 'the regulator') + ' →',
       tourSrc: '/web/signup/shots/' + (st.src || 'home') + '.mp4', tourPoster: '/web/signup/shots/' + (st.src || 'home') + '-poster.jpg',
       tourEyebrow: st.eyebrow || '', tourTitle: st.title || '', tourSub: st.sub || '',
       tourCap: cap, tourCapKey: 'cap' + t.k + '-' + ci, tourWhere: st.where ? ('Inside your desk · ' + st.where) : '',
