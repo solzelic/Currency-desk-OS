@@ -45,6 +45,15 @@ such as `maryjane` from a new ID; formatting never selects an account. The synta
 this cosmetic helper never proves or resolves an account. Server normalization
 and legacy alphanumeric compatibility remain part of returning-auth integration.
 
+**F1 — must be fixed before activation:** the blurred input's actual DOM value
+is formatted, even though the request stays raw. Opus independently observed
+`CD-MARY-JANE` in the field on mouse-Continue or Tab+Enter, versus `maryjane`
+when Enter is pressed inside it. Copying that formatted value, or saving it
+through autocomplete/password management, could produce a later failed login.
+Password-manager storage is a risk inference, not a verified browser result.
+Keep typed text in the field, or format only after the server confirms a v2 ID;
+design approval alone does not resolve this identity-persistence risk.
+
 ## Original source and intentional differences
 
 Source: the supplied `signin-v2.3-pack`, BUILD-SIGN-IN v2.3 (15 Nov), original
@@ -126,7 +135,8 @@ and lock remain later slices. Q19 owner/money endpoints, Q20 initial no-email PI
 and Q21 idle timing remain in the existing Message Board discussion. No policy
 values have been invented. Before activation: provider full visible labels and
 Microsoft attribution must follow CD-207; unavailable methods need a visible
-explanation/styling; obtain design preview approval for blur-only formatting
+explanation/styling; resolve F1's DOM-value persistence risk and obtain design
+preview approval for the resulting identifier behavior
 and consider caret mapping on refocus; remove remote Google Fonts calls from the shell; replace
 legacy lock wording only alongside the server policy. These are recorded Opus
 nonblocking follow-ups, not accepted final design. The /signup navigation uses
