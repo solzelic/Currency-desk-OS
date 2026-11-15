@@ -706,6 +706,9 @@ export const signupAccounts = pgTable("signup_accounts", {
   codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
   codeAttempts: integer("code_attempts").notNull().default(0),
   codeSends: jsonb("code_sends").$type<number[]>().notNull().default([]),
+  /* 077: the counter PIN, hashed. */
+  pinHash: text("pin_hash"),
+  pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

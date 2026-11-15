@@ -117,6 +117,9 @@ describe("PIN writers", () => {
       return [...text.matchAll(/pinHash:\s*([^,}]+)/g)].map((m) => [p.slice(root.length + 1), m[1]!.trim()] as const);
     }).filter(([, value]) => !value.startsWith("text(\"pin_hash\")"));
     expect(writes).toEqual([
+      /* Sign-up v2.1's owner PIN: its own rule (four of a kind and 1234
+         refused, the rest labelled), SIGNUP-LOGIC §3.3, asserted below. */
+      ["onboarding/signup-pin.ts", "await hashPin(pin)"],
       ["routes/admin.ts", "await hashPin(pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
@@ -126,6 +129,11 @@ describe("PIN writers", () => {
     const pin = readFileSync(join(root, "routes/pin.ts"), "utf8");
     expect(pin.match(/weakPinDetail\(parsed\.data\.pin\)/g)).toHaveLength(3);
     for (const f of ["routes/admin.ts", "routes/staff.ts"]) expect(readFileSync(join(root, f), "utf8")).toMatch(/const pin = generatePin\(\);/);
+    /* the sign-up writer is reached only after checkPin has passed */
+    const desk = readFileSync(join(root, "routes/signup-desk.ts"), "utf8");
+    expect(desk.indexOf("checkPin(parsed.data.pin, parsed.data.confirm)")).toBeGreaterThan(-1);
+    expect(desk.indexOf("checkPin(parsed.data.pin")).toBeLessThan(desk.indexOf("savePin(db"));
+    expect(files(root).filter((p) => readFileSync(p, "utf8").includes("savePin(")).map((p) => p.slice(root.length + 1)).sort()).toEqual(["onboarding/signup-pin.ts", "routes/signup-desk.ts"]);
     expect(files(root).some((p) => p.endsWith("staging-default-pin.ts"))).toBe(false);
   });
 

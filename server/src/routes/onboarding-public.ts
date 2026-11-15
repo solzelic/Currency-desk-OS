@@ -40,6 +40,7 @@ import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "./signup-credential.js";
 import { ownerDetails, registerSignupEmailRoutes } from "./signup-email.js";
+import { registerSignupDeskRoutes } from "./signup-desk.js";
 import { enrolmentFor } from "../onboarding/email-code.js";
 import { loadAccount } from "../onboarding/signup-account.js";
 import {
@@ -201,6 +202,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   const door = (idDoor = createIdDoor({ db }));
   registerCredentialRoutes(app, db, door);
   registerSignupEmailRoutes(app, db, door);
+  registerSignupDeskRoutes(app, db, door);
 
   /* "Can't find your ID? Send it again." Always 202, whatever the email,
      before any lookup happens (SIGNUP-LOGIC §2.1). */

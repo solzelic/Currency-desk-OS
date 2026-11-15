@@ -243,6 +243,9 @@ CREATE TABLE IF NOT EXISTS enrolment_sessions (
   revoked_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS enrolment_sessions_enquiry_idx ON enrolment_sessions (enquiry_id);
+-- Sign-up v2.1 counter PIN (077).
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS pin_hash text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS pin_set_at timestamptz;
 CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   id text PRIMARY KEY,
   enquiry_id text NOT NULL REFERENCES enquiries(id),
