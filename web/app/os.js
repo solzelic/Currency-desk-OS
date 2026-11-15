@@ -10994,9 +10994,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       };
 
       // ---- roster row: click to open the account ----
+      const blockedOf = e => e.active === false || !!(e.code && srvStaff && srvStaff[String(e.code).trim()] && srvStaff[String(e.code).trim()].active === false);
       const empRow = e => {
         const asg = assignmentOf(e.name);
-        const blocked = e.active === false;
+        const blocked = blockedOf(e);
         return /*#__PURE__*/React.createElement("button", {
           key: e.id,
           onClick: () => setEmpSel(e.id),
@@ -11064,7 +11065,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         const asg = assignmentOf(e.name);
         const apps = Array.isArray(e.apps) ? e.apps : null;
         const isOwner = e.role === 'Owner';
-        const blocked = e.active === false;
+        const blocked = blockedOf(e);
         /* Their server sign-in. A profile finds its account by username, so a
            username typed here that already belongs to somebody else would read
            as this person's — with that person's reset, disable, block and PIN
@@ -68089,8 +68090,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const {
     useState,
     useEffect,
-    useRef,
-    useMemo
+    useRef
   } = React;
 
   // design tokens → CSS vars, scoped to the sign-in surface
@@ -68398,12 +68398,82 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     /* The hour is the shop's own clock. Naming the zone repeats it. */
     const lockSentence = !locked ? '' : !lockUntil ? 'Too many tries. Try again in a few minutes.' : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
-    // recognise the typed ID against the local directory (by code, then name)
     const resolve = raw => {
       const q = (raw || '').trim().toLowerCase();
       return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null;
     };
-    const known = useMemo(() => resolve(idInput), [idInput, dir]);
+    const SRV2OS = {
+      administrator: 'Owner',
+      branch_manager: 'Manager',
+      supervisor: 'Senior teller',
+      compliance_officer: 'Manager',
+      teller: 'Cashier',
+      auditor: 'Trainee'
+    };
+    /* The server names an active id. An inactive id and an unknown id are
+       the same answer, so neither gets a name or a role on this screen.
+       The saved directory is only for a desk the server cannot answer. */
+    const [ident, setIdent] = useState(null);
+    useEffect(() => {
+      const q = idInput.trim();
+      if (q.length < 3) {
+        setIdent(null);
+        return undefined;
+      }
+      let live = true;
+      const timer = setTimeout(() => {
+        fetch('/api/auth/id', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            staffId: q
+          })
+        }).then(async res => {
+          if (!live) return;
+          const data = res.ok ? await res.json().catch(() => null) : null;
+          if (!data || typeof data.name !== 'string' || !data.name) {
+            setIdent({
+              q: q.toLowerCase(),
+              person: null
+            });
+            return;
+          }
+          const local = resolve(q);
+          const role = SRV2OS[data.role] || local && local.role || 'Teller';
+          setIdent({
+            q: q.toLowerCase(),
+            person: local ? {
+              ...local,
+              name: data.name,
+              role
+            } : {
+              name: data.name,
+              role,
+              code: q
+            }
+          });
+        }).catch(() => {
+          if (!live) return;
+          const local = resolve(q);
+          setIdent({
+            q: q.toLowerCase(),
+            person: local ? {
+              name: local.name,
+              role: local.role,
+              code: local.code || q
+            } : null
+          });
+        });
+      }, 160);
+      return () => {
+        live = false;
+        clearTimeout(timer);
+      };
+    }, [idInput]);
+    const known = ident && ident.q === idInput.trim().toLowerCase() ? ident.person : null;
     /* EXAMPLES ARE ONLY EVER THIS DESK'S PEOPLE.
         A browser that has never signed in here carries the rehearsal desk's
        five, and offering those to a returning customer showed them two
@@ -68502,19 +68572,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setFreshErr(window.CDOS.freshShopMessage('network'));
       }
     }
-    const SRV2OS = {
-      administrator: 'Owner',
-      branch_manager: 'Manager',
-      supervisor: 'Senior teller',
-      compliance_officer: 'Manager',
-      teller: 'Cashier',
-      auditor: 'Trainee'
-    };
     const adopt = (u, rec) => rec || {
       id: 'e_' + Date.now(),
       code: u.id,
       name: u.name || u.id,
-      role: SRV2OS[u.role] || 'Cashier',
+      role: SRV2OS[u.role] || 'Teller',
       active: true,
       branches: [],
       home: null,
@@ -73997,6 +74059,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const settingsRef = useRef(null);
     const hydratedRef = useRef(false); // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
+    /* null: the server list has not arrived (show only the signed-in person).
+       false: no server (the saved directory, still without inactive rows).
+       string[]: staff ids the server says are active. */
+    const [liveIds, setLiveIds] = useState(null);
 
     /* The book and the client roster. There is no seed any more: a desk that
        has posted nothing shows nothing, rather than 38 invented deals and 18
@@ -75389,9 +75455,37 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
       setCashVersion(v => v + 1);
     };
+    useEffect(() => {
+      if (stage !== 'desktop') return undefined;
+      let live = true;
+      fetch('/api/auth/colleagues', {
+        credentials: 'same-origin'
+      }).then(r => r.ok ? r.json() : null).then(d => {
+        if (!live) return;
+        if (!d || !Array.isArray(d.staff)) {
+          setLiveIds(false);
+          return;
+        }
+        setLiveIds(d.staff.map(s => String(s.staffId || '').toLowerCase()));
+      }).catch(() => {
+        if (live) setLiveIds(false);
+      });
+      return () => {
+        live = false;
+      };
+    }, [stage]);
+    const switchRoster = () => {
+      const local = (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false);
+      if (liveIds === false) return local;
+      if (!Array.isArray(liveIds)) return local.filter(s => s.name === me.name);
+      const allow = new Set(liveIds);
+      return local.filter(s => allow.has(String(s.code || s.staffId || '').toLowerCase()));
+    };
     const switchTo = s => {
       setAcctMenu(false);
-      if (s.name === me.name) return;
+      if (!s || s.name === me.name) return;
+      const code = String(s.code || s.staffId || '').toLowerCase();
+      if (s.active === false || Array.isArray(liveIds) && !liveIds.includes(code)) return;
       askPin({
         title: 'Switch account',
         sub: 'Enter ' + s.name + '’s PIN to continue',
@@ -77334,7 +77428,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "mb-menu-div"
     }), /*#__PURE__*/React.createElement("div", {
       className: "mb-menu-cap"
-    }, "Switch account"), (settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => /*#__PURE__*/React.createElement("button", {
+    }, "Switch account"), switchRoster().map(s => /*#__PURE__*/React.createElement("button", {
       key: s.name,
       className: 'mb-menu-row' + (s.name === me.name ? ' active' : ''),
       onClick: () => switchTo(s)
@@ -77360,7 +77454,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         logout();
       }
     }), document.body), handover && ReactDOM.createPortal(/*#__PURE__*/React.createElement(Handover, {
-      operators: settings.employees && settings.employees.length ? settings.employees : STAFF,
+      operators: switchRoster(),
       current: me,
       onCancel: () => setHandover(false),
       onConfirm: (op, switched) => {

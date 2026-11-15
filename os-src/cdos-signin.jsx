@@ -10,7 +10,7 @@
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {
-  const { useState, useEffect, useRef, useMemo } = React;
+  const { useState, useEffect, useRef } = React;
 
   // design tokens → CSS vars, scoped to the sign-in surface
   const VARS = {
@@ -182,9 +182,36 @@
       : !lockUntil ? 'Too many tries. Try again in a few minutes.'
       : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
-    // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
-    const known = useMemo(() => resolve(idInput), [idInput, dir]);
+    const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+    /* The server names an active id. An inactive id and an unknown id are
+       the same answer, so neither gets a name or a role on this screen.
+       The saved directory is only for a desk the server cannot answer. */
+    const [ident, setIdent] = useState(null);
+    useEffect(() => {
+      const q = idInput.trim();
+      if (q.length < 3) { setIdent(null); return undefined; }
+      let live = true;
+      const timer = setTimeout(() => {
+        fetch('/api/auth/id', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: q }),
+        }).then(async (res) => {
+          if (!live) return;
+          const data = res.ok ? await res.json().catch(() => null) : null;
+          if (!data || typeof data.name !== 'string' || !data.name) { setIdent({ q: q.toLowerCase(), person: null }); return; }
+          const local = resolve(q);
+          const role = SRV2OS[data.role] || (local && local.role) || 'Teller';
+          setIdent({ q: q.toLowerCase(), person: local ? { ...local, name: data.name, role } : { name: data.name, role, code: q } });
+        }).catch(() => {
+          if (!live) return;
+          const local = resolve(q);
+          setIdent({ q: q.toLowerCase(), person: local ? { name: local.name, role: local.role, code: local.code || q } : null });
+        });
+      }, 160);
+      return () => { live = false; clearTimeout(timer); };
+    }, [idInput]);
+    const known = ident && ident.q === idInput.trim().toLowerCase() ? ident.person : null;
     /* EXAMPLES ARE ONLY EVER THIS DESK'S PEOPLE.
 
        A browser that has never signed in here carries the rehearsal desk's
@@ -246,8 +273,7 @@
       }
     }
 
-    const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
-    const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+    const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Teller', active: true, branches: [], home: null, _adopted: true };
     /* The prototype remains useful as a file/localhost demo, but a deployed
        desk must never look signed in when its API is unavailable. In the live
        product the server session is the identity, not browser state. */
