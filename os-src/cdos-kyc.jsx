@@ -570,7 +570,7 @@
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
           <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."} /></div>
-          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (idvWords || 'Identity checks are on for this shop.') : 'Persona is not connected yet.'}</div>
+          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (checks.length ? (idvWords || 'Identity checks are on for this shop.') : 'Identity checks are on for this shop.') : 'Persona is not connected yet.'}</div>
         </div>
       </div>
 

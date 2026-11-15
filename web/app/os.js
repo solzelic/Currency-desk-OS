@@ -27448,12 +27448,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.mute
       }
-    }, "ID details are not saved from this check yet."), /*#__PURE__*/React.createElement("div", {
+    }, "ID details from this check are not saved on the desk. Enter the ID with Fix ID."), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
       }
-    }, "This line updates when the check changes. Persona's ID photo and selfie are not copied to this desk."));
+    }, "Persona's ID photo and selfie are not copied to this desk."));
   }
   function ProcessStanding({
     rec,
@@ -27570,7 +27570,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.mute,
         maxWidth: 420
       }
-    }, "Proof of address, source of funds, corporate filings \u2014 kept with this customer, not in this browser.")), canEdit && /*#__PURE__*/React.createElement("label", {
+    }, "Proof of address, source of funds, corporate filings, kept with this customer, not in this browser.")), canEdit && /*#__PURE__*/React.createElement("label", {
       className: "flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none",
       style: {
         color: CD.ink
@@ -51534,7 +51534,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, configured ? idvWords || 'Identity checks are on for this shop.' : 'Persona is not connected yet.'))), latest && latest.status === 'completed' && (() => {
+    }, configured ? checks.length ? idvWords || 'Identity checks are on for this shop.' : 'Identity checks are on for this shop.' : 'Persona is not connected yet.'))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {

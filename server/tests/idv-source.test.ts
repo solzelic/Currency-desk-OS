@@ -30,7 +30,7 @@ describe("idv source locks", () => {
     const block = text.slice(text.indexOf("function IdentityCheck"), text.indexOf("function ProcessStanding"));
     expect(block).not.toContain("Approved");
     expect(block).toContain("Check passed (test)");
-    expect(block).toContain("ID details are not saved from this check yet.");
+    expect(block).toContain("ID details from this check are not saved on the desk. Enter the ID with Fix ID.");
     expect(block).toContain("Check passed");
   });
 

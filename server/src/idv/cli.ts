@@ -1,7 +1,7 @@
 /* Persona CLI. No HTTP route.
      npm run persona -- register-webhook
    Reads the shared API key. Refuses unless this process is a staging
-   runtime, unless --production is passed. The signing secret is printed
+   runtime. --production is refused until go-live (CD-219). The signing secret is printed
    on stdout once and is not logged. */
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";

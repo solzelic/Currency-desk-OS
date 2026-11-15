@@ -85,7 +85,7 @@ describe("persona inquiry request", () => {
 describe("register-webhook", () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("refuses unless the runtime is staging or --production is passed", async () => {
+  it("refuses unless the runtime is staging", async () => {
     const cap = capture();
     const fetchImpl = vi.fn<typeof fetch>();
     expect(await registerPersonaWebhook(["register-webhook"], {}, { ...cap.io, fetch: fetchImpl })).toBe(1);

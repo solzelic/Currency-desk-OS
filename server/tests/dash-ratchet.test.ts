@@ -38,7 +38,7 @@ const BASELINE: Record<string, number> = {
   "os-src/cdos-branches.jsx": 31,
   "os-src/cdos-cheques-app.jsx": 2,
   "os-src/cdos-cheques.jsx": 10,
-  "os-src/cdos-clients.jsx": 24,
+  "os-src/cdos-clients.jsx": 23,
   "os-src/cdos-compliance-app.jsx": 13,
   "os-src/cdos-compliance.jsx": 5,
   "os-src/cdos-dashboard.jsx": 10,
@@ -94,7 +94,7 @@ const BASELINE: Record<string, number> = {
   "server/src/routes/tenantState.ts": 2,
   "server/src/state/contract.ts": 1,
   "server/src/state/shape.ts": 10,
-  "web/app/os.js": 749,
+  "web/app/os.js": 748,
 };
 const FIXED: Array<[string, string]> = [
   ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],

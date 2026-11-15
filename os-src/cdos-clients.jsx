@@ -1157,8 +1157,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {canEdit && checksOn && !passed && <button type="button" onClick={start} disabled={busy} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'transparent' }}>{busy ? 'Starting' : 'Start identity check'}</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details are not saved from this check yet.</div>
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>This line updates when the check changes. Persona's ID photo and selfie are not copied to this desk.</div>
+      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from this check are not saved on the desk. Enter the ID with Fix ID.</div>
+      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's ID photo and selfie are not copied to this desk.</div>
     </div>);
   }
 
@@ -1224,7 +1224,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       <div className="flex items-center justify-between gap-3 mb-2">
         <div>
           <div className="text-sm font-semibold" style={{ color: CD.ink }}>Files{docs.length ? <span style={{ color: CD.mute, fontWeight: 500 }}> · {docs.length}</span> : null}</div>
-          <div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 420 }}>Proof of address, source of funds, corporate filings — kept with this customer, not in this browser.</div>
+          <div className="text-[11px] mt-0.5" style={{ color: CD.mute, maxWidth: 420 }}>Proof of address, source of funds, corporate filings, kept with this customer, not in this browser.</div>
         </div>
         {canEdit && <label className="flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none" style={{ color: CD.ink }}><Ic n="upload" s={13} c={CD.ink} /> Add file<input type="file" aria-label="Add a file to this customer" accept="image/*,application/pdf" className="hidden" onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) writer.addFile(f); }} /></label>}
       </div>
