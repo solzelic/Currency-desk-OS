@@ -39265,7 +39265,34 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         ...inSty,
         borderColor: marginReason.trim() ? CD.line : CD.flag
       }
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Note (optional)"), /*#__PURE__*/React.createElement("input", {
+    })), isExchange && window.CDOS && window.CDOS.ExchangeV29 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Style, null), /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Meter, {
+      postedTotal: cashWindow && cashWindow.postedTotal,
+      heldCountedTotal: cashWindow && cashWindow.heldCountedTotal,
+      heldNotCounted: cashWindow && cashWindow.heldNotCounted || []
+    }), idStamp ? /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Stamp, {
+      text: idStamp
+    }) : null, inCcy === home && amtN >= 3000 && /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.OccupationRequired, null), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setIdChooser(true),
+      className: "mt-2 w-full text-left text-[12.5px] font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Choose an ID check"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setRevealOpen(true),
+      className: "mt-1 w-full text-left text-[12.5px] font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Reveal ID number"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setLctrOpen(true),
+      className: "mt-1 w-full text-left text-[12.5px] font-medium",
+      style: {
+        color: CD.ink
+      }
+    }, "Client already left")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Lbl, null, "Note (optional)"), /*#__PURE__*/React.createElement("input", {
       value: memo,
       onChange: e => setMemo(e.target.value),
       placeholder: notePh,
@@ -39454,34 +39481,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         onClick: () => setRecordId(true),
         className: "cd-tx-id-need-go mt-1"
       }, "Record the ID") : null
-    }))), isExchange && window.CDOS && window.CDOS.ExchangeV29 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Style, null), /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Meter, {
-      postedTotal: cashWindow && cashWindow.postedTotal,
-      heldCountedTotal: cashWindow && cashWindow.heldCountedTotal,
-      heldNotCounted: cashWindow && cashWindow.heldNotCounted || []
-    }), idStamp ? /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.Stamp, {
-      text: idStamp
-    }) : null, isExchange && inCcy === home && amtN >= 3000 && /*#__PURE__*/React.createElement(window.CDOS.ExchangeV29.OccupationRequired, null), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setIdChooser(true),
-      className: "mt-2 w-full text-left text-[12.5px] font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Choose an ID check"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setRevealOpen(true),
-      className: "mt-1 w-full text-left text-[12.5px] font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Reveal ID number"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setLctrOpen(true),
-      className: "mt-1 w-full text-left text-[12.5px] font-medium",
-      style: {
-        color: CD.ink
-      }
-    }, "Client already left")), (single || structuring) && /*#__PURE__*/React.createElement("div", {
+    }))), (single || structuring) && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 text-[11px] flex items-start gap-2",
       style: {
         background: single ? CD.flagSoft : CD.amberSoft,

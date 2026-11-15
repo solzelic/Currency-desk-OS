@@ -1405,6 +1405,18 @@
                 </div>
               )}
 
+              {isExchange && window.CDOS && window.CDOS.ExchangeV29 && (
+                <div>
+                  <window.CDOS.ExchangeV29.Style />
+                  <window.CDOS.ExchangeV29.Meter postedTotal={cashWindow && cashWindow.postedTotal} heldCountedTotal={cashWindow && cashWindow.heldCountedTotal} heldNotCounted={cashWindow && cashWindow.heldNotCounted || []} />
+                  {idStamp ? <window.CDOS.ExchangeV29.Stamp text={idStamp} /> : null}
+                  {inCcy === home && amtN >= 3000 && <window.CDOS.ExchangeV29.OccupationRequired />}
+                  <button type="button" onClick={() => setIdChooser(true)} className="mt-2 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Choose an ID check</button>
+                  <button type="button" onClick={() => setRevealOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Reveal ID number</button>
+                  <button type="button" onClick={() => setLctrOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Client already left</button>
+                </div>
+              )}
+
               {/* note */}
               <div><Lbl>Note (optional)</Lbl><input value={memo} onChange={e => setMemo(e.target.value)} placeholder={notePh} className="cd-tx-note w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
             </div>
@@ -1452,18 +1464,6 @@
                   </div>
                   {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
-                {isExchange && window.CDOS && window.CDOS.ExchangeV29 && (
-                  <div>
-                    <window.CDOS.ExchangeV29.Style />
-                    <window.CDOS.ExchangeV29.Meter postedTotal={cashWindow && cashWindow.postedTotal} heldCountedTotal={cashWindow && cashWindow.heldCountedTotal} heldNotCounted={cashWindow && cashWindow.heldNotCounted || []} />
-                    {idStamp ? <window.CDOS.ExchangeV29.Stamp text={idStamp} /> : null}
-                    {isExchange && inCcy === home && amtN >= 3000 && <window.CDOS.ExchangeV29.OccupationRequired />}
-                    <button type="button" onClick={() => setIdChooser(true)} className="mt-2 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Choose an ID check</button>
-                    <button type="button" onClick={() => setRevealOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Reveal ID number</button>
-                    <button type="button" onClick={() => setLctrOpen(true)} className="mt-1 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Client already left</button>
-                  </div>
-                )}
-
                 {/* compliance note */}
                 {(single || structuring) && (
                   <div className="px-3 py-2.5 text-[11px] flex items-start gap-2" style={{ background: single ? CD.flagSoft : CD.amberSoft, borderRadius: 10, color: single ? CD.flag : 'var(--cd-brass-text)' }}>
