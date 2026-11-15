@@ -537,6 +537,51 @@ postgres("sanctions hold and review", () => {
       const after = await pool.query(`SELECT count(*)::int AS n FROM ${table}`);
       expect(after.rows[0].n, url).toBe(before.rows[0].n);
     }
+
+    const quiet = `cust-settle-${stamp}`;
+    await pool.query(
+      `INSERT INTO ledger_customers (customer_id,tenant_id,legal_entity_id,branch_id,workspace_id,name,risk,id_status)
+       VALUES ($1,$2,$3,$4,$5,'Settle Later','Normal','verified')`,
+      [quiet, ...scope],
+    );
+    await pool.query("UPDATE rate_boards SET published_at = now()");
+    const received = await app.inject({
+      method: "POST", url: "/api/ledger/remittances/receive", cookies,
+      payload: {
+        idempotencyKey: `recv-${stamp}`,
+        customerId: quiet,
+        reference: `RR-${stamp}`,
+        sentCurrency: "USD",
+        sentAmount: "10.00",
+        payoutAmount: "10.00",
+        feeAmount: "0.00",
+        corridor: "US",
+        partner: "Partner",
+      },
+    });
+    expect(received.statusCode, received.body).toBe(201);
+    const obligationId = received.json().obligationId as string;
+    await pool.query(
+      `INSERT INTO sanctions_list_entries (snapshot_id,entry_key,names,dobs)
+       VALUES ('snp-hold',$1,'["Settle Later"]','[]')`,
+      [`ca|settle-${stamp}`],
+    );
+    const manager = await cookie("r.haddad");
+    const beforeSettle = await pool.query(
+      "SELECT status FROM ledger_obligations WHERE obligation_id = $1",
+      [obligationId],
+    );
+    const settled = await app.inject({
+      method: "POST", url: `/api/ledger/obligations/${obligationId}/settlement`, cookies: manager,
+      payload: { idempotencyKey: `settle-${stamp}`, amountHome: "10.00" },
+    });
+    expect(settled.statusCode, settled.body).toBe(422);
+    expect(settled.json()).toEqual({ code: "NEEDS_REVIEW", message: TELLER_HOLD_MESSAGE });
+    const afterSettle = await pool.query(
+      "SELECT status FROM ledger_obligations WHERE obligation_id = $1",
+      [obligationId],
+    );
+    expect(afterSettle.rows[0].status).toBe(beforeSettle.rows[0].status);
   });
 
   it("opens a review when the screen fails, matches an alias, and holds a blank name", async () => {

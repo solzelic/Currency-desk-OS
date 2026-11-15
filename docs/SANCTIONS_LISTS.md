@@ -93,7 +93,8 @@ While `signed_off` is false the outcome is never `clear`, though a match
 is still held. If any required list is missing or older than 24 hours,
 the outcome is `not_screened` rather than cleared against the lists that
 remain. The same hold runs before a quote post, a cheque cashing, a
-remittance send or receive, a bill payment, and a money order. A blank
+remittance send or receive, a bill payment, a money order, and paying out an
+open obligation. A blank
 customer name is held. A client's aliases are matched. The client write
 API refuses a caller-supplied `screeningOutcome`. A failed screen opens a
 review instead of posting. The client file and the tiles read the stored
