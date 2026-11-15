@@ -49,6 +49,7 @@ const CA_LAW: LawRow[] = [
 /** The pack for a reservation's country code ("CA", "US", …). Unknown codes use "XX". */
 export function signupPack(code: string | null | undefined): SignupPack {
   const key = code && JURISDICTION[code] ? code : "XX";
+  // key was found in JURISDICTION above, or is its required XX fallback.
   const j = JURISDICTION[key]!;
   const ca = key === "CA";
   return {

@@ -34,7 +34,7 @@ type Enquiry = typeof schema.enquiries.$inferSelect;
 
 /** What the owner may see once the code has passed (§3: details appear). */
 export function ownerDetails(row: Enquiry) {
-  const d = (row.details ?? {}) as Record<string, unknown>;
+  const d = row.details ?? {};
   const name = [d.firstName, d.lastName].filter((x) => typeof x === "string" && x).join(" ") || String(row.name ?? "");
   return {
     name,

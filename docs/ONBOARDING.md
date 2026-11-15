@@ -2,8 +2,8 @@
 
 The reference for the onboarding subsystem: the record model, the build
 pipeline, the public API, verification, and provisioning. Everything below
-is verified against a running server, driven in Chromium, unless it says
-otherwise.
+describes the legacy flow unless it says v2.1. Historical Chromium evidence
+below does not cover the v2.1 server corrections or its still-missing page.
 
 ## The shape of it
 
@@ -225,3 +225,26 @@ Still outside server acceptance: first-deal subscription activation, staff invit
 Support reissue now serializes against signup mutation, retires the old ID's hash, and clears outstanding codes/challenges/unverified candidates. Delayed credential/code requests against the prior ID refuse; authenticated ownership is retained. Credential work is additionally limited before expensive hashing/provider calls (12 requests per ID and 30 per connection per 15 minutes); these request/ID-miss/resend brakes remain process-local, while code-send and attempt limits are database-serialized. Multi-instance durable abuse protection remains a release review consideration.
 
 The existing Places routes now accept the scoped v2.1 enrolment session and derive the country from the reservation. SAM opt-out appends the existing stop-consent record and cancels its scheduled call even when subsequent card setup fails. Selecting SAM again does not manufacture new opt-in evidence; that UI/consent integration still needs completion.
+
+
+Migration 080 adds append-only `signup_agreements`: typed signer, account,
+declaration version, canonical answer hash, signed snapshot, pack identity/version,
+and selected plan/price/intent evidence. Service terms are pinned to the frozen
+prototype fragment hash in `SERVICE_AGREEMENT_SOURCE_HASH`; this is draft-source
+provenance, not proof that the missing page displayed those terms. Do not delete
+or rewrite signed records when progress is edited. Final UI must display the
+reviewed version and confirm the evidence matches it.
+
+Activation copies applied phone, unit, home/selected currencies and the named
+compliance contact into the desk. "Me" means the verified reservation's owner,
+not an empty contact. Naming another officer is required before signing in that
+mode; this does not itself appoint an officer legally or create their account.
+Trusted staging runtime + stored staging marker + synthetic owner are all needed
+to retain `isTestShop`; production cannot acquire it from the marker alone.
+`setup.signup.vaultCountStatus` explicitly reports deferred/pending ledger work.
+No opening count is treated as a cash balance. Signup confirmation/pricing and
+migration changes still require protected-surface CTO review.
+
+PIN changes and their audit event now commit together under the account lock.
+Every onboarding 409/410/423/429 response logs a bounded machine reason and
+status, without response detail, code, credential or card data.

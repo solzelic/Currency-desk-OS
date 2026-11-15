@@ -200,6 +200,7 @@ export async function buildApp(
       serializers: {
         req: (req: { method: string; url: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) => ({
           method: req.method,
+          // split always returns at least one string, including for an empty URL.
           url: req.url.startsWith("/api/onboarding/")
             ? maskCdIds(req.url.split("?")[0]!.replace(/^(\/api\/onboarding\/)[^/]+/, "$1[identifier]"))
             : maskCdIds(req.url),
@@ -220,6 +221,21 @@ export async function buildApp(
     const status = typeof code === "number" && Number.isInteger(code) && code >= 400 && code < 500 ? code : 500;
     req.log.error({ reason: "onboarding_request_failed", status }, "onboarding request failed");
     return reply.code(status).send({ error: status === 500 ? "temporarily_unavailable" : "invalid_request" });
+  });
+  app.addHook("onSend", async (req, reply, payload) => {
+    if (!req.url.startsWith("/api/onboarding/") || ![409, 410, 423, 429].includes(reply.statusCode)) return payload;
+    // Only the bounded machine reason is logged, never response detail/input.
+    let reason = "refused";
+    if (typeof payload === "string") {
+      try {
+        const body: unknown = JSON.parse(payload);
+        if (body && typeof body === "object" && "error" in body && typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error)) reason = body.error;
+      } catch {
+        // A non-JSON refusal still produces the generic reason and status.
+      }
+    }
+    req.log.warn({ reason, status: reply.statusCode }, "signup.refused");
+    return payload;
   });
   await app.register(cookie);
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });

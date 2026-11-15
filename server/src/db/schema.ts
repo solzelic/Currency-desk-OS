@@ -721,6 +721,19 @@ export const signupAccounts = pgTable("signup_accounts", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Immutable evidence, separate from mutable signup progress (080). */
+export const signupAgreements = pgTable("signup_agreements", {
+  id: text("id").primaryKey(),
+  enquiryId: text("enquiry_id").notNull().references(() => enquiries.id),
+  accountId: text("account_id").notNull().references(() => signupAccounts.accountId),
+  kind: text("kind").$type<"desk" | "plan">().notNull(),
+  signerName: text("signer_name").notNull(),
+  declarationVersion: text("declaration_version").notNull(),
+  answersHash: text("answers_hash").notNull(),
+  record: jsonb("record").$type<Record<string, unknown>>().notNull(),
+  signedAt: timestamp("signed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const enrolmentSessions = pgTable(
   "enrolment_sessions",
   {

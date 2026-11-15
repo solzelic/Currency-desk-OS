@@ -77,9 +77,9 @@ export type ParsedAnswers =
 
 /** Keep only what this screen asks for, in the shape it promises. */
 export function parseAnswers(step: ResumableStep, answers: Record<string, unknown>): ParsedAnswers {
-  const schema = (STEP_FIELDS as Record<string, z.ZodTypeAny>)[step];
+  const schema = Object.entries(STEP_FIELDS).find(([key]) => key === step)?.[1];
   if (!schema) return { ok: true, step, values: {} };
-  const known = Object.keys((schema as z.ZodObject<z.ZodRawShape>).shape);
+  const known = Object.keys(schema.shape);
   const picked: Record<string, unknown> = {};
   for (const k of known) if (k in answers) picked[k] = answers[k];
   const parsed = schema.safeParse(picked);
@@ -87,12 +87,12 @@ export function parseAnswers(step: ResumableStep, answers: Record<string, unknow
     const issue = parsed.error.issues[0];
     return { ok: false, detail: `${issue?.path.join(".") || "answer"}: ${issue?.message ?? "not valid"}` };
   }
-  return { ok: true, step, values: parsed.data as Record<string, unknown> };
+  return { ok: true, step, values: parsed.data };
 }
 
 /** The answers a resume may show. The keys are this file's lists, so nothing else leaks back. */
 export function resumable(answers: Record<string, unknown>): Record<string, unknown> {
-  const allowed = new Set(Object.values(STEP_FIELDS).flatMap((s) => Object.keys((s as z.ZodObject<z.ZodRawShape>).shape)));
+  const allowed = new Set(Object.values(STEP_FIELDS).flatMap((s) => Object.keys(s.shape)));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(answers)) if (allowed.has(k)) out[k] = v;
   return out;

@@ -62,3 +62,12 @@ it("v2.1 address lookup requires the reservation's enrolment session", async () 
   expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
   expect((await app.inject({ method: "GET", url, cookies: { cd_enrol: token } })).statusCode).toBe(200);
 });
+
+it("a reservation-state refusal records only its reason and status", async () => {
+  const response = await app.inject({ method: "POST", url: "/api/onboarding/CD-YORK-7K42/email/send", payload: { code: "SECRET_654321" } });
+  expect(response.statusCode).toBe(409);
+  const events = logs.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+  expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ reason: "no_candidate", status: 409, msg: "signup.refused" })]));
+  expect(logs).not.toContain("SECRET_654321");
+  expect(logs).not.toContain(email);
+});

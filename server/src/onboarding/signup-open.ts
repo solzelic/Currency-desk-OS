@@ -32,20 +32,25 @@
    - staff invites by email at opening (§9.1) are not sent yet.
    ============================================================ */
 import { z } from "zod";
+import { isStagingRuntime } from "../auth/staging-runtime.js";
+import { stagingOnboardingMark } from "../routes/staging-fresh-shop.js";
+import { packForCountry } from "../ledger/jurisdiction.js";
 import { signupPack } from "./signup-pack.js";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { hashPassword } from "../auth/password.js";
-import { fromApplication, resolve, type Answers } from "./flow.js";
+import { fromApplication, resolve } from "./flow.js";
 import { freeSlug, provisionDesk, specFromAnswers } from "./provision.js";
 import { loadOrCreateOnboarding } from "./verify.js";
 import { resumable, STEP_FIELDS } from "./signup-answers.js";
 import { advance, withSignupAccount } from "./signup-account.js";
 
 export const DECLARATION_VERSION = "v2.1-2026-11-14";
+// Exact frozen prototype fragment: agreement title through its final sentence.
+export const SERVICE_AGREEMENT_SOURCE_HASH = "28138735125317dc4817bcb5f105b93856b8060842e505be8831a1b9064fe1af";
 
 type Enquiry = typeof schema.enquiries.$inferSelect;
 
@@ -53,7 +58,7 @@ type Enquiry = typeof schema.enquiries.$inferSelect;
 export function answersHash(answers: Record<string, unknown>): string {
   const canonical = (v: unknown): unknown =>
     Array.isArray(v) ? v.map(canonical)
-      : v && typeof v === "object" ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])]))
+      : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, value]) => [k, canonical(value)]))
         : v;
   return createHash("sha256").update(JSON.stringify(canonical(resumable(answers)))).digest("hex");
 }
@@ -65,16 +70,24 @@ export async function confirmDesk(db: Db, enquiryId: string, signedName: string)
   return withSignupAccount(db, enquiryId, async (db, account) => {
   if (account.state !== "verified" || !account.pinHash) return false;
   const row = await loadOrCreateOnboarding(db, enquiryId);
-  const complete = z.object({ operatingName: z.string().trim().min(1), bizName: z.string().trim().min(1), street: z.string().trim().min(1), city: z.string().trim().min(1), region: z.string().trim().min(1), postal: z.string().trim().min(1), currencies: z.array(z.string().regex(/^[A-Z]{3}$/)).min(1), idOver: z.string().regex(/^\d{1,9}$/) }).safeParse(row.answers);
-  if (!complete.success) return false;
+  const complete = z.object({ operatingName: z.string().trim().min(1), bizName: z.string().trim().min(1), street: z.string().trim().min(1), city: z.string().trim().min(1), region: z.string().trim().min(1), postal: z.string().trim().min(1), complianceMode: z.enum(["me", "else"]), compName: z.string().optional(), currencies: z.array(z.string().regex(/^[A-Z]{3}$/)).min(1), idOver: z.string().regex(/^\d{1,9}$/) }).safeParse(row.answers);
+  if (!complete.success || (complete.data.complianceMode === "else" && !complete.data.compName?.trim())) return false;
   const done = await db.update(schema.signupAccounts).set({
     confirmedAt: new Date(), confirmedName: signedName, declarationVersion: DECLARATION_VERSION,
-    answersHash: answersHash((row.answers ?? {}) as Record<string, unknown>), updatedAt: new Date(),
+    answersHash: answersHash(row.answers ?? {}), updatedAt: new Date(),
   }).where(and(eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.state, "verified"))).returning();
   if (!done.length) return false;
+  const evidenceId = randomUUID();
+  const reservation = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
+  if (!reservation) throw new Error("signup_reservation_unavailable");
+  const country = typeof reservation.details?.jurisdiction === "string" ? reservation.details.jurisdiction : null;
+  await db.insert(schema.signupAgreements).values({ id: evidenceId, enquiryId, accountId: account.accountId, kind: "desk", signerName: signedName,
+    declarationVersion: DECLARATION_VERSION, answersHash: answersHash(row.answers ?? {}),
+    record: { answers: resumable(row.answers ?? {}), pack: packForCountry(country), declaration: `I confirm these details are true, and I'm authorised to open this desk for ${declarationName(complete.data.bizName)}.` },
+  });
   await audit(db, {
     tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", action: "signup.confirmed",
-    detail: { enquiryId, declaration: DECLARATION_VERSION, answers: done[0]!.answersHash },
+    detail: { enquiryId, agreementId: evidenceId, declaration: DECLARATION_VERSION, answers: answersHash(row.answers ?? {}) },
   });
   return true;
   });
@@ -85,7 +98,7 @@ export async function stillConfirmed(db: Db, enquiryId: string): Promise<boolean
   const account = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, enquiryId)).limit(1))[0];
   if (!account?.confirmedAt || !account.answersHash) return false;
   const row = await loadOrCreateOnboarding(db, enquiryId);
-  return answersHash((row.answers ?? {}) as Record<string, unknown>) === account.answersHash;
+  return answersHash(row.answers ?? {}) === account.answersHash;
 }
 
 /* ---- the plan (§5.3) ------------------------------------------------ */
@@ -123,6 +136,7 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
     const answers = ob.answers ?? {};
     const locations = answers.shops === "more" ? z.number().int().min(2).max(50).parse(answers.shopCount) : 1;
     const selected = { ...choice, locations };
+    if (!account.confirmedName || !account.answersHash) throw new Error("signup_signature_missing");
     const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected })).digest("hex");
     const metadata = { currencydesk_signup_enquiry: row.id, currencydesk_signup_agreement: agreement };
     const customerId = account.stripeCustomerId ?? z.object({ id: z.string().startsWith("cus_") }).parse(
@@ -136,6 +150,10 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
       planChoice: { ...selected, agreement, answersHash: account.answersHash, price: monthlyFor(selected) }, updatedAt: new Date(),
     }).where(eq(schema.signupAccounts.enquiryId, row.id));
     await db.update(schema.onboarding).set({ answers: { ...answers, plan: selected.plan, term: selected.term, brief: selected.brief, call: selected.call }, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, row.id));
+    await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId: row.id, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
+      declarationVersion: DECLARATION_VERSION, answersHash: account.answersHash,
+      record: { selected, price: monthlyFor(selected), agreed: true, agreement, setupIntentId: intent.id, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH },
+    });
     return { clientSecret: intent.client_secret, price: monthlyFor(selected) };
   });
 }
@@ -159,7 +177,7 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   if (account.state === "active") return { opened: false, reason: "already_open" };
   if (account.state !== "verified") return { opened: false, reason: "not_verified" };
   if (!(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
-  const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0]!;
+  const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
   const ob = await loadOrCreateOnboarding(db, enquiryId);
   if (ob.tenantId) {
     await advance(db, enquiryId, "active");
@@ -179,11 +197,23 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
     const m = z.object({ first: z.string(), last: z.string() }).passthrough().parse(member);
     return { ...m, name: `${m.first} ${m.last}`.trim() };
   });
-  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: choice.data.call } as Answers, fromApplication(row));
+  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: choice.data.call }, fromApplication(row));
   const spec = specFromAnswers(resolved, row);
   spec.email = row.email;
-  const d = (row.details ?? {}) as Record<string, unknown>;
-  const wanted = (typeof d.workspace === "string" ? d.workspace.split(".")[0] : "") || spec.slug;
+  const pack = signupPack(typeof row.details?.jurisdiction === "string" ? row.details.jurisdiction : null);
+  spec.setup.currencies = [...new Set([pack.homeCurrency, ...(Array.isArray(values.currencies) ? values.currencies : [])])];
+  spec.setup.phone = typeof row.details?.phone === "string" ? row.details.phone : "";
+  if (spec.setup.address && typeof spec.setup.address === "object") spec.setup.address = { ...spec.setup.address, unit: typeof values.unit === "string" ? values.unit : "" };
+  if (values.complianceMode === "me") spec.setup.compliance = { mode: "me", name: row.name ?? "", email: row.email };
+  else if (values.complianceMode === "else") spec.setup.compliance = { mode: "other", name: values.compName ?? "", email: values.compEmail ?? "" };
+  // Retain what remains to be completed without pretending it is ledger money.
+  spec.setup.signup = { version: "2.1", locationCount: choice.data.locations, brief: choice.data.brief, call: choice.data.call,
+    vaultCount: values.count ?? null, vaultCountStatus: values.countLater ? "deferred" : "pending-ledger-integration" };
+
+  const d = row.details ?? {};
+  const stagingSlug = isStagingRuntime(undefined) ? stagingOnboardingMark(row.email, row.details) : null;
+  spec.isTestShop = !!stagingSlug;
+  const wanted = stagingSlug || (typeof d.workspace === "string" ? d.workspace.split(".")[0] : "") || spec.slug;
   spec.slug = await freeSlug(db, wanted ?? spec.slug, row.email);
 
   const password = (await db.select().from(schema.signupCredentials).where(and(
