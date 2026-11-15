@@ -445,6 +445,11 @@
     const [customer, setCustomer] = useState(prefillClient || '');
     const [query, setQuery] = useState(prefillClient || '');
     const [addFlow, setAddFlow] = useState(false);   // launches the KYC scan-ID walk-through
+    const [idChooser, setIdChooser] = useState(false);
+    const [cashWindow, setCashWindow] = useState(null);
+    const [returnReason, setReturnReason] = useState('No earlier check at this shop. A new check is needed.');
+    const [returnOff, setReturnOff] = useState(true);
+    const [idStamp, setIdStamp] = useState('');
     const [recordId, setRecordId] = useState(false); // the client file's identity editor
     const [discardAsk, setDiscardAsk] = useState(false);
     const [quickChk, setQuickChk] = useState(null);   // tier string → opens the SendModal chooser
@@ -575,6 +580,25 @@
 
     const amtN = parseFloat(inAmt) || 0;
     const isExchange = type === 'Currency Exchange';
+    const ledgerCustomerId = clients[customer] && clients[customer].ledgerCustomerId;
+    useEffect(() => {
+      if (!isExchange || !serverBacked || !ledgerCustomerId) return undefined;
+      let dead = false;
+      fetch('/api/exchange/cash-window?customerId=' + encodeURIComponent(ledgerCustomerId))
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body) => { if (!dead && body) setCashWindow(body); })
+        .catch(() => { if (!dead) setCashWindow(null); });
+      fetch('/api/exchange/id-check?customerId=' + encodeURIComponent(ledgerCustomerId))
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body) => {
+          if (dead || !body || !body.returning) return;
+          setReturnOff(!body.returning.offered);
+          setReturnReason(body.returning.reason || 'No earlier check at this shop. A new check is needed.');
+          setIdStamp(body.badge || '');
+        })
+        .catch(() => {});
+      return () => { dead = true; };
+    }, [isExchange, serverBacked, ledgerCustomerId]);
     const isSend = type === 'Remittance — Send';
     const isReceive = type === 'Remittance — Receive';
     const isCheque = type === 'Cheque Cashing';
@@ -1426,6 +1450,14 @@
                   </div>
                   {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
+                {isExchange && window.CDOS && window.CDOS.ExchangeV29 && (
+                  <div>
+                    <window.CDOS.ExchangeV29.Style />
+                    <window.CDOS.ExchangeV29.Meter postedTotal={cashWindow && cashWindow.postedTotal} heldCountedTotal={cashWindow && cashWindow.heldCountedTotal} heldNotCounted={cashWindow && cashWindow.heldNotCounted || []} />
+                    {idStamp ? <div className="cd-v29-footer">{idStamp}</div> : null}
+                    <button type="button" onClick={() => setIdChooser(true)} className="mt-2 w-full text-left text-[12.5px] font-medium" style={{ color: CD.ink }}>Choose an ID check</button>
+                  </div>
+                )}
 
                 {/* compliance note */}
                 {(single || structuring) && (
@@ -1464,6 +1496,16 @@
             </div>
           </div>
           </div>
+          {idChooser && window.CDOS && window.CDOS.ExchangeV29 && (
+            <window.CDOS.ExchangeV29.Chooser
+              reason={returnReason}
+              returningOff={returnOff}
+              onClose={() => setIdChooser(false)}
+              onInPerson={() => { setIdChooser(false); setRecordId(true); }}
+              onSelfie={() => setIdChooser(false)}
+              onDatabase={() => setIdChooser(false)}
+            />
+          )}
           {discardAsk && (
             <div className="cd-tx-discard" onMouseDown={e => { e.stopPropagation(); setDiscardAsk(false); }}>
               <div role="dialog" aria-label="Discard this deal?" onMouseDown={e => e.stopPropagation()} className="cd-tx-discard-sheet">
