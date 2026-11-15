@@ -14,6 +14,8 @@ export type IdvRouteOptions = {
   sleep?: (ms: number) => Promise<void>;
   cap?: number;
   clients?: ClientLookup;
+  ratePerMinute?: number;
+  rateLimitStore?: Map<string, number[]>;
 };
 
 export function webhookProviders(options?: IdvRouteOptions): Record<string, IdvProvider | null> {

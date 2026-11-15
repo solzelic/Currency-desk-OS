@@ -163,7 +163,17 @@ describe("idv webhook", () => {
     const before = await countIdvEvents(handle.db);
     const raw = rawFor("evt_bad", "ref-a", "inq_a", "shop-b");
     const res = await post(app, raw, signed("other-secret", Buffer.from(raw)));
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "invalid_signature" });
     expect(await countIdvEvents(handle.db)).toBe(before);
+  });
+
+  it("refuses a webhook body over 256 KiB", async () => {
+    const raw = "x".repeat(256 * 1024 + 1);
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/persona", payload: raw,
+      headers: { "content-type": "application/json", "persona-signature": "t=1,v1=ab" },
+    });
+    expect(res.statusCode).toBe(413);
   });
 });

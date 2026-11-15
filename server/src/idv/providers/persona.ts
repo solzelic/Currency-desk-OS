@@ -36,6 +36,12 @@ export function personaSharedKey(env: NodeJS.ProcessEnv): string {
   return (env[SHARED] ?? "").trim();
 }
 
+/* Staging accepts only a sandbox key. Any other runtime refuses a sandbox key. */
+export function personaKeyMatchesRuntime(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const sandbox = key.trim().startsWith("persona_sandbox");
+  return isStagingRuntime(undefined, env) ? sandbox : !sandbox;
+}
+
 /* True only for a sandbox key, or a key with no Persona prefix on a staging runtime. */
 export function personaKeyIsSandbox(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
   const value = key.trim();

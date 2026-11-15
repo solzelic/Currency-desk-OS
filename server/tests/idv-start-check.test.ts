@@ -119,8 +119,9 @@ beforeAll(async () => {
     staffId: B.staffId, name: "B Owner", role: "administrator", authorizedBranchIds: [B.branchId], passwordHash: owner[0]!.passwordHash,
   });
   const opts = { persona, fetch: fetchStub, sleep: async (ms: number) => { sleeps.push(ms); } };
-  app = await buildApp(handle.db, {}, undefined, { ...opts, env: ENV });
-  bare = await buildApp(handle.db, {}, undefined, { ...opts, env: {} });
+  const room = { ratePerMinute: 1000, rateLimitStore: new Map<string, number[]>() };
+  app = await buildApp(handle.db, {}, undefined, { ...opts, env: ENV, ...room });
+  bare = await buildApp(handle.db, {}, undefined, { ...opts, env: {}, ratePerMinute: 1000, rateLimitStore: new Map() });
   cookies.a = await signIn(app, "m.costa", DEMO.tenantId);
   cookies.b = await signIn(app, B.staffId, B.tenantId);
 });
@@ -188,7 +189,7 @@ describe("sandbox start-check", () => {
     const row = await handle.db.execute(sql`SELECT client_id, status FROM idv_inquiries WHERE reference_id = ${body.referenceId}`);
     expect(row.rows[0]).toMatchObject({ client_id: "cli_idv_a", status: "starting" });
     const open = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
-    expect(open.json()).toEqual({ status: "starting" });
+    expect(open.json()).toMatchObject({ status: "starting", checksEnabled: true });
     const raw = payload("inquiry.approved", "evt_cli_a", body.referenceId, body.providerRef);
     const t = Math.floor(Date.now() / 1000);
     const hook = await app.inject({
@@ -197,13 +198,13 @@ describe("sandbox start-check", () => {
     });
     expect(hook.statusCode, hook.body).toBe(200);
     const after = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
-    expect(after.json()).toEqual({ status: "Check passed" });
+    expect(after.json()).toMatchObject({ status: "Check passed", checksEnabled: true });
     expect(JSON.stringify(after.json())).not.toContain("Approved");
     expect(JSON.stringify(after.json())).not.toContain("Not Stored");
     const otherShop = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.b });
     expect(otherShop.statusCode).toBe(404);
     const empty = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
-    expect(empty.json()).toEqual({ status: null });
+    expect(empty.json()).toMatchObject({ status: null });
   });
 
   it("reads the client from the ledger connection when that is where the file lives", async () => {
@@ -225,7 +226,7 @@ describe("sandbox start-check", () => {
       expect(missing.statusCode).toBe(404);
       const found = await local.inject({ method: "GET", url: "/api/idv/clients/cli_ledger", cookies: cookies.a });
       expect(found.statusCode, found.body).toBe(200);
-      expect(found.json()).toEqual({ status: null });
+      expect(found.json()).toMatchObject({ status: null, checksEnabled: true });
       expect(seen).toEqual(["cli_missing", "cli_ledger"]);
       const before = calls;
       const started = await local.inject({
@@ -254,15 +255,23 @@ describe("sandbox start-check", () => {
       staffId: "l.berg", name: "L. Berg", role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash: teller[0]!.passwordHash,
     }).onConflictDoNothing();
     cookies.auditor = await signIn(app, "l.berg", DEMO.tenantId);
+    await handle.db.insert(schema.staffUsers).values({
+      id: `${DEMO.tenantId}:trainee`, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId,
+      staffId: "trainee", name: "Trainee", role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash: teller[0]!.passwordHash,
+    }).onConflictDoNothing();
+    cookies.trainee = await signIn(app, "trainee", DEMO.tenantId);
+    const trainee = await start("trainee");
+    expect(trainee.statusCode).toBe(403);
+    expect(trainee.json().message).toBe("You cannot start an identity check.");
     const before = calls;
     const refused = await start("auditor");
     expect(refused.statusCode).toBe(403);
-    expect(refused.json()).toEqual({ error: "forbidden" });
+    expect(refused.json()).toEqual({ error: "forbidden", message: "You cannot start an identity check." });
     expect(calls).toBe(before);
     await enable(DEMO.legalEntityId, true);
     const longId = await start("a", { clientId: "c".repeat(81) });
     expect(longId.statusCode).toBe(400);
-    expect(longId.json()).toEqual({ error: "invalid_client" });
+    expect(longId.json()).toEqual({ error: "invalid_client", message: "That client id is not valid." });
     expect(calls).toBe(before);
   });
 
@@ -292,7 +301,7 @@ describe("sandbox start-check", () => {
     try {
       const res = await sandbox.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
       expect(res.statusCode, res.body).toBe(200);
-      expect(res.json()).toEqual({ status: "Check passed (test)" });
+      expect(res.json()).toMatchObject({ status: "Check passed (test)", checksEnabled: true });
       expect(res.body).not.toContain("Approved");
     } finally {
       await sandbox.close();
@@ -335,7 +344,7 @@ describe("sandbox start-check", () => {
     const before = sleeps.length;
     const res = await start("a");
     expect(res.statusCode).toBe(502);
-    expect(res.json()).toEqual({ error: "provider_unavailable" });
+    expect(res.json()).toEqual({ error: "provider_unavailable", message: "The identity check could not be started. Nothing from the provider was saved." });
     expect(attempt).toBe(3);
     expect(sleeps.slice(before)).toEqual([25, 50]);
   });
@@ -413,6 +422,89 @@ describe("sandbox start-check", () => {
       await local.close();
     }
   });
+
+  it("reuses one open inquiry and keeps the idempotency key", async () => {
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_once', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Once Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    await enable(DEMO.legalEntityId, true);
+    const keys: string[] = [];
+    const localFetch: typeof fetch = async (_input, init) => {
+      const headers = init?.headers as Record<string, string>;
+      keys.push(headers["idempotency-key"] ?? "");
+      return new Response(JSON.stringify({ data: { id: "inq_once" } }), { status: 201, headers: { "content-type": "application/json" } });
+    };
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: ENV, fetch: localFetch, sleep: async () => {}, cap: 100, ratePerMinute: 1000, rateLimitStore: new Map(),
+    });
+    try {
+      const first = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_once" } });
+      const second = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_once" } });
+      expect(first.statusCode, first.body).toBe(200);
+      expect(second.statusCode, second.body).toBe(200);
+      expect(second.json().referenceId).toBe(first.json().referenceId);
+      expect(second.json().reused).toBe(true);
+      const rows = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_inquiries WHERE client_id = 'cli_once'`);
+      expect(Number((rows.rows[0] as { n: number }).n)).toBe(1);
+      expect(keys).toEqual([first.json().referenceId]);
+      const audited = await handle.db.execute(sql`
+        SELECT action FROM audit_events WHERE action = 'idv.check_started' AND detail->>'referenceId' = ${first.json().referenceId}
+      `);
+      expect(audited.rows).toHaveLength(1);
+    } finally {
+      await local.close();
+    }
+  });
+
+  it("refuses a sandbox key off staging and a production key on staging", async () => {
+    await enable(DEMO.legalEntityId, true);
+    const staging = { STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com" };
+    const run = async (env: NodeJS.ProcessEnv) => {
+      let hits = 0;
+      const local = await buildApp(handle.db, {}, undefined, {
+        env, fetch: async () => { hits += 1; return new Response(JSON.stringify({ data: { id: "inq_key" } }), { status: 201 }); },
+        sleep: async () => {}, cap: 100, ratePerMinute: 1000, rateLimitStore: new Map(),
+      });
+      try {
+        const res = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: {} });
+        return { status: res.statusCode, body: res.json(), hits };
+      } finally {
+        await local.close();
+      }
+    };
+    const sandboxOffStaging = await run({ PERSONA_API_KEY: "persona_sandbox_fixture" });
+    expect(sandboxOffStaging.status).toBe(409);
+    expect(sandboxOffStaging.body.message).toBe("This shop's identity key does not match this server.");
+    expect(sandboxOffStaging.hits).toBe(0);
+    const productionOnStaging = await run({ ...staging, PERSONA_API_KEY: "persona_production_fixture" });
+    expect(productionOnStaging.status).toBe(409);
+    expect(productionOnStaging.hits).toBe(0);
+    const sandboxOnStaging = await run({ ...staging, PERSONA_API_KEY: "persona_sandbox_fixture" });
+    expect(sandboxOnStaging.status).toBe(200);
+    expect(sandboxOnStaging.hits).toBe(1);
+  });
+
+  it("stops a shop after 10 starts in a minute", async () => {
+    await handle.db.execute(sql`DELETE FROM idv_events WHERE shop_id = ${B.legalEntityId}`);
+    await handle.db.execute(sql`DELETE FROM idv_inquiries WHERE shop_id = ${B.legalEntityId}`);
+    await enable(B.legalEntityId, true);
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: ENV, fetch: fetchStub, sleep: async () => {}, cap: 20, ratePerMinute: 10, rateLimitStore: new Map(),
+    });
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        const res = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.b, payload: {} });
+        expect(res.statusCode, res.body).toBe(200);
+      }
+      const blocked = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.b, payload: {} });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.json().message).toBe("Too many identity checks were started. Wait a minute and try again.");
+    } finally {
+      await local.close();
+    }
+  });
 });
 
 describe("inquiry progress events", () => {
@@ -473,13 +565,25 @@ describe("inquiry progress events", () => {
     const openBefore = await countOpenInquiries(handle.db, DEMO.legalEntityId);
     const created = await post("inquiry.created", "evt_final_created", referenceId, "inq_final");
     expect(created.json()).toEqual({ received: true, duplicate: false });
+    const startedLate = await post("inquiry.started", "evt_final_started", referenceId, "inq_final");
+    expect(startedLate.statusCode).toBe(200);
+    const declined = await post("inquiry.declined", "evt_final_declined", referenceId, "inq_final");
+    expect(declined.statusCode).toBe(200);
     expect(await statusOf(referenceId)).toBe("approved");
     expect(await countOpenInquiries(handle.db, DEMO.legalEntityId)).toBe(openBefore);
     const replay = await post("inquiry.approved", "evt_final_created", referenceId, "inq_final");
     expect(replay.json()).toEqual({ received: true, duplicate: true });
     expect(await statusOf(referenceId)).toBe("approved");
+    const flipped = "ref-declined";
+    await insertIdvInquiry(handle.db, {
+      referenceId: flipped, shopId: DEMO.legalEntityId, branchId: DEMO.branchId, tellerId: "teller-a",
+      provider: "persona", providerRef: "inq_declined",
+    });
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'declined' WHERE reference_id = ${flipped}`);
+    await post("inquiry.approved", "evt_flip_approved", flipped, "inq_declined");
+    expect(await statusOf(flipped)).toBe("declined");
     const events = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_events WHERE reference_id = ${referenceId}`);
-    expect(Number((events.rows[0] as { n: number }).n)).toBe(1);
+    expect(Number((events.rows[0] as { n: number }).n)).toBe(3);
     const other = await post("inquiry.declined", "evt_other_provider", referenceId, "inq_final");
     expect(other.statusCode).toBe(200);
     await handle.db.execute(sql`

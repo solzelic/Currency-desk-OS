@@ -3,6 +3,9 @@
    PERSONA_SANDBOX_API_KEY is set, and it is skipped otherwise. */
 import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { personaInquiryBody, PERSONA_API_BASE_DEFAULT, PERSONA_VERSION, PERSONA_WEBHOOK_EVENTS, startPersonaCheck } from "../src/idv/providers/persona/index.js";
 import { registerPersonaWebhook, STAGING_WEBHOOK_URL } from "../src/idv/register-webhook.js";
 
@@ -94,19 +97,38 @@ describe("register-webhook", () => {
     expect(missing.err[0]).toContain("Pass --url");
     const stagingUrl = capture();
     expect(await registerPersonaWebhook(
-      ["register-webhook", "--production", "--url", STAGING_WEBHOOK_URL],
+      ["register-webhook", "--production", "--url", STAGING_WEBHOOK_URL, "--secret-file", "/tmp/unused-secret"],
       { PERSONA_API_KEY: "fixture-api-key" },
       { ...stagingUrl.io, fetch: fetchImpl },
     )).toBe(1);
     expect(stagingUrl.err[0]).toContain("staging webhook URL");
-    expect(await registerPersonaWebhook(
-      ["register-webhook", "--production", "--url", liveUrl],
-      { PERSONA_API_KEY: "fixture-api-key" },
-      { ...live.io, fetch },
-    )).toBe(0);
-    expect(calls.some((call) => call.method === "POST" && call.body.includes(liveUrl))).toBe(true);
-    expect(calls.some((call) => call.body.includes(STAGING_WEBHOOK_URL))).toBe(false);
-    expect(live.out[0]).toBe(SECRET);
+    const dir = await mkdtemp(join(tmpdir(), "persona-secret-"));
+    const secretFile = join(dir, "webhook-secret");
+    try {
+      expect(await registerPersonaWebhook(
+        ["register-webhook", "--production", "--url", liveUrl, "--secret-file", secretFile],
+        { PERSONA_API_KEY: "fixture-api-key" },
+        { ...live.io, fetch },
+      )).toBe(0);
+      expect(calls.some((call) => call.method === "POST" && call.body.includes(liveUrl))).toBe(true);
+      expect(live.out.join("")).not.toContain(SECRET);
+      expect(await readFile(secretFile, "utf8")).toBe(`${SECRET}\n`);
+      expect((await stat(secretFile)).mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not follow a hostile next link", async () => {
+    const cap = capture();
+    const seen: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      seen.push(String(input));
+      return new Response(JSON.stringify({ data: [], links: { next: "https://evil.example/steal" } }), { status: 200 });
+    };
+    expect(await registerPersonaWebhook(["register-webhook"], STAGING, { ...cap.io, fetch: fetchImpl })).toBe(1);
+    expect(seen).toEqual([`${PERSONA_API_BASE_DEFAULT}/webhooks`]);
+    expect(cap.err[0]).toContain("refused");
   });
 
   it("follows a relative next link and tells the owner to rotate an unreadable secret", async () => {

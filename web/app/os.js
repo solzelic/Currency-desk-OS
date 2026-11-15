@@ -27339,6 +27339,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     canEdit
   }) {
     const [status, setStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
     const [note, setNote] = useState('');
     const [busy, setBusy] = useState(false);
     const [loaded, setLoaded] = useState(false);
@@ -27367,6 +27368,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           if (!live) return;
           const next = body && typeof body.status === 'string' ? body.status : '';
           setStatus(next);
+          setChecksOn(!!(body && body.checksEnabled));
           setLoaded(true);
           if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
         }).catch(() => {
@@ -27402,6 +27404,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       });
     };
     const label = status === 'approved' ? 'Check passed' : labels[status] || (status ? 'Recorded' : '');
+    const passed = label === 'Check passed' || label === 'Check passed (test)';
     return /*#__PURE__*/React.createElement("div", {
       "data-testid": "identity-check",
       className: "mb-3 p-3.5",
@@ -27424,7 +27427,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.ink
       }
-    }, loaded ? label || 'No check has been started for this client.' : 'Reading the identity check.'), canEdit && /*#__PURE__*/React.createElement("button", {
+    }, loaded ? label || 'No check has been started for this client.' : 'Reading the identity check.'), canEdit && checksOn && !passed && /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: start,
       disabled: busy,

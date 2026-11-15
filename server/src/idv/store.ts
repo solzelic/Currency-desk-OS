@@ -89,17 +89,47 @@ export async function markInquiry(db: Db, result: IdvResult): Promise<void> {
   `);
 }
 
-/* Count and insert share one transaction, so parallel starts cannot all pass the cap. */
-export async function reserveIdvSlot(db: Db, row: IdvInquiry, cap: number): Promise<boolean> {
+export type ReservedInquiry =
+  | { kind: "capped" }
+  | { kind: "created"; referenceId: string; providerRef: string }
+  | { kind: "reused"; referenceId: string; providerRef: string };
+
+/* One open check per client. A second start reuses it, under the same lock as the cap. */
+export async function reserveIdvSlot(db: Db, row: IdvInquiry, cap: number): Promise<ReservedInquiry> {
   const book = db as unknown as { transaction(fn: (tx: Db) => Promise<void>): Promise<void> };
-  let reserved = false;
+  let reserved: ReservedInquiry = { kind: "capped" };
   await book.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${row.shopId}))`);
+    if (row.clientId) {
+      const open = await tx.execute(sql`
+        SELECT reference_id, provider_ref FROM idv_inquiries
+         WHERE shop_id = ${row.shopId} AND provider = ${row.provider} AND client_id = ${row.clientId}
+           AND status IN ('starting', 'in progress', 'needs review')
+         ORDER BY created_at DESC
+         LIMIT 1
+      `);
+      const existing = open.rows[0] as { reference_id?: string; provider_ref?: string } | undefined;
+      if (existing?.reference_id && existing.provider_ref) {
+        reserved = { kind: "reused", referenceId: existing.reference_id, providerRef: existing.provider_ref };
+        return;
+      }
+    }
     if (await countOpenInquiries(tx, row.shopId) >= cap) return;
     await insertIdvInquiry(tx, row);
-    reserved = true;
+    reserved = { kind: "created", referenceId: row.referenceId, providerRef: row.providerRef };
   });
   return reserved;
+}
+
+/* The ledger pool is shared. This wrapper refuses anything but a read. */
+export function readOnlyClientLookup(pool: { query(text: string, values?: unknown[]): Promise<{ rowCount: number | null }> }): ClientLookup {
+  return {
+    async query(text, values) {
+      if (!/^\s*select\b/i.test(text)) throw new Error("read_only");
+      const found = await pool.query(text, [...values]);
+      return { rowCount: found.rowCount };
+    },
+  };
 }
 
 export async function countOpenInquiries(db: Db, shopId: string): Promise<number> {

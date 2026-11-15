@@ -2,6 +2,7 @@
    injected stdout once. It is not logged, stored, or sent onward.
    Lists existing webhooks first and does not create a second one for
    the same URL. https://docs.withpersona.com/api-reference/webhooks/create-a-webhook */
+import { chmod, writeFile } from "node:fs/promises";
 import { isStagingRuntime } from "../auth/staging-runtime.js";
 import { personaSharedKey } from "./providers/persona.js";
 import { PERSONA_API_BASE_DEFAULT, PERSONA_VERSION, PERSONA_WEBHOOK_EVENTS } from "./providers/persona/index.js";
@@ -15,13 +16,14 @@ export type WebhookIo = {
   fetch?: typeof fetch;
 };
 
-type Args = { command: string; production: boolean; url: string; urlSet: boolean };
+type Args = { command: string; production: boolean; url: string; urlSet: boolean; secretFile: string };
 
 export function readWebhookArgs(argv: readonly string[]): Args | null {
   const command = argv[0] ?? "";
   let production = false;
   let url = STAGING_WEBHOOK_URL;
   let urlSet = false;
+  let secretFile = "";
   for (let i = 1; i < argv.length; i += 1) {
     const arg = argv[i] ?? "";
     if (arg === "--production") production = true;
@@ -32,9 +34,13 @@ export function readWebhookArgs(argv: readonly string[]): Args | null {
     } else if (arg.startsWith("--url=")) {
       url = arg.slice("--url=".length);
       urlSet = true;
-    } else return null;
+    } else if (arg === "--secret-file") {
+      secretFile = argv[i + 1] ?? "";
+      i += 1;
+    } else if (arg.startsWith("--secret-file=")) secretFile = arg.slice("--secret-file=".length);
+    else return null;
   }
-  return { command, production, url, urlSet };
+  return { command, production, url, urlSet, secretFile };
 }
 
 /* A relative next link stays on the API host. Anything else is refused. */
@@ -120,6 +126,10 @@ export async function registerPersonaWebhook(
     io.stderr("Pass --url with the live webhook address.");
     return 1;
   }
+  if (args.production && !args.secretFile.trim()) {
+    io.stderr("Pass --secret-file for a production registration. The secret is not printed.");
+    return 1;
+  }
   const url = args.url.trim();
   if (args.production && url === STAGING_WEBHOOK_URL) {
     io.stderr("A production registration cannot use the staging webhook URL.");
@@ -185,6 +195,17 @@ export async function registerPersonaWebhook(
   if (!secret) {
     io.stderr("Persona did not return a signing secret. Nothing was saved.");
     return 1;
+  }
+  if (args.production) {
+    try {
+      await writeFile(args.secretFile, `${secret}\n`, { mode: 0o600, flag: "wx" });
+      await chmod(args.secretFile, 0o600);
+    } catch {
+      io.stderr("Persona created the webhook but the secret could not be written. Rotate or delete that webhook in the Persona dashboard. Nothing was saved here.");
+      return 1;
+    }
+    io.stdout(`The signing secret was written to ${args.secretFile} with mode 0600. It was not printed. Paste it into PERSONA_WEBHOOK_SECRET, then delete the file.`);
+    return 0;
   }
   io.stdout(secret);
   io.stdout("Paste this into PERSONA_WEBHOOK_SECRET in Render. It is shown here once and is not stored.");
