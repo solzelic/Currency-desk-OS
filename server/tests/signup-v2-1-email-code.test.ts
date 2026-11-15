@@ -61,7 +61,7 @@ beforeAll(async () => {
   app = Fastify();
   await app.register(cookie);
   door = createIdDoor({ db: handle.db, logRefusal: () => {} });
-  registerCredentialRoutes(app, handle.db, door, { breachRange: async () => "", mail });
+  registerCredentialRoutes(app, handle.db, door, { breachRange: async () => "00000000000000000000000000000000000:0", mail });
   registerSignupEmailRoutes(app, handle.db, door, { mail });
   await app.ready();
 });

@@ -11,14 +11,15 @@
    flags. The pack refuses only four-of-a-kind and 1234 at sign-up, so a
    PIN chosen here (1999, say) would be refused if typed again inside.
 
-   Hashed like every PIN (hashPin), never logged. The owner's PIN is local
+   Hashed with Argon2id (the existing PIN verifier accepts both formats), never logged. The owner's PIN is local
    re-auth on a live session only (§3.3); it signs nobody in.
    ============================================================ */
+import { hashSignupSecret } from "../auth/password.js";
 import { and, eq } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
-import { hashPin, isWeakPin } from "../routes/pin.js";
+import { isWeakPin } from "../routes/pin.js";
 
 export type PinStrength = "easy" | "okay" | "strong";
 
@@ -42,7 +43,7 @@ export function checkPin(pin: string, confirm: string): PinVerdict {
 /** Save the PIN for a verified account. False when the account is not verified. */
 export async function savePin(db: Db, enquiryId: string, pin: string): Promise<boolean> {
   const saved = await db.update(schema.signupAccounts)
-    .set({ pinHash: await hashPin(pin), pinSetAt: new Date(), updatedAt: new Date() })
+    .set({ pinHash: await hashSignupSecret(pin), pinSetAt: new Date(), updatedAt: new Date() })
     .where(and(eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.state, "verified")))
     .returning();
   if (!saved.length) return false;

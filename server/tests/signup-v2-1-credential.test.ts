@@ -83,7 +83,8 @@ function makePasskey(challenge: string, o: { origin?: string; rpId?: string; uv?
 let n = 0;
 async function reserve(over: Partial<typeof schema.enquiries.$inferInsert> = {}) {
   n++;
-  const cdId = `CD-YORK-${"23456789ABCDEFGH"[n % 16]}${"JKMNPQRS"[n % 8]}${"TUVW"[n % 4]}${"XYZ2"[Math.floor(n / 4) % 4]}`;
+  const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+  const cdId = `CD-YORK-${[0, 1, 2, 3].map(i => alphabet[Math.floor(n / 31 ** i) % 31]).join("")}`;
   const id = `enq-${randomUUID()}`;
   await handle.db.insert(schema.enquiries).values({
     id, reference: `CD-T${String(n).padStart(5, "0")}`, kind: "early_access", email: `owner${n}@yorkfx.test`,
@@ -110,7 +111,7 @@ beforeAll(async () => {
     env: ENV, http, mail: async () => "simulated",
     breachRange: async (prefix) => {
       if (rangeDown) throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
-      return [...breached].filter((h) => h.startsWith(prefix)).map((h) => `${h.slice(5)}:12`).concat(["0000000000000000000000000000000000A:0"]).join("\r\n");
+      return [...breached].filter((h) => h.startsWith(prefix)).map((h) => `${h.slice(5)}:12`).concat(["00000000000000000000000000000000000:0"]).join("\r\n");
     },
   });
   await app.ready();
@@ -139,25 +140,25 @@ describe("the account state machine", () => {
 
 describe("D. email and password", () => {
   it("knows the rule: 12 characters, no forced symbol, leaked and local-list refused", async () => {
-    const ok = async () => "";
+    const ok = async () => "00000000000000000000000000000000000:0";
     expect(lengthOf("ééééééééééé")).toBe(11);
     expect((await checkPassword("short pass", "Harbour Exchange", ok)).ok).toBe(false);
     expect(await checkPassword("four plain words here", "Harbour Exchange", ok)).toEqual({ ok: true });
     expect((await checkPassword("harbourexchange99", "Harbour Exchange", ok) as { reason: string }).reason).toBe("local_list");
     expect((await checkPassword("MyPassword-is-long", "Harbour Exchange", ok) as { reason: string }).reason).toBe("local_list");
     const pw = "correct horse battery";
-    const range = async (prefix: string) => (sha1(pw).startsWith(prefix) ? `${sha1(pw).slice(5)}:3\r\nABC:1` : "");
+    const range = async (prefix: string) => (sha1(pw).startsWith(prefix) ? `${sha1(pw).slice(5)}:3\r\n00000000000000000000000000000000000:0` : "00000000000000000000000000000000000:0");
     expect(await isBreached(pw, range)).toBe(true);
     expect(await isBreached("something else entirely", range)).toBe(false);
   });
 
   it("sends only the first five characters of the SHA-1 to the range", async () => {
     const seen: string[] = [];
-    await isBreached("a perfectly long password", async (p) => { seen.push(p); return ""; });
+    await isBreached("a perfectly long password", async (p) => { seen.push(p); return "00000000000000000000000000000000000:0"; });
     expect(seen).toEqual([sha1("a perfectly long password").slice(0, 5)]);
   });
 
-  it("saves a scrypt hash, moves reserved → enrolling, and says nothing about the owner", async () => {
+  it("saves an Argon2id hash, moves reserved → enrolling, and says nothing about the owner", async () => {
     const { id, cdId, email } = await reserve();
     const res = await post(`/api/onboarding/${cdId}/password`, { password: "four plain words here", confirm: "four plain words here" });
     expect(res.statusCode, res.body).toBe(200);
@@ -165,7 +166,7 @@ describe("D. email and password", () => {
     expect(res.body).not.toContain(email);
     expect(res.cookies.find((c) => c.name === "cd_enrol_attempt")?.httpOnly).toBe(true);
     const cred = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
-    expect(cred.passwordHash).toMatch(/^scrypt\$/);
+    expect(cred.passwordHash).toMatch(/^\$argon2id\$/);
     expect(cred.passwordHash).not.toContain("four plain");
     expect(cred.verifiedAt).toBeNull();
     expect(await verifyPassword("four plain words here", cred.passwordHash!)).toBe(true);
@@ -312,6 +313,15 @@ describe("B / C. Google and Microsoft", () => {
     expect(ok.statusCode, ok.body).toBe(200);
   });
 
+  it("rejects tokens for another authorized party or before their valid time", async () => {
+    for (const extra of [{ aud: ["google-client", "other"], azp: "other" }, { nbf: now() + 3600 }, { iat: now() + 3600 }]) {
+      const { cdId, email } = await reserve();
+      const s = await start(cdId, "google");
+      nextClaims = { iss: "https://accounts.google.com", aud: "google-client", exp: now() + 7200, nonce: s.nonce, sub: "g-time", email, email_verified: true, ...extra };
+      expect((await post(`/api/onboarding/${cdId}/sso/callback`, { provider: "google", code: "c", state: s.state }, s.jar)).statusCode).toBe(400);
+    }
+  });
+
   it("answers 503 when a provider is not configured", async () => {
     const bare = Fastify();
     await bare.register(cookie);
@@ -349,5 +359,29 @@ describe("who may choose", () => {
       await post(`/api/onboarding/${cdId}/passkey/verify`, { response: makePasskey("bogus") }, { cd_enrol_attempt: "a".repeat(43) }, `192.0.2.${i}`);
     }
     expect((await post(`/api/onboarding/${cdId}/passkey/options`, {}, {}, "192.0.2.200")).statusCode).toBe(429);
+  });
+});
+
+
+describe("review: external boundaries", () => {
+  it("does not choose a permanent relying party when configuration is absent", async () => {
+    const bare = Fastify();
+    await bare.register(cookie);
+    registerCredentialRoutes(bare, handle.db, door, { env: {} });
+    const { cdId } = await reserve();
+    expect((await bare.inject({ method: "POST", url: `/api/onboarding/${cdId}/passkey/options` })).statusCode).toBe(503);
+    await bare.close();
+  });
+  it("treats malformed breach-range replies as unavailable", async () => {
+    for (const body of ["<html>unavailable</html>", "", "ABC:1"]) {
+      expect(await checkPassword("four plain words here", "Harbour", async () => body)).toMatchObject({ ok: false, reason: "check_unavailable" });
+    }
+  });
+  it("does not echo provider or authenticator payloads into refusal logs", async () => {
+    const { cdId } = await reserve();
+    const opt = await post(`/api/onboarding/${cdId}/passkey/options`, {});
+    const secretOrigin = "https://private-name-and-token.invalid";
+    await post(`/api/onboarding/${cdId}/passkey/verify`, { response: makePasskey(opt.json().options.challenge, { origin: secretOrigin }) }, cookieFrom(opt));
+    expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).not.toContain(secretOrigin);
   });
 });

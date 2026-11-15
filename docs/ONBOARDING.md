@@ -194,3 +194,20 @@ The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, n
 - `POST …/email/verify` needs the attempt cookie of a browser holding a candidate credential. Success sets `cd_enrol` (24 h sliding). Only `enrolment_sessions.token_hash` is stored.
 - Status codes: 401 wrong, 410 expired, 423 five wrong, 429 too soon, 409 nothing waiting.
 
+
+## CD-206 server review corrections (15 November 2026)
+
+New v2.1 passwords and PINs use Argon2id (node-argon2 0.45.2, pinned; reference
+implementation with Node 22 support), 64 MiB, three iterations, one lane.
+Existing scrypt hashes and writers remain compatible through the common verifier.
+The dependency is required by the supplied build pack; npm's audit reports no
+advisory for argon2 or its new dependencies. Existing server dependency advisories
+remain, and this is not a clean dependency-audit claim.
+
+Passkeys require explicit `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGINS`; missing or
+mismatched origins return unavailable. The ID/shop labels preserve pre-proof
+privacy; returning private email/name in registration JSON would violate it.
+OIDC checks authorized party and future validity as well as signature, issuer,
+audience, expiry, nonce and the exact normalized verified email. No provider token
+or authenticator error contents are logged by these adapters. Empty/malformed
+breach-range replies are unavailable, never evidence that a password is safe.
