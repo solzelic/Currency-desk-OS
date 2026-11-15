@@ -1,6 +1,7 @@
 /* POST /api/webhooks/idv/:provider. Off without a signing secret.
-   Signature first. Shop comes from the map, never the payload.
-   Unknown reference: 200 and no write. One row per event id.
+   Signature first. Shop and tenant come from the stored inquiry, never the payload.
+   Unknown inquiry id: 200 and no write. A reference id that disagrees is 400.
+   One row per event id.
    POST /api/idv/start-check is the caller's shop, branch, and teller. */
 import { randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -75,6 +76,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     try {
       const saved = await recordIdvEvent(db, result);
       if (saved === "unknown") return { received: true, dropped: true };
+      if (saved === "conflict") return reply.code(400).send({ error: "invalid_webhook" });
       if (saved === "duplicate") return { received: true, duplicate: true };
       await markInquiry(db, result);
       return { received: true, duplicate: false };

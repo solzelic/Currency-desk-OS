@@ -55,7 +55,10 @@ const fetchStub: typeof fetch = async (input, init) => {
   calls += 1;
   attempt += 1;
   const body = String(init?.body ?? "");
-  const sent = JSON.parse(body) as { data: { attributes: Record<string, string> } };
+  const sent = JSON.parse(body) as {
+    data: { attributes: Record<string, string> };
+    meta: { "auto-create-account": boolean };
+  };
   const referenceId = sent.data.attributes["reference-id"] ?? "";
   const headers = init?.headers as Record<string, string>;
   expect(String(input)).toBe(`${PERSONA_API_BASE_DEFAULT}/inquiries`);
@@ -64,7 +67,8 @@ const fetchStub: typeof fetch = async (input, init) => {
   expect(headers["persona-version"]).toBe(PERSONA_VERSION);
   expect(headers["key-inflection"]).toBe("kebab");
   expect(headers["idempotency-key"]).toBe(referenceId);
-  expect(Object.keys(sent).sort()).toEqual(["data"]);
+  expect(Object.keys(sent).sort()).toEqual(["data", "meta"]);
+  expect(sent.meta["auto-create-account"]).toBe(false);
   expect(Object.keys(sent.data).sort()).toEqual(["attributes"]);
   expect(Object.keys(sent.data.attributes).sort()).toEqual(["inquiry-template-id", "reference-id"]);
   expect(sent.data.attributes["inquiry-template-id"]).toBe("itmpl_fixture");

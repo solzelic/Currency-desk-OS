@@ -3,7 +3,8 @@
    two sets separated by a space. Either configured secret may pass.
    Inquiry create follows the current docs (version 2026-09-29):
    inquiry-template-id for itmpl_, template-id for tmpl_, and reference-id.
-   No Persona account is created for the check.
+   meta.auto-create-account is false, so no Persona account is created.
+   A webhook matches the stored inquiry id. reference-id on the event is optional.
    https://docs.withpersona.com/api-reference/inquiries/create-an-inquiry */
 import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
@@ -72,6 +73,7 @@ function templateField(template: string): string {
 export function personaInquiryBody(template: string, referenceId: string): string {
   return JSON.stringify({
     data: { attributes: { [templateField(template)]: template, "reference-id": referenceId } },
+    meta: { "auto-create-account": false },
   });
 }
 
@@ -83,8 +85,11 @@ function parse(body: unknown): IdvResult | null {
   const inquiry = obj(obj(obj(attributes.payload).data));
   const fields = obj(inquiry.attributes);
   const providerRef = typeof inquiry.id === "string" ? inquiry.id : "";
+  /* reference-id is deprecated. Absent is fine. A conflict is decided against the stored row. */
   const referenceId = typeof fields["reference-id"] === "string" ? fields["reference-id"] : "";
-  if (!eventId || !providerRef || !referenceId) return null;
+  if (!eventId || !providerRef) return null;
+  /* A known inquiry event can omit reference-id. Anything else still needs one. */
+  if (!referenceId && !EVENTS[name]) return null;
   const status = typeof fields.status === "string" ? fields.status : "";
   const named = EVENTS[name];
   const outcome = named?.outcome ?? OUTCOME[status] ?? "unknown";

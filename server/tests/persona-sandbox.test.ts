@@ -45,8 +45,10 @@ describe("persona inquiry request", () => {
   it("uses the template field the current docs name for each id", () => {
     const itmpl = JSON.parse(personaInquiryBody("itmpl_AVBb88sxEE9tJDxDPrTh54H5WGbXtm", "ref-a")) as {
       data: { attributes: Record<string, string> };
+      meta: { "auto-create-account": boolean };
     };
-    expect(Object.keys(itmpl).sort()).toEqual(["data"]);
+    expect(Object.keys(itmpl).sort()).toEqual(["data", "meta"]);
+    expect(itmpl.meta["auto-create-account"]).toBe(false);
     expect(Object.keys(itmpl.data).sort()).toEqual(["attributes"]);
     expect(Object.keys(itmpl.data.attributes).sort()).toEqual(["inquiry-template-id", "reference-id"]);
     expect(itmpl.data.attributes["inquiry-template-id"]).toBe("itmpl_AVBb88sxEE9tJDxDPrTh54H5WGbXtm");

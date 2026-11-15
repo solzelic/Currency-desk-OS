@@ -45,30 +45,29 @@ export async function latestClientIdvStatus(db: Db, shopId: string, clientId: st
   return typeof status === "string" ? status : null;
 }
 
-type MapRow = { shop_id: string; branch_id: string; teller_id: string; provider_ref: string };
+type MapRow = {
+  shop_id: string; branch_id: string; teller_id: string; provider_ref: string; reference_id: string; tenant_id: string;
+};
 
-/* unknown: reference is not on this provider's map. duplicate: event id already stored. */
-export async function recordIdvEvent(db: Db, result: IdvResult): Promise<"stored" | "duplicate" | "unknown"> {
+/* unknown: this provider has no stored inquiry with that id.
+   conflict: the event names a reference id that is not the stored one.
+   duplicate: event id already stored.
+   Shop and tenant come from the stored row, never the payload. */
+export async function recordIdvEvent(db: Db, result: IdvResult): Promise<"stored" | "duplicate" | "unknown" | "conflict"> {
   const found = await db.execute(sql`
-    SELECT shop_id, branch_id, teller_id, provider_ref FROM idv_inquiries
-     WHERE provider = ${result.provider} AND reference_id = ${result.referenceId} LIMIT 1
+    SELECT i.shop_id, i.branch_id, i.teller_id, i.provider_ref, i.reference_id, e.tenant_id
+      FROM idv_inquiries i
+      JOIN legal_entities e ON e.id = i.shop_id
+     WHERE i.provider = ${result.provider} AND i.provider_ref = ${result.providerRef}
+     LIMIT 1
   `);
   const row = found.rows[0] as MapRow | undefined;
-  if (!row) return "unknown";
-  /* The start route writes the reference id into provider_ref until Persona answers. */
-  if (row.provider_ref !== result.providerRef) {
-    if (row.provider_ref !== result.referenceId) return "unknown";
-    const updated = await db.execute(sql`
-      UPDATE idv_inquiries SET provider_ref = ${result.providerRef}
-       WHERE reference_id = ${result.referenceId} AND provider = ${result.provider}
-         AND provider_ref = ${result.referenceId}
-      RETURNING provider_ref
-    `);
-    if (updated.rows.length === 0) return "unknown";
-  }
+  if (!row || !row.tenant_id) return "unknown";
+  const named = result.referenceId.trim();
+  if (named && named !== row.reference_id) return "conflict";
   const inserted = await db.execute(sql`
     INSERT INTO idv_events (event_id, provider, provider_ref, reference_id, shop_id, branch_id, teller_id, outcome)
-    VALUES (${result.eventId}, ${result.provider}, ${result.providerRef}, ${result.referenceId},
+    VALUES (${result.eventId}, ${result.provider}, ${result.providerRef}, ${row.reference_id},
             ${row.shop_id}, ${row.branch_id}, ${row.teller_id}, ${result.outcome})
     ON CONFLICT (event_id) DO NOTHING RETURNING event_id
   `);
@@ -84,7 +83,7 @@ export async function markInquiry(db: Db, result: IdvResult): Promise<void> {
   if (!status) return;
   await db.execute(sql`
     UPDATE idv_inquiries SET status = ${status}
-     WHERE provider = ${result.provider} AND reference_id = ${result.referenceId}
+     WHERE provider = ${result.provider} AND provider_ref = ${result.providerRef}
        AND status NOT IN ('approved', 'declined', 'failed', 'expired')
   `);
 }

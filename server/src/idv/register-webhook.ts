@@ -1,5 +1,8 @@
-/* One-time webhook registration. The signing secret is written to the
-   injected stdout once. It is not logged, stored, or sent onward.
+/* One-time webhook registration.
+   On staging the signing secret is printed on stdout once. It is not
+   logged, written to a file, or sent onward.
+   With --production the secret is written to the --secret-file path
+   at mode 0600 and is not printed.
    Lists existing webhooks first and does not create a second one for
    the same URL. https://docs.withpersona.com/api-reference/webhooks/create-a-webhook */
 import { chmod, writeFile } from "node:fs/promises";
