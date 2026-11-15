@@ -103,6 +103,10 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
+  /* 075 stores official-list snapshots, entries, the ops alert flag, and
+     the placeholder score threshold. 074 is the Persona inquiry client
+     on PR 722, so this file follows it. */
+  ["075_sanctions_lists", "src/db/migrations/075_sanctions_lists.sql"],
 ] as const;
 
 type MigrationReader = {
