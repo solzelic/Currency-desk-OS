@@ -1,6 +1,10 @@
 /* Persona adapter. Header t=<unix>,v1=<hex>. HMAC-SHA256 over the raw
    body bytes, constant-time compare, five-minute window. Rotation sends
-   two sets separated by a space. Either configured secret may pass. */
+   two sets separated by a space. Either configured secret may pass.
+   Inquiry create follows the current docs (version 2026-09-29):
+   inquiry-template-id for itmpl_, template-id for tmpl_, and the
+   reference on the inquiry plus meta.auto-create-account-reference-id.
+   https://docs.withpersona.com/api-reference/inquiries/create-an-inquiry */
 import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
 import { personaConnection } from "../persona.js";
@@ -9,6 +13,8 @@ const WINDOW_MS = 5 * 60 * 1000;
 const ATTEMPTS = 3;
 /* Persona uses one host. A sandbox key selects the sandbox environment. */
 export const PERSONA_API_BASE_DEFAULT = "https://api.withpersona.com/api/v1";
+/* Current server version. Older dates are still accepted by Persona. */
+export const PERSONA_VERSION = "2026-09-29";
 const OUTCOME: Record<string, IdvOutcome> = {
   created: "pending", pending: "pending", started: "pending", completed: "pending",
   approved: "approved", declined: "declined", "needs-review": "review", needs_review: "review",
@@ -19,6 +25,10 @@ const EVENTS: Record<string, Pick<IdvResult, "outcome" | "inquiryStatus">> = {
   "inquiry.completed": { outcome: "pending" }, "inquiry.approved": { outcome: "approved" }, "inquiry.declined": { outcome: "declined" },
   "inquiry.marked-for-review": { outcome: "review", inquiryStatus: "needs review" }, "inquiry.failed": { outcome: "failed" }, "inquiry.expired": { outcome: "expired" },
 };
+/* Registered with the webhook. Watchlist payloads carry names and dates,
+   so they are acknowledged and not stored. */
+const WATCHLIST = new Set(["report/watchlist.ready", "report/watchlist.matched"]);
+export const PERSONA_WEBHOOK_EVENTS = [...Object.keys(EVENTS), ...WATCHLIST];
 
 function header(value: string | string[] | undefined): string {
   if (typeof value === "string") return value;
@@ -53,17 +63,37 @@ function obj(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function templateField(template: string): string {
+  if (template.startsWith("itmplv_")) return "inquiry-template-version-id";
+  if (template.startsWith("itmpl_")) return "inquiry-template-id";
+  return "template-id";
+}
+
+/* Our reference only. No name, email, phone, or document fields. */
+export function personaInquiryBody(template: string, referenceId: string): string {
+  return JSON.stringify({
+    data: { attributes: { [templateField(template)]: template, "reference-id": referenceId } },
+    meta: { "auto-create-account": true, "auto-create-account-reference-id": referenceId },
+  });
+}
+
 function parse(body: unknown): IdvResult | null {
   const data = obj(obj(body).data);
-  const inquiry = obj(obj(obj(obj(data.attributes).payload).data));
-  const fields = obj(inquiry.attributes);
+  const attributes = obj(data.attributes);
   const eventId = typeof data.id === "string" ? data.id : "";
+  const name = typeof attributes.name === "string" ? attributes.name : "";
+  /* Do not read report attributes. They hold a name and a birth date. */
+  if (WATCHLIST.has(name)) {
+    if (!eventId) return null;
+    return { eventId, provider: "persona", providerRef: eventId, referenceId: "", outcome: "unknown", drop: true };
+  }
+  const inquiry = obj(obj(obj(attributes.payload).data));
+  const fields = obj(inquiry.attributes);
   const providerRef = typeof inquiry.id === "string" ? inquiry.id : "";
   const referenceId = typeof fields["reference-id"] === "string" ? fields["reference-id"] : "";
   if (!eventId || !providerRef || !referenceId) return null;
-  const attributes = obj(data.attributes);
   const status = typeof fields.status === "string" ? fields.status : "";
-  const named = typeof attributes.name === "string" ? EVENTS[attributes.name] : undefined;
+  const named = EVENTS[name];
   const outcome = named?.outcome ?? OUTCOME[status] ?? "unknown";
   return { eventId, provider: "persona", providerRef, referenceId, outcome, ...(named?.inquiryStatus ? { inquiryStatus: named.inquiryStatus } : {}) };
 }
@@ -80,17 +110,19 @@ export async function startPersonaCheck(
   const base = (env.PERSONA_API_BASE?.trim() || PERSONA_API_BASE_DEFAULT).replace(/\/$/, "");
   const fetchImpl = deps.fetch ?? fetch;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const body = JSON.stringify({ data: { attributes: { "inquiry-template-id": template, "reference-id": input.referenceId } } });
+  const body = personaInquiryBody(template, input.referenceId);
   let status = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     const res = await fetchImpl(`${base}/inquiries`, {
       method: "POST",
+      redirect: "manual",
       headers: {
         authorization: `Bearer ${key}`,
         accept: "application/json",
         "content-type": "application/json",
         "idempotency-key": input.referenceId,
-        "persona-version": "2023-01-05",
+        "key-inflection": "kebab",
+        "persona-version": PERSONA_VERSION,
       },
       body,
     });
@@ -105,7 +137,7 @@ export async function startPersonaCheck(
     if ((status !== 429 && status < 500) || attempt === ATTEMPTS) break;
     await sleep(25 * 2 ** (attempt - 1));
   }
-  throw new Error(status === 429 || status >= 500 ? "provider_unavailable" : "provider_rejected");
+  throw new Error(status === 429 || status >= 500 ? "provider_unavailable" : `provider_rejected_${status}`);
 }
 
 /* The only place these variables are read. Callers pass a fixture or nothing. */

@@ -135,6 +135,25 @@ describe("idv webhook", () => {
     expect(JSON.stringify(a)).not.toContain("not-stored");
   });
 
+  it("accepts a watchlist event and stores nothing from it", async () => {
+    const before = await countIdvEvents(handle.db);
+    const raw = JSON.stringify({
+      data: {
+        id: "evt_watch",
+        attributes: {
+          name: "report/watchlist.matched",
+          payload: { data: { id: "rep_1", attributes: { "name-first": "Secret", "name-last": "Person", birthdate: "1990-01-01" } } },
+        },
+      },
+    });
+    const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true, dropped: true });
+    expect(res.body).not.toContain("Secret");
+    expect(res.body).not.toContain("1990-01-01");
+    expect(await countIdvEvents(handle.db)).toBe(before);
+  });
+
   it("rejects a bad signature on the route and writes nothing", async () => {
     const before = await countIdvEvents(handle.db);
     const raw = rawFor("evt_bad", "ref-a", "inq_a", "shop-b");

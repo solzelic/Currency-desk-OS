@@ -5,13 +5,33 @@ import type { IdvResult } from "./provider.js";
 
 export type IdvInquiry = {
   referenceId: string; shopId: string; branchId: string; tellerId: string; provider: string; providerRef: string;
+  clientId?: string | null;
 };
 
 export async function insertIdvInquiry(db: Db, row: IdvInquiry): Promise<void> {
   await db.execute(sql`
-    INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref)
-    VALUES (${row.referenceId}, ${row.shopId}, ${row.branchId}, ${row.tellerId}, ${row.provider}, ${row.providerRef})
+    INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id)
+    VALUES (${row.referenceId}, ${row.shopId}, ${row.branchId}, ${row.tellerId}, ${row.provider}, ${row.providerRef}, ${row.clientId ?? null})
   `);
+}
+
+export async function clientOnShop(db: Db, shopId: string, clientId: string): Promise<boolean> {
+  const found = await db.execute(sql`
+    SELECT 1 FROM desk_clients WHERE client_id = ${clientId} AND legal_entity_id = ${shopId} LIMIT 1
+  `);
+  return found.rows.length > 0;
+}
+
+/* Latest check for this client. Status words only. No provider payload. */
+export async function latestClientIdvStatus(db: Db, shopId: string, clientId: string): Promise<string | null> {
+  const found = await db.execute(sql`
+    SELECT status FROM idv_inquiries
+     WHERE shop_id = ${shopId} AND client_id = ${clientId}
+     ORDER BY created_at DESC, reference_id DESC
+     LIMIT 1
+  `);
+  const status = (found.rows[0] as { status?: unknown } | undefined)?.status;
+  return typeof status === "string" ? status : null;
 }
 
 type MapRow = { shop_id: string; branch_id: string; teller_id: string; provider_ref: string };

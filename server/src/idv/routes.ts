@@ -11,7 +11,7 @@ import { reserveIdvCredit } from "./credit.js";
 import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
 import { shopEnvCodeFor } from "./shop-config.js";
-import { failStarting, markInquiry, recordIdvEvent, reserveIdvSlot, setProviderRef } from "./store.js";
+import { clientOnShop, failStarting, latestClientIdvStatus, markInquiry, recordIdvEvent, reserveIdvSlot, setProviderRef } from "./store.js";
 
 export const IDV_SHOP_CAP = 5;
 const OFF = "Identity checks are off for this shop.";
@@ -44,6 +44,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     catch { return reply.code(400).send({ error: "invalid_webhook" }); }
     const result = provider.parseResult(body);
     if (!result || result.provider !== provider.name) return reply.code(400).send({ error: "invalid_webhook" });
+    if (result.drop) return { received: true, dropped: true };
     try {
       const saved = await recordIdvEvent(db, result);
       if (saved === "unknown") return { received: true, dropped: true };
@@ -58,6 +59,11 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
   app.post("/api/idv/start-check", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const rawBody = req.body;
+    const namedClient = typeof rawBody === "object" && rawBody !== null && "clientId" in rawBody;
+    const clientValue = namedClient ? (rawBody as { clientId?: unknown }).clientId : undefined;
+    if (namedClient && typeof clientValue !== "string") return reply.code(400).send({ error: "invalid_client" });
+    const clientId = typeof clientValue === "string" ? clientValue.trim() : "";
     const found = await db.execute(sql`
       SELECT provider, checks_enabled, api_key_ref, template_id
         FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
@@ -76,10 +82,13 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       shopCode: await shopEnvCodeFor(db, who.tenantId),
     };
     if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
+    if (clientId && !await clientOnShop(db, who.legalEntityId, clientId)) {
+      return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
+    }
     const referenceId = randomBytes(18).toString("base64url");
     const reserved = await reserveIdvSlot(db, {
       referenceId, shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
-      provider: provider.name, providerRef: referenceId,
+      provider: provider.name, providerRef: referenceId, clientId: clientId || null,
     }, options?.cap ?? IDV_SHOP_CAP);
     if (!reserved) return reply.code(409).send({ code: "IDV_CAP", message: CAP });
     /* No credit ledger in this repo. Do not invent one, and do not settle. */
@@ -94,5 +103,15 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       req.log.error({ reason: "start_failed", name: err instanceof Error ? err.name : "Error" }, "idv start failed");
       return reply.code(502).send({ error: "provider_unavailable" });
     }
+  });
+
+  app.get<{ Params: { clientId: string } }>("/api/idv/clients/:clientId", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const clientId = req.params.clientId.trim();
+    if (!clientId || !await clientOnShop(db, who.legalEntityId, clientId)) {
+      return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
+    }
+    return { status: await latestClientIdvStatus(db, who.legalEntityId, clientId) };
   });
 }

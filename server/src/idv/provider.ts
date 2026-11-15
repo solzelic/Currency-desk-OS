@@ -13,6 +13,8 @@ export type IdvResult = {
   outcome: IdvOutcome;
   /* Set by the adapter for created, started, and needs review. */
   inquiryStatus?: "in progress" | "needs review";
+  /* Verified event with nothing safe to store. The route answers 200. */
+  drop?: boolean;
 };
 
 export type IdvStart = {

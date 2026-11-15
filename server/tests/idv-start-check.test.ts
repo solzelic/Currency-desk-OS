@@ -8,7 +8,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { reserveIdvCredit } from "../src/idv/credit.js";
 import type { IdvProvider } from "../src/idv/provider.js";
-import { PERSONA_API_BASE_DEFAULT, createPersonaProvider } from "../src/idv/providers/persona/index.js";
+import { PERSONA_API_BASE_DEFAULT, PERSONA_VERSION, createPersonaProvider } from "../src/idv/providers/persona/index.js";
 import { insertIdvInquiry } from "../src/idv/store.js";
 
 const SECRET = "fixture-webhook-secret";
@@ -54,10 +54,24 @@ const fetchStub: typeof fetch = async (input, init) => {
   calls += 1;
   attempt += 1;
   const body = String(init?.body ?? "");
-  const referenceId = (JSON.parse(body) as { data: { attributes: { "reference-id": string } } }).data.attributes["reference-id"];
+  const sent = JSON.parse(body) as {
+    data: { attributes: Record<string, string> };
+    meta: Record<string, unknown>;
+  };
+  const referenceId = sent.data.attributes["reference-id"] ?? "";
+  const headers = init?.headers as Record<string, string>;
   expect(String(input)).toBe(`${PERSONA_API_BASE_DEFAULT}/inquiries`);
+  expect(init?.method).toBe("POST");
+  expect(headers.authorization).toBe("Bearer fixture-api-key");
+  expect(headers["persona-version"]).toBe(PERSONA_VERSION);
+  expect(headers["key-inflection"]).toBe("kebab");
+  expect(headers["idempotency-key"]).toBe(referenceId);
+  expect(sent.data.attributes["inquiry-template-id"]).toBe("itmpl_fixture");
+  expect(sent.meta["auto-create-account"]).toBe(true);
+  expect(sent.meta["auto-create-account-reference-id"]).toBe(referenceId);
   expect(body).not.toContain(DEMO.legalEntityId);
   expect(body).not.toContain("secret@example.com");
+  expect(body).not.toMatch(/name-first|birthdate|email-address/);
   const open = await handle.db.execute(sql`
     SELECT reference_id, shop_id, teller_id, provider_ref FROM idv_inquiries WHERE reference_id = ${referenceId}
   `);
@@ -148,6 +162,48 @@ describe("sandbox start-check", () => {
     expect(JSON.stringify(stored.rows[0])).not.toContain("secret@example.com");
     const other = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_inquiries WHERE shop_id = ${B.legalEntityId}`);
     expect(Number((other.rows[0] as { n: number }).n)).toBe(0);
+  });
+
+  it("keeps the check on that client and shows the webhook status on the file", async () => {
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_idv_a', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Ada Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_idv_b', ${B.tenantId}, ${B.legalEntityId}, 'Bea Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    await enable(DEMO.legalEntityId, true);
+    const before = calls;
+    const missing = await start("a", { clientId: "cli_idv_b", name: "Bea Client" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().message).toBe("That client is not on this shop.");
+    expect(calls).toBe(before);
+    const started = await start("a", { clientId: "cli_idv_a", name: "Ada Client", email: "ada@example.com" });
+    expect(started.statusCode, started.body).toBe(200);
+    const body = started.json();
+    expect(JSON.stringify(body)).not.toContain("Ada");
+    expect(JSON.stringify(body)).not.toContain("ada@example.com");
+    const row = await handle.db.execute(sql`SELECT client_id, status FROM idv_inquiries WHERE reference_id = ${body.referenceId}`);
+    expect(row.rows[0]).toMatchObject({ client_id: "cli_idv_a", status: "starting" });
+    const open = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
+    expect(open.json()).toEqual({ status: "starting" });
+    const raw = payload("inquiry.approved", "evt_cli_a", body.referenceId, body.providerRef);
+    const t = Math.floor(Date.now() / 1000);
+    const hook = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/persona", payload: raw,
+      headers: { "content-type": "application/json", "persona-signature": `t=${t},v1=${mac(Buffer.from(raw), t)}` },
+    });
+    expect(hook.statusCode, hook.body).toBe(200);
+    const after = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
+    expect(after.json()).toEqual({ status: "approved" });
+    expect(JSON.stringify(after.json())).not.toContain("Not Stored");
+    const otherShop = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.b });
+    expect(otherShop.statusCode).toBe(404);
+    const empty = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
+    expect(empty.json()).toEqual({ status: null });
   });
 
   it("refuses a shop that is already at the cap", async () => {

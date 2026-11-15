@@ -27,6 +27,11 @@ export function personaRefIssue(name: string, shopCode: string): "key" | "name" 
   return looksLikeKey(name) ? "key" : "name";
 }
 
+/* The shared key, read here and nowhere else. */
+export function personaSharedKey(env: NodeJS.ProcessEnv): string {
+  return (env[SHARED] ?? "").trim();
+}
+
 export function personaConnection(
   input: { apiKeyRef?: string | null; templateId?: string | null; shopCode?: string },
   env: NodeJS.ProcessEnv,

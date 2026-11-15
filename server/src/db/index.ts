@@ -677,10 +677,12 @@ CREATE TABLE IF NOT EXISTS idv_inquiries (
   provider text NOT NULL,
   provider_ref text NOT NULL,
   status text NOT NULL DEFAULT 'starting',
+  client_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (provider, provider_ref)
 );
 ALTER TABLE idv_inquiries ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'starting';
+ALTER TABLE idv_inquiries ADD COLUMN IF NOT EXISTS client_id text;
 CREATE TABLE IF NOT EXISTS idv_events (
   event_id text PRIMARY KEY,
   provider text NOT NULL,

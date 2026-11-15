@@ -103,6 +103,8 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
+  /* 074 ties an identity check to the client file. 073 is on staging. */
+  ["074_idv_inquiry_client", "src/db/migrations/074_idv_inquiry_client.sql"],
 ] as const;
 
 type MigrationReader = {
