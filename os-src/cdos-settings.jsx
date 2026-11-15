@@ -2395,7 +2395,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* sanctionsListShips is false for every pack, including PH, SG and HK. */}
           {(window.CDOS._compliance && window.CDOS._compliance.sanctionsListShips(pack))
             ? <Row title="Sanctions screening" desc="Names are matched against the list this pack loaded."><span className="text-[12px] px-2.5 py-1.5" style={{ color: CD.mute }}>List loaded</span></Row>
-            : <Row title="Sanctions screening" desc={(window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack)) || "Sanctions screening is not connected yet. Check clients against your government's official lists yourself."}><span className="text-[12px] px-2.5 py-1.5" data-testid="sanctions-screening-gap" style={{ color: CD.mute }}>Not connected</span></Row>}
+            : <Row title="Sanctions screening" desc={(window.CDOS._compliance && window.CDOS._compliance.screeningNote(pack)) || "Screening runs on this desk. A teller does not see why a deal is held."}><span className="text-[12px] px-2.5 py-1.5" data-testid="sanctions-screening-gap" style={{ color: CD.mute }}>Running</span></Row>}
 
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>

@@ -110,8 +110,11 @@ units.
 Listed person or entity property report: Act s.7.1 and the Suspicious
 Transaction Reporting Regulations. File immediately. This is property
 of a listed person or a terrorist group. It is not
-`SANCTIONS-STOP`. No sanctions list is loaded, so the screen does not
-fire it. The desk says screening is not connected.
+`SANCTIONS-STOP`. The desk screens the official lists in
+`docs/SANCTIONS_LISTS.md`. A possible match holds the deal until a
+compliance officer or the owner clears it. The teller does not see
+the list or the reason. Filing the listed-person report stays outside
+the desk.
 
 Foreign-exchange ticket, s.36(i) and s.1(2). At the foreign-exchange
 line the record needs the customer's name, address, occupation, and

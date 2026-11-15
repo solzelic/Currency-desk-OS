@@ -81,6 +81,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { civilDate, civilToday } from "../civil-date.js";
+import { screenSubject } from "../screening/gate.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import {
@@ -471,6 +472,13 @@ export class ClientRecordService {
         `${input.kind ?? "individual"} · ${input.legalName.trim()}`,
       );
       await this.syncCounterRecord(client, actor, clientId);
+      await screenSubject(client, {
+        tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.userId,
+      }, {
+        name: input.legalName.trim(),
+        dob: input.dateOfBirth || null,
+        clientId,
+      });
       return this.readOne(client, actor, clientId);
     });
   }
@@ -547,6 +555,20 @@ export class ClientRecordService {
       }
       const touched = entries.map(([field]) => field).join(", ");
       await this.audit(client, actor, "client.update", clientId, `changed: ${touched}`);
+      const fresh = await client.query(
+        "SELECT display_name, date_of_birth FROM desk_clients WHERE client_id=$1",
+        [clientId],
+      );
+      const row = fresh.rows[0];
+      if (row) {
+        await screenSubject(client, {
+          tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.userId,
+        }, {
+          name: String(row.display_name),
+          dob: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : null,
+          clientId,
+        });
+      }
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });

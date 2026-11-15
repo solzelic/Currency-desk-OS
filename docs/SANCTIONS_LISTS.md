@@ -58,6 +58,20 @@ does not fetch that file. If the numbered headings or either label
 disappear, the parser throws and the fetch is a failure. The last good
 list stays.
 
+## Hold
+
+A possible match, or a confirmed one, stops `POST /api/quotes/:id/post`.
+The teller response is only `{ code: "NEEDS_REVIEW", message: "This needs review. A supervisor will help." }`.
+The owner or a compliance officer uses `GET /api/screening/reviews`.
+Clearing stores the actor and the reason and lets a later post through
+for that same list entry. Confirming keeps the deal held. A changed list
+re-screens existing clients.
+
+Tiers 1 and 2 (`quick` and `verify` as well as `1` and `2`) record whether
+the client said they are a politically exposed person, and the date.
+`server/src/screening/provider.ts` is the later vendor seam for PEP and
+adverse media. Nothing calls it.
+
 ## Schedule
 
 `listenServer` fetches these three once a day. `SCREENING_FETCH=off` skips

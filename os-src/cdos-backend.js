@@ -275,6 +275,15 @@
       postQuote: function (quoteId, payload) {
         return request("/api/quotes/" + encodeURIComponent(quoteId) + "/post", { method: "POST", body: JSON.stringify(payload) });
       },
+      screenIdCheck: function (payload) {
+        return request("/api/screening/id-check", { method: "POST", body: JSON.stringify(payload) });
+      },
+      listReviews: function () {
+        return request("/api/screening/reviews");
+      },
+      decideReview: function (reviewId, action, reason) {
+        return request("/api/screening/reviews/" + encodeURIComponent(reviewId) + "/" + action, { method: "POST", body: JSON.stringify({ reason: reason }) });
+      },
       reverseTransaction: function (transactionId, payload) {
         return request("/api/ledger/transactions/" + encodeURIComponent(transactionId) + "/reversal", { method: "POST", body: JSON.stringify(payload) });
       },

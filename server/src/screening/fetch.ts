@@ -1,6 +1,7 @@
 import type { ListEntry } from "./match.js";
 import type { ListSource } from "./sources.js";
 import { LIST_SOURCES } from "./sources.js";
+import { pgPool, rescreenAll } from "./gate.js";
 import { latestGood, markUnchanged, sha256, storeFailed, storeGood, type SqlDb } from "./store.js";
 
 export type FetchBody = (url: string) => Promise<{ ok: boolean; status: number; body: string }>;
@@ -46,7 +47,14 @@ export async function fetchOne(db: SqlDb, source: ListSource, get: FetchBody): P
     await markUnchanged(db, previous.snapshotId, source.key);
     return "unchanged";
   }
-  await storeGood(db, source, downloaded.body, entries, previous);
+  const stored = await storeGood(db, source, downloaded.body, entries, previous);
+  if (stored.added > 0 || stored.removed > 0) {
+    const pool = pgPool(db);
+    if (pool) {
+      try { await rescreenAll(pool); }
+      catch (err) { console.error(`[sanctions] rescreen failed: ${err instanceof Error ? err.name : "Error"}`); }
+    }
+  }
   return "good";
 }
 

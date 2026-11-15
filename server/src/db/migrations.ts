@@ -106,6 +106,9 @@ export const migrations: readonly Migration[] = [
   /* 074 stores official-list snapshots, entries, the ops alert flag, and
      the placeholder score threshold. 073 is the SAM call on this branch. */
   ["074_sanctions_lists", "src/db/migrations/074_sanctions_lists.sql"],
+  /* 075 is the screen result, the review queue, and the PEP answer.
+     074 is the list snapshot on this branch. */
+  ["075_sanctions_reviews", "src/db/migrations/075_sanctions_reviews.sql"],
 ] as const;
 
 type MigrationReader = {
