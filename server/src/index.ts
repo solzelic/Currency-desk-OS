@@ -20,6 +20,7 @@ import { seedOwner } from "./platform/team.js";
 import { buildApp } from "./app.js";
 import { ratesSyncIntervalMs, warnRatesSyncMinutes } from "./rates/sync-interval.js";
 import { startRatesSync } from "./rates/sync-schedule.js";
+import { startSanctionsFetch } from "./screening/fetch.js";
 import { siteDomainRefreshIntervalMs, startSiteDomainRefresh } from "./sites.js";
 import { applyResetStaffPassword } from "./auth/break-glass.js";
 import { runStagingPinReset } from "./staging/pin-reset.js";
@@ -158,6 +159,11 @@ export async function listenServer(app: FastifyInstance, db: Db): Promise<void> 
   if (process.env.RATES_SYNC !== "off") {
     warnRatesSyncMinutes(process.env.RATES_SYNC_MINUTES);
     startRatesSync(db, DEMO.branchId, ratesSyncIntervalMs(process.env.RATES_SYNC_MINUTES));
+  }
+  /* Daily official-list fetch. A failure keeps the last good list.
+     SCREENING_FETCH=off is the test harness. Production leaves it unset. */
+  if (process.env.SCREENING_FETCH !== "off") {
+    startSanctionsFetch(db);
   }
 }
 

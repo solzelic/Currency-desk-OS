@@ -108,6 +108,12 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `074_sanctions_lists` adds `sanctions_list_snapshots`,
+  `sanctions_list_entries`, `sanctions_ops_flags`, and
+  `sanctions_score_settings`. 073 is the SAM call, so this file is 074.
+  The list addresses and the placeholder threshold are
+  `docs/SANCTIONS_LISTS.md`. The daily fetch starts in `listenServer`
+  unless `SCREENING_FETCH` is `off`.
 - Migration `072_enquiry_v2_1` adds `enquiries.cd_id` (unique), `waitlist_reason`
   (checked: `outside-canada` or `not-fintrac-registered`), `invite_code`
   (unique) and `place_in_line` for Early Access v2.1 (CD-179 to CD-183). The

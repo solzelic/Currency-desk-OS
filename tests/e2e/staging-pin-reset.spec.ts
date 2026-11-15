@@ -17,7 +17,7 @@ const HOST = "staging.currencydeskos.com";
 const NAME = `staging_pin_e2e_${Date.now()}`;
 const { Pool } = createRequire(path.join(process.cwd(), "server", "package.json"))("pg") as { Pool: new (c: { connectionString: string }) => any };
 const dbUrl = () => { const u = new URL(process.env.SEAM_DATABASE_URL!); u.pathname = `/${NAME}`; return u.toString(); };
-const ENV = () => ({ ...process.env, DATABASE_URL: dbUrl(), SEED_PASSWORD: "yorkville", RATES_SYNC: "off", NODE_ENV: "development", STAGING: "1", RENDER_EXTERNAL_HOSTNAME: HOST });
+const ENV = () => ({ ...process.env, DATABASE_URL: dbUrl(), SEED_PASSWORD: "yorkville", RATES_SYNC: "off", SCREENING_FETCH: "off", NODE_ENV: "development", STAGING: "1", RENDER_EXTERNAL_HOSTNAME: HOST });
 
 test.use({ baseURL: `http://${HOST}:${PORT}`, launchOptions: { args: [`--host-resolver-rules=MAP ${HOST} 127.0.0.1`] } });
 
