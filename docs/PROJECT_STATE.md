@@ -1689,3 +1689,6 @@ Residual, not blocking: the uncompiled editor shells remain fetchable at
 React production URLs in its bundler template. Neither is a product-route
 regression. Review this stamp — and every section above — whenever a PR
 changes what is true.
+
+### CD-206 Astra server correction candidate (15 Nov 2026)
+Server review has corrected credential/provider boundaries, proof concurrency, legacy bypass/privacy, and transactional payment activation. Migration 079 preserves the explicit every-exchange ID choice. This is bounded server work, not slice acceptance: UI/Day 1/tour and the integration gaps recorded in docs/ONBOARDING.md remain; ticket stays In progress. CTO protected-surface approval and end-to-end provider/payment/browser verification remain required.

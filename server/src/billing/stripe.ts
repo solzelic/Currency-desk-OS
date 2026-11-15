@@ -43,8 +43,12 @@ export function planForPrice(config: StripeBillingConfig, priceId: string | null
 }
 
 export function stripeClient(config: StripeBillingConfig): Stripe {
-  /* Every external call has a timeout (standards §5.5); Stripe's default is 80 s. */
-  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 2, timeout: 15_000 });
+  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 2 });
+}
+
+/** Signup holds a database lock: bound one attempt, with idempotent client retries. */
+export function signupStripeClient(config: StripeBillingConfig): Stripe {
+  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 0, timeout: 15_000 });
 }
 
 export function safeAppBaseUrl(config: StripeBillingConfig, host: string | undefined): string | null {

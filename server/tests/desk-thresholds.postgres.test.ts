@@ -149,6 +149,13 @@ postgres("the desk's thresholds, resolved against its pack", () => {
     expect((await resolved()).retentionYears.effective).toBe(7);
   });
 
+  it("an explicit zero desk ID line means every exchange, while null follows the pack", async () => {
+    await deskSets({ id_threshold: "0.00" });
+    expect((await resolved()).idThreshold).toEqual({ effective: "0.00", deskChoice: "0.00", packValue: "3000.00", posture: "stricter" });
+    await deskSets({ id_threshold: null });
+    expect((await resolved()).idThreshold.effective).toBe("3000.00");
+  });
+
   it("calls a tighter line stricter, and says so without alarm", async () => {
     await deskSets({ id_threshold: "1000.00", report_threshold: "7500.00" });
     const desk = await resolved();
@@ -474,6 +481,12 @@ postgres("the identification gate refuses at the desk's own number", () => {
   });
 
   beforeEach(() => gateReset("pack-gate-tight-v1"));
+
+  it("every-exchange signup policy refuses even a one-cent unidentified exchange", async () => {
+    await pool.query("UPDATE legal_entities SET id_threshold=0 WHERE id=$1", [GATE_ENTITY]);
+    await blocked(sell("0.01"));
+    expect((await pool.query("SELECT count(*) FROM ledger_transactions")).rows[0].count).toBe("0");
+  });
 
   it("refuses at the PACK's line, which is not three thousand", async () => {
     /* 1,500 on a desk whose pack identifies at 1,000. The old code

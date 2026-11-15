@@ -31,13 +31,18 @@ let app: FastifyInstance;
 let door: ReturnType<typeof createIdDoor>;
 const inbox: { to: string; text: string }[] = [];
 const intents: { id: string; customer: string; metadata: Record<string, string> }[] = [];
+const intentKeys = new Map<string, { id: string; client_secret: string }>();
 const fakeStripe: SignupStripe = {
   customers: { create: async () => ({ id: `cus_${randomUUID().slice(0, 8)}` }) },
   setupIntents: {
-    create: async (p) => {
+    create: async (p, options?: { idempotencyKey: string }) => {
+      const previous = options && intentKeys.get(options.idempotencyKey);
+      if (previous) return previous;
       const id = `seti_${randomUUID().slice(0, 12)}`;
       intents.push({ id, customer: p.customer, metadata: p.metadata });
-      return { id, client_secret: `${id}_secret_test` };
+      const result = { id, client_secret: `${id}_secret_test` };
+      if (options) intentKeys.set(options.idempotencyKey, result);
+      return result;
     },
   },
 };
@@ -115,8 +120,8 @@ beforeEach(() => door.reset());
 
 describe("the plan screen's arithmetic", () => {
   it("is per location, integers, annual 10% off, $0 today", () => {
-    expect(monthlyFor({ plan: "ai", term: "monthly", locations: 1, brief: true, call: true, website: false, setupWeek: false })).toEqual({ perLocation: 750, total: 750, dueToday: 0 });
-    expect(monthlyFor({ plan: "ai", term: "annual", locations: 2, brief: true, call: true, website: false, setupWeek: false })).toEqual({ perLocation: 675, total: 1350, dueToday: 0 });
+    expect(monthlyFor({ plan: "ai", term: "monthly", locations: 1, brief: true, call: true, website: false, setupWeek: false })).toEqual({ currency: "CAD", perLocationMinor: 75000, totalMinor: 75000, dueTodayMinor: 0, setupWeekMinor: 0 });
+    expect(monthlyFor({ plan: "ai", term: "annual", locations: 2, brief: true, call: true, website: false, setupWeek: false })).toEqual({ currency: "CAD", perLocationMinor: 67500, totalMinor: 135000, dueTodayMinor: 0, setupWeekMinor: 0 });
     expect(declarationName("York Foreign Exchange Inc.")).toBe("York Foreign Exchange Inc");
     expect(answersHash({ b: 1, a: [2, { d: 1, c: 2 }] })).toBe(answersHash({ a: [2, { c: 2, d: 1 }], b: 1 }));
   });
@@ -127,14 +132,14 @@ describe("from the ID to inside, on the server", () => {
     const r = await readyToPay();
     const plan = await call("POST", `${r.base}/plan`, PLAN);
     expect(plan.statusCode, plan.body).toBe(200);
-    expect(plan.json()).toMatchObject({ ok: true, price: { perLocation: 750, total: 750, dueToday: 0 } });
+    expect(plan.json()).toMatchObject({ ok: true, price: { currency: "CAD", perLocationMinor: 75000, totalMinor: 75000, dueTodayMinor: 0, setupWeekMinor: 0 } });
     expect(plan.json().clientSecret).toMatch(/^seti_.*_secret_test$/);
     /* not open until Stripe says so */
     expect((await call("POST", `${r.base}/open`)).statusCode).toBe(202);
     expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
 
     const intent = intents.at(-1)!;
-    const hook = await stripeSays("setup_intent.succeeded", { id: intent.id, object: "setup_intent", customer: intent.customer, status: "succeeded", metadata: intent.metadata });
+    const hook = await stripeSays("setup_intent.succeeded", { id: intent.id, object: "setup_intent", customer: intent.customer, status: "succeeded", payment_method: "pm_test", metadata: intent.metadata });
     expect(hook.statusCode, hook.body).toBe(200);
     expect((await loadAccount(handle.db, r.id)).state).toBe("active");
 
@@ -187,5 +192,33 @@ describe("from the ID to inside, on the server", () => {
   it("ignores a SetupIntent the sign-up did not make", async () => {
     expect((await openFromSetupIntent(handle.db, { id: "seti_stranger", metadata: { currencydesk_signup_enquiry: "enq-none" } })).opened).toBe(false);
     expect((await stripeSays("setup_intent.succeeded", { id: "seti_other", object: "setup_intent", metadata: {} })).statusCode).toBe(200);
+  });
+});
+
+describe("activation consistency regressions", () => {
+  it("annual Full pricing preserves the ten-cent fraction in integer minor units", () => {
+    expect(monthlyFor({ plan: "full", term: "annual", locations: 2, brief: false, call: false, website: false, setupWeek: true })).toMatchObject({ currency: "CAD", perLocationMinor: 53910, totalMinor: 107820, dueTodayMinor: 0, setupWeekMinor: 500000 });
+  });
+  it("retrying an unchanged plan returns the same intent", async () => {
+    const r = await readyToPay();
+    const first = await call("POST", `${r.base}/plan`, PLAN);
+    const retry = await call("POST", `${r.base}/plan`, PLAN);
+    expect(retry.json().clientSecret).toBe(first.json().clientSecret);
+  });
+  it("editing and signing again cannot activate the old payment agreement", async () => {
+    const r = await readyToPay();
+    await call("POST", `${r.base}/plan`, PLAN);
+    const intent = intents.at(-1)!;
+    await call("PUT", `${r.base}/answers`, { step: "14-currencies", answers: { currencies: ["EUR"] } });
+    await call("POST", `${r.base}/confirm`, { signed: true, name: "Daniel Okafor" });
+    await stripeSays("setup_intent.succeeded", { ...intent, status: "succeeded", payment_method: "pm_test" });
+    expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
+  });
+  it("rejects a signed webhook with the wrong customer", async () => {
+    const r = await readyToPay();
+    await call("POST", `${r.base}/plan`, PLAN);
+    const intent = intents.at(-1)!;
+    await stripeSays("setup_intent.succeeded", { ...intent, customer: "cus_wrong", status: "succeeded", payment_method: "pm_test" });
+    expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
   });
 });

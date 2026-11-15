@@ -165,7 +165,7 @@ async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObje
   if (type === "setup_intent.succeeded" && signupEnquiry) {
     const intentId = string(data.id);
     if (!intentId) return null;
-    const result = await openFromSetupIntent(db, { id: intentId, metadata: { currencydesk_signup_enquiry: signupEnquiry } });
+    const result = await openFromSetupIntent(db, { id: intentId, customer: string(data.customer), status: string(data.status), paymentMethod: string(data.payment_method), metadata: { currencydesk_signup_enquiry: signupEnquiry, currencydesk_signup_agreement: string(object(data.metadata).currencydesk_signup_agreement) ?? "" } });
     return result.opened ? result.tenantId : null;
   }
   if (type === "checkout.session.completed") {
