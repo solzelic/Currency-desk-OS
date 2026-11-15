@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIST_BYTE_CAP, fetchOfficial, listShrank, pinnedRedirect } from "../src/screening/fetch.js";
+import { LIST_BYTE_CAP, UN_BLOB_HOST, UN_BLOB_PATH_PREFIX, fetchOfficial, listShrank, pinnedRedirect } from "../src/screening/fetch.js";
 
 describe("official list fetch", () => {
   it("fails closed when a redirect leaves the official host", async () => {
@@ -10,6 +10,29 @@ describe("official list fetch", () => {
     })).rejects.toThrow(/official host/);
     expect(seen).toEqual(["https://scsanctions.un.org/resources/xml/en/consolidated.xml"]);
     expect(() => pinnedRedirect("https://www.international.gc.ca/list.xml", "https://evil.example/list.xml")).toThrow(/official host/);
+  });
+
+  it("follows the Security Council redirect onto its pinned blob path only", async () => {
+    const official = "https://scsanctions.un.org/resources/xml/en/consolidated.xml";
+    const blob = `https://${UN_BLOB_HOST}${UN_BLOB_PATH_PREFIX}consolidatedLegacyByPRN.xml?sig=test`;
+    const seen: string[] = [];
+    const result = await fetchOfficial(official, async (input) => {
+      const url = String(input);
+      seen.push(url);
+      if (url === official) return new Response("", { status: 302, headers: { location: blob } });
+      return new Response("<list/>", { status: 200 });
+    });
+    expect(result).toEqual({ ok: true, status: 200, body: "<list/>" });
+    expect(seen[0]).toBe(official);
+    expect(seen[1]?.startsWith(`https://${UN_BLOB_HOST}${UN_BLOB_PATH_PREFIX}`)).toBe(true);
+    await expect(fetchOfficial(official, async () => new Response("", {
+      status: 302,
+      headers: { location: `https://${UN_BLOB_HOST}/other/file.xml` },
+    }))).rejects.toThrow(/official host/);
+    await expect(fetchOfficial(official, async () => new Response("", {
+      status: 302,
+      headers: { location: `https://evil.example${UN_BLOB_PATH_PREFIX}consolidatedLegacyByPRN.xml` },
+    }))).rejects.toThrow(/official host/);
   });
 
   it("follows a redirect that stays on an official https host", async () => {

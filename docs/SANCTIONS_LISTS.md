@@ -53,10 +53,12 @@ of birth is `DATE` or `YEAR` inside `INDIVIDUAL_DATE_OF_BIRTH`. The stable
 id is `DATAID`.
 
 The fetch follows a redirect only when the next URL is HTTPS and its host
-is one of the three official hosts in this document. A redirect to any
-other host fails the fetch. The last good snapshot stays, and the ops flag
-is raised. The snapshot stores the official address above, never the
-redirect and never a query string from one.
+is one of the three official hosts, or `unsolprodfiles.blob.core.windows.net`
+with the path prefix `/publiclegacyxmlfiles/EN/`. That is the host and path
+the Security Council address redirected to on 15 Nov 2026. Any other host,
+or that host on another path, fails the fetch. The last good snapshot stays,
+and the ops flag is raised. The snapshot stores the official address above,
+never the redirect and never a query string from one.
 
 ## Criminal Code listed entities
 
