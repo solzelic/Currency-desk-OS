@@ -262,9 +262,9 @@ export interface Provisioned {
    The desk follows the pack, and a tighter dinar line is set later. */
 async function fxLineIsForeign(db: Db, packId: string, home: string): Promise<boolean> {
   try {
-    const found = await db.execute(
+    const found = await db.transaction((tx) => tx.execute(
       sql`SELECT currency FROM jurisdiction_id_thresholds WHERE pack_id = ${packId} AND deal_kind = 'fx'`,
-    );
+    ));
     const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     const currency = String((rows[0] as { currency?: unknown } | undefined)?.currency ?? "")
       .trim()
@@ -287,9 +287,9 @@ async function idThresholdFromSetup(
   if (!Number.isFinite(chosen) || chosen <= 0) return null;
   let mandate: number | null = null;
   try {
-    const found = await db.execute(
+    const found = await db.transaction((tx) => tx.execute(
       sql`SELECT id_threshold FROM jurisdiction_packs WHERE pack_id = ${packId}`,
-    );
+    ));
     const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     const value = Number((rows[0] as { id_threshold?: unknown } | undefined)?.id_threshold);
     mandate = Number.isFinite(value) && value > 0 ? value : null;
@@ -308,6 +308,7 @@ export async function provisionDesk(
   spec: DeskSpec,
   passwordHash: string,
   via: string,
+  options: { requireNewTenant?: boolean } = {},
 ): Promise<Provisioned> {
   const slug = spec.slug;
   const tenantId = "tnt-" + slug;
@@ -362,7 +363,7 @@ export async function provisionDesk(
   }
   const foreignLine = pack ? await fxLineIsForeign(db, pack.packId, bookHome) : false;
   if (pack && !foreignLine && typedIdentificationLine(setup.idThreshold) == null) {
-    const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
+    const line = await packIdThreshold({ execute: (query) => db.transaction((tx) => tx.execute(query)) }, pack.packId, SETUP_ID_DEAL);
     /* A positive amount fills the blank box. Zero means every deal on
        the pack's own table, and it is not written back into this field,
        because zero here means the box was left empty. */
@@ -370,10 +371,11 @@ export async function provisionDesk(
       setup.idThreshold = Number(line.amount.toDecimalPlaces(2).toFixed(2));
     }
   }
-  await db.insert(schema.tenants).values({
+  const insertedTenant = await db.insert(schema.tenants).values({
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
     isTestShop: spec.isTestShop === true,
-  }).onConflictDoNothing();
+  }).onConflictDoNothing().returning();
+  if (options.requireNewTenant && !insertedTenant.length) throw new Error("signup_tenant_collision");
   /* Rates v2.5: every shop has a rate page from the day it opens, at its
      own address and private until the owner turns it on. */
   await ensureRatePage(db, tenantId);

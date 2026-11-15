@@ -27,10 +27,12 @@
      on the staff row; signing in again later needs the Sign-in pack to
      honour signup_credentials (until then the real session is the only
      way in for them);
-   - provisionDesk's cross-application slug and owner race is CD-156, a
-     go-live blocker this PR does not fix;
+   - CD-156 remains a system-wide provisioning dependency; this path
+     refuses tenant collisions transactionally.
    - staff invites by email at opening (§9.1) are not sent yet.
    ============================================================ */
+import { z } from "zod";
+import { signupPack } from "./signup-pack.js";
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
@@ -38,10 +40,10 @@ import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { hashPassword } from "../auth/password.js";
 import { fromApplication, resolve, type Answers } from "./flow.js";
-import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "./provision.js";
+import { freeSlug, provisionDesk, specFromAnswers } from "./provision.js";
 import { loadOrCreateOnboarding } from "./verify.js";
-import { resumable } from "./signup-answers.js";
-import { advance } from "./signup-account.js";
+import { resumable, STEP_FIELDS } from "./signup-answers.js";
+import { advance, withSignupAccount } from "./signup-account.js";
 
 export const DECLARATION_VERSION = "v2.1-2026-11-14";
 
@@ -60,7 +62,11 @@ export function answersHash(answers: Record<string, unknown>): string {
 export const declarationName = (legal: string): string => legal.trim().replace(/\.+$/, "");
 
 export async function confirmDesk(db: Db, enquiryId: string, signedName: string): Promise<boolean> {
+  return withSignupAccount(db, enquiryId, async (db, account) => {
+  if (account.state !== "verified" || !account.pinHash) return false;
   const row = await loadOrCreateOnboarding(db, enquiryId);
+  const complete = z.object({ operatingName: z.string().trim().min(1), bizName: z.string().trim().min(1), street: z.string().trim().min(1), city: z.string().trim().min(1), region: z.string().trim().min(1), postal: z.string().trim().min(1), currencies: z.array(z.string().regex(/^[A-Z]{3}$/)).min(1), idOver: z.string().regex(/^\d{1,9}$/) }).safeParse(row.answers);
+  if (!complete.success) return false;
   const done = await db.update(schema.signupAccounts).set({
     confirmedAt: new Date(), confirmedName: signedName, declarationVersion: DECLARATION_VERSION,
     answersHash: answersHash((row.answers ?? {}) as Record<string, unknown>), updatedAt: new Date(),
@@ -71,6 +77,7 @@ export async function confirmDesk(db: Db, enquiryId: string, signedName: string)
     detail: { enquiryId, declaration: DECLARATION_VERSION, answers: done[0]!.answersHash },
   });
   return true;
+  });
 }
 
 /** Still signed: confirmed, and the answers have not moved since. */
@@ -93,35 +100,44 @@ export type PlanChoice = {
   brief: boolean; call: boolean; website: boolean; setupWeek: boolean;
 };
 
-/** What this choice costs a month, in whole currency units, per the plan screen. Integers only. */
-export function monthlyFor(c: PlanChoice): { perLocation: number; total: number; dueToday: 0 } {
-  const base = SIGNUP_PLANS[c.plan];
-  const perLocation = c.term === "annual" ? Math.round(base * 0.9) : base;
-  return { perLocation, total: perLocation * c.locations, dueToday: 0 };
+/** Integer minor units; annual discounts preserve cents. Website is coming soon. */
+export function monthlyFor(c: PlanChoice) {
+  const perLocationMinor = SIGNUP_PLANS[c.plan] * (c.term === "annual" ? 90 : 100);
+  return { currency: "CAD" as const, perLocationMinor, totalMinor: perLocationMinor * c.locations,
+    dueTodayMinor: 0, setupWeekMinor: c.setupWeek ? 500_000 : 0 };
 }
 
 /** The slice of Stripe this needs. The real client is passed in; tests pass a fake. */
 export type SignupStripe = {
-  customers: { create(p: { email: string; name: string; metadata: Record<string, string> }): Promise<{ id: string }> };
-  setupIntents: { create(p: { customer: string; usage: "off_session"; automatic_payment_methods: { enabled: true }; metadata: Record<string, string> }): Promise<{ id: string; client_secret: string | null }> };
+  customers: { create(p: { email: string; name: string; metadata: Record<string, string> }, options: { idempotencyKey: string }): Promise<{ id: string }> };
+  setupIntents: { create(p: { customer: string; usage: "off_session"; automatic_payment_methods: { enabled: true }; metadata: Record<string, string> }, options: { idempotencyKey: string }): Promise<{ id: string; client_secret: string | null }> };
 };
 
-export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, choice: PlanChoice): Promise<{ clientSecret: string }> {
-  const account = (await db.select().from(schema.signupAccounts).where(eq(schema.signupAccounts.enquiryId, row.id)).limit(1))[0]!;
-  const metadata = { currencydesk_signup_enquiry: row.id };
-  const shopName = String(((row.details ?? {}) as Record<string, unknown>).shopName ?? row.name ?? "");
-  const customerId = account.stripeCustomerId
-    ?? (await stripe.customers.create({ email: row.email, name: shopName, metadata })).id;
-  const intent = await stripe.setupIntents.create({ customer: customerId, usage: "off_session", automatic_payment_methods: { enabled: true }, metadata });
-  if (!intent.client_secret) throw new Error("Stripe returned a SetupIntent without a client secret");
-  await db.update(schema.signupAccounts).set({
-    stripeCustomerId: customerId, setupIntentId: intent.id, planChoice: choice, updatedAt: new Date(),
-  }).where(eq(schema.signupAccounts.enquiryId, row.id));
-  /* the plan joins the answers under the design's names, which is where provisioning reads it */
-  const ob = await loadOrCreateOnboarding(db, row.id);
-  const answers = { ...((ob.answers ?? {}) as Record<string, unknown>), plan: choice.plan, term: choice.term, brief: choice.brief, call: choice.call };
-  await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, row.id));
-  return { clientSecret: intent.client_secret };
+export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, choice: PlanChoice): Promise<{ clientSecret: string; price: ReturnType<typeof monthlyFor> }> {
+  return withSignupAccount(db, row.id, async (db, account) => {
+    if (account.state !== "verified" || !account.pinHash || !(await stillConfirmed(db, row.id))) throw new Error("signup_not_confirmed");
+    const ob = await loadOrCreateOnboarding(db, row.id);
+    const details = row.details ?? {};
+    if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") throw new Error("signup_billing_country_unavailable");
+    if (choice.website) throw new Error("signup_website_unavailable");
+    const answers = ob.answers ?? {};
+    const locations = answers.shops === "more" ? z.number().int().min(2).max(50).parse(answers.shopCount) : 1;
+    const selected = { ...choice, locations };
+    const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected })).digest("hex");
+    const metadata = { currencydesk_signup_enquiry: row.id, currencydesk_signup_agreement: agreement };
+    const customerId = account.stripeCustomerId ?? z.object({ id: z.string().startsWith("cus_") }).parse(
+      await stripe.customers.create({ email: row.email, name: typeof details.shopName === "string" ? details.shopName : row.name ?? "", metadata: { currencydesk_signup_enquiry: row.id } }, { idempotencyKey: `signup-customer-${account.accountId}` })
+    ).id;
+    const intent = z.object({ id: z.string().startsWith("seti_"), client_secret: z.string().min(1) }).parse(
+      await stripe.setupIntents.create({ customer: customerId, usage: "off_session", automatic_payment_methods: { enabled: true }, metadata }, { idempotencyKey: `signup-intent-${account.accountId}-${agreement}` })
+    );
+    await db.update(schema.signupAccounts).set({
+      stripeCustomerId: customerId, setupIntentId: intent.id,
+      planChoice: { ...selected, agreement, answersHash: account.answersHash, price: monthlyFor(selected) }, updatedAt: new Date(),
+    }).where(eq(schema.signupAccounts.enquiryId, row.id));
+    await db.update(schema.onboarding).set({ answers: { ...answers, plan: selected.plan, term: selected.term, brief: selected.brief, call: selected.call }, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, row.id));
+    return { clientSecret: intent.client_secret, price: monthlyFor(selected) };
+  });
 }
 
 /* ---- opening the desk ------------------------------------------------ */
@@ -129,13 +145,17 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
 export type OpenResult = { opened: true; tenantId: string } | { opened: false; reason: "unknown_intent" | "not_verified" | "not_confirmed" | "already_open" };
 
 /** Stripe said the card is saved. Create the desk, once. */
-export async function openFromSetupIntent(db: Db, intent: { id: string; metadata?: Record<string, string> | null }): Promise<OpenResult> {
+export async function openFromSetupIntent(db: Db, intent: { id: string; metadata?: Record<string, string> | null; customer?: string | null; status?: string | null; paymentMethod?: string | null }): Promise<OpenResult> {
   const enquiryId = intent.metadata?.currencydesk_signup_enquiry;
   if (!enquiryId) return { opened: false, reason: "unknown_intent" };
   const account = (await db.select().from(schema.signupAccounts).where(and(
     eq(schema.signupAccounts.enquiryId, enquiryId), eq(schema.signupAccounts.setupIntentId, intent.id),
   )).limit(1))[0];
   if (!account) return { opened: false, reason: "unknown_intent" };
+  return withSignupAccount(db, enquiryId, async (db, account): Promise<OpenResult> => {
+  if (account.setupIntentId !== intent.id || intent.customer !== account.stripeCustomerId || intent.status !== "succeeded" || !intent.paymentMethod) return { opened: false, reason: "unknown_intent" };
+  const choice = z.object({ agreement: z.string(), answersHash: z.string(), plan: z.enum(["ai", "full", "rates"]), term: z.enum(["monthly", "annual"]), locations: z.number().int().min(1).max(50), brief: z.boolean(), call: z.boolean(), website: z.literal(false), setupWeek: z.boolean() }).safeParse(account.planChoice);
+  if (!choice.success || choice.data.agreement !== intent.metadata?.currencydesk_signup_agreement || choice.data.answersHash !== account.answersHash || !account.pinHash) return { opened: false, reason: "not_confirmed" };
   if (account.state === "active") return { opened: false, reason: "already_open" };
   if (account.state !== "verified") return { opened: false, reason: "not_verified" };
   if (!(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
@@ -146,7 +166,20 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
     return { opened: false, reason: "already_open" };
   }
 
-  const resolved = resolve((ob.answers ?? {}) as Answers, fromApplication(row));
+  if (!row) throw new Error("signup_reservation_unavailable");
+  const stored = ob.answers ?? {};
+  // Parse persisted answers again before they can create staff or a desk.
+  const values: Record<string, unknown> = {};
+  for (const [step, validator] of Object.entries(STEP_FIELDS)) {
+    const parsed = validator.safeParse(stored);
+    if (!parsed.success) throw new Error(`signup_answers_invalid:${step}`);
+    Object.assign(values, parsed.data);
+  }
+  if (Array.isArray(values.team)) values.team = values.team.map((member) => {
+    const m = z.object({ first: z.string(), last: z.string() }).passthrough().parse(member);
+    return { ...m, name: `${m.first} ${m.last}`.trim() };
+  });
+  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: choice.data.call } as Answers, fromApplication(row));
   const spec = specFromAnswers(resolved, row);
   spec.email = row.email;
   const d = (row.details ?? {}) as Record<string, unknown>;
@@ -159,7 +192,7 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   /* A passkey or SSO owner has no password: theirs is a random one nobody
      holds (see KNOWN GAPS). */
   const passwordHash = password?.passwordHash ?? (await hashPassword(randomBytes(32).toString("base64url")));
-  const made = await provisionDesk(db, spec, passwordHash, "signup-v2.1");
+  const made = await provisionDesk(db, spec, passwordHash, "signup-v2.1", { requireNewTenant: true });
 
   await db.update(schema.staffUsers).set({
     ...(account.pinHash ? { pinHash: account.pinHash, pinSetAt: account.pinSetAt ?? new Date() } : {}),
@@ -172,10 +205,13 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   }
   await db.update(schema.onboarding).set({ tenantId: made.tenantId, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, enquiryId));
   await advance(db, enquiryId, "active");
-  await closeApplication(db, { enquiryId, email: row.email }, made.tenantId, "signup-v2.1", spec.setup);
+  await db.update(schema.enquiries).set({ status: "accepted", tenantId: made.tenantId, decidedAt: new Date(), decidedBy: "signup-v2.1" }).where(eq(schema.enquiries.id, enquiryId));
+  // v2.1 explicitly offers zero = every exchange; legacy zero meant blank.
+  if (values.idOver === "0") await db.update(schema.legalEntities).set({ idThreshold: "0.00" }).where(eq(schema.legalEntities.id, made.legalEntityId));
   await audit(db, {
     tenantId: made.tenantId, legalEntityId: made.legalEntityId, branchId: made.branchId, actorId: made.ownerId,
     action: "signup.completed", detail: { enquiryId, plan: account.planChoice ?? null, via: "signup-v2.1" },
   });
   return { opened: true, tenantId: made.tenantId };
+  });
 }

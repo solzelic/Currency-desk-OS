@@ -18,15 +18,15 @@ import { clientIp } from "../auth/client-ip.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { idTail, type IdDoor } from "../onboarding/cd-id-door.js";
 import { enrolmentFor } from "../onboarding/email-code.js";
-import { loadAccount, type Account } from "../onboarding/signup-account.js";
+import { loadAccount, withSignupAccount, sha256, type Account } from "../onboarding/signup-account.js";
 import { checkPin, savePin } from "../onboarding/signup-pin.js";
 import { answersBody, parseAnswers, resumable } from "../onboarding/signup-answers.js";
 import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
-import { and, eq } from "drizzle-orm";
-import { confirmDesk, declarationName, monthlyFor, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
-import { stripeBillingConfig, stripeClient } from "../billing/stripe.js";
+import { and, eq, gt, isNull } from "drizzle-orm";
+import { confirmDesk, declarationName, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { stripeBillingConfig, signupStripeClient } from "../billing/stripe.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
 
@@ -71,7 +71,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
   /* Not configured → null → 503 with a plain line; nothing pretends to take a card. */
   const stripe = deps.stripe ?? (() => {
     const config = stripeBillingConfig();
-    return config ? (stripeClient(config) as unknown as SignupStripe) : null;
+    return config ? (signupStripeClient(config) as unknown as SignupStripe) : null;
   });
   const enrolled = enrolledGuard(db, door);
 
@@ -112,12 +112,16 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
     const parsed = parseAnswers(body.data.step, body.data.answers);
     if (!parsed.ok) return reply.code(422).send({ error: "invalid_answer", detail: parsed.detail });
-    const row = await loadOrCreateOnboarding(db, r.row.id);
-    if (row.tenantId) return reply.code(409).send({ error: "already_open", detail: "This desk is already open. Sign in." });
-    const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...parsed.values };
-    await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, r.row.id));
-    /* An edit after signing clears the signature: the desk that opens is the one signed (§5.1). */
-    await db.update(schema.signupAccounts).set({ lastStep: parsed.step, confirmedAt: null, answersHash: null, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, r.row.id));
+    const saved = await withSignupAccount(db, r.row.id, async (db, account) => {
+      if (account.state !== "verified") return false;
+      const row = await loadOrCreateOnboarding(db, r.row.id);
+      if (row.tenantId) return false;
+      const answers = { ...(row.answers ?? {}), ...parsed.values };
+      await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, r.row.id));
+      await db.update(schema.signupAccounts).set({ lastStep: parsed.step, confirmedAt: null, answersHash: null, setupIntentId: null, planChoice: null, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, r.row.id));
+      return true;
+    });
+    if (!saved) return reply.code(409).send({ error: "already_open" });
     return { ok: true, lastStep: parsed.step };
   });
 
@@ -156,16 +160,19 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
     if (r.account.state !== "verified") return reply.code(409).send({ error: "not_verified" });
     if (!(await stillConfirmed(db, r.row.id))) return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
+    const details = r.row.details ?? {};
+    if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") return reply.code(409).send({ error: "billing_country_unavailable" });
+    if (body.data.extras.website) return reply.code(409).send({ error: "website_coming_soon" });
     const client = stripe();
     if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });
     const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers as Record<string, unknown>;
     const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
     const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };
     try {
-      const { clientSecret } = await startPayment(db, client, r.row, choice);
-      return { ok: true, clientSecret, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null, price: monthlyFor(choice) };
+      const { clientSecret, price } = await startPayment(db, client, r.row, choice);
+      return { ok: true, clientSecret, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null, price };
     } catch (err) {
-      req.log.error({ err: err instanceof Error ? err.message : "stripe error", id: idTail(r.cdId) }, "signup SetupIntent failed");
+      req.log.error({ reason: err instanceof Error ? err.name : "stripe_error", id: idTail(r.cdId) }, "signup SetupIntent failed");
       return reply.code(502).send({ error: "payment_unavailable", detail: "We couldn't reach the card processor. Nothing was charged. Try again in a moment." });
     }
   });
@@ -180,15 +187,27 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const row = await door.findByCdId(cdId);
     if (!row) { door.fail(cdId, connection, "open_unknown_id"); return reply.code(404).send({ error: "no_such_id" }); }
     if (!(await enrolmentFor(db, req, reply, row.id))) return reply.code(401).send({ error: "sign_in_again", detail: "For your security, sign in again to carry on." });
-    const account = await loadAccount(db, row.id);
-    const ob = await loadOrCreateOnboarding(db, row.id);
-    if (account.state !== "active" || !ob.tenantId) return reply.code(202).send({ pending: true, state: account.state });
-    const owner = (await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, ob.tenantId), eq(schema.staffUsers.cdId, cdId))).limit(1))[0];
-    if (!owner) return reply.code(409).send({ error: "no_owner", detail: "Your desk is open, but we couldn't find your sign-in. Sign in from the login page." });
-    const { token, expiresAt } = await createSession(db, owner.id);
-    reply.setCookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", expires: expiresAt });
-    /* the enrolment session has done its job */
-    await db.update(schema.enrolmentSessions).set({ revokedAt: new Date() }).where(eq(schema.enrolmentSessions.enquiryId, row.id));
+    const token = req.cookies[ENROLMENT_COOKIE];
+    if (!token) return reply.code(401).send({ error: "sign_in_again" });
+    const result = await withSignupAccount(db, row.id, async (db, account) => {
+      const ob = await loadOrCreateOnboarding(db, row.id);
+      if (account.state !== "active" || !ob.tenantId) return { kind: "pending", state: account.state } as const;
+      const owner = (await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, ob.tenantId), eq(schema.staffUsers.cdId, cdId))).limit(1))[0];
+      if (!owner) return { kind: "no_owner" } as const;
+      const spent = await db.update(schema.enrolmentSessions).set({ revokedAt: new Date() }).where(and(
+        eq(schema.enrolmentSessions.tokenHash, sha256(token)), eq(schema.enrolmentSessions.enquiryId, row.id),
+        isNull(schema.enrolmentSessions.revokedAt), gt(schema.enrolmentSessions.expiresAt, new Date()),
+      )).returning();
+      if (!spent.length) return { kind: "spent" } as const;
+      const session = await createSession(db, owner.id);
+      await db.update(schema.enrolmentSessions).set({ revokedAt: new Date() }).where(eq(schema.enrolmentSessions.enquiryId, row.id));
+      return { kind: "opened", ob, session } as const;
+    });
+    if (result.kind === "pending") return reply.code(202).send({ pending: true, state: result.state });
+    if (result.kind === "no_owner") return reply.code(409).send({ error: "no_owner" });
+    if (result.kind === "spent") return reply.code(401).send({ error: "sign_in_again" });
+    const { ob, session } = result;
+    reply.setCookie(SESSION_COOKIE, session.token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", expires: session.expiresAt });
     reply.clearCookie(ENROLMENT_COOKIE, { path: "/api/onboarding" });
     const answers = (ob.answers ?? {}) as Record<string, unknown>;
     return { ok: true, tenantId: ob.tenantId, cdId, operatingName: String(answers.operatingName ?? (row.details as Record<string, unknown> | null)?.shopName ?? "") };
