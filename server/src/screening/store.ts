@@ -6,6 +6,12 @@ import { diffKeys, type ListEntry } from "./match.js";
 
 export type SqlDb = {
   execute: (query: ReturnType<typeof sql>) => Promise<{ rows: ReadonlyArray<Record<string, unknown>> }>;
+  transaction?<T>(run: (tx: SqlDb) => Promise<T>): Promise<T>;
+};
+
+export type StoreGoodOptions = {
+  /** Throws here to prove a mid-insert failure rolls the snapshot back. */
+  afterBatch?: (batchIndex: number) => void;
 };
 
 export type GoodSnapshot = {
@@ -57,37 +63,61 @@ export async function markUnchanged(db: SqlDb, snapshotId: string, sourceKey: st
   await setAlert(db, sourceKey, false, null);
 }
 
+async function writeGood(
+  tx: SqlDb,
+  source: { key: string; url: string },
+  body: string,
+  entries: ListEntry[],
+  previous: GoodSnapshot | null,
+  options: StoreGoodOptions | undefined,
+): Promise<{ snapshotId: string; added: number; removed: number }> {
+  const hash = sha256(body);
+  const diff = diffKeys(previous?.keys ?? [], entries.map((entry) => entry.key));
+  const snapshotId = `snp_${randomUUID()}`;
+  /* Not good until every batch is in. A reader only loads status good. */
+  await tx.execute(sql`
+    INSERT INTO sanctions_list_snapshots
+      (snapshot_id, source_key, source_url, fetched_at, last_checked_at, content_sha256,
+       entry_count, status, added_count, removed_count, previous_snapshot_id)
+    VALUES
+      (${snapshotId}, ${source.key}, ${source.url}, now(), now(), ${hash},
+       ${entries.length}, 'writing', ${diff.added.length}, ${diff.removed.length}, ${previous?.snapshotId ?? null})
+  `);
+  const size = 80;
+  let batch = 0;
+  for (let i = 0; i < entries.length; i += size) {
+    const chunk = entries.slice(i, i + size);
+    const values = chunk.map((entry) => sql`(
+      ${snapshotId}, ${entry.key}, ${JSON.stringify(entry.names)}::jsonb, ${JSON.stringify(entry.dobs)}::jsonb
+    )`);
+    await tx.execute(sql`
+      INSERT INTO sanctions_list_entries (snapshot_id, entry_key, names, dobs)
+      VALUES ${sql.join(values, sql`, `)}
+    `);
+    options?.afterBatch?.(batch);
+    batch += 1;
+  }
+  await tx.execute(sql`
+    UPDATE sanctions_list_snapshots
+       SET status = 'good'
+     WHERE snapshot_id = ${snapshotId} AND status = 'writing'
+  `);
+  await setAlert(tx, source.key, false, null);
+  return { snapshotId, added: diff.added.length, removed: diff.removed.length };
+}
+
 export async function storeGood(
   db: SqlDb,
   source: { key: string; url: string },
   body: string,
   entries: ListEntry[],
   previous: GoodSnapshot | null,
+  options?: StoreGoodOptions,
 ): Promise<{ snapshotId: string; added: number; removed: number }> {
-  const hash = sha256(body);
-  const diff = diffKeys(previous?.keys ?? [], entries.map((entry) => entry.key));
-  const snapshotId = `snp_${randomUUID()}`;
-  await db.execute(sql`
-    INSERT INTO sanctions_list_snapshots
-      (snapshot_id, source_key, source_url, fetched_at, last_checked_at, content_sha256,
-       entry_count, status, added_count, removed_count, previous_snapshot_id)
-    VALUES
-      (${snapshotId}, ${source.key}, ${source.url}, now(), now(), ${hash},
-       ${entries.length}, 'good', ${diff.added.length}, ${diff.removed.length}, ${previous?.snapshotId ?? null})
-  `);
-  const size = 80;
-  for (let i = 0; i < entries.length; i += size) {
-    const chunk = entries.slice(i, i + size);
-    const values = chunk.map((entry) => sql`(
-      ${snapshotId}, ${entry.key}, ${JSON.stringify(entry.names)}::jsonb, ${JSON.stringify(entry.dobs)}::jsonb
-    )`);
-    await db.execute(sql`
-      INSERT INTO sanctions_list_entries (snapshot_id, entry_key, names, dobs)
-      VALUES ${sql.join(values, sql`, `)}
-    `);
+  if (typeof db.transaction !== "function") {
+    throw new Error("snapshot writes require a transaction");
   }
-  await setAlert(db, source.key, false, null);
-  return { snapshotId, added: diff.added.length, removed: diff.removed.length };
+  return db.transaction((tx) => writeGood(tx, source, body, entries, previous, options));
 }
 
 /** A failed fetch records the alert and leaves every previous entry in place. */

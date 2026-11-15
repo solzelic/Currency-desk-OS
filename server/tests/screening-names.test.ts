@@ -45,6 +45,45 @@ describe("name normalisation and matching", () => {
     expect(dobConflict("1974-05-31", several.dobs)).toBe(false);
     expect(bestMatch({ name: "Sergei Yepikhov", dob: "1974-05-31" }, [several], SCORE_THRESHOLD_PLACEHOLDER)?.score).toBe(1);
     expect(bestMatch({ name: "Sergei Yepikhov", dob: "1980-01-01" }, [several], SCORE_THRESHOLD_PLACEHOLDER)).toBeNull();
+    const withYear: ListEntry = { ...listed, dobs: parseDobField("1972-08-26 or 1974") };
+    expect(dobConflict("1974-05-31", withYear.dobs)).toBe(false);
+    expect(bestMatch({ name: "Sergei Yepikhov", dob: "1974-05-31" }, [withYear], SCORE_THRESHOLD_PLACEHOLDER)?.score).toBe(1);
+    expect(dobConflict("1972-08-26", withYear.dobs)).toBe(false);
+    expect(dobConflict("1980-01-01", withYear.dobs)).toBe(true);
+    expect(bestMatch({ name: "Sergei Yepikhov", dob: "1980-01-01" }, [withYear], SCORE_THRESHOLD_PLACEHOLDER)).toBeNull();
+  });
+
+  it("reports scores for known misses and known false positives", () => {
+    const hits: Record<string, number> = {
+      "Ivan Petrov | Ivan Ivanovich Petrov": scoreNames("Ivan Petrov", "Ivan Ivanovich Petrov"),
+      "Yepikhof | Yepikhov": scoreNames("Yepikhof", "Yepikhov"),
+      "Sergei Yepikhof | Sergei Yepikhov": scoreNames("Sergei Yepikhof", "Sergei Yepikhov"),
+      "Ahmed Hassan | Ahmed Mohamed bin Hassan": scoreNames("Ahmed Hassan", "Ahmed Mohamed bin Hassan"),
+      "Ivan Petrov | PETROV Ivan Ivanovich": scoreNames("Ivan Petrov", "PETROV Ivan Ivanovich"),
+    };
+    const misses: Record<string, number> = {
+      "John Smith | John Williams": scoreNames("John Smith", "John Williams"),
+      "Ivan Petrov | Ivan Sokolov": scoreNames("Ivan Petrov", "Ivan Sokolov"),
+      "Mary Jones | Robert Brown": scoreNames("Mary Jones", "Robert Brown"),
+      "Ali | Ali Mohamed Hassan": scoreNames("Ali", "Ali Mohamed Hassan"),
+      "Peter | Petrov": scoreNames("Peter", "Petrov"),
+    };
+    expect(hits).toEqual({
+      "Ivan Petrov | Ivan Ivanovich Petrov": 0.95,
+      "Yepikhof | Yepikhov": 0.94,
+      "Sergei Yepikhof | Sergei Yepikhov": 0.94,
+      "Ahmed Hassan | Ahmed Mohamed bin Hassan": 0.95,
+      "Ivan Petrov | PETROV Ivan Ivanovich": 0.95,
+    });
+    for (const score of Object.values(hits)) expect(score).toBeGreaterThanOrEqual(SCORE_THRESHOLD_PLACEHOLDER);
+    expect(misses).toEqual({
+      "John Smith | John Williams": 1 / 3,
+      "Ivan Petrov | Ivan Sokolov": 1 / 3,
+      "Mary Jones | Robert Brown": 0,
+      "Ali | Ali Mohamed Hassan": 1 / 3,
+      "Peter | Petrov": 0,
+    });
+    for (const score of Object.values(misses)) expect(score).toBeLessThan(SCORE_THRESHOLD_PLACEHOLDER);
   });
 
   it("keeps a name match when only one side has a date of birth", () => {

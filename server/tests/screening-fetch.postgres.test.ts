@@ -4,9 +4,12 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
-import { fetchOne } from "../src/screening/fetch.js";
+import { fetchOne, pinnedRedirect } from "../src/screening/fetch.js";
 import { parseCanadaXml } from "../src/screening/parse.js";
 import { LIST_SOURCES } from "../src/screening/sources.js";
+import type { ListSource } from "../src/screening/sources.js";
+import { storeGood } from "../src/screening/store.js";
+import type { ListEntry } from "../src/screening/match.js";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,5 +65,81 @@ postgres("sanctions list fetch", () => {
     expect(goods.rows[0].n).toBe(1);
     const flag = await pool.query("SELECT alert FROM sanctions_ops_flags WHERE source_key = $1", [canada.key]);
     expect(flag.rows[0].alert).toBe(false);
+  });
+
+  it("keeps the previous good snapshot when a batch crashes, and never marks that batch good", async () => {
+    await pool.query("DELETE FROM sanctions_list_entries");
+    await pool.query("DELETE FROM sanctions_list_snapshots");
+    const source = { key: "ca-sema", url: canada.url };
+    const first: ListEntry[] = [{ key: "ca|keep", names: ["Kept Person"], dobs: [] }];
+    await storeGood(handle.db, source, "first-body", first, null);
+    const next: ListEntry[] = Array.from({ length: 81 }, (_, index) => ({
+      key: `ca|next-${index}`,
+      names: [`Next Person ${index}`],
+      dobs: [],
+    }));
+    await expect(storeGood(handle.db, source, "second-body", next, {
+      snapshotId: "old",
+      hash: "first",
+      keys: ["ca|keep"],
+    }, {
+      afterBatch: () => { throw new Error("crash"); },
+    })).rejects.toThrow(/crash/);
+    const good = await pool.query("SELECT status FROM sanctions_list_snapshots WHERE status = 'good'");
+    expect(good.rowCount).toBe(1);
+    const writing = await pool.query("SELECT count(*)::int AS n FROM sanctions_list_snapshots WHERE status = 'writing'");
+    expect(writing.rows[0].n).toBe(0);
+    const keys = await pool.query("SELECT entry_key FROM sanctions_list_entries");
+    expect(keys.rows.map((row) => row.entry_key)).toEqual(["ca|keep"]);
+  });
+
+  it("fails closed on a well-formed list that shrank by more than 10 percent", async () => {
+    await pool.query("DELETE FROM sanctions_list_entries");
+    await pool.query("DELETE FROM sanctions_list_snapshots");
+    await pool.query("DELETE FROM sanctions_ops_flags");
+    const source: ListSource = {
+      key: "un-sc",
+      url: LIST_SOURCES[1]!.url,
+      parse: (body) => (JSON.parse(body) as string[]).map((name, index) => ({
+        key: `un|${index}`,
+        names: [name],
+        dobs: [],
+      })),
+    };
+    const full = JSON.stringify(Array.from({ length: 10 }, (_, index) => `Person ${index}`));
+    expect(await fetchOne(handle.db, source, async () => ({ ok: true, status: 200, body: full }))).toBe("good");
+    const short = JSON.stringify(Array.from({ length: 8 }, (_, index) => `Person ${index}`));
+    expect(await fetchOne(handle.db, source, async () => ({ ok: true, status: 200, body: short }))).toBe("failed");
+    const goods = await pool.query(
+      "SELECT entry_count FROM sanctions_list_snapshots WHERE source_key = 'un-sc' AND status = 'good'",
+    );
+    expect(goods.rows).toEqual([{ entry_count: 10 }]);
+    const entries = await pool.query("SELECT count(*)::int AS n FROM sanctions_list_entries");
+    expect(entries.rows[0].n).toBe(10);
+    const flag = await pool.query("SELECT alert, reason FROM sanctions_ops_flags WHERE source_key = 'un-sc'");
+    expect(flag.rows[0].alert).toBe(true);
+    expect(String(flag.rows[0].reason)).toMatch(/10 percent/);
+  });
+
+  it("keeps the last good list when a redirect leaves the official host", async () => {
+    await pool.query("DELETE FROM sanctions_list_entries");
+    await pool.query("DELETE FROM sanctions_list_snapshots");
+    await pool.query("DELETE FROM sanctions_ops_flags");
+    const source: ListSource = {
+      key: "ca-cc",
+      url: LIST_SOURCES[2]!.url,
+      parse: () => [{ key: "cc|1", names: ["Listed One"], dobs: [] }],
+    };
+    expect(await fetchOne(handle.db, source, async () => ({ ok: true, status: 200, body: "listed-one" }))).toBe("good");
+    const failed = await fetchOne(handle.db, source, async () => {
+      pinnedRedirect(source.url, "https://evil.example/list");
+      return { ok: true, status: 200, body: "should-not-store" };
+    });
+    expect(failed).toBe("failed");
+    const goods = await pool.query("SELECT count(*)::int AS n FROM sanctions_list_snapshots WHERE status = 'good' AND source_key = 'ca-cc'");
+    expect(goods.rows[0].n).toBe(1);
+    const flag = await pool.query("SELECT alert, reason FROM sanctions_ops_flags WHERE source_key = 'ca-cc'");
+    expect(flag.rows[0].alert).toBe(true);
+    expect(String(flag.rows[0].reason)).toMatch(/official host/);
   });
 });

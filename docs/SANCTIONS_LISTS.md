@@ -9,9 +9,22 @@ The score threshold defaults to 0.92 in `SCORE_THRESHOLD_PLACEHOLDER`. That
 number is a placeholder pending Compliance Officer sign-off. It is not final.
 `signed_off` stays false until that sign-off is recorded.
 
-A date of birth rules a name out only when both sides have a full day and
-none of those days are the same. A missing date, a year-only date, or a
-match on any one of several listed days stays a possible match.
+A date of birth rules a name out only when the subject has a full day and
+every listed day, month, and year disagrees with it. A missing date, a
+year-only date, or any one agreeing day or year stays a possible match. A
+full day plus an alternative year keeps the match when either one agrees.
+
+A snapshot is written in one transaction. Entry batches land while the row
+is `writing`, and the row becomes `good` only after the last batch. A crash
+rolls that snapshot back. The previous good snapshot stays the one a screen
+can read. A list over 12,000,000 bytes, or a well-formed list with more than
+10 percent fewer rows than the last good snapshot, is a failed fetch: the
+last good snapshot stays and `sanctions_ops_flags.alert` is set.
+
+Name matching also keeps a shorter name when every token is on the longer
+name (a missing middle name, or a short client name against a multi-part
+list name) and a token that is one edit from the listed token when that
+token is at least six letters. The threshold stays 0.92 until sign-off.
 
 ## Global Affairs Canada
 
@@ -39,9 +52,11 @@ Aliases are `ALIAS_NAME` inside `INDIVIDUAL_ALIAS` or `ENTITY_ALIAS`. A date
 of birth is `DATE` or `YEAR` inside `INDIVIDUAL_DATE_OF_BIRTH`. The stable
 id is `DATAID`.
 
-That address redirects to a short-lived file host. The snapshot stores the
-official address above, not the redirected address, and not any query string
-on the redirect.
+The fetch follows a redirect only when the next URL is HTTPS and its host
+is one of the three official hosts in this document. A redirect to any
+other host fails the fetch. The last good snapshot stays, and the ops flag
+is raised. The snapshot stores the official address above, never the
+redirect and never a query string from one.
 
 ## Criminal Code listed entities
 

@@ -103,15 +103,15 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
-  /* 074 stores official-list snapshots, entries, the ops alert flag, and
-     the placeholder score threshold. 073 is the SAM call on this branch. */
-  ["074_sanctions_lists", "src/db/migrations/074_sanctions_lists.sql"],
-  /* 075 is the screen result, the review queue, and the PEP answer.
-     074 is the list snapshot on this branch. */
-  ["075_sanctions_reviews", "src/db/migrations/075_sanctions_reviews.sql"],
-  /* 076 names the shop's compliance officer, keeps review decisions for
+  /* 075 stores official-list snapshots, entries, the ops alert flag, and
+     the placeholder score threshold. 074 is the Persona inquiry client
+     on PR 722, so this file follows it. */
+  ["075_sanctions_lists", "src/db/migrations/075_sanctions_lists.sql"],
+  /* 076 is the screen result, the review queue, and the PEP answer. */
+  ["076_sanctions_reviews", "src/db/migrations/076_sanctions_reviews.sql"],
+  /* 077 names the shop's compliance officer, keeps review decisions for
      5 years, and refuses clearing a confirmed match. */
-  ["076_sanctions_review_rules", "src/db/migrations/076_sanctions_review_rules.sql"],
+  ["077_sanctions_review_rules", "src/db/migrations/077_sanctions_review_rules.sql"],
 ] as const;
 
 type MigrationReader = {
