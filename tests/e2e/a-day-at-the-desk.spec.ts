@@ -305,7 +305,7 @@ test("the desk refuses what it should, and says why", async ({ page }) => {
     refused.status,
     `an unidentified customer was served over the line: ${JSON.stringify(refused.body)}`,
   ).toBe(422);
-  expect(String(refused.body.code)).toContain("COMPLIANCE");
+  expect(String(refused.body.code)).toBe("ID_CHECK_REQUIRED");
 });
 
 test("night — the drawer is counted and the books balance", async ({ page }) => {
