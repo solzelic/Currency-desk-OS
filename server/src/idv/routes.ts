@@ -73,6 +73,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     catch { return reply.code(400).send({ error: "invalid_webhook" }); }
     const result = provider.parseResult(body);
     if (!result || result.provider !== provider.name) return reply.code(400).send({ error: "invalid_webhook" });
+    if (result.ignore) return { received: true, dropped: true };
     try {
       const saved = await recordIdvEvent(db, result);
       if (saved === "unknown") return { received: true, dropped: true };

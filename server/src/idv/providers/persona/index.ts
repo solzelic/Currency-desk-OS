@@ -85,6 +85,10 @@ function parse(body: unknown): IdvResult | null {
   const inquiry = obj(obj(obj(attributes.payload).data));
   const fields = obj(inquiry.attributes);
   const providerRef = typeof inquiry.id === "string" ? inquiry.id : "";
+  /* Watchlist events are not this check. Acknowledge them and store nothing. */
+  if (name.startsWith("report/watchlist")) {
+    return { eventId: eventId || name, provider: "persona", providerRef: providerRef || "watchlist", referenceId: "", outcome: "unknown", ignore: true };
+  }
   /* reference-id is deprecated. Absent is fine. A conflict is decided against the stored row. */
   const referenceId = typeof fields["reference-id"] === "string" ? fields["reference-id"] : "";
   if (!eventId || !providerRef) return null;

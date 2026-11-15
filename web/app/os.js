@@ -27448,6 +27448,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.mute
       }
+    }, "ID details are not saved from this check yet."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
     }, "This line updates when the check changes. Persona's ID photo and selfie are not copied to this desk."));
   }
   function ProcessStanding({
@@ -28107,6 +28112,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       name: name,
       kind: rec.kind || 'individual',
       rec: rec,
+      clientId: rec && rec.clientId,
       by: me && me.name,
       setClients: setClients,
       settings: settings
@@ -51435,12 +51441,41 @@ ${(filing.map || []).map(blockHTML).join('')}
     rec,
     by,
     setClients,
-    settings
+    settings,
+    clientId
   }) {
     useStore();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
+    const [idvStatus, setIdvStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
+    useEffect(() => {
+      if (!clientId) return undefined;
+      let live = true;
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (!api || !api.idvStatus) return undefined;
+      api.idvStatus(clientId).then(body => {
+        if (!live || !body) return;
+        setIdvStatus(typeof body.status === 'string' ? body.status : '');
+        setChecksOn(!!body.checksEnabled);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [clientId]);
+    const idvWords = {
+      starting: 'Starting',
+      'in progress': 'In progress',
+      'needs review': 'Needs review',
+      approved: 'Check passed',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
+      declined: 'Declined',
+      failed: 'Failed',
+      expired: 'Expired'
+    }[idvStatus] || '';
+    const configured = checksOn || !!idvStatus;
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -51492,14 +51527,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
+      body: configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
-      "data-testid": "persona-not-connected",
+      "data-testid": "persona-connection",
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet."))), latest && latest.status === 'completed' && (() => {
+    }, configured ? idvWords || 'Identity checks are on for this shop.' : 'Persona is not connected yet.'))), latest && latest.status === 'completed' && (() => {
       const r = latest.result;
       const dm = decisionMeta(r.decision);
       const cell = (l, v) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -51567,7 +51602,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "No verifications on file. Persona is not connected yet."));
+    }, configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'));
   }
 
   /* ====================================================================

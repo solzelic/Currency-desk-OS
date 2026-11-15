@@ -176,7 +176,7 @@ describe("idv webhook", () => {
     expect((status.rows[0] as { status: string }).status).toBe("approved");
   });
 
-  it("rejects a watchlist event and stores nothing from it", async () => {
+  it("ignores a watchlist event and stores nothing from it", async () => {
     const before = await countIdvEvents(handle.db);
     const raw = JSON.stringify({
       data: {
@@ -188,8 +188,8 @@ describe("idv webhook", () => {
       },
     });
     const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: "invalid_webhook" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true, dropped: true });
     expect(res.body).not.toContain("Secret");
     expect(res.body).not.toContain("1990-01-01");
     expect(await countIdvEvents(handle.db)).toBe(before);

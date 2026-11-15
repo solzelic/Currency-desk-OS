@@ -85,6 +85,7 @@ export async function markInquiry(db: Db, result: IdvResult): Promise<void> {
     UPDATE idv_inquiries SET status = ${status}
      WHERE provider = ${result.provider} AND provider_ref = ${result.providerRef}
        AND status NOT IN ('approved', 'declined', 'failed', 'expired')
+       AND NOT (status = 'needs review' AND ${status} = 'in progress')
   `);
 }
 

@@ -259,14 +259,6 @@ describe("sandbox start-check", () => {
       staffId: "l.berg", name: "L. Berg", role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash: teller[0]!.passwordHash,
     }).onConflictDoNothing();
     cookies.auditor = await signIn(app, "l.berg", DEMO.tenantId);
-    await handle.db.insert(schema.staffUsers).values({
-      id: `${DEMO.tenantId}:trainee`, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId,
-      staffId: "trainee", name: "Trainee", role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash: teller[0]!.passwordHash,
-    }).onConflictDoNothing();
-    cookies.trainee = await signIn(app, "trainee", DEMO.tenantId);
-    const trainee = await start("trainee");
-    expect(trainee.statusCode).toBe(403);
-    expect(trainee.json().message).toBe("You cannot start an identity check.");
     const before = calls;
     const refused = await start("auditor");
     expect(refused.statusCode).toBe(403);
@@ -340,6 +332,41 @@ describe("sandbox start-check", () => {
     expect([reserveIdvCredit("inq-once"), reserveIdvCredit("inq-once")]).toEqual(["no_ledger", "no_ledger"]);
     const after = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_inquiries`);
     expect(after.rows).toEqual(before.rows);
+  });
+
+  it("starts a new inquiry after a failed start and after a finished check", async () => {
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_again', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Again Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    let fail = true;
+    const localFetch: typeof fetch = async () => {
+      if (fail) return new Response("", { status: 502 });
+      return new Response(JSON.stringify({ data: { id: `inq_again_${Date.now()}` } }), { status: 201 });
+    };
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: ENV, fetch: localFetch, sleep: async () => {}, cap: 1000, ratePerMinute: 1000, rateLimitStore: new Map(),
+    });
+    try {
+      await enable(DEMO.legalEntityId, true);
+      const first = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_again" } });
+      expect(first.statusCode).toBe(502);
+      fail = false;
+      const second = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_again" } });
+      expect(second.statusCode, second.body).toBe(200);
+      expect(second.json().referenceId).not.toBeUndefined();
+      await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'approved' WHERE reference_id = ${second.json().referenceId}`);
+      const third = await local.inject({ method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_again" } });
+      expect(third.statusCode, third.body).toBe(200);
+      expect(third.json().referenceId).not.toBe(second.json().referenceId);
+      const rows = await handle.db.execute(sql`SELECT reference_id, status FROM idv_inquiries WHERE client_id = 'cli_again'`);
+      expect(rows.rows).toHaveLength(3);
+      const statuses = (rows.rows as Array<{ status: string }>).map((row) => row.status).sort();
+      expect(statuses).toEqual(["approved", "failed", "starting"]);
+    } finally {
+      await local.close();
+    }
   });
 
   it("stops after 3 tries and answers 502", async () => {
@@ -465,10 +492,11 @@ describe("sandbox start-check", () => {
   it("refuses a sandbox key off staging and a production key on staging", async () => {
     await enable(DEMO.legalEntityId, true);
     const staging = { STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com" };
+    let issued = 0;
     const run = async (env: NodeJS.ProcessEnv) => {
       let hits = 0;
       const local = await buildApp(handle.db, {}, undefined, {
-        env, fetch: async () => { hits += 1; return new Response(JSON.stringify({ data: { id: "inq_key" } }), { status: 201 }); },
+        env, fetch: async () => { hits += 1; issued += 1; return new Response(JSON.stringify({ data: { id: `inq_key_${issued}` } }), { status: 201 }); },
         sleep: async () => {}, cap: 100, ratePerMinute: 1000, rateLimitStore: new Map(),
       });
       try {
@@ -488,6 +516,19 @@ describe("sandbox start-check", () => {
     const sandboxOnStaging = await run({ ...staging, PERSONA_API_KEY: "persona_sandbox_fixture" });
     expect(sandboxOnStaging.status).toBe(200);
     expect(sandboxOnStaging.hits).toBe(1);
+    const unsetSandbox = await run({ PERSONA_API_KEY: "persona_sandbox_fixture" });
+    expect(unsetSandbox.status).toBe(409);
+    expect(unsetSandbox.hits).toBe(0);
+    const unsetProduction = await run({ PERSONA_API_KEY: "persona_production_fixture" });
+    expect(unsetProduction.status).toBe(409);
+    expect(unsetProduction.hits).toBe(0);
+    const live = { RENDER_EXTERNAL_HOSTNAME: "currencydeskos.com" };
+    const productionOnLive = await run({ ...live, PERSONA_API_KEY: "persona_production_fixture" });
+    expect(productionOnLive.status).toBe(200);
+    expect(productionOnLive.hits).toBe(1);
+    const sandboxOnLive = await run({ ...live, PERSONA_API_KEY: "persona_sandbox_fixture" });
+    expect(sandboxOnLive.status).toBe(409);
+    expect(sandboxOnLive.hits).toBe(0);
   });
 
   it("stops a shop after 10 starts in a minute", async () => {
@@ -557,6 +598,18 @@ describe("inquiry progress events", () => {
     const event = await handle.db.execute(sql`SELECT outcome FROM idv_events WHERE reference_id = 'ref-review'`);
     expect((event.rows[0] as { outcome: string }).outcome).toBe("review");
     expect(reserveIdvCredit("ref-review")).toBe("no_ledger");
+  });
+
+  it("does not move needs review back to in progress", async () => {
+    const referenceId = "ref-review-late";
+    await insertIdvInquiry(handle.db, {
+      referenceId, shopId: DEMO.legalEntityId, branchId: DEMO.branchId, tellerId: "teller-a",
+      provider: "persona", providerRef: "inq_review_late",
+    });
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'needs review' WHERE reference_id = ${referenceId}`);
+    expect((await post("inquiry.created", "evt_review_late_created", referenceId, "inq_review_late")).statusCode).toBe(200);
+    expect((await post("inquiry.started", "evt_review_late_started", referenceId, "inq_review_late")).statusCode).toBe(200);
+    expect(await statusOf(referenceId)).toBe("needs review");
   });
 
   it("does not move a final status backwards or take the cap slot again", async () => {

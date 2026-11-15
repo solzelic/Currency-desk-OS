@@ -13,6 +13,8 @@ export type IdvResult = {
   outcome: IdvOutcome;
   /* Set by the adapter for created, started, and needs review. */
   inquiryStatus?: "in progress" | "needs review";
+  /* A watchlist event is acknowledged and not stored. */
+  ignore?: boolean;
 };
 
 export type IdvStart = {

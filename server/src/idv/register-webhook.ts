@@ -1,4 +1,6 @@
-/* One-time webhook registration.
+/* One-time webhook registration. Run it only in an interactive shell,
+   never as a job or a deploy step. If the output may have been kept,
+   rotate the secret.
    On staging the signing secret is printed on stdout once. It is not
    logged, written to a file, or sent onward.
    With --production the secret is written to the --secret-file path

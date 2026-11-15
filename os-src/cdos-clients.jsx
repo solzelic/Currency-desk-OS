@@ -1157,6 +1157,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {canEdit && checksOn && !passed && <button type="button" onClick={start} disabled={busy} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'transparent' }}>{busy ? 'Starting' : 'Start identity check'}</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
+      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details are not saved from this check yet.</div>
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>This line updates when the check changes. Persona's ID photo and selfie are not copied to this desk.</div>
     </div>);
   }
@@ -1369,7 +1370,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           <div className="mb-5">
-            {window.CDOS.KYC ? <window.CDOS.KYC.SubjectPanel name={name} kind={rec.kind || 'individual'} rec={rec} by={me && me.name} setClients={setClients} settings={settings} /> : null}
+            {window.CDOS.KYC ? <window.CDOS.KYC.SubjectPanel name={name} kind={rec.kind || 'individual'} rec={rec} clientId={rec && rec.clientId} by={me && me.name} setClients={setClients} settings={settings} /> : null}
           </div>
           {/* KPI strip */}
           <div className="grid grid-cols-4 gap-px mb-5" style={{ background: CD.line, border: `1px solid ${CD.line}`, borderRadius: 10, overflow: 'hidden' }}>

@@ -3,7 +3,7 @@
    Sandbox and production are the key prefix Persona documents
    (persona_sandbox, persona_production). A key with neither prefix
    follows the runtime: staging is sandbox. */
-import { isStagingRuntime } from "../../auth/staging-runtime.js";
+import { isProductionRuntime, isStagingRuntime } from "../../auth/staging-runtime.js";
 import type { IdvSettingsProvider } from "../provider.js";
 
 const TEMPLATE = /^(itmpl|itmplv|tmpl)_[A-Za-z0-9_-]{1,80}$/;
@@ -36,10 +36,16 @@ export function personaSharedKey(env: NodeJS.ProcessEnv): string {
   return (env[SHARED] ?? "").trim();
 }
 
-/* Staging accepts only a sandbox key. Any other runtime refuses a sandbox key. */
+/* Staging allows a sandbox key. Production allows a production key.
+   An unset or unknown runtime refuses both. A key with neither prefix
+   is not a Persona key, so the fixture key still runs there. */
 export function personaKeyMatchesRuntime(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  const sandbox = key.trim().startsWith("persona_sandbox");
-  return isStagingRuntime(undefined, env) ? sandbox : !sandbox;
+  const value = key.trim();
+  const sandbox = value.startsWith("persona_sandbox");
+  const production = value.startsWith("persona_production");
+  if (isStagingRuntime(undefined, env)) return sandbox;
+  if (isProductionRuntime(env)) return production;
+  return !sandbox && !production;
 }
 
 /* True only for a sandbox key, or a key with no Persona prefix on a staging runtime. */
