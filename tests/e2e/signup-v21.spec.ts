@@ -133,6 +133,84 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await expect(page.getByText("Okafor")).toHaveCount(0);
   });
 
+  test("password, the code, the PIN, every chapter, and signed", async ({ page, request }) => {
+    const email = `owner-${unique()}@synthetic.example`;
+    const shop = `Harbour Exchange ${unique()}`;
+    const { cdId } = await apply(request, email, shop);
+    await page.goto("/onboarding");
+    await toSignIn(page, cdId, cdId.replace(/-/g, "").toLowerCase());
+    /* nothing on this screen names the person */
+    await expect(page.getByText("Okafor")).toHaveCount(0);
+    await withPassword(page);
+    await proveInbox(page, request, email);
+    await choosePin(page);
+    /* nothing about the shop, the owner or their secrets is kept in this browser: only the typed ID, in this tab */
+    const kept = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.entries(sessionStorage) }));
+    expect(kept.local.filter((k) => k !== "cdSound")).toEqual([]);
+    expect(kept.session).toEqual([["cdSignupId", cdId]]);
+
+    /* chapter 2: the shop */
+    await press(page, /^That’s it/);
+    await card(page).locator("input:visible").last().fill("Harbour Foreign Exchange Inc.");
+    await press(page, /^Next/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Where’s the shop?")).toBeVisible();
+    await press(page, /by hand/i);
+    const at = (k: string) => card(page).locator(`input[data-k="${k}"]`);
+    await at("street").fill("77 Harbour St");
+    await at("unit").fill("204");
+    await at("postal").fill("M5J 2V2");
+    await at("city").fill("Toronto");
+    await at("region").fill("ON");
+    await press(page, /^Use this address/);
+    await expect(page.getByText("Just the one shop?")).toBeVisible();
+    await press(page, /^Just the one/);
+    await expect(page.getByText(/FINTRAC registration number/)).toBeVisible();
+    await press(page, /^Continue/);
+
+    /* chapter 3: the money */
+    await expect(page.getByText("The money.")).toBeVisible();
+    await press(page, /^Pick my currencies/);
+    await expect(page.getByText("Which currencies do you trade?")).toBeVisible();
+    await press(page, /^Continue/);
+    await expect(page.getByText("Count the vault.")).toBeVisible();
+    /* count the home currency by note: 400 × 100 */
+    await card(page).locator("input:visible").first().fill("400");
+    await expect(card(page).getByText("40,000 CAD").first()).toBeVisible();
+    await press(page, /^Done · next USD/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Your rates, online. Free.")).toBeVisible();
+    await press(page, /^Good. Now my rules/);
+
+    /* chapter 4: the rules */
+    await press(page, /^Set my rules/);
+    await expect(page.getByText(/compliance officer/i).first()).toBeVisible();
+    await press(page, /That’s me, Daniel Okafor/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("When should the desk ask for ID?")).toBeVisible();
+    await press(page, /^Use this line/);
+    await expect(page.getByText("Who else works the counter?")).toBeVisible();
+    await press(page, /It’s just me for now/);
+
+    /* chapter 5: sign it */
+    await expect(page.getByText("Confirm your desk.")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Harbour Foreign Exchange Inc", { exact: false }).first()).toBeVisible();
+    const confirmed = page.waitForResponse((r) => r.url().endsWith(`/api/onboarding/${cdId}/confirm`));
+    await card(page).getByRole("button", { name: /I confirm/ }).click();
+    await press(page, /^Confirm my desk/);
+    expect((await confirmed).status()).toBe(200);
+    /* what they saw is what the server holds, read back on their own enrolment session */
+    const held = (await (await page.request.get(`/api/onboarding/${cdId}/resume`)).json()) as { answers: Record<string, unknown>; pack: { code: string; regulator: string } };
+    expect(held.pack).toMatchObject({ code: "CA", regulator: "FINTRAC" });
+    expect(held.answers).toMatchObject({
+      operatingName: shop, bizName: "Harbour Foreign Exchange Inc.",
+      street: "77 Harbour St", unit: "204", city: "Toronto", region: "ON", postal: "M5J 2V2", addrManual: true,
+      complianceMode: "me", team: [],
+    });
+    expect((held.answers.count as Record<string, { mode: string; notes: Record<string, number> }>).CAD).toMatchObject({ mode: "notes", notes: { "100": 400 } });
+    await expect(page.getByText("Confirmed. Now, open it.")).toBeVisible();
+  });
+
   test("the code is wrong five times, then it is burnt; a 1234 PIN is refused", async ({ page, request }) => {
     const email = `owner-${unique()}@synthetic.example`;
     const { cdId } = await apply(request, email, `Harbour Exchange ${unique()}`);
@@ -172,6 +250,23 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     expect((await verified).status()).toBe(200);
     await proveInbox(page, request, email);
     await expect(page.getByText("Now, your PIN.", { exact: false })).toBeVisible();
+  });
+
+  test("a reload comes back where they stopped", async ({ page, request }) => {
+    const email = `owner-${unique()}@synthetic.example`;
+    const { cdId } = await apply(request, email, `Harbour Exchange ${unique()}`);
+    await page.goto("/onboarding");
+    await toSignIn(page, cdId);
+    await withPassword(page);
+    await proveInbox(page, request, email);
+    await choosePin(page);
+    await press(page, /^That’s it/);
+    await card(page).locator("input:visible").last().fill("Harbour Foreign Exchange Inc.");
+    await press(page, /^Next/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Where’s the shop?")).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Where’s the shop?")).toBeVisible({ timeout: 15_000 });
   });
 
   test("lost ID: the answer is the same whatever the email", async ({ page }) => {
