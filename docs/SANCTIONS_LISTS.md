@@ -9,6 +9,10 @@ The score threshold defaults to 0.92 in `SCORE_THRESHOLD_PLACEHOLDER`. That
 number is a placeholder pending Compliance Officer sign-off. It is not final.
 `signed_off` stays false until that sign-off is recorded.
 
+A date of birth rules a name out only when both sides have a full day and
+none of those days are the same. A missing date, a year-only date, or a
+match on any one of several listed days stays a possible match.
+
 ## Global Affairs Canada
 
 Consolidated Canadian Autonomous Sanctions List (SEMA and JVCFOA), official XML:

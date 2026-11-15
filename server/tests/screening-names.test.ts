@@ -4,6 +4,7 @@ import {
   SCORE_THRESHOLD_PLACEHOLDER,
   THRESHOLD_SIGNOFF,
   dobAgrees,
+  dobConflict,
   normalizeName,
   parseDobField,
   scoreNames,
@@ -33,8 +34,17 @@ describe("name normalisation and matching", () => {
     expect(hit?.score).toBe(1);
   });
 
-  it("does not match when the date of birth disagrees", () => {
+  it("rules a match out only when full dates conflict", () => {
     expect(bestMatch({ name: "Sergei Yepikhov", dob: "1970-01-02" }, [listed], SCORE_THRESHOLD_PLACEHOLDER)).toBeNull();
+    expect(dobConflict("1970-01-02", listed.dobs)).toBe(true);
+    expect(bestMatch({ name: "Sergei Yepikhov" }, [listed], SCORE_THRESHOLD_PLACEHOLDER)?.score).toBe(1);
+    const yearOnly: ListEntry = { ...listed, dobs: parseDobField("1970") };
+    expect(dobConflict("1966-05-16", yearOnly.dobs)).toBe(false);
+    expect(bestMatch({ name: "Sergei Yepikhov", dob: "1966-05-16" }, [yearOnly], SCORE_THRESHOLD_PLACEHOLDER)?.score).toBe(1);
+    const several: ListEntry = { ...listed, dobs: parseDobField("1972-08-26 or 1974-05-31") };
+    expect(dobConflict("1974-05-31", several.dobs)).toBe(false);
+    expect(bestMatch({ name: "Sergei Yepikhov", dob: "1974-05-31" }, [several], SCORE_THRESHOLD_PLACEHOLDER)?.score).toBe(1);
+    expect(bestMatch({ name: "Sergei Yepikhov", dob: "1980-01-01" }, [several], SCORE_THRESHOLD_PLACEHOLDER)).toBeNull();
   });
 
   it("keeps a name match when only one side has a date of birth", () => {

@@ -1,4 +1,4 @@
-import { dobAgrees, scoreNames, type DobConstraint } from "./names.js";
+import { dobConflict, scoreNames, type DobConstraint } from "./names.js";
 
 export type ListEntry = {
   key: string;
@@ -28,7 +28,7 @@ export function bestMatch(
         matchedName = name;
       }
     }
-    if (dobAgrees(subject.dob, entry.dobs) === false) top = 0;
+    if (dobConflict(subject.dob, entry.dobs)) top = 0;
     if (top >= threshold && (!best || top > best.score)) best = { score: top, entry, matchedName };
   }
   return best;

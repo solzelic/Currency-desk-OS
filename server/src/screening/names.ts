@@ -112,3 +112,14 @@ export function dobAgrees(subjectDob: string | null | undefined, constraints: re
     return dob.startsWith(item.value);
   });
 }
+
+/** A full date on both sides, and none of those days are the same.
+    A missing date, a year-only date, or any one matching day is not a conflict. */
+export function dobConflict(subjectDob: string | null | undefined, constraints: readonly DobConstraint[]): boolean {
+  if (!subjectDob || !constraints.length) return false;
+  const dob = subjectDob.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
+  const full = constraints.filter((item) => item.kind === "date");
+  if (!full.length) return false;
+  return !full.some((item) => item.value === dob);
+}
