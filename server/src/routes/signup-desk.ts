@@ -21,6 +21,7 @@ import { enrolmentFor } from "../onboarding/email-code.js";
 import { loadAccount, withSignupAccount, sha256, type Account } from "../onboarding/signup-account.js";
 import { checkPin, savePin } from "../onboarding/signup-pin.js";
 import { answersBody, parseAnswers, resumable } from "../onboarding/signup-answers.js";
+import { stopSignupCalls } from "../onboarding/signup-preferences.js";
 import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
@@ -159,6 +160,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const body = planBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
     if (r.account.state !== "verified") return reply.code(409).send({ error: "not_verified" });
+    if (!body.data.extras.call) await stopSignupCalls(db, r.row.id);
     if (!(await stillConfirmed(db, r.row.id))) return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
     const details = r.row.details ?? {};
     if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") return reply.code(409).send({ error: "billing_country_unavailable" });

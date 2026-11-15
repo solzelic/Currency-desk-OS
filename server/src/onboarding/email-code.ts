@@ -26,7 +26,7 @@ import { codeMatches, hashCode, makeCode, sendEmail, type EmailStatus } from "..
 import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { CODE_TTL_MS, MAX_CODE_ATTEMPTS } from "./verify.js";
-import { sha256, withSignupAccount } from "./signup-account.js";
+import { sha256, withSignupAccount, signupReservationMatches } from "./signup-account.js";
 
 export const SENDS_PER_WINDOW = 3;
 export const SEND_WINDOW_MS = 15 * 60 * 1000;
@@ -54,7 +54,7 @@ export type SendResult = { sent: true; delivery: EmailStatus } | { sent: false; 
 /** Issue a fresh code (replacing any other) and send it to the email on file. */
 export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string, mail: Mailer = sendEmail, now = Date.now()): Promise<SendResult> {
   const prepared = await withSignupAccount(db, row.id, async (tx, account) => {
-    if (account.state !== "enrolling") return { sent: false, reason: "not_enrolling" } as const;
+    if (account.state !== "enrolling" || (row.cdId && !(await signupReservationMatches(tx, row.id, row.cdId)))) return { sent: false, reason: "not_enrolling" } as const;
     const recent = (account.codeSends ?? []).filter((t) => now - t < SEND_WINDOW_MS);
     if (recent.length >= SENDS_PER_WINDOW) {
       return { sent: false, reason: "too_soon", retryInMs: SEND_WINDOW_MS - (now - Math.min(...recent)) } as const;
@@ -77,8 +77,9 @@ export type VerifyResult =
   | { ok: true; token: string; expiresAt: Date }
   | { ok: false; status: 400 | 401 | 409 | 410 | 423; error: "no_candidate" | "no_code" | "wrong_code" | "expired" | "too_many_attempts" | "not_enrolling" };
 
-export async function verifySignupCode(db: Db, enquiryId: string, attemptHash: string, entered: string, now = Date.now()): Promise<VerifyResult> {
+export async function verifySignupCode(db: Db, enquiryId: string, attemptHash: string, entered: string, now = Date.now(), expectedCdId?: string): Promise<VerifyResult> {
   return withSignupAccount(db, enquiryId, async (db, account): Promise<VerifyResult> => {
+  if (expectedCdId && !(await signupReservationMatches(db, enquiryId, expectedCdId))) return { ok: false, status: 409, error: "not_enrolling" };
   if (!account || account.state !== "enrolling") return { ok: false, status: 409, error: "not_enrolling" };
   const candidate = (await db.select().from(schema.signupCredentials).where(and(
     eq(schema.signupCredentials.enquiryId, enquiryId), eq(schema.signupCredentials.attemptHash, attemptHash), isNull(schema.signupCredentials.verifiedAt),

@@ -64,6 +64,12 @@ export async function withSignupAccount<T>(db: Db, enquiryId: string, work: (tx:
   });
 }
 
+/** Caller holds the account lock shared with reissue. */
+export async function signupReservationMatches(db: Db, enquiryId: string, cdId: string): Promise<boolean> {
+  const row = (await db.select({ cdId: schema.enquiries.cdId }).from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
+  return row?.cdId === cdId;
+}
+
 /** Move the account, only from a state the table allows. True when it moved. */
 export async function advance(db: Db, enquiryId: string, to: SignupState): Promise<boolean> {
   const moved = await db
@@ -110,9 +116,9 @@ export type NewCredential = {
 
 /* Save a candidate credential and move reserved → enrolling. The caller has
    already checked the account is not past enrolling. */
-export async function saveCredential(db: Db, enquiryId: string, c: NewCredential): Promise<{ id: string; state: SignupState } | null> {
+export async function saveCredential(db: Db, enquiryId: string, c: NewCredential, expectedCdId?: string): Promise<{ id: string; state: SignupState } | null> {
   return withSignupAccount(db, enquiryId, async (db, account) => {
-  if (!takesCredential(account.state)) return null;
+  if (!takesCredential(account.state) || (expectedCdId && !(await signupReservationMatches(db, enquiryId, expectedCdId)))) return null;
   await db.delete(schema.signupCredentials).where(and(
     eq(schema.signupCredentials.enquiryId, enquiryId), eq(schema.signupCredentials.attemptHash, c.attemptHash), isNull(schema.signupCredentials.verifiedAt),
   ));

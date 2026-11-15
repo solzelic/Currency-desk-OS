@@ -260,6 +260,12 @@ export interface Provisioned {
    currency other than the book. A euro figure must not be stored as a
    dinar override: 2,500 would then mean 2,500 dinars, not 2,500 euro.
    The desk follows the pack, and a tighter dinar line is set later. */
+function missingOptionalTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && error.code === "42P01") return true;
+  return "cause" in error && error.cause !== error ? missingOptionalTable(error.cause) : false;
+}
+
 async function fxLineIsForeign(db: Db, packId: string, home: string): Promise<boolean> {
   try {
     const found = await db.transaction((tx) => tx.execute(
@@ -271,7 +277,8 @@ async function fxLineIsForeign(db: Db, packId: string, home: string): Promise<bo
       .toUpperCase();
     if (!currency) return false;
     return currency !== home.trim().toUpperCase();
-  } catch {
+  } catch (error) {
+    if (!missingOptionalTable(error)) throw error;
     return false;
   }
 }
@@ -293,7 +300,8 @@ async function idThresholdFromSetup(
     const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     const value = Number((rows[0] as { id_threshold?: unknown } | undefined)?.id_threshold);
     mandate = Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
+  } catch (error) {
+    if (!missingOptionalTable(error)) throw error;
     return null;
   }
   if (mandate === null || chosen >= mandate) return null;
@@ -489,7 +497,7 @@ export async function provisionDesk(
   await audit(db, {
     tenantId, legalEntityId, branchId, actorId: ownerId,
     action: "tenant.created",
-    detail: { via, slug, email: spec.email, plan: spec.plan, team: staffCreated },
+    detail: { via, slug, ...(via === "signup-v2.1" ? {} : { email: spec.email }), plan: spec.plan, team: staffCreated },
   });
 
   return { tenantId, legalEntityId, branchId, ownerId, slug, staffCreated };

@@ -26,7 +26,7 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount, isStagingDoorEnquiry } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
-import { issueCdId as issueApplicantCdId } from "../enquiries/cd-id.js";
+import { reissueSignupId } from "../onboarding/reissue-id.js";
 import { idTail } from "../onboarding/cd-id-door.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
@@ -765,17 +765,15 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
     if (row.status === "accepted") {
       return reply.code(409).send({ error: "already_open", detail: "Their desk is open. Reissue the ID from the staff record." });
     }
-    const was = row.cdId;
-    const d = (row.details ?? {}) as Record<string, unknown>;
-    const cdId = await issueApplicantCdId(db, [
-      String(d.shopName ?? ""), String(d.workspace ?? "").split(".")[0] ?? "", String(row.name ?? ""),
-    ]);
-    await db.update(schema.enquiries).set({ cdId }).where(eq(schema.enquiries.id, row.id));
+    const changed = await reissueSignupId(db, row.id, who.id);
+    if (!changed) return reply.code(409).send({ error: "already_open" });
+    const { cdId, was } = changed;
+    const d = changed.row.details ?? {};
     const message = cdIdEmail({ name: String(d.firstName ?? row.name ?? "Hello").replace(/[<>&"']/g, ""), cdId, replaced: true });
-    const email = await sendEmail(row.email, message.subject, { text: message.text, html: message.html });
+    const email = await sendEmail(row.email, message.subject, { text: message.text, html: message.html, sensitive: true });
     await audit(db, {
       tenantId: row.tenantId ?? PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
-      action: "cd_id.reissued", detail: { enquiryId: row.id, was: idTail(was), now: idTail(cdId), delivery: email },
+      action: "cd_id.reissue_delivery", detail: { enquiryId: row.id, delivery: email },
     });
     return { ok: true, id: idTail(cdId), was: idTail(was), email };
   });

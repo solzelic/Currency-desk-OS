@@ -16,7 +16,7 @@
    wrong guess is rate-limited hard, so it cannot be walked. Only an
    application we have actually invited will open.
    ============================================================ */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
@@ -40,7 +40,7 @@ import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "./signup-credential.js";
 import { ownerDetails, registerSignupEmailRoutes } from "./signup-email.js";
-import { registerSignupDeskRoutes } from "./signup-desk.js";
+import { registerSignupDeskRoutes, enrolledGuard } from "./signup-desk.js";
 import { enrolmentFor } from "../onboarding/email-code.js";
 import { loadAccount } from "../onboarding/signup-account.js";
 import {
@@ -203,6 +203,12 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   registerCredentialRoutes(app, db, door);
   registerSignupEmailRoutes(app, db, door);
   registerSignupDeskRoutes(app, db, door);
+
+  const enrolledForPlaces = enrolledGuard(db, door);
+  async function placesApplicant(req: FastifyRequest<{ Params: { ref: string } }>, reply: FastifyReply) {
+    if (normalizeCdIdInput(req.params.ref) && !(await referenceExists(req.params.ref))) return (await enrolledForPlaces(req, reply))?.row;
+    return gateFor(req.params.ref, req.ip, reply);
+  }
 
   /* "Can't find your ID? Send it again." Always 202, whatever the email,
      before any lookup happens (SIGNUP-LOGIC §2.1). */
@@ -516,7 +522,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   app.get<{ Params: { ref: string }; Querystring: { q?: string; country?: string; s?: string } }>(
     "/api/onboarding/:ref/places/suggest",
     async (req, reply) => {
-      const a = await gateFor(req.params.ref, req.ip, reply);
+      const a = await placesApplicant(req, reply);
       if (!a) return;
       if (!placesEnabled()) return { enabled: false, suggestions: [] };
       /* A busy typist is one person; a script is not. Generous enough that
@@ -524,16 +530,17 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       if (!allow("places:" + a.reference, 400)) return { enabled: true, suggestions: [] };
       const q = String(req.query.q ?? "").slice(0, 200);
       const session = String(req.query.s ?? "").slice(0, 64);
-      return { enabled: true, suggestions: await suggest(q, req.query.country, session) };
+      return { enabled: true, suggestions: await suggest(q, a.cdId ? (typeof a.details?.jurisdiction === "string" ? a.details.jurisdiction : undefined) : req.query.country, session) };
     },
   );
 
   app.get<{ Params: { ref: string }; Querystring: { id?: string; s?: string } }>(
     "/api/onboarding/:ref/places/details",
     async (req, reply) => {
-      const a = await gateFor(req.params.ref, req.ip, reply);
+      const a = await placesApplicant(req, reply);
       if (!a) return;
-      const id = String(req.query.id ?? "");
+      if (!allow("places:" + a.reference, 400)) return reply.code(429).send({ error: "slow_down" });
+      const id = String(req.query.id ?? "").slice(0, 512);
       if (!id) return reply.code(400).send({ error: "invalid_request" });
       const address = await details(id, String(req.query.s ?? "").slice(0, 64));
       if (!address) return reply.code(502).send({ error: "lookup_failed", detail: "We couldn't read that address — type it in instead." });

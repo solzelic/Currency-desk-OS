@@ -67,6 +67,10 @@ export class Throttle {
   /** Count one event. True when this event reached the limit. */
   hit(key: string): boolean {
     const t = this.now();
+    if (this.hits.size > 10_000) {
+      for (const [key, times] of this.hits) if (!times.some(at => t - at < this.windowMs)) { this.hits.delete(key); this.lockedUntil.delete(key); }
+      if (this.hits.size > 10_000) return true; // bounded memory; refuse new work under saturation
+    }
     const recent = (this.hits.get(key) ?? []).filter((at) => t - at < this.windowMs);
     recent.push(t);
     this.hits.set(key, recent);
@@ -81,6 +85,10 @@ export class Throttle {
   take(key: string): boolean {
     if (this.locked(key)) return false;
     const t = this.now();
+    if (this.hits.size > 10_000) {
+      for (const [key, times] of this.hits) if (!times.some(at => t - at < this.windowMs)) { this.hits.delete(key); this.lockedUntil.delete(key); }
+      if (this.hits.size > 10_000) return false;
+    }
     const recent = (this.hits.get(key) ?? []).filter((at) => t - at < this.windowMs);
     if (recent.length >= this.max) return false;
     recent.push(t);
@@ -153,6 +161,9 @@ export function createIdDoor(deps: DoorDeps) {
   const missesByConnection = new Throttle(MISS_LIMIT, MISS_WINDOW_MS, LOCK_MS, now);
   const resendByEmail = new Throttle(RESEND_PER_EMAIL, RESEND_WINDOW_MS, 0, now);
   const resendByConnection = new Throttle(RESEND_PER_CONNECTION, RESEND_WINDOW_MS, 0, now);
+  const credentialById = new Throttle(12, MISS_WINDOW_MS, 0, now);
+  const credentialByConnection = new Throttle(30, MISS_WINDOW_MS, 0, now);
+  const takeCredential = (id: string, connection: string): boolean => credentialByConnection.take(connection) && credentialById.take(id);
   const send = deps.send ?? ((to, m) => sendEmail(to, m.subject, { text: m.text, html: m.html, sensitive: true }));
   const logRefusal = deps.logRefusal ?? ((r: Refusal) =>
     console.warn(`[onboarding refused] ${r.reason} id=${r.id} connection=${emailHash(r.connection)}`));
@@ -236,10 +247,10 @@ export function createIdDoor(deps: DoorDeps) {
   const closed = (cdId: string, connection: string): boolean => missesById.locked(cdId) || missesByConnection.locked(connection);
 
   function reset(): void {
-    for (const t of [missesById, missesByConnection, resendByEmail, resendByConnection]) t.clear();
+    for (const t of [missesById, missesByConnection, resendByEmail, resendByConnection, credentialById, credentialByConnection]) t.clear();
   }
 
-  return { state, resend, reset, findByCdId, fail, closed, logRefusal };
+  return { state, resend, reset, findByCdId, fail, closed, logRefusal, takeCredential };
 }
 
 export type IdDoor = ReturnType<typeof createIdDoor>;

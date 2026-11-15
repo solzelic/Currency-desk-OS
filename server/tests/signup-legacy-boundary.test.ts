@@ -4,6 +4,8 @@ import { Writable } from "node:stream";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
 import { resetIdDoor } from "../src/routes/onboarding-public.js";
+import { loadAccount, sha256 } from "../src/onboarding/signup-account.js";
+import { eq } from "drizzle-orm";
 import { hashCode, sendEmail } from "../src/email.js";
 let handle: DbHandle;
 let app: Awaited<ReturnType<typeof buildApp>>;
@@ -48,4 +50,15 @@ it("sensitive email never simulates a secret in logs", async () => {
   expect(result).toBe("failed");
   expect(spy).not.toHaveBeenCalled();
   spy.mockRestore();
+});
+
+it("v2.1 address lookup requires the reservation's enrolment session", async () => {
+  const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, reference)))[0]!;
+  await loadAccount(handle.db, row.id);
+  await handle.db.update(schema.signupAccounts).set({ state: "verified" }).where(eq(schema.signupAccounts.enquiryId, row.id));
+  const token = "a".repeat(43);
+  await handle.db.insert(schema.enrolmentSessions).values({ tokenHash: sha256(token), enquiryId: row.id, expiresAt: new Date(Date.now() + 60000) });
+  const url = "/api/onboarding/CD-YORK-7K42/places/suggest?q=Toronto";
+  expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+  expect((await app.inject({ method: "GET", url, cookies: { cd_enrol: token } })).statusCode).toBe(200);
 });
