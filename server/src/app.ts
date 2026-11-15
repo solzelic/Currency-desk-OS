@@ -178,6 +178,11 @@ const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   return accept.includes("text/html");
 };
 
+/** A CurrencyDesk ID anywhere in a string, typed with or without hyphens,
+    reduced to its last four characters. */
+export const maskCdIds = (text: string): string =>
+  String(text ?? "").replace(/CD(?:-|\s|%20)*[A-Z]{4}(?:-|\s|%20)*[2-9A-HJKMNP-Z]{4}(?![A-Z0-9])/gi, (m) => `CD-…${m.slice(-4)}`);
+
 /* logStream lets a test read app.log. Production omits it, and Fastify
    keeps the logger it uses for every other warning. */
 export async function buildApp(
@@ -187,7 +192,21 @@ export async function buildApp(
   idv?: IdvRouteOptions,
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: logStream ? { stream: logStream } : process.env.NODE_ENV !== "test",
+    logger: process.env.NODE_ENV === "test" && !logStream ? false : {
+      ...(logStream ? { stream: logStream } : {}),
+      /* The request line carries a typed CurrencyDesk ID in its path
+         (/api/onboarding/CD-YORK-7K42/state). Logs keep its last four
+         characters only (standards §6, sign-up build doc §9.8). */
+      serializers: {
+        req: (req: { method: string; url: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) => ({
+          method: req.method,
+          url: maskCdIds(req.url),
+          host: req.hostname,
+          remoteAddress: req.ip,
+          remotePort: req.socket?.remotePort,
+        }),
+      },
+    },
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
   });

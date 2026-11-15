@@ -24,6 +24,8 @@ export type EmailStatus = "sent" | "simulated" | "failed";
 export const replyToAddress = (): string | undefined =>
   process.env.REPLY_TO?.trim() || undefined;
 
+export const EMAIL_TIMEOUT_MS = 10_000;
+
 export async function sendEmail(
   to: string,
   subject: string,
@@ -48,6 +50,9 @@ export async function sendEmail(
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      /* Every external call has a timeout (standards §5.5). A hung send is
+         reported as failed, the same as a refused one. */
+      signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
       body: JSON.stringify({
         from, to, subject, text: body.text, html: body.html,
         ...(body.replyTo ? { reply_to: body.replyTo } : {}),

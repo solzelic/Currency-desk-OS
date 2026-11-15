@@ -35,6 +35,9 @@ import {
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
+import { clientIp } from "../auth/client-ip.js";
+import { normalizeCdIdInput } from "../enquiries/cd-id.js";
+import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
   setVerifyState, verifyStateOf, type VerifyState,
@@ -182,7 +185,26 @@ function forgiveMisses(ip: string): void {
   misses.delete(ip);
 }
 
+/* Sign-up v2.1's front door (onboarding/cd-id-door.ts). Module-level so a
+   test can reset its counters between cases. */
+let idDoor: IdDoor | undefined;
+export const resetIdDoor = (): void => idDoor?.reset();
+
+const signUpUrl = (): string =>
+  `${(process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "")}/onboarding`;
+
 export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): void {
+  const door = (idDoor = createIdDoor({ db }));
+
+  /* "Can't find your ID? Send it again." Always 202, whatever the email,
+     before any lookup happens (SIGNUP-LOGIC §2.1). */
+  app.post("/api/onboarding/resend-id", async (req, reply) => {
+    const parsed = resendBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "Type the email you applied with." });
+    void door.resend(parsed.data.email, clientIp(req), signUpUrl());
+    return reply.code(202).send({ ok: true });
+  });
+
   /* Only an invited application opens. An application still being read, or
      one we turned down, is not a door — and the answer is the same either
      way so the code cannot be used to find out which. */
@@ -220,6 +242,11 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       detail: "We don't recognise that code. Check the email we sent you.",
     });
     return undefined;
+  }
+
+  async function referenceExists(ref: string): Promise<boolean> {
+    const rows = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
+    return rows.length > 0;
   }
 
   async function find(ref: string, ip?: string) {
@@ -366,6 +393,15 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
      surfaces slowly stopped agreeing about what a desk had. Rows written
      before that are still read below, once, and then written back flat. */
   app.get<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
+    /* A CurrencyDesk ID (10 characters once compacted) is sign-up v2.1:
+       the shop's name and nothing else. A setup reference (8) is the
+       older page below, unchanged. A hand-made reference can share the
+       shape (the walkthrough's CD-WALKTHRU compacts to 10), so a reference
+       that exists always means the older page. */
+    if (normalizeCdIdInput(req.params.ref) && !(await referenceExists(req.params.ref))) {
+      const answer = await door.state(req.params.ref, clientIp(req));
+      return reply.code(answer.status).send(answer.body);
+    }
     const a = await gateFor(req.params.ref, req.ip, reply);
     if (!a) return;
     const row = await loadOrCreate(a.id);

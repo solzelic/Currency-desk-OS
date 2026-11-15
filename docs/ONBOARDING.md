@@ -168,3 +168,15 @@ its `tenantId` is still null and its status still `invited`.
 - Once the desk exists, `PUT /state` answers 409. The page keeps autosaving
   for a moment afterwards; the server refusing to overwrite a finished
   onboarding is the correct end of that conversation.
+
+## Sign-up v2.1: the CurrencyDesk ID door (PR 1 of 8)
+
+The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, not on the setup reference. Both doors live side by side until the v2.1 page replaces the older one.
+
+- `GET /api/onboarding/:id/state` with an ID gives `{ valid, operatingName, state }` and nothing more. The ID identifies the reservation; it does not authenticate. The credential, the email code and the PIN do that (later PRs).
+- Which door answers: a value that compacts to `CD` + 4 letters + 4 characters from the ID alphabet is an ID, unless a setup reference with that exact text exists, which keeps the older page.
+- Misses: per ID and per connection, 10 in 15 minutes, then 15 minutes closed. In memory, so the counts reset on restart and are per instance.
+- `POST /api/onboarding/resend-id`: always 202; the lookup and the send run after the reply.
+- Reissue is a platform action (`POST /api/admin/enquiries/:id/reissue-cd-id`); the old ID stops matching at once.
+- Logs: IDs as their last four characters, emails as a 16-character SHA-256 prefix.
+

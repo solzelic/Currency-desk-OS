@@ -130,8 +130,10 @@ describe("fresh onboarding", () => {
       const savedRow = (await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, row!.id)))[0];
       expect((savedRow?.answers as Record<string, unknown>).cdId).toBeUndefined();
       expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } })).json().data.cdId).toBe(body.cdId);
-      /* the ID is theirs to show and quote, so it is not a key: it does not open setup */
-      expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.cdId + "/state", headers: { host: STAGING_HOST } })).statusCode).toBe(404);
+      /* sign-up v2.1: the ID identifies the reservation and says only the shop's name (SIGNUP-LOGIC §2.1) */
+      const typed = await app.inject({ method: "GET", url: "/api/onboarding/" + body.cdId + "/state", headers: { host: STAGING_HOST } });
+      expect(typed.statusCode).toBe(200);
+      expect(Object.keys(typed.json()).sort()).toEqual(["operatingName", "state", "valid"]);
 
       await app.inject({
         method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST },
