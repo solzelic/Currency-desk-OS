@@ -45,3 +45,17 @@ export async function findStaffForLogin(db: Db, staffId: string, tenantId: strin
   const anywhere = await db.select().from(schema.staffUsers).where(sameStaffId(staffId)).limit(2);
   return anywhere.length === 1 ? anywhere[0] : undefined;
 }
+
+/* One lookup for the ID step. The route treats an inactive row as a miss,
+   and this function does not do a second query that only one of those two
+   paths would take. Two matches is a miss, the same as an ambiguous name. */
+export async function lookupSignInId(db: Db, staffId: string) {
+  const typed = staffId.trim();
+  if (!typed) return undefined;
+  if (looksLikeCdId(typed)) {
+    const rows = await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.cdId, normalizeCdId(typed))).limit(2);
+    return rows.length === 1 ? rows[0] : undefined;
+  }
+  const rows = await db.select().from(schema.staffUsers).where(sameStaffId(typed)).limit(2);
+  return rows.length === 1 ? rows[0] : undefined;
+}

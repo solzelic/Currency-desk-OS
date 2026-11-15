@@ -19,7 +19,7 @@
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
 import type { FastifyInstance } from "fastify";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
@@ -32,7 +32,7 @@ import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { stagingTestShop } from "../staging/pin-reset.js";
 import { audit } from "../audit.js";
-import { findStaffForLogin, isEmail } from "../auth/login-user.js";
+import { findStaffForLogin, isEmail, lookupSignInId } from "../auth/login-user.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import pg from "pg";
@@ -184,6 +184,36 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     return { status: 401 as const, body: { error: "invalid_credentials" as const } };
   }
 
+  /* The CurrencyDesk ID step. An inactive id is not a person we will name:
+     one query, then the same miss an unknown id gets. No second read, no
+     audit, no name, no role. */
+  const idBody = z.object({ staffId: z.string().min(1).max(120) });
+  const idMiss = { error: "not_found" as const };
+  app.post("/api/auth/id", async (req, reply) => {
+    const parsed = idBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const found = await lookupSignInId(db, parsed.data.staffId);
+    if (!found || !found.active) return reply.code(404).send(idMiss);
+    return { name: found.name, role: found.role };
+  });
+
+  /* Who the account menu may offer. Inactive staff are not in it. The
+     Employees list is GET /api/staff and still includes them. */
+  app.get("/api/auth/colleagues", async (req, reply) => {
+    const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
+    if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    const rows = await db
+      .select({
+        staffId: schema.staffUsers.staffId,
+        name: schema.staffUsers.name,
+        role: schema.staffUsers.role,
+      })
+      .from(schema.staffUsers)
+      .where(and(eq(schema.staffUsers.tenantId, who.tenantId), eq(schema.staffUsers.active, true)))
+      .orderBy(asc(schema.staffUsers.name), asc(schema.staffUsers.staffId));
+    return { staff: rows };
+  });
+
   app.post("/api/auth/login", async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
     if (!parsed.success) {
@@ -192,7 +222,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const { staffId, password } = parsed.data;
     const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
 
-    const user = await findStaffForLogin(db, staffId, tenantId, { anywhere: !parsed.data.tenantId });
+    const found = await findStaffForLogin(db, staffId, tenantId, { anywhere: !parsed.data.tenantId });
+    const user = found?.active ? found : undefined;
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,
@@ -295,7 +326,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const { staffId, password } = parsed.data;
     const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
-    const user = await findLoginUser(staffId, tenantId, !parsed.data.tenantId);
+    const found = await findLoginUser(staffId, tenantId, !parsed.data.tenantId);
+    const user = found?.active ? found : undefined;
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,

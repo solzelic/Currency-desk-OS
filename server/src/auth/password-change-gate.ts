@@ -28,6 +28,7 @@ const OPEN = new Set([
   "POST /api/auth/change-password",
   "POST /api/auth/logout",
   "POST /api/auth/login",
+  "POST /api/auth/id",
   "POST /api/auth/login/start",
   "POST /api/auth/login/verify",
   "POST /api/auth/forgot",

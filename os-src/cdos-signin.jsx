@@ -10,7 +10,7 @@
    Tokens mirror the design exactly (ink #17140F, primary #1D6B45, …).
    ============================================================ */
 (function () {
-  const { useState, useEffect, useRef, useMemo } = React;
+  const { useState, useEffect, useRef } = React;
 
   // design tokens → CSS vars, scoped to the sign-in surface
   const VARS = {
@@ -182,9 +182,36 @@
       : !lockUntil ? 'Too many tries. Try again in a few minutes.'
       : 'Too many tries. Try again at ' + lockUntil + '.';
     const dir = (employees || []).filter(e => e.active !== false);
-    // recognise the typed ID against the local directory (by code, then name)
     const resolve = (raw) => { const q = (raw || '').trim().toLowerCase(); return dir.find(e => (e.code || '').toLowerCase() === q) || dir.find(e => e.name.toLowerCase() === q) || null; };
-    const known = useMemo(() => resolve(idInput), [idInput, dir]);
+    const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
+    /* The server names an active id. An inactive id and an unknown id are
+       the same answer, so neither gets a name or a role on this screen.
+       The saved directory is only for a desk the server cannot answer. */
+    const [ident, setIdent] = useState(null);
+    useEffect(() => {
+      const q = idInput.trim();
+      if (q.length < 3) { setIdent(null); return undefined; }
+      let live = true;
+      const timer = setTimeout(() => {
+        fetch('/api/auth/id', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ staffId: q }),
+        }).then(async (res) => {
+          if (!live) return;
+          const data = res.ok ? await res.json().catch(() => null) : null;
+          if (!data || typeof data.name !== 'string' || !data.name) { setIdent({ q: q.toLowerCase(), person: null }); return; }
+          const local = resolve(q);
+          const role = SRV2OS[data.role] || (local && local.role) || 'Teller';
+          setIdent({ q: q.toLowerCase(), person: local ? { ...local, name: data.name, role } : { name: data.name, role, code: q } });
+        }).catch(() => {
+          if (!live) return;
+          const local = resolve(q);
+          setIdent({ q: q.toLowerCase(), person: local ? { name: local.name, role: local.role, code: local.code || q } : null });
+        });
+      }, 160);
+      return () => { live = false; clearTimeout(timer); };
+    }, [idInput]);
+    const known = ident && ident.q === idInput.trim().toLowerCase() ? ident.person : null;
     /* EXAMPLES ARE ONLY EVER THIS DESK'S PEOPLE.
 
        A browser that has never signed in here carries the rehearsal desk's
@@ -246,8 +273,7 @@
       }
     }
 
-    const SRV2OS = { administrator: 'Owner', branch_manager: 'Manager', supervisor: 'Senior teller', compliance_officer: 'Manager', teller: 'Cashier', auditor: 'Trainee' };
-    const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Cashier', active: true, branches: [], home: null, _adopted: true };
+    const adopt = (u, rec) => rec || { id: 'e_' + Date.now(), code: u.id, name: u.name || u.id, role: SRV2OS[u.role] || 'Teller', active: true, branches: [], home: null, _adopted: true };
     /* The prototype remains useful as a file/localhost demo, but a deployed
        desk must never look signed in when its API is unavailable. In the live
        product the server session is the identity, not browser state. */
@@ -522,9 +548,16 @@
       };
       return shell(card(<form onSubmit={submitPassword}>
         <div style={{ display: 'grid', placeItems: 'center', marginBottom: 12 }}>
-          <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--si-ink)', color: '#fff', display: 'grid', placeItems: 'center', fontFamily: MONO, fontSize: 19, fontWeight: 700 }}>{initialsOf(known ? known.name : idInput)}</div>
+          <div data-signin-avatar={displayName ? 'initials' : 'person'} aria-label={displayName ? undefined : 'Person'} style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--si-ink)', color: '#fff', display: 'grid', placeItems: 'center', fontFamily: MONO, fontSize: 19, fontWeight: 700 }}>
+            {displayName ? initialsOf(known.name) : (
+              <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="3.2" />
+                <path d="M6.2 18.5v-1.2a3.8 3.8 0 0 1 3.8-3.8h4a3.8 3.8 0 0 1 3.8 3.8v1.2" />
+              </svg>
+            )}
+          </div>
         </div>
-        <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{displayName ? 'Welcome back, ' + displayName : 'Welcome back'}</h1>
+        <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{displayName ? 'Welcome back, ' + displayName : 'Enter your password'}</h1>
         <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--si-mute)', marginBottom: 18 }}>
           <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px', background: 'none', border: 'none', color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
         </div>
