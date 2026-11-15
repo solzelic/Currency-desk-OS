@@ -108,6 +108,8 @@ export const migrations: readonly Migration[] = [
   ["075_signup_accounts", "src/db/migrations/075_signup_accounts.sql"],
   /* 076 is sign-up v2.1's email code and enrolment session. */
   ["076_signup_email_code", "src/db/migrations/076_signup_email_code.sql"],
+  /* 077 is sign-up v2.1's counter PIN, hashed. */
+  ["077_signup_pin", "src/db/migrations/077_signup_pin.sql"],
 ] as const;
 
 type MigrationReader = {
