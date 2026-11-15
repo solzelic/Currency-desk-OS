@@ -206,6 +206,32 @@ describe("sandbox start-check", () => {
     expect(empty.json()).toEqual({ status: null });
   });
 
+  it("reads the client from the ledger connection when that is where the file lives", async () => {
+    const seen: string[] = [];
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: ENV,
+      fetch: fetchStub,
+      sleep: async () => {},
+      clients: {
+        query: async (text, values) => {
+          seen.push(String(values[0]));
+          return { rowCount: text.includes("desk_clients") && values[0] === "cli_ledger" ? 1 : 0 };
+        },
+      },
+    });
+    try {
+      await enable(DEMO.legalEntityId, true);
+      const missing = await local.inject({ method: "GET", url: "/api/idv/clients/cli_missing", cookies: cookies.a });
+      expect(missing.statusCode).toBe(404);
+      const found = await local.inject({ method: "GET", url: "/api/idv/clients/cli_ledger", cookies: cookies.a });
+      expect(found.statusCode, found.body).toBe(200);
+      expect(found.json()).toEqual({ status: null });
+      expect(seen).toEqual(["cli_missing", "cli_ledger"]);
+    } finally {
+      await local.close();
+    }
+  });
+
   it("refuses a shop that is already at the cap", async () => {
     await enable(B.legalEntityId, true);
     for (let i = 0; i < 5; i += 1) {

@@ -1,6 +1,6 @@
 /* Webhook providers and start providers. The route asks this map.
    Provider names and env vars stay in the adapter. */
-import type { IdvProvider } from "./provider.js";
+import type { ClientLookup, IdvProvider } from "./provider.js";
 import { personaConnection } from "./providers/persona.js";
 import { createPersonaProvider, startPersonaCheck } from "./providers/persona/index.js";
 
@@ -13,6 +13,7 @@ export type IdvRouteOptions = {
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   cap?: number;
+  clients?: ClientLookup;
 };
 
 export function webhookProviders(options?: IdvRouteOptions): Record<string, IdvProvider | null> {

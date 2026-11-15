@@ -82,7 +82,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       shopCode: await shopEnvCodeFor(db, who.tenantId),
     };
     if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
-    if (clientId && !await clientOnShop(db, who.legalEntityId, clientId)) {
+    if (clientId && !await clientOnShop(db, who.legalEntityId, clientId, options?.clients)) {
       return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
     }
     const referenceId = randomBytes(18).toString("base64url");
@@ -109,7 +109,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const clientId = req.params.clientId.trim();
-    if (!clientId || !await clientOnShop(db, who.legalEntityId, clientId)) {
+    if (!clientId || !await clientOnShop(db, who.legalEntityId, clientId, options?.clients)) {
       return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
     }
     return { status: await latestClientIdvStatus(db, who.legalEntityId, clientId) };

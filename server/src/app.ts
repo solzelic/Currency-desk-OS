@@ -7,6 +7,7 @@
    so session cookies work with no CORS configuration.
    ============================================================ */
 import Fastify, { type FastifyInstance } from "fastify";
+import pg from "pg";
 import cookie from "@fastify/cookie";
 import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
@@ -278,7 +279,17 @@ export async function buildApp(
   registerAdminRoutes(app, db);
   registerAdminMfaRoutes(app, db);
   registerGrowthRoutes(app, db, growth);
-  registerIdvRoutes(app, db, idv);
+  const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
+  /* Client files are on the ledger connection when that database is separate
+     from the app database. The sweep and a local ledger URL are that case. */
+  const clients = idv?.clients ?? (ledgerDatabaseUrl
+    ? new pg.Pool({ connectionString: ledgerDatabaseUrl, max: 2 })
+    : undefined);
+  if (clients && clients !== idv?.clients) {
+    const pool = clients as pg.Pool;
+    app.addHook("onClose", async () => { await pool.end(); });
+  }
+  registerIdvRoutes(app, db, { ...idv, clients });
   /* There used to be a second, staff-side copy of the whole setup flow —
      sixteen steps an operator could fill in on somebody's behalf. It is
      gone. Setting a desk up is the customer's job on the link we email
@@ -291,7 +302,6 @@ export async function buildApp(
   registerBillingRoutes(app, db);
   /* Per-shop identity-verification settings. Off until an owner turns them on. */
   registerIdvShopConfigRoutes(app, db);
-  const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   if (ledgerDatabaseUrl) {
     registerLedgerRoutes(app, db, ledgerDatabaseUrl);
     registerQuoteRoutes(app, db, ledgerDatabaseUrl);

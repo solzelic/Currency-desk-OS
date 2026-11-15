@@ -27,6 +27,11 @@ export type IdvStart = {
   shopCode?: string;
 };
 
+/* The ledger connection, when client files live there rather than on the app database. */
+export type ClientLookup = {
+  query(text: string, values: readonly unknown[]): Promise<{ rowCount?: number | null }>;
+};
+
 export type IdvWebhookInput = {
   rawBody: Buffer;
   headers: Record<string, string | string[] | undefined>;

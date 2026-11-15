@@ -1,7 +1,7 @@
 /* Provider-neutral inquiry map. Shop, branch, and teller come from this table. */
 import { sql } from "drizzle-orm";
 import type { Db } from "../db/index.js";
-import type { IdvResult } from "./provider.js";
+import type { ClientLookup, IdvResult } from "./provider.js";
 
 export type IdvInquiry = {
   referenceId: string; shopId: string; branchId: string; tellerId: string; provider: string; providerRef: string;
@@ -15,7 +15,14 @@ export async function insertIdvInquiry(db: Db, row: IdvInquiry): Promise<void> {
   `);
 }
 
-export async function clientOnShop(db: Db, shopId: string, clientId: string): Promise<boolean> {
+export async function clientOnShop(db: Db, shopId: string, clientId: string, clients?: ClientLookup): Promise<boolean> {
+  if (clients) {
+    const found = await clients.query(
+      "SELECT 1 FROM desk_clients WHERE client_id = $1 AND legal_entity_id = $2 LIMIT 1",
+      [clientId, shopId],
+    );
+    return (found.rowCount ?? 0) > 0;
+  }
   const found = await db.execute(sql`
     SELECT 1 FROM desk_clients WHERE client_id = ${clientId} AND legal_entity_id = ${shopId} LIMIT 1
   `);
