@@ -38,6 +38,7 @@ import { registerRatePageRoutes } from "./routes/rate-pages.js";
 import { registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
 import { registerQuoteRoutes } from "./quotes/routes.js";
+import { registerExchangeRoutes } from "./exchange/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
 import { registerIdvShopConfigRoutes } from "./idv/shop-config.js";
 import { registerClientRoutes } from "./clients/routes.js";
@@ -99,15 +100,17 @@ const isPhone = (ua: string | undefined): boolean =>
    reads. shared/counter-cash.js is the cash-leg rule the till summary
    uses.    shared/rolling-24h.js is the rolling 24 hours the server also
    reads. shared/lctr-reversal.js is which reversal still counts
-   toward an LCTR. The uncompiled shell loads all four as scripts, so
-   they are on the list for that fallback and hidden with os-src once
-   the compiled desk, which carries them inside os.js, is on disk.
-   Nothing else under shared/ is. */
+   toward an LCTR. shared/exchange-v29.js is the exchange v2.9 meter
+   and returning-client rule. The uncompiled shell loads these as
+   scripts, so they are on the list for that fallback and hidden with
+   os-src once the compiled desk, which carries them inside os.js, is
+   on disk. Nothing else under shared/ is. */
 const UNCOMPILED_SHARED = new Set([
   "/shared/id-document-types.js",
   "/shared/counter-cash.js",
   "/shared/rolling-24h.js",
   "/shared/lctr-reversal.js",
+  "/shared/exchange-v29.js",
 ]);
 const retiredUncompiledDesk = (
   pathname: string,
@@ -295,6 +298,7 @@ export async function buildApp(
   if (ledgerDatabaseUrl) {
     registerLedgerRoutes(app, db, ledgerDatabaseUrl);
     registerQuoteRoutes(app, db, ledgerDatabaseUrl);
+    registerExchangeRoutes(app, db, ledgerDatabaseUrl);
     /* The desk's customer files. Behind the same gate as the ledger, and
        for the same reason: these routes join `desk_clients` to
        `ledger_customers`, which only exists where the migrations have

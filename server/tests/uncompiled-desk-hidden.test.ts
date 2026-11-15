@@ -29,7 +29,7 @@ const asStyle = { "sec-fetch-dest": "style", accept: "text/css" };
 
 /* A real source file the Babel shell loads, and the two shells themselves.
    The stylesheet the compiled page still links is asserted separately. */
-const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js", "/shared/counter-cash.js", "/shared/rolling-24h.js", "/shared/lctr-reversal.js"] as const;
+const HIDDEN = ["/os-src/cdos-base.jsx", "/CurrencyDesk%20OS.html", "/admin.html", "/shared/id-document-types.js", "/shared/counter-cash.js", "/shared/rolling-24h.js", "/shared/lctr-reversal.js", "/shared/exchange-v29.js"] as const;
 
 /* Markers that only the uncompiled desk carries. A 200 from the marketing
    page is not a leak; a body with any of these is the source. */
@@ -63,6 +63,7 @@ const UNCOMPILED_FILES: Record<string, string> = {
   "shared/counter-cash.js": "/* the uncompiled cash rule */",
   "shared/rolling-24h.js": "/* the uncompiled lookback */",
   "shared/lctr-reversal.js": "/* the uncompiled reversal rule */",
+  "shared/exchange-v29.js": "/* the uncompiled exchange rule */",
   "shared/not-listed.js": "/* not on the allow-list */",
 };
 
@@ -228,6 +229,9 @@ describe("compiled shells absent: the fallback shells are still served", () => {
       const reversalRule = await bare.inject({ method: "GET", url: "/shared/lctr-reversal.js", headers: asScript });
       expect(reversalRule.statusCode).toBe(200);
       expect(reversalRule.body).toContain("the uncompiled reversal rule");
+      const exchangeRule = await bare.inject({ method: "GET", url: "/shared/exchange-v29.js", headers: asScript });
+      expect(exchangeRule.statusCode).toBe(200);
+      expect(exchangeRule.body).toContain("the uncompiled exchange rule");
       const other = await bare.inject({ method: "GET", url: "/shared/not-listed.js", headers: asScript });
       expect(other.statusCode).toBe(404);
       expect(other.body).not.toContain("not on the allow-list");

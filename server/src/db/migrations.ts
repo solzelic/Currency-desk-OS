@@ -103,6 +103,8 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
+  /* 074 is the Canada exchange v2.9 rules: ID check, holds, reveal reasons, occupation, prepared LCTR gap. */
+  ["074_exchange_v29", "src/db/migrations/074_exchange_v29.sql"],
 ] as const;
 
 type MigrationReader = {

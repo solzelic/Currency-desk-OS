@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import Decimal from "decimal.js";
 import pg from "pg";
 import {
@@ -19,6 +20,11 @@ import { redactDeskEarnings } from "../ledger/earnings-redaction.js";
 import { calculateQuoteTerms, cashierQuoteMessage, type QuoteDirection } from "./terms.js";
 import { RATES_SYNC_HEADROOM_SECONDS, ratesSyncIntervalMs } from "../rates/sync-interval.js";
 import { dealMarginPct, enforceOf, floorFor, readDeskSettings } from "../rates/guardrails.js";
+
+const require = createRequire(import.meta.url);
+const { reviewLockSeconds } = require("../../../shared/exchange-v29.js") as {
+  reviewLockSeconds: (choice: unknown) => number;
+};
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 /* A currency, as a code. This was a four-way union — CAD, USD, EUR, GBP
@@ -109,9 +115,10 @@ export function ratePublicationIsStale(
   return !Number.isFinite(maxAge) || maxAge < 1 || nowMs - publishedAtMs > maxAge * 1000;
 }
 const complianceFact = (value: string, label: string) => {
-  if (typeof value !== "string" || !value.trim() || value.trim().length > 500)
-    throw new LedgerError("INVALID_REQUEST", `${label} is required and must be at most 500 characters.`);
-  return value.trim();
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length > 500)
+    throw new LedgerError("INVALID_REQUEST", `${label} must be at most 500 characters.`);
+  return text;
 };
 
 export class QuoteService {
@@ -437,10 +444,16 @@ export class QuoteService {
           ? "seed"
           : "manual";
       const quoteId = `qt_${randomUUID()}`,
-        now = new Date(),
-        expiresAt = new Date(
-          now.getTime() + Number(process.env.QUOTE_TTL_SECONDS ?? 60) * 1000,
-        );
+        now = new Date();
+      const settingsRow = await client.query(
+        "SELECT state->'cdos_settings' AS settings FROM tenant_state WHERE tenant_id=$1",
+        [actor.tenantId],
+      );
+      const deskSettings = readDeskSettings(settingsRow.rows[0]?.settings ?? null);
+      const lockChoice = deskSettings.reviewLockSeconds == null || deskSettings.reviewLockSeconds === ""
+        ? (process.env.QUOTE_TTL_SECONDS ?? 60)
+        : deskSettings.reviewLockSeconds;
+      const expiresAt = new Date(now.getTime() + reviewLockSeconds(lockChoice) * 1000);
       await client.query(
         "INSERT INTO quotes (quote_id,tenant_id,legal_entity_id,branch_id,workspace_id,till_id,customer_id,created_by,direction,from_currency,to_currency,input_amount,output_amount,market_mid,from_mid,to_mid,customer_rate,buy_or_sell_side,fee_cad,spread_cad,rate_board_publication_id,market_snapshot_id,rate_source_type,status,expires_at,created_at,supersedes_quote_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,'active',$24,$25,$26)",
         [
@@ -723,6 +736,10 @@ export class QuoteService {
       usdNoteSerials?: string[];
       reportSuspicion?: boolean;
       marginOverrideReason?: string;
+      occupationCode?: string;
+      occupationText?: string;
+      clientLeft?: boolean;
+      holdId?: string;
     },
   ) {
     const validatedPurpose = complianceFact(purpose, "Purpose");
@@ -730,6 +747,8 @@ export class QuoteService {
     const validatedThirdPartyName = thirdParty
       ? complianceFact(thirdPartyName || "", "Third-party name")
       : null;
+    if (thirdParty && !validatedThirdPartyName)
+      throw new LedgerError("INVALID_REQUEST", "Third-party name is required and must be at most 500 characters.");
     if (!thirdParty && thirdPartyName?.trim())
       throw new LedgerError("INVALID_REQUEST", "Third-party name requires third-party status.");
     const client = await this.pool.connect();
@@ -797,6 +816,10 @@ export class QuoteService {
           quoteOverrideId: value.o?.override_id ?? null,
           purpose: validatedPurpose,
           sourceOfFunds: validatedSourceOfFunds,
+          occupationCode: capture?.occupationCode,
+          occupationText: capture?.occupationText,
+          clientLeft: capture?.clientLeft,
+          holdId: capture?.holdId,
           thirdParty,
           thirdPartyName: validatedThirdPartyName,
           identityNumber: capture?.identityNumber,

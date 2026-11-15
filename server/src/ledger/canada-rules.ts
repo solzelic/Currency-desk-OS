@@ -64,6 +64,10 @@ export type IdentificationDeal = {
   purpose?: string | null;
   /** Where the money came from. Same EU due diligence line. */
   sourceOfFunds?: string | null;
+  /** The client had already left when a run of small deals crossed the
+      large-cash line. The LCTR draft is flagged. The deal is not blocked
+      for that gap, and a single FX deal at CAD 3,000 still is. */
+  clientLeft?: boolean;
   /** The instant this deal is checked. The live gate uses now.
       A test pins a wall time so a receipt before midnight can sit
       inside the 24 hours. */
@@ -448,7 +452,12 @@ export async function countryIdentification(
             who,
           );
           if (prior.add(args.amountHome).gte(trigger)) {
-            return { split: true, refusal: ID_BLOCKED };
+            /* A run of small deals. The client leaving does not waive an
+               FX deal at CAD 3,000. It flags the LCTR draft instead. */
+            const smallDeal = args.amountHome.lt("3000");
+            if (!(args.deal.clientLeft && smallDeal)) {
+              return { split: true, refusal: ID_BLOCKED };
+            }
           }
         }
       }
