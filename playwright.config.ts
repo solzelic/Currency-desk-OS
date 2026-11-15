@@ -97,5 +97,12 @@ export default defineConfig({
       ...devices["Desktop Chrome"],
       ...(process.env.TZ ? { timezoneId: process.env.TZ } : {}),
     },
-  }],
+  },
+  /* Opt-in. CI installs Chromium only. PW_WEBKIT=1 also runs the Early Access
+     audio spec in WebKit, which is where a suspended context drops every cue. */
+  ...(process.env.PW_WEBKIT ? [{
+    name: "webkit",
+    testMatch: /early-access-audio\.spec\.ts/,
+    use: { ...devices["Desktop Safari"] },
+  }] : [])],
 });
