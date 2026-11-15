@@ -120,6 +120,19 @@ test.describe("locked sign-in", () => {
     await openPassword(page, "m.costa");
     await expect(page.getByRole("heading", { name: "Welcome back, M. Costa", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Welcome back, M", exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-signin-avatar="initials"]')).toBeVisible();
+  });
+
+  test("an unconfirmed id asks for the password", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const looked = page.waitForResponse((res) => res.url().includes("/api/auth/id") && res.request().method() === "POST");
+    await openPassword(page, "no.such.person");
+    await looked;
+    await expect(page.getByRole("heading", { name: "Enter your password", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Welcome back/ })).toHaveCount(0);
+    await expect(page.locator('[data-signin-avatar="person"] svg')).toBeVisible();
+    await expect(page.locator('[data-signin-avatar="initials"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "not you?" })).toBeVisible();
   });
 
   test("a lock with no server time says a few minutes", async ({ page }) => {

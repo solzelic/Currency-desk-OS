@@ -69263,6 +69263,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           marginBottom: 12
         }
       }, /*#__PURE__*/React.createElement("div", {
+        "data-signin-avatar": displayName ? 'initials' : 'person',
+        "aria-label": displayName ? undefined : 'Person',
         style: {
           width: 60,
           height: 60,
@@ -69275,7 +69277,23 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontSize: 19,
           fontWeight: 700
         }
-      }, initialsOf(known ? known.name : idInput))), /*#__PURE__*/React.createElement("h1", {
+      }, displayName ? initialsOf(known.name) : /*#__PURE__*/React.createElement("svg", {
+        viewBox: "0 0 24 24",
+        width: "28",
+        height: "28",
+        "aria-hidden": "true",
+        fill: "none",
+        stroke: "#fff",
+        strokeWidth: "1.8",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }, /*#__PURE__*/React.createElement("circle", {
+        cx: "12",
+        cy: "8",
+        r: "3.2"
+      }), /*#__PURE__*/React.createElement("path", {
+        d: "M6.2 18.5v-1.2a3.8 3.8 0 0 1 3.8-3.8h4a3.8 3.8 0 0 1 3.8 3.8v1.2"
+      })))), /*#__PURE__*/React.createElement("h1", {
         style: {
           textAlign: 'center',
           fontSize: 23,
@@ -69283,7 +69301,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           letterSpacing: '-0.01em',
           margin: '0 0 4px'
         }
-      }, displayName ? 'Welcome back, ' + displayName : 'Welcome back'), /*#__PURE__*/React.createElement("div", {
+      }, displayName ? 'Welcome back, ' + displayName : 'Enter your password'), /*#__PURE__*/React.createElement("div", {
         style: {
           textAlign: 'center',
           fontSize: 12.5,
