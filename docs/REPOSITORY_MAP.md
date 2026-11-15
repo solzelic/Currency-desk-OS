@@ -95,7 +95,10 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
   it once. Saving or clearing a domain, and deleting a desk that had one,
   reload it on this process. That instant reload assumes one server
-  instance. Staging and live each run as a single instance on Render free.
+  instance. Staging and live each run as a single instance. Live's compute
+  plan in render.yaml is the paid plan 1c-2g (1 CPU, 2 GB), set by the
+  owner, and must not be set back to free. Staging is a separate service
+  and is not in that file.
   With more instances, a domain saved on one can lag on the others until
   the safety reload, up to 30 minutes. The safety reload runs every 30
   minutes, or longer when `SITE_DOMAIN_REFRESH_MINUTES` is set, and never
