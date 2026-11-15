@@ -35,7 +35,7 @@ export const ENROLMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 type Enquiry = typeof schema.enquiries.$inferSelect;
 
-export type Mailer = (to: string, subject: string, body: { text: string; html: string }) => Promise<EmailStatus>;
+export type Mailer = (to: string, subject: string, body: { text: string; html: string; sensitive?: boolean }) => Promise<EmailStatus>;
 
 export function signupCodeEmail(code: string, operatingName: string) {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -69,7 +69,7 @@ export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string
   if (!prepared.sent) return prepared;
   const code = prepared.code;
   const message = signupCodeEmail(code, operatingName);
-  const delivery = await mail(row.email, message.subject, { text: message.text, html: message.html });
+  const delivery = await mail(row.email, message.subject, { text: message.text, html: message.html, sensitive: true });
   return { sent: true, delivery };
 }
 

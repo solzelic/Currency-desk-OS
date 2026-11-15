@@ -260,7 +260,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   async function find(ref: string, ip?: string) {
     const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
     const row = rows[0];
-    if (!row || row.kind !== "early_access") return undefined;
+    if (!row || row.kind !== "early_access" || row.cdId) return undefined;
     if (row.status !== "invited" && row.status !== "accepted") return undefined;
     /* Forgiven HERE rather than at eleven call sites, so a route added
        later cannot forget it and reintroduce the lockout. */

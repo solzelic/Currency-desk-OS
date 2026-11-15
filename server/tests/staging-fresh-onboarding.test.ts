@@ -66,7 +66,7 @@ async function boot(flag: string | undefined, externalHost: string) {
 }
 
 describe("fresh onboarding", () => {
-  it("is absent on live and opens the real desk setup on staging", async () => {
+  it("is absent on live and reserves the private v2.1 door on staging", async () => {
     const closed = await boot(undefined, STAGING_HOST);
     try {
       expect(closed.app.hasRoute({ method: "POST", url: "/api/staging/fresh-onboarding" })).toBe(false);
@@ -118,54 +118,18 @@ describe("fresh onboarding", () => {
       const again = await app.inject({ method: "POST", url: "/api/enquiries", headers: { host: STAGING_HOST }, payload: application("again@example.com", ticketOf(door.start)) });
       expect(again.statusCode).toBe(400);
 
-      const state = await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } });
-      expect(state.statusCode).toBe(200);
-      expect(state.json().data.ownerEmail).toBe(body.email);
-      /* setup shows the CurrencyDesk ID the reveal showed, not the reference in the link (Sol, 14 Nov) */
-      expect(state.json().data.cdId).toBe(body.cdId);
-      expect(state.json().application.cdId).toBe(body.cdId);
-      /* a copy saved by an older page (it wrote the reference there) cannot replace the server's */
-      const stale = await app.inject({ method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST }, payload: { at: 0, data: { cdId: body.reference } } });
-      expect(stale.statusCode).toBe(200);
-      const savedRow = (await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, row!.id)))[0];
-      expect((savedRow?.answers as Record<string, unknown>).cdId).toBeUndefined();
-      expect((await app.inject({ method: "GET", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST } })).json().data.cdId).toBe(body.cdId);
-      /* sign-up v2.1: the ID identifies the reservation and says only the shop's name (SIGNUP-LOGIC §2.1) */
-      const typed = await app.inject({ method: "GET", url: "/api/onboarding/" + body.cdId + "/state", headers: { host: STAGING_HOST } });
+      // A v2.1 reservation never inherits the old reference-as-proof path,
+      // including on staging. Actual new-flow session/activation is exercised
+      // in signup-v2-1-open and signup-proof-races; the new UI is still missing.
+      for (const [method, tail] of [["GET", "state"], ["PUT", "state"], ["POST", "verify/send"], ["POST", "verify/check"], ["POST", "launch"]] as const) {
+        const res = await app.inject({ method, url: `/api/onboarding/${body.reference}/${tail}`, headers: { host: STAGING_HOST }, ...(method !== "GET" ? { payload: {} } : {}) });
+        expect(res.statusCode).toBe(404);
+        expect(res.body).not.toContain(body.email);
+      }
+      const typed = await app.inject({ method: "GET", url: `/api/onboarding/${body.cdId}/state`, headers: { host: STAGING_HOST } });
       expect(typed.statusCode).toBe(200);
       expect(Object.keys(typed.json()).sort()).toEqual(["operatingName", "state", "valid"]);
-
-      await app.inject({
-        method: "PUT", url: "/api/onboarding/" + body.reference + "/state", headers: { host: STAGING_HOST },
-        payload: { at: 5, data: { country: "CA", operatingName: "Harbour Test", bizName: "Harbour Test Inc.", ownerName: "Staging owner", ownerEmail: body.email, plan: "full" } },
-      });
-      const sent = await app.inject({
-        method: "POST", url: "/api/onboarding/" + body.reference + "/verify/send", headers: { host: STAGING_HOST },
-        payload: { data: { ownerEmail: body.email, operatingName: "Harbour Test" } },
-      });
-      expect(sent.statusCode).toBe(200);
-      const code = (sent.json() as { code?: string }).code;
-      expect(code).toMatch(/^[0-9]{6}$/);
-      expect(lines.join("\n")).not.toContain(String(code));
-      expect(sent.json().channel).toBe("email");
-
-      const checked = await app.inject({
-        method: "POST", url: "/api/onboarding/" + body.reference + "/verify/check", headers: { host: STAGING_HOST },
-        payload: { code },
-      });
-      expect(checked.statusCode).toBe(200);
-
-      const launch = await app.inject({
-        method: "POST", url: "/api/onboarding/" + body.reference + "/launch", headers: { host: STAGING_HOST },
-        payload: { data: { ownerPass: "north-yard-9", ownerEmail: body.email, operatingName: "Harbour Test", bizName: "Harbour Test Inc.", country: "CA", ownerName: "Staging owner", plan: "full" } },
-      });
-      expect(launch.statusCode).toBe(201);
-      const tenantId = (launch.json() as { tenantId: string }).tenantId;
-      const tenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId)))[0];
-      expect(tenant?.isTestShop).toBe(true);
-      expect(tenant?.siteSlug?.startsWith("stg-")).toBe(true);
-      const owner = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, body.email)))[0];
-      expect(owner?.mustChangePassword).toBe(false);
+      expect(await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, body.email))).toHaveLength(0);
     } finally {
       await app.close();
       await handle.close();

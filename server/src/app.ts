@@ -200,7 +200,9 @@ export async function buildApp(
       serializers: {
         req: (req: { method: string; url: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) => ({
           method: req.method,
-          url: maskCdIds(req.url),
+          url: req.url.startsWith("/api/onboarding/")
+            ? maskCdIds(req.url.split("?")[0]!.replace(/^(\/api\/onboarding\/)[^/]+/, "$1[identifier]"))
+            : maskCdIds(req.url),
           host: req.hostname,
           remoteAddress: req.ip,
           remotePort: req.socket?.remotePort,
@@ -209,6 +211,15 @@ export async function buildApp(
     },
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
+  });
+  const defaultErrorHandler = app.errorHandler;
+  app.setErrorHandler((error, req, reply) => {
+    if (!req.url.startsWith("/api/onboarding/")) return defaultErrorHandler.call(app, error, req, reply);
+    // Database/provider error messages can contain bound secrets or PII.
+    const code = error && typeof error === "object" && "statusCode" in error ? error.statusCode : undefined;
+    const status = typeof code === "number" && Number.isInteger(code) && code >= 400 && code < 500 ? code : 500;
+    req.log.error({ reason: "onboarding_request_failed", status }, "onboarding request failed");
+    return reply.code(status).send({ error: status === 500 ? "temporarily_unavailable" : "invalid_request" });
   });
   await app.register(cookie);
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });
