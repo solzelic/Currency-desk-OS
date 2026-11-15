@@ -8,8 +8,9 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { reserveIdvCredit } from "../src/idv/credit.js";
 import type { IdvProvider } from "../src/idv/provider.js";
+import { personaPassLabel } from "../src/idv/providers/persona.js";
 import { PERSONA_API_BASE_DEFAULT, PERSONA_VERSION, createPersonaProvider } from "../src/idv/providers/persona/index.js";
-import { insertIdvInquiry } from "../src/idv/store.js";
+import { countOpenInquiries, insertIdvInquiry } from "../src/idv/store.js";
 
 const SECRET = "fixture-webhook-secret";
 const ENV = { PERSONA_API_KEY: "fixture-api-key" };
@@ -54,10 +55,7 @@ const fetchStub: typeof fetch = async (input, init) => {
   calls += 1;
   attempt += 1;
   const body = String(init?.body ?? "");
-  const sent = JSON.parse(body) as {
-    data: { attributes: Record<string, string> };
-    meta: Record<string, unknown>;
-  };
+  const sent = JSON.parse(body) as { data: { attributes: Record<string, string> } };
   const referenceId = sent.data.attributes["reference-id"] ?? "";
   const headers = init?.headers as Record<string, string>;
   expect(String(input)).toBe(`${PERSONA_API_BASE_DEFAULT}/inquiries`);
@@ -66,9 +64,10 @@ const fetchStub: typeof fetch = async (input, init) => {
   expect(headers["persona-version"]).toBe(PERSONA_VERSION);
   expect(headers["key-inflection"]).toBe("kebab");
   expect(headers["idempotency-key"]).toBe(referenceId);
+  expect(Object.keys(sent).sort()).toEqual(["data"]);
+  expect(Object.keys(sent.data).sort()).toEqual(["attributes"]);
+  expect(Object.keys(sent.data.attributes).sort()).toEqual(["inquiry-template-id", "reference-id"]);
   expect(sent.data.attributes["inquiry-template-id"]).toBe("itmpl_fixture");
-  expect(sent.meta["auto-create-account"]).toBe(true);
-  expect(sent.meta["auto-create-account-reference-id"]).toBe(referenceId);
   expect(body).not.toContain(DEMO.legalEntityId);
   expect(body).not.toContain("secret@example.com");
   expect(body).not.toMatch(/name-first|birthdate|email-address/);
@@ -198,7 +197,8 @@ describe("sandbox start-check", () => {
     });
     expect(hook.statusCode, hook.body).toBe(200);
     const after = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
-    expect(after.json()).toEqual({ status: "approved" });
+    expect(after.json()).toEqual({ status: "Check passed" });
+    expect(JSON.stringify(after.json())).not.toContain("Approved");
     expect(JSON.stringify(after.json())).not.toContain("Not Stored");
     const otherShop = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.b });
     expect(otherShop.statusCode).toBe(404);
@@ -215,7 +215,7 @@ describe("sandbox start-check", () => {
       clients: {
         query: async (text, values) => {
           seen.push(String(values[0]));
-          return { rowCount: text.includes("desk_clients") && values[0] === "cli_ledger" ? 1 : 0 };
+          return { rowCount: text.includes("tenant_id") && values[0] === "cli_ledger" && values[2] === DEMO.tenantId ? 1 : 0 };
         },
       },
     });
@@ -227,8 +227,75 @@ describe("sandbox start-check", () => {
       expect(found.statusCode, found.body).toBe(200);
       expect(found.json()).toEqual({ status: null });
       expect(seen).toEqual(["cli_missing", "cli_ledger"]);
+      const before = calls;
+      const started = await local.inject({
+        method: "POST", url: ROUTE, cookies: cookies.a, payload: { clientId: "cli_ledger" },
+      });
+      expect(started.statusCode, started.body).toBe(200);
+      expect(started.json().connected).toBe(true);
+      expect(calls).toBe(before + 1);
+      const row = await handle.db.execute(sql`
+        SELECT client_id FROM idv_inquiries WHERE reference_id = ${started.json().referenceId}
+      `);
+      expect(row.rows[0]).toMatchObject({ client_id: "cli_ledger" });
+      const localOnly = await handle.db.execute(sql`
+        SELECT 1 FROM desk_clients WHERE client_id = 'cli_ledger'
+      `);
+      expect(localOnly.rows).toEqual([]);
     } finally {
       await local.close();
+    }
+  });
+
+  it("refuses an auditor and a client id that is too long", async () => {
+    const teller = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "m.costa")).limit(1);
+    await handle.db.insert(schema.staffUsers).values({
+      id: `${DEMO.tenantId}:l.berg`, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, branchId: DEMO.branchId,
+      staffId: "l.berg", name: "L. Berg", role: "auditor", authorizedBranchIds: [DEMO.branchId], passwordHash: teller[0]!.passwordHash,
+    }).onConflictDoNothing();
+    cookies.auditor = await signIn(app, "l.berg", DEMO.tenantId);
+    const before = calls;
+    const refused = await start("auditor");
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toEqual({ error: "forbidden" });
+    expect(calls).toBe(before);
+    await enable(DEMO.legalEntityId, true);
+    const longId = await start("a", { clientId: "c".repeat(81) });
+    expect(longId.statusCode).toBe(400);
+    expect(longId.json()).toEqual({ error: "invalid_client" });
+    expect(calls).toBe(before);
+  });
+
+  it("says Check passed (test) for a sandbox key and Check passed for a production key", async () => {
+    const STAGING = { STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com" };
+    expect(personaPassLabel({ PERSONA_API_KEY: "persona_sandbox_fixture" }, "PERSONA_API_KEY", "YORKFX")).toBe("Check passed (test)");
+    expect(personaPassLabel({ PERSONA_API_KEY: "persona_production_fixture" }, "PERSONA_API_KEY", "YORKFX")).toBe("Check passed");
+    expect(personaPassLabel({ ...STAGING, PERSONA_API_KEY: "persona_production_fixture" }, null, "YORKFX")).toBe("Check passed");
+    expect(personaPassLabel({ ...STAGING, PERSONA_API_KEY: "fixture-api-key" }, "", "YORKFX")).toBe("Check passed (test)");
+    expect(personaPassLabel({ PERSONA_API_KEY: "fixture-api-key" }, "PERSONA_API_KEY", "YORKFX")).toBe("Check passed");
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_idv_a', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Ada Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    await enable(DEMO.legalEntityId, true);
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, status, client_id)
+      VALUES ('ref-pass', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'teller', 'persona', 'inq_pass', 'approved', 'cli_idv_a')
+      ON CONFLICT (reference_id) DO UPDATE SET status = 'approved', client_id = 'cli_idv_a'
+    `);
+    const sandbox = await buildApp(handle.db, {}, undefined, {
+      env: { PERSONA_API_KEY: "persona_sandbox_fixture" },
+      fetch: fetchStub,
+      sleep: async () => {},
+    });
+    try {
+      const res = await sandbox.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.a });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toEqual({ status: "Check passed (test)" });
+      expect(res.body).not.toContain("Approved");
+    } finally {
+      await sandbox.close();
     }
   });
 
@@ -394,5 +461,34 @@ describe("inquiry progress events", () => {
     const event = await handle.db.execute(sql`SELECT outcome FROM idv_events WHERE reference_id = 'ref-review'`);
     expect((event.rows[0] as { outcome: string }).outcome).toBe("review");
     expect(reserveIdvCredit("ref-review")).toBe("no_ledger");
+  });
+
+  it("does not move a final status backwards or take the cap slot again", async () => {
+    const referenceId = "ref-final";
+    await insertIdvInquiry(handle.db, {
+      referenceId, shopId: DEMO.legalEntityId, branchId: DEMO.branchId, tellerId: "teller-a",
+      provider: "persona", providerRef: "inq_final",
+    });
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'approved' WHERE reference_id = ${referenceId}`);
+    const openBefore = await countOpenInquiries(handle.db, DEMO.legalEntityId);
+    const created = await post("inquiry.created", "evt_final_created", referenceId, "inq_final");
+    expect(created.json()).toEqual({ received: true, duplicate: false });
+    expect(await statusOf(referenceId)).toBe("approved");
+    expect(await countOpenInquiries(handle.db, DEMO.legalEntityId)).toBe(openBefore);
+    const replay = await post("inquiry.approved", "evt_final_created", referenceId, "inq_final");
+    expect(replay.json()).toEqual({ received: true, duplicate: true });
+    expect(await statusOf(referenceId)).toBe("approved");
+    const events = await handle.db.execute(sql`SELECT count(*)::int AS n FROM idv_events WHERE reference_id = ${referenceId}`);
+    expect(Number((events.rows[0] as { n: number }).n)).toBe(1);
+    const other = await post("inquiry.declined", "evt_other_provider", referenceId, "inq_final");
+    expect(other.statusCode).toBe(200);
+    await handle.db.execute(sql`
+      UPDATE idv_inquiries SET provider = 'other' WHERE reference_id = ${referenceId}
+    `);
+    await post("inquiry.started", "evt_final_started", referenceId, "inq_final");
+    const moved = await handle.db.execute(sql`
+      SELECT status FROM idv_inquiries WHERE provider = 'other' AND reference_id = ${referenceId}
+    `);
+    expect((moved.rows[0] as { status: string }).status).toBe("approved");
   });
 });

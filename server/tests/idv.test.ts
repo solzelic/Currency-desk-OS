@@ -47,6 +47,7 @@ describe("persona webhook signature", () => {
     expect(check(signed(SECRET, raw, t).replace(/.$/, (c) => (c === "a" ? "b" : "a")))).toBe(false);
   });
   it("rejects an expired signature", () => { expect(check(signed(SECRET, raw, t - 301))).toBe(false); });
+  it("rejects a future timestamp outside the window", () => { expect(check(signed(SECRET, raw, t + 301))).toBe(false); });
   it("accepts either secret during rotation", () => {
     const header = `t=${t - 301},v1=${"ab".repeat(32)} t=${t},v1=${mac(PREVIOUS, raw, t)}`;
     expect(check(header)).toBe(true);
@@ -54,6 +55,10 @@ describe("persona webhook signature", () => {
   it("is absent when the keys are blank", () => {
     expect(createPersonaProvider({})).toBeNull();
     expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET: "  " })).toBeNull();
+    expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS })).toBeNull();
+  });
+  it("accepts the previous secret only beside the current one", () => {
+    expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS })).not.toBeNull();
   });
   it("verifies the exact raw bytes, not the re-serialized payload", () => {
     const pretty = Buffer.from('{\n  "a": 1\n}');
@@ -135,7 +140,7 @@ describe("idv webhook", () => {
     expect(JSON.stringify(a)).not.toContain("not-stored");
   });
 
-  it("accepts a watchlist event and stores nothing from it", async () => {
+  it("rejects a watchlist event and stores nothing from it", async () => {
     const before = await countIdvEvents(handle.db);
     const raw = JSON.stringify({
       data: {
@@ -147,8 +152,8 @@ describe("idv webhook", () => {
       },
     });
     const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ received: true, dropped: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "invalid_webhook" });
     expect(res.body).not.toContain("Secret");
     expect(res.body).not.toContain("1990-01-01");
     expect(await countIdvEvents(handle.db)).toBe(before);

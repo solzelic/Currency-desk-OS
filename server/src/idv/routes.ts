@@ -5,15 +5,18 @@
 import { randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import type { Db } from "../db/index.js";
 import { reserveIdvCredit } from "./credit.js";
 import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
+import { personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import { clientOnShop, failStarting, latestClientIdvStatus, markInquiry, recordIdvEvent, reserveIdvSlot, setProviderRef } from "./store.js";
 
 export const IDV_SHOP_CAP = 5;
+const CLIENT_ID_MAX = 80;
 const OFF = "Identity checks are off for this shop.";
 const NOT_CONNECTED = "Identity checks are not connected.";
 const CAP = "This shop already has the maximum number of identity checks in progress.";
@@ -44,12 +47,12 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     catch { return reply.code(400).send({ error: "invalid_webhook" }); }
     const result = provider.parseResult(body);
     if (!result || result.provider !== provider.name) return reply.code(400).send({ error: "invalid_webhook" });
-    if (result.drop) return { received: true, dropped: true };
     try {
       const saved = await recordIdvEvent(db, result);
       if (saved === "unknown") return { received: true, dropped: true };
+      if (saved === "duplicate") return { received: true, duplicate: true };
       await markInquiry(db, result);
-      return { received: true, duplicate: saved === "duplicate" };
+      return { received: true, duplicate: false };
     } catch (err) {
       req.log.error({ reason: "record_failed", name: err instanceof Error ? err.name : "Error" }, "idv webhook failed");
       return reply.code(500).send({ error: "webhook_processing_failed" });
@@ -59,11 +62,13 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
   app.post("/api/idv/start-check", async (req, reply) => {
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
+    if (!hasBackendPermission(who.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
     const rawBody = req.body;
     const namedClient = typeof rawBody === "object" && rawBody !== null && "clientId" in rawBody;
     const clientValue = namedClient ? (rawBody as { clientId?: unknown }).clientId : undefined;
     if (namedClient && typeof clientValue !== "string") return reply.code(400).send({ error: "invalid_client" });
     const clientId = typeof clientValue === "string" ? clientValue.trim() : "";
+    if (clientId.length > CLIENT_ID_MAX) return reply.code(400).send({ error: "invalid_client" });
     const found = await db.execute(sql`
       SELECT provider, checks_enabled, api_key_ref, template_id
         FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
@@ -82,7 +87,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       shopCode: await shopEnvCodeFor(db, who.tenantId),
     };
     if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
-    if (clientId && !await clientOnShop(db, who.legalEntityId, clientId, options?.clients)) {
+    if (clientId && !await clientOnShop(db, who.legalEntityId, who.tenantId, clientId, options?.clients)) {
       return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
     }
     const referenceId = randomBytes(18).toString("base64url");
@@ -109,9 +114,18 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const who = await resolveSession(db, req.cookies[SESSION_COOKIE]);
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const clientId = req.params.clientId.trim();
-    if (!clientId || !await clientOnShop(db, who.legalEntityId, clientId, options?.clients)) {
+    if (clientId.length > CLIENT_ID_MAX) return reply.code(400).send({ error: "invalid_client" });
+    if (!clientId || !await clientOnShop(db, who.legalEntityId, who.tenantId, clientId, options?.clients)) {
       return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
     }
-    return { status: await latestClientIdvStatus(db, who.legalEntityId, clientId) };
+    const stored = await latestClientIdvStatus(db, who.legalEntityId, clientId);
+    if (stored !== "approved") return { status: stored };
+    const found = await db.execute(sql`
+      SELECT api_key_ref FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
+    `);
+    const ref = (found.rows[0] as { api_key_ref?: string | null } | undefined)?.api_key_ref ?? null;
+    const shopCode = await shopEnvCodeFor(db, who.tenantId);
+    const status = personaPassLabel(options?.env ?? process.env, ref, shopCode);
+    return { status };
   });
 }

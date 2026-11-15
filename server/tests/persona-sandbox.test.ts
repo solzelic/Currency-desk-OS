@@ -41,11 +41,13 @@ function webhookFetch(list: Array<{ url: string }>, status = 201): { fetch: type
 describe("persona inquiry request", () => {
   it("uses the template field the current docs name for each id", () => {
     const itmpl = JSON.parse(personaInquiryBody("itmpl_AVBb88sxEE9tJDxDPrTh54H5WGbXtm", "ref-a")) as {
-      data: { attributes: Record<string, string> }; meta: Record<string, unknown>;
+      data: { attributes: Record<string, string> };
     };
+    expect(Object.keys(itmpl).sort()).toEqual(["data"]);
+    expect(Object.keys(itmpl.data).sort()).toEqual(["attributes"]);
+    expect(Object.keys(itmpl.data.attributes).sort()).toEqual(["inquiry-template-id", "reference-id"]);
     expect(itmpl.data.attributes["inquiry-template-id"]).toBe("itmpl_AVBb88sxEE9tJDxDPrTh54H5WGbXtm");
     expect(itmpl.data.attributes["reference-id"]).toBe("ref-a");
-    expect(itmpl.meta["auto-create-account-reference-id"]).toBe("ref-a");
     const tmpl = JSON.parse(personaInquiryBody("tmpl_fixture", "ref-b")) as { data: { attributes: Record<string, string> } };
     expect(tmpl.data.attributes["template-id"]).toBe("tmpl_fixture");
     expect(tmpl.data.attributes["inquiry-template-id"]).toBeUndefined();
@@ -86,9 +88,56 @@ describe("register-webhook", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
     const live = capture();
     const { fetch, calls } = webhookFetch([]);
-    expect(await registerPersonaWebhook(["register-webhook", "--production"], { PERSONA_API_KEY: "fixture-api-key" }, { ...live.io, fetch })).toBe(0);
-    expect(calls.some((call) => call.method === "POST")).toBe(true);
+    const liveUrl = "https://example.com/api/webhooks/idv/persona";
+    const missing = capture();
+    expect(await registerPersonaWebhook(["register-webhook", "--production"], { PERSONA_API_KEY: "fixture-api-key" }, { ...missing.io, fetch: fetchImpl })).toBe(1);
+    expect(missing.err[0]).toContain("Pass --url");
+    const stagingUrl = capture();
+    expect(await registerPersonaWebhook(
+      ["register-webhook", "--production", "--url", STAGING_WEBHOOK_URL],
+      { PERSONA_API_KEY: "fixture-api-key" },
+      { ...stagingUrl.io, fetch: fetchImpl },
+    )).toBe(1);
+    expect(stagingUrl.err[0]).toContain("staging webhook URL");
+    expect(await registerPersonaWebhook(
+      ["register-webhook", "--production", "--url", liveUrl],
+      { PERSONA_API_KEY: "fixture-api-key" },
+      { ...live.io, fetch },
+    )).toBe(0);
+    expect(calls.some((call) => call.method === "POST" && call.body.includes(liveUrl))).toBe(true);
+    expect(calls.some((call) => call.body.includes(STAGING_WEBHOOK_URL))).toBe(false);
     expect(live.out[0]).toBe(SECRET);
+  });
+
+  it("follows a relative next link and tells the owner to rotate an unreadable secret", async () => {
+    const cap = capture();
+    let gets = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if ((init?.method ?? "GET") === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return new Response(JSON.stringify({ data: [], links: { next: "/api/v1/webhooks?page[after]=wbh_1" } }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          data: [{ attributes: { url: STAGING_WEBHOOK_URL } }],
+          links: { next: null },
+        }), { status: 200 });
+      }
+      return new Response("not-json", { status: 201 });
+    };
+    expect(await registerPersonaWebhook(["register-webhook"], STAGING, { ...cap.io, fetch: fetchImpl })).toBe(0);
+    expect(cap.out[0]).toContain("already registered");
+    expect(gets).toBe(2);
+    const broken = capture();
+    const created: typeof fetch = async (_input, init) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify({ data: [], links: { next: null } }), { status: 200 });
+      }
+      return new Response("not-json", { status: 201 });
+    };
+    expect(await registerPersonaWebhook(["register-webhook"], STAGING, { ...broken.io, fetch: created })).toBe(1);
+    expect(broken.err.join(" ")).toContain("Rotate or delete that webhook in the Persona dashboard");
+    expect(broken.out.join("")).not.toContain("fixture");
   });
 
   it("lists first, posts the handled events, and prints the secret once", async () => {
@@ -108,8 +157,8 @@ describe("register-webhook", () => {
     expect(posted.data.attributes["enabled-events"]).toEqual(PERSONA_WEBHOOK_EVENTS);
     expect(PERSONA_WEBHOOK_EVENTS).toContain("inquiry.approved");
     expect(PERSONA_WEBHOOK_EVENTS).toContain("inquiry.marked-for-review");
-    expect(PERSONA_WEBHOOK_EVENTS).toContain("report/watchlist.ready");
-    expect(PERSONA_WEBHOOK_EVENTS).toContain("report/watchlist.matched");
+    expect(PERSONA_WEBHOOK_EVENTS).not.toContain("report/watchlist.ready");
+    expect(PERSONA_WEBHOOK_EVENTS).not.toContain("report/watchlist.matched");
     expect(PERSONA_WEBHOOK_EVENTS).not.toContain("inquiry.redacted");
     expect(posted.data.attributes["api-version"]).toBe(PERSONA_VERSION);
     expect(posted.data.attributes["api-key-inflection"]).toBe("kebab");

@@ -15,22 +15,40 @@ export type WebhookIo = {
   fetch?: typeof fetch;
 };
 
-type Args = { command: string; production: boolean; url: string };
+type Args = { command: string; production: boolean; url: string; urlSet: boolean };
 
 export function readWebhookArgs(argv: readonly string[]): Args | null {
   const command = argv[0] ?? "";
   let production = false;
   let url = STAGING_WEBHOOK_URL;
+  let urlSet = false;
   for (let i = 1; i < argv.length; i += 1) {
     const arg = argv[i] ?? "";
     if (arg === "--production") production = true;
     else if (arg === "--url") {
       url = argv[i + 1] ?? "";
+      urlSet = true;
       i += 1;
-    } else if (arg.startsWith("--url=")) url = arg.slice("--url=".length);
-    else return null;
+    } else if (arg.startsWith("--url=")) {
+      url = arg.slice("--url=".length);
+      urlSet = true;
+    } else return null;
   }
-  return { command, production, url };
+  return { command, production, url, urlSet };
+}
+
+/* A relative next link stays on the API host. Anything else is refused. */
+function follow(base: string, link: string): string | null {
+  const trimmed = link.trim();
+  if (trimmed.startsWith(`${base}/`)) return trimmed;
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  try {
+    const resolved = new URL(trimmed, base).toString();
+    const origin = new URL(base).origin;
+    return resolved.startsWith(`${origin}/`) ? resolved : null;
+  } catch {
+    return null;
+  }
 }
 
 function obj(value: unknown): Record<string, unknown> {
@@ -61,7 +79,6 @@ async function listUrls(fetchImpl: typeof fetch, base: string, key: string): Pro
   const urls: string[] = [];
   let next: string | null = `${base}/webhooks`;
   for (let page = 0; page < 10 && next; page += 1) {
-    if (!next.startsWith(`${base}/`)) return "refused";
     const res = await fetchImpl(next, { method: "GET", headers: headers(key), redirect: "manual" });
     if (res.status === 403) return "permission";
     if (res.status !== 200) return "refused";
@@ -74,7 +91,13 @@ async function listUrls(fetchImpl: typeof fetch, base: string, key: string): Pro
       if (typeof url === "string") urls.push(url.trim());
     }
     const link = obj(payload.links).next;
-    next = typeof link === "string" && link.trim() ? link.trim() : null;
+    if (typeof link !== "string" || !link.trim()) {
+      next = null;
+    } else {
+      const resolved = follow(base, link);
+      if (!resolved) return "refused";
+      next = resolved;
+    }
   }
   return urls;
 }
@@ -93,7 +116,15 @@ export async function registerPersonaWebhook(
     io.stderr("register-webhook refused: this is not a staging runtime. Pass --production to run it on another host.");
     return 1;
   }
+  if (args.production && !args.urlSet) {
+    io.stderr("Pass --url with the live webhook address.");
+    return 1;
+  }
   const url = args.url.trim();
+  if (args.production && url === STAGING_WEBHOOK_URL) {
+    io.stderr("A production registration cannot use the staging webhook URL.");
+    return 1;
+  }
   if (!url.startsWith("https://") || url.includes(" ")) {
     io.stderr("The webhook URL has to be an https address.");
     return 1;
@@ -143,8 +174,13 @@ export async function registerPersonaWebhook(
     io.stderr(`Persona refused the webhook registration (${res.status}).`);
     return 1;
   }
-  let created: unknown;
-  try { created = await res.json(); } catch { created = null; }
+  let created: unknown = null;
+  let readable = true;
+  try { created = await res.json(); } catch { readable = false; }
+  if (res.status === 201 && !readable) {
+    io.stderr("Persona created the webhook but the reply could not be read. Rotate or delete that webhook in the Persona dashboard. Nothing was saved here.");
+    return 1;
+  }
   const secret = signingSecret(created);
   if (!secret) {
     io.stderr("Persona did not return a signing secret. Nothing was saved.");

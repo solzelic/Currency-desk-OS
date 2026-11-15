@@ -15,16 +15,20 @@ export async function insertIdvInquiry(db: Db, row: IdvInquiry): Promise<void> {
   `);
 }
 
-export async function clientOnShop(db: Db, shopId: string, clientId: string, clients?: ClientLookup): Promise<boolean> {
+export async function clientOnShop(
+  db: Db, shopId: string, tenantId: string, clientId: string, clients?: ClientLookup,
+): Promise<boolean> {
   if (clients) {
     const found = await clients.query(
-      "SELECT 1 FROM desk_clients WHERE client_id = $1 AND legal_entity_id = $2 LIMIT 1",
-      [clientId, shopId],
+      "SELECT 1 FROM desk_clients WHERE client_id = $1 AND legal_entity_id = $2 AND tenant_id = $3 LIMIT 1",
+      [clientId, shopId, tenantId],
     );
     return (found.rowCount ?? 0) > 0;
   }
   const found = await db.execute(sql`
-    SELECT 1 FROM desk_clients WHERE client_id = ${clientId} AND legal_entity_id = ${shopId} LIMIT 1
+    SELECT 1 FROM desk_clients
+     WHERE client_id = ${clientId} AND legal_entity_id = ${shopId} AND tenant_id = ${tenantId}
+     LIMIT 1
   `);
   return found.rows.length > 0;
 }
@@ -73,11 +77,16 @@ export async function recordIdvEvent(db: Db, result: IdvResult): Promise<"stored
 
 const TERMINAL = new Set<IdvResult["outcome"]>(["approved", "declined", "failed", "expired"]);
 
-/* created and started pass inquiryStatus. A terminal outcome frees the shop cap. */
+/* created and started pass inquiryStatus. A final status is not replaced
+   by an earlier one, so a finished check does not take a cap slot again. */
 export async function markInquiry(db: Db, result: IdvResult): Promise<void> {
   const status = result.inquiryStatus ?? (TERMINAL.has(result.outcome) ? result.outcome : "");
   if (!status) return;
-  await db.execute(sql`UPDATE idv_inquiries SET status = ${status} WHERE reference_id = ${result.referenceId}`);
+  await db.execute(sql`
+    UPDATE idv_inquiries SET status = ${status}
+     WHERE provider = ${result.provider} AND reference_id = ${result.referenceId}
+       AND status NOT IN ('approved', 'declined', 'failed', 'expired')
+  `);
 }
 
 /* Count and insert share one transaction, so parallel starts cannot all pass the cap. */

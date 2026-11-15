@@ -2,8 +2,8 @@
    body bytes, constant-time compare, five-minute window. Rotation sends
    two sets separated by a space. Either configured secret may pass.
    Inquiry create follows the current docs (version 2026-09-29):
-   inquiry-template-id for itmpl_, template-id for tmpl_, and the
-   reference on the inquiry plus meta.auto-create-account-reference-id.
+   inquiry-template-id for itmpl_, template-id for tmpl_, and reference-id.
+   No Persona account is created for the check.
    https://docs.withpersona.com/api-reference/inquiries/create-an-inquiry */
 import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
@@ -25,10 +25,8 @@ const EVENTS: Record<string, Pick<IdvResult, "outcome" | "inquiryStatus">> = {
   "inquiry.completed": { outcome: "pending" }, "inquiry.approved": { outcome: "approved" }, "inquiry.declined": { outcome: "declined" },
   "inquiry.marked-for-review": { outcome: "review", inquiryStatus: "needs review" }, "inquiry.failed": { outcome: "failed" }, "inquiry.expired": { outcome: "expired" },
 };
-/* Registered with the webhook. Watchlist payloads carry names and dates,
-   so they are acknowledged and not stored. */
-const WATCHLIST = new Set(["report/watchlist.ready", "report/watchlist.matched"]);
-export const PERSONA_WEBHOOK_EVENTS = [...Object.keys(EVENTS), ...WATCHLIST];
+/* Inquiry events only. Sanctions run in house, not on a Persona watchlist. */
+export const PERSONA_WEBHOOK_EVENTS = Object.keys(EVENTS);
 
 function header(value: string | string[] | undefined): string {
   if (typeof value === "string") return value;
@@ -69,11 +67,11 @@ function templateField(template: string): string {
   return "template-id";
 }
 
-/* Our reference only. No name, email, phone, or document fields. */
+/* Our reference only. No name, email, phone, or document fields.
+   TODO: Persona 30-day redaction policy (images, selfies, facial geometry, including Accounts) must be on before any real customer check. CD-219, addendum 4.4. */
 export function personaInquiryBody(template: string, referenceId: string): string {
   return JSON.stringify({
     data: { attributes: { [templateField(template)]: template, "reference-id": referenceId } },
-    meta: { "auto-create-account": true, "auto-create-account-reference-id": referenceId },
   });
 }
 
@@ -82,11 +80,6 @@ function parse(body: unknown): IdvResult | null {
   const attributes = obj(data.attributes);
   const eventId = typeof data.id === "string" ? data.id : "";
   const name = typeof attributes.name === "string" ? attributes.name : "";
-  /* Do not read report attributes. They hold a name and a birth date. */
-  if (WATCHLIST.has(name)) {
-    if (!eventId) return null;
-    return { eventId, provider: "persona", providerRef: eventId, referenceId: "", outcome: "unknown", drop: true };
-  }
   const inquiry = obj(obj(obj(attributes.payload).data));
   const fields = obj(inquiry.attributes);
   const providerRef = typeof inquiry.id === "string" ? inquiry.id : "";
@@ -143,10 +136,10 @@ export async function startPersonaCheck(
 /* The only place these variables are read. Callers pass a fixture or nothing. */
 export function createPersonaProvider(env?: NodeJS.ProcessEnv): IdvProvider | null {
   const source = env ?? process.env;
-  const secrets = ["PERSONA_WEBHOOK_SECRET", "PERSONA_WEBHOOK_SECRET_PREVIOUS"]
-    .map((name) => source[name]?.trim() ?? "")
-    .filter(Boolean);
-  if (secrets.length === 0) return null;
+  const current = source.PERSONA_WEBHOOK_SECRET?.trim() ?? "";
+  if (!current) return null;
+  const previous = source.PERSONA_WEBHOOK_SECRET_PREVIOUS?.trim() ?? "";
+  const secrets = previous ? [current, previous] : [current];
   return {
     name: "persona",
     startCheck(input) { return startPersonaCheck(input); },

@@ -1100,7 +1100,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       starting: 'Starting',
       'in progress': 'In progress',
       'needs review': 'Needs review',
-      approved: 'Approved',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
       declined: 'Declined',
       failed: 'Failed',
       expired: 'Expired',
@@ -1120,7 +1121,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           const next = body && typeof body.status === 'string' ? body.status : '';
           setStatus(next);
           setLoaded(true);
-          if (open(next)) timer = window.setTimeout(pull, 4000);
+          if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
         }).catch(() => { if (live) { setLoaded(true); setNote('The identity check status could not be read.'); } });
       };
       pull();
@@ -1145,7 +1146,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         setBusy(false);
       });
     };
-    const label = labels[status] || (status ? 'Recorded' : '');
+    const label = status === 'approved' ? 'Check passed' : (labels[status] || (status ? 'Recorded' : ''));
     return (<div data-testid="identity-check" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identity check</div>
       <div className="flex items-center gap-2 flex-wrap">
@@ -1153,7 +1154,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {canEdit && <button type="button" onClick={start} disabled={busy} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'transparent' }}>{busy ? 'Starting' : 'Start identity check'}</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>This line updates when the check changes. The desk does not keep the ID image.</div>
+      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>This line updates when the check changes. Persona's ID photo and selfie are not copied to this desk.</div>
     </div>);
   }
 
