@@ -43,7 +43,8 @@ export function planForPrice(config: StripeBillingConfig, priceId: string | null
 }
 
 export function stripeClient(config: StripeBillingConfig): Stripe {
-  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 2 });
+  /* Every external call has a timeout (standards §5.5); Stripe's default is 80 s. */
+  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 2, timeout: 15_000 });
 }
 
 export function safeAppBaseUrl(config: StripeBillingConfig, host: string | undefined): string | null {

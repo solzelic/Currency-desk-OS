@@ -7,6 +7,9 @@
      POST /api/onboarding/:id/pin      { pin, confirm }
      PUT  /api/onboarding/:id/answers  { step, answers }   saves on Continue
      GET  /api/onboarding/:id/resume   → { lastStep, answers, pack, you }
+     POST /api/onboarding/:id/confirm  { signed: true, name }   the declaration
+     POST /api/onboarding/:id/plan     { plan, term, extras }   → SetupIntent secret
+     POST /api/onboarding/:id/open     → a real desk session once Stripe has said yes
    ============================================================ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -21,7 +24,11 @@ import { answersBody, parseAnswers, resumable } from "../onboarding/signup-answe
 import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { confirmDesk, declarationName, monthlyFor, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { stripeBillingConfig, stripeClient } from "../billing/stripe.js";
+import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
+import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
 
 type Enquiry = typeof schema.enquiries.$inferSelect;
 export type Enrolled = { cdId: string; row: Enquiry; account: Account; connection: string };
@@ -50,7 +57,22 @@ export function enrolledGuard(db: Db, door: IdDoor) {
 
 const pinBody = z.object({ pin: z.string().max(8), confirm: z.string().max(8) });
 
-export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdDoor): void {
+const confirmBody = z.object({ signed: z.literal(true), name: z.string().trim().min(2).max(120) });
+const planBody = z.object({
+  plan: z.enum(["ai", "full", "rates"]),
+  term: z.enum(["monthly", "annual"]),
+  extras: z.object({ brief: z.boolean(), call: z.boolean(), website: z.boolean(), setupWeek: z.boolean() }).strict(),
+  agreed: z.literal(true),
+}).strict();
+
+export type DeskDeps = { stripe?: () => SignupStripe | null };
+
+export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdDoor, deps: DeskDeps = {}): void {
+  /* Not configured → null → 503 with a plain line; nothing pretends to take a card. */
+  const stripe = deps.stripe ?? (() => {
+    const config = stripeBillingConfig();
+    return config ? (stripeClient(config) as unknown as SignupStripe) : null;
+  });
   const enrolled = enrolledGuard(db, door);
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/pin", async (req, reply) => {
@@ -94,7 +116,8 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (row.tenantId) return reply.code(409).send({ error: "already_open", detail: "This desk is already open. Sign in." });
     const answers = { ...((row.answers ?? {}) as Record<string, unknown>), ...parsed.values };
     await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, r.row.id));
-    await db.update(schema.signupAccounts).set({ lastStep: parsed.step, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, r.row.id));
+    /* An edit after signing clears the signature: the desk that opens is the one signed (§5.1). */
+    await db.update(schema.signupAccounts).set({ lastStep: parsed.step, confirmedAt: null, answersHash: null, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, r.row.id));
     return { ok: true, lastStep: parsed.step };
   });
 
@@ -112,5 +135,62 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
       you: ownerDetails(r.row),
       workspace: typeof d.workspace === "string" ? d.workspace.split(".")[0] : null,
     };
+  });
+
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/confirm", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    const body = confirmBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: "Tick the declaration and sign with your name." });
+    if (!r.account.pinHash) return reply.code(409).send({ error: "no_pin", detail: "Set your counter PIN first." });
+    if (!(await confirmDesk(db, r.row.id, body.data.name))) return reply.code(409).send({ error: "not_verified" });
+    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers as Record<string, unknown>;
+    const legal = String(answers.bizName ?? answers.operatingName ?? "");
+    return { ok: true, declaration: `I confirm these details are true, and I'm authorised to open this desk for ${declarationName(legal)}.` };
+  });
+
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/plan", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    const body = planBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
+    if (r.account.state !== "verified") return reply.code(409).send({ error: "not_verified" });
+    if (!(await stillConfirmed(db, r.row.id))) return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
+    const client = stripe();
+    if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });
+    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers as Record<string, unknown>;
+    const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
+    const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };
+    try {
+      const { clientSecret } = await startPayment(db, client, r.row, choice);
+      return { ok: true, clientSecret, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null, price: monthlyFor(choice) };
+    } catch (err) {
+      req.log.error({ err: err instanceof Error ? err.message : "stripe error", id: idTail(r.cdId) }, "signup SetupIntent failed");
+      return reply.code(502).send({ error: "payment_unavailable", detail: "We couldn't reach the card processor. Nothing was charged. Try again in a moment." });
+    }
+  });
+
+  /* The browser that paid comes in from here. Its enrolment session is the
+     proof it is the same person; the account being active is Stripe's yes. */
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/open", async (req, reply) => {
+    const connection = clientIp(req);
+    const cdId = normalizeCdIdInput(req.params.ref);
+    if (!cdId) return reply.code(404).send({ error: "no_such_id" });
+    if (door.closed(cdId, connection)) return reply.code(429).send({ error: "slow_down" });
+    const row = await door.findByCdId(cdId);
+    if (!row) { door.fail(cdId, connection, "open_unknown_id"); return reply.code(404).send({ error: "no_such_id" }); }
+    if (!(await enrolmentFor(db, req, reply, row.id))) return reply.code(401).send({ error: "sign_in_again", detail: "For your security, sign in again to carry on." });
+    const account = await loadAccount(db, row.id);
+    const ob = await loadOrCreateOnboarding(db, row.id);
+    if (account.state !== "active" || !ob.tenantId) return reply.code(202).send({ pending: true, state: account.state });
+    const owner = (await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, ob.tenantId), eq(schema.staffUsers.cdId, cdId))).limit(1))[0];
+    if (!owner) return reply.code(409).send({ error: "no_owner", detail: "Your desk is open, but we couldn't find your sign-in. Sign in from the login page." });
+    const { token, expiresAt } = await createSession(db, owner.id);
+    reply.setCookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", expires: expiresAt });
+    /* the enrolment session has done its job */
+    await db.update(schema.enrolmentSessions).set({ revokedAt: new Date() }).where(eq(schema.enrolmentSessions.enquiryId, row.id));
+    reply.clearCookie(ENROLMENT_COOKIE, { path: "/api/onboarding" });
+    const answers = (ob.answers ?? {}) as Record<string, unknown>;
+    return { ok: true, tenantId: ob.tenantId, cdId, operatingName: String(answers.operatingName ?? (row.details as Record<string, unknown> | null)?.shopName ?? "") };
   });
 }

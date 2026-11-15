@@ -119,6 +119,8 @@ describe("PIN writers", () => {
     expect(writes).toEqual([
       /* Sign-up v2.1's owner PIN: its own rule (four of a kind and 1234
          refused, the rest labelled), SIGNUP-LOGIC §3.3, asserted below. */
+      /* the desk opening copies that same checked hash to the owner's staff row */
+      ["onboarding/signup-open.ts", "account.pinHash"],
       ["onboarding/signup-pin.ts", "await hashPin(pin)"],
       ["routes/admin.ts", "await hashPin(pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
