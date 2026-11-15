@@ -66,7 +66,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
      saved; the inbox screen offers "Send it again" when the wait is over. */
   async function codeAfterSave(r: Reservation): Promise<boolean> {
     const result = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
-    return result.sent;
+    return result.sent && result.delivery !== "failed";
   }
 
   /* The reservation this ID names, if it still takes a credential. Replies
@@ -125,6 +125,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const saved = await saveCredential(db, r.row.id, {
       kind: "passkey", attemptHash: attempt, passkey: { ...result.passkey, deviceLabel: parsed.data.deviceLabel || "This device" },
     });
+    if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: "passkey", state: saved.state, codeSent: await codeAfterSave(r) };
   });
 
@@ -165,6 +166,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       return reply.code(400).send({ error: "sso_not_saved", detail: "That sign-in didn't finish. Nothing was saved. Try again, or choose another way." });
     }
     const saved = await saveCredential(db, r.row.id, { kind: provider, attemptHash: attempt, sso: { subject: result.subject, tenant: result.tenant } });
+    if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: provider, state: saved.state, codeSent: await codeAfterSave(r) };
   });
 
@@ -184,6 +186,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const saved = await saveCredential(db, r.row.id, {
       kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashSignupSecret(parsed.data.password),
     });
+    if (!saved) return reply.code(409).send({ error: "already_verified" });
     return { ok: true, kind: "password", state: saved.state, codeSent: await codeAfterSave(r) };
   });
 }

@@ -69,6 +69,7 @@ export function registerSignupEmailRoutes(app: FastifyInstance, db: Db, door: Id
     )).limit(1))[0];
     if (r.account.state !== "enrolling" || !candidate) return reply.code(409).send({ error: "no_candidate", detail: DETAIL.no_candidate });
     const sent = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
+    if (!sent.sent && sent.reason === "not_enrolling") return reply.code(409).send({ error: "not_enrolling" });
     if (!sent.sent) {
       door.logRefusal({ reason: "code_resend_too_soon", id: idTail(r.cdId), connection: ip });
       return reply.code(429).send({ error: "too_soon", retryInSeconds: Math.ceil(sent.retryInMs / 1000), detail: "We've sent a few already. Give it a few minutes, then try again." });

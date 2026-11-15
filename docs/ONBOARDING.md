@@ -211,3 +211,5 @@ OIDC checks authorized party and future validity as well as signature, issuer,
 audience, expiry, nonce and the exact normalized verified email. No provider token
 or authenticator error contents are logged by these adapters. Empty/malformed
 breach-range replies are unavailable, never evidence that a password is safe.
+
+The Astra server review serializes candidate replacement, code sends and code verification on the signup account row. A browser's latest unverified choice replaces its previous candidate; a delayed save after proof refuses. Verification, candidate cleanup, audit and session creation commit together. Real PostgreSQL regressions cover concurrent sends, attempts and successful verification.
