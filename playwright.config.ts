@@ -76,6 +76,13 @@ export default defineConfig({
          server allows twenty an hour from one address unless this says
          otherwise (routes/enquiries.ts); Render leaves it unset. */
       ENQUIRY_IP_MAX: "1000",
+      /* Sign-up v2.1: the codes it emails are never logged, so the seam
+         entry keeps them in memory for the suite (email-test-mailbox.ts).
+         Passkeys need an origin the browser trusts: localhost, over http,
+         outside production only (onboarding/passkey.ts). */
+      CD_TEST_MAILBOX: "1",
+      WEBAUTHN_RP_ID: "localhost",
+      WEBAUTHN_ORIGINS: `http://localhost:${PORT}`,
     },
   },
 

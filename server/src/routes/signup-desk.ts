@@ -26,7 +26,7 @@ import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { confirmDesk, declarationName, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { confirmDesk, declarationName, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
 import { stripeBillingConfig, signupStripeClient } from "../billing/stripe.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
@@ -134,6 +134,9 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     return {
       state: r.account.state,
       lastStep: r.account.lastStep ?? (r.account.pinHash ? "08-shop-name" : "06-pin-intro"),
+      /* true: lastStep is the last screen they finished (the page opens the one after it);
+         false: nothing saved yet, lastStep is where to start. */
+      saved: !!r.account.lastStep,
       pinSet: !!r.account.pinHash,
       answers: resumable(seeded(r.row, row.answers ?? {})),
       pack: signupPack(typeof d.jurisdiction === "string" ? d.jurisdiction : null),
@@ -177,6 +180,21 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
       req.log.error({ reason: err instanceof Error ? err.name : "stripe_error", id: idTail(r.cdId) }, "signup SetupIntent failed");
       return reply.code(502).send({ error: "payment_unavailable", detail: "We couldn't reach the card processor. Nothing was charged. Try again in a moment." });
     }
+  });
+
+  /* The plan screen's prices (build doc §6, payment), for the locations the
+     shop's own answers name; the page sends no quantity. The list price for
+     one location is public (the plan cards before anyone has an account);
+     the quote for this desk needs its enrolment session. Nothing here
+     creates a customer or an intent. */
+  app.get("/api/onboarding/prices", async () => priceList(1));
+  app.get<{ Params: { ref: string } }>("/api/onboarding/:ref/prices", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    const details = r.row.details ?? {};
+    if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") return reply.code(409).send({ error: "billing_country_unavailable" });
+    const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers ?? {};
+    return priceList(answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1);
   });
 
   /* The browser that paid comes in from here. Its enrolment session is the

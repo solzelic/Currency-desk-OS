@@ -9,6 +9,7 @@
    (SendGrid is a small addition if one-vendor billing is preferred.)
    ============================================================ */
 import { randomInt, createHash, timingSafeEqual } from "node:crypto";
+import { testMailbox } from "./email-test-mailbox.js";
 import { applicationReceived, codeEmail, contactReceivedEmail, passwordResetEmail, youreIn } from "./emails/design.js";
 
 export { contactReceivedEmail, passwordResetEmail };
@@ -33,6 +34,14 @@ export async function sendEmail(
 ): Promise<EmailStatus> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
+  /* The browser suite's mailbox (email-test-mailbox.ts): open only on the
+     seam entry, never on a real server. Only the messages a real server would
+     refuse to log (sign-up codes); the rest keep their simulated log line. */
+  const sink = testMailbox();
+  if (sink && body.sensitive && (!key || !from)) {
+    sink.push({ to, subject, text: body.text, at: Date.now() });
+    return "simulated";
+  }
   if (!key || !from) {
     /* A sign-in subject line is the code. Production must not write it
        down just because the provider is not configured yet. Dev and test

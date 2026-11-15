@@ -120,6 +120,23 @@ export function monthlyFor(c: PlanChoice) {
     dueTodayMinor: 0, setupWeekMinor: c.setupWeek ? 500_000 : 0 };
 }
 
+/** Every plan and term the plan screen shows, for this many locations, so
+ *  the page renders the server's arithmetic and never its own (standards §3).
+ *  Integer minor units in the billing currency. A year is twelve months of the
+ *  term's per-month figure; the annual saving is against twelve monthly ones. */
+export function priceList(locations: number) {
+  const n = Math.max(1, Math.min(50, Math.trunc(locations)));
+  const quote = (plan: SignupPlan, term: "monthly" | "annual") => {
+    const p = monthlyFor({ plan, term, locations: n, brief: true, call: true, website: false, setupWeek: false });
+    const monthly = monthlyFor({ plan, term: "monthly", locations: n, brief: true, call: true, website: false, setupWeek: false });
+    return { perLocationMinor: p.perLocationMinor, perLocationYearMinor: p.perLocationMinor * 12, aboutPerDayMinor: Math.round(p.perLocationMinor / 30), totalMinor: p.totalMinor, yearMinor: p.totalMinor * 12,
+      annualSavingMinor: (monthly.totalMinor - p.totalMinor) * 12, dueTodayMinor: p.dueTodayMinor };
+  };
+  const plans = Object.fromEntries((Object.keys(SIGNUP_PLANS) as SignupPlan[]).map((plan) =>
+    [plan, { monthly: quote(plan, "monthly"), annual: quote(plan, "annual") }])) as Record<SignupPlan, { monthly: ReturnType<typeof quote>; annual: ReturnType<typeof quote> }>;
+  return { currency: "CAD" as const, locations: n, setupWeekMinor: 500_000, plans };
+}
+
 /** The slice of Stripe this needs. The real client is passed in; tests pass a fake. */
 export type SignupStripe = {
   customers: { create(p: { email: string; name: string; metadata: Record<string, string> }, options: { idempotencyKey: string }): Promise<{ id: string }> };

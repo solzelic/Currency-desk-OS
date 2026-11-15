@@ -26,6 +26,7 @@ import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
+import { LEGACY_ONBOARDING_PAGE, SIGNUP_PAGE, SIGNUP_SSO_PAGE, registerSignupPages } from "./routes/signup-page.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
@@ -62,8 +63,8 @@ const SITE_PAGES = {
   // site links to as "Get early access", and /early-access is the same page.
   "/signup": "web/early-access-v2.html",
   "/early-access": "web/early-access-v2.html",
-  // where the invite email lands: type your code, walk the setup
-  "/onboarding": "web/onboarding.html",
+  // "/onboarding" is sign-up v2.1 and the older setup page by reference:
+  // routes/signup-page.ts decides which, so it is not listed here.
 } as const satisfies Record<string, string>;
 
 /* Phones and small tablets get the phone design. Deliberately coarse: the
@@ -456,12 +457,13 @@ export async function buildApp(
           app.get(route, (_req, reply) => reply.sendFile(file));
         }
       }
-      /* The invite link reads like an address rather than a query string:
-         currencydeskos.com/onboarding/CD-A3V5ZE. The page pulls the code off
-         the path itself, so every one of these serves the same file. */
-      if (existsSync(path.join(staticDir, SITE_PAGES["/onboarding"]))) {
-        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
-      }
+      /* Sign-up v2.1 at /onboarding, the older setup page for an invitation
+         that carries a setup reference (routes/signup-page.ts). */
+      registerSignupPages(app, db, staticDir, {
+        signup: existsSync(path.join(staticDir, SIGNUP_PAGE)),
+        legacy: existsSync(path.join(staticDir, LEGACY_ONBOARDING_PAGE)),
+        sso: existsSync(path.join(staticDir, SIGNUP_SSO_PAGE)),
+      });
     }
     // the platform control panel — the compiled web/app/admin.html, else the
     // hand-written admin.html in the static dir (repo root)
