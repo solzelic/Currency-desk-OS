@@ -1,5 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { apply, press, proveInbox, toSignIn } from "./signup-v21.spec";
+import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 
 /* ============================================================
    Sign-up v2.1, "How will you sign in?", in a real browser: which ways in
@@ -16,6 +15,45 @@ import { apply, press, proveInbox, toSignIn } from "./signup-v21.spec";
    ============================================================ */
 
 const unique = () => Math.random().toString(36).slice(2, 7);
+
+/* The visitor's own steps, as tests/e2e/signup-v21.spec.ts walks them (a spec
+   file cannot import another). */
+async function apply(request: APIRequestContext, email: string, shop: string): Promise<{ cdId: string }> {
+  const res = await request.post("/api/enquiries", { data: {
+    kind: "early_access", form: "early-access-v2.1", email, name: "Daniel Okafor",
+    details: {
+      firstName: "Daniel", lastName: "Okafor", shopName: shop,
+      workspace: `${shop.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.currencydeskos.com`, website: "none yet", mode: "early_access",
+      jurisdiction: "CA", province: "ON", country: "Canada", state: null,
+      fintracRegistered: "Yes", msbNumber: "m 1234-5678", waitlist: false, waitlistReason: null,
+      role: "Owner", employees: "2 to 5", monthlyVolume: "$2M to $10M", branches: "single",
+      runningOn: "Excel or Google Sheets", timeline: "This month",
+      phone: "+1 4165550148", bestTime: "no call", samConsent: null,
+    },
+    contactContext: { timezone: "America/Toronto" },
+  } });
+  expect(res.status()).toBe(201);
+  return (await res.json()) as { cdId: string };
+}
+const press = (page: Page, name: RegExp) => page.locator("[data-card]").getByRole("button", { name }).last().click();
+async function toSignIn(page: Page, cdId: string) {
+  await page.getByRole("button", { name: /^Start/ }).click();
+  await page.getByPlaceholder("CD-YORK-7K42").pressSequentially(cdId, { delay: 25 });
+  await expect(page.getByText("That’s your ID. It’s unique to you, and it’s how you sign in from now on.")).toBeVisible();
+  await press(page, /^Open it/);
+  await press(page, /^Make it mine/);
+  await expect(page.getByText("How will you sign in?")).toBeVisible();
+}
+async function proveInbox(page: Page, request: APIRequestContext, email: string) {
+  await expect(page.getByText("Check your inbox.")).toBeVisible();
+  let code = "";
+  for (let i = 0; i < 40 && !code; i++) {
+    const mail = ((await (await request.get(`/__test/mail?to=${encodeURIComponent(email)}`)).json()) as { mail: { text: string }[] }).mail;
+    code = mail.at(-1)?.text.match(/\b(\d{6})\b/)?.[1] ?? "";
+    if (!code) await new Promise((r) => setTimeout(r, 250));
+  }
+  await page.locator('input[autocomplete="one-time-code"]').pressSequentially(code, { delay: 40 });
+}
 const local = (path: string) => (test.info().project.use.baseURL ?? "http://127.0.0.1:4173").replace("127.0.0.1", "localhost") + path;
 const origin = () => local("");
 
