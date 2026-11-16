@@ -66,6 +66,12 @@ This output change does not alter their financial fixtures or assertions.
   there before chasing a race. Adding a till no longer denies unscoped
   callers — that was issue #34, and the session workspace is the rule
   now. The day-at-the-desk gate trades on its own till.
+- **Sanctions-hold tests own their database.** The PostgreSQL hold/review suite
+  creates a uniquely named disposable database using `TEST_DATABASE_URL`'s
+  connection, migrates it, and drops it after closing its connections. Like
+  the migration tests, it needs a local/CI role allowed to create databases.
+  It does not reset another suite's till or screening history. This prevents
+  prior earnings fixtures from replacing its intended teller-held till.
 - **Drive the seam to verify wiring.** A server test and a browser test
   both green while the join is broken is how every serious cash defect
   here survived CI.

@@ -14,7 +14,7 @@ import { THROTTLE_KEYS, createIdDoor } from "../src/onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "../src/routes/signup-credential.js";
 import { advance, allowedFrom, loadAccount } from "../src/onboarding/signup-account.js";
 import { checkPassword, isBreached, lengthOf } from "../src/onboarding/password-rule.js";
-import { ProviderHttpError, clearJwksCache, providerConfig, sameEmail, type FetchJson } from "../src/onboarding/sso.js";
+import { ProviderHttpError, fetchJson, clearJwksCache, providerConfig, sameEmail, type FetchJson } from "../src/onboarding/sso.js";
 import { relyingParty } from "../src/onboarding/passkey.js";
 import { verifyPassword } from "../src/auth/password.js";
 
@@ -36,6 +36,7 @@ let idToken: (claims: Record<string, unknown>) => string;
 let nextClaims: Record<string, unknown> = {};
 let jwks: unknown;
 let tokenFailure: Error | null = null;
+let keysFailure: Error | null = null;
 
 /* ---- the fake provider ---------------------------------------------- */
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -47,7 +48,7 @@ idToken = (claims) => {
 };
 jwks = { keys: [jwk] };
 const http: FetchJson = async (url, init) => {
-  if (url.includes("certs") || url.includes("keys")) return jwks;
+  if (url.includes("certs") || url.includes("keys")) { if (keysFailure) throw keysFailure; return jwks; }
   if (init.method === "POST") { if (tokenFailure) throw tokenFailure; return { id_token: idToken(nextClaims) }; }
   throw new Error(`unexpected ${url}`);
 };
@@ -119,7 +120,7 @@ beforeAll(async () => {
   await app.ready();
 });
 afterAll(async () => { await app.close(); await handle.close(); });
-beforeEach(() => { door.reset(); breached = new Set(); rangeDown = false; tokenFailure = null; clearJwksCache(); });
+beforeEach(() => { door.reset(); breached = new Set(); rangeDown = false; tokenFailure = null; keysFailure = null; clearJwksCache(); });
 
 const sha1 = (s: string) => createHash("sha1").update(s).digest("hex").toUpperCase();
 
@@ -466,7 +467,7 @@ describe("provider readiness", () => {
     const { cdId, email } = await reserve();
     let s = await start(cdId, "google");
     nextClaims = google(s, email, { email_verified: true });
-    tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400);
+    tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400, "invalid_grant");
     const refusedCode = await callback(cdId, "google", s);
     expect(refusedCode.statusCode).toBe(400);
     expect(refusedCode.json().error).toBe("sso_not_saved");
@@ -488,9 +489,44 @@ describe("provider readiness", () => {
       expect((await callback(cdId, "google", s)).statusCode).toBe(502);
       expect(misses).not.toHaveBeenCalled();
       s = await start(cdId, "google");
-      tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400);
+      tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400, "invalid_grant");
       expect((await callback(cdId, "google", s)).statusCode).toBe(400);
       expect(misses).toHaveBeenCalledTimes(1);
+    } finally { misses.mockRestore(); }
+  });
+
+  it("reads only invalid_grant from a token refusal; configuration failures carry no provider detail", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+    try {
+      for (const [error, expected] of [["invalid_grant", "invalid_grant"], ["invalid_client", null]]) {
+        fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error, error_description: "private provider detail" }), { status: 400 }));
+        await expect(fetchJson("https://oauth2.googleapis.com/token", { method: "POST", signal: AbortSignal.timeout(1000) }))
+          .rejects.toMatchObject({ status: 400, oauthError: expected, message: "oauth2.googleapis.com answered 400" });
+      }
+    } finally { fetch.mockRestore(); }
+  });
+
+  it.each([400, 408, 429, 401])("provider HTTP %i is unavailable, not a guessed ID or refused code", async (status) => {
+    const { cdId, email } = await reserve();
+    const s = await start(cdId, "google");
+    nextClaims = google(s, email, { email_verified: true });
+    tokenFailure = new ProviderHttpError("oauth2.googleapis.com", status);
+    const misses = vi.spyOn(door, "fail");
+    try {
+      expect((await callback(cdId, "google", s)).statusCode).toBe(502);
+      expect(misses).not.toHaveBeenCalled();
+    } finally { misses.mockRestore(); }
+  });
+
+  it("a key-discovery HTTP refusal is a provider failure, never a refused authorization code", async () => {
+    const { cdId, email } = await reserve();
+    const s = await start(cdId, "google");
+    nextClaims = google(s, email, { email_verified: true });
+    keysFailure = new ProviderHttpError("www.googleapis.com", 400);
+    const misses = vi.spyOn(door, "fail");
+    try {
+      expect((await callback(cdId, "google", s)).statusCode).toBe(502);
+      expect(misses).not.toHaveBeenCalled();
     } finally { misses.mockRestore(); }
   });
 

@@ -27,7 +27,7 @@
   };
   var done = function () {
     window.close();
-    document.querySelector("p").textContent = "You're signed in. Close this window to carry on.";
+    document.querySelector("p").textContent = "Return to CurrencyDesk to continue. You can close this window.";
   };
   if (window.opener && window.opener !== window) {
     try { window.opener.postMessage(msg, location.origin); done(); return; } catch (e) { /* the opener went away; try the channel */ }

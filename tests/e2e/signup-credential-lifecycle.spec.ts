@@ -183,3 +183,48 @@ test.describe("sign-up v2.1, the credential step in the browser", () => {
     expect(callbacks).toEqual([{ provider: "google", code: "C-phone", state: "S-2" }]);
   });
 });
+
+
+test("a readiness outage does not retry on every credential-screen render", async ({ page, context }) => {
+  const { cdId } = await reservation(page);
+  let lookups = 0;
+  await context.route("**/api/onboarding/methods", route => {
+    lookups++;
+    return route.fulfill({ status: 503, json: { error: "unavailable" } });
+  });
+  await page.goto(local("/onboarding"));
+  await toSignIn(page, cdId);
+  await page.locator('[data-logo="password"]').click();
+  await page.getByPlaceholder("At least 12 characters").fill("synthetic long phrase");
+  await expect(page.getByPlaceholder("At least 12 characters")).toHaveValue("synthetic long phrase");
+  expect(lookups).toBe(1);
+});
+
+test("Back retires a pending provider start; returning to the screen cannot launch its popup", async ({ page, context }) => {
+  const { cdId } = await reservation(page);
+  await googleOffered(context);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let started!: () => void;
+  const startSeen = new Promise<void>(resolve => { started = resolve; });
+  await context.route("**/api/onboarding/*/sso/google/start", async route => {
+    started(); await held;
+    await route.fulfill({ json: { url: "https://provider.invalid/auth?state=retired" } });
+  });
+  const providerVisits: string[] = [];
+  await context.route("https://provider.invalid/**", route => {
+    providerVisits.push(route.request().url()); return route.fulfill({ body: "Unexpected provider visit" });
+  });
+  await page.goto(local("/onboarding")); await toSignIn(page, cdId);
+  const opening = page.waitForEvent("popup"); await google(page).click();
+  const popup = await opening; await startSeen;
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect.poll(() => popup.isClosed()).toBe(true);
+  const completed = page.waitForResponse(r => r.url().endsWith("/sso/google/start"));
+  release(); await completed;
+  await press(page, /^Make it mine/);
+  await expect(page.getByText("How will you sign in?")).toBeVisible();
+  await page.locator('[data-logo="password"]').click();
+  await expect(page.getByPlaceholder("At least 12 characters")).toBeVisible();
+  expect(providerVisits).toEqual([]);
+});

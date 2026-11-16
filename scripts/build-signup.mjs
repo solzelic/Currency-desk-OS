@@ -139,6 +139,10 @@ patch("google", "this.set('lockMode', 'google'); this.setState({ ssoPhase: 'choo
   "this.set('lockMode', 'google'); window.__cdOnb.sso(this, 'google'); }");
 patch("microsoft", "this.set('lockMode', 'microsoft'); this.setState({ ssoPhase: 'choose', ssoProv: 'microsoft', lockErr: '' }); }",
   "this.set('lockMode', 'microsoft'); window.__cdOnb.sso(this, 'microsoft'); }");
+/* Choosing another method retires a popup whose provider isolated its opener. */
+patch("password cancels provider", "this.set('lockMode', 'password'); this.setState({ lockErr: '' });",
+  "window.__cdOnb.cancelCredential(); this.set('lockMode', 'password'); this.setState({ lockErr: '' });");
+patch("unmount cancels provider", "  componentWillUnmount() {", "  componentWillUnmount() { window.__cdOnb.cancelCredential(); window.__cdOnb.comp = null;");
 patch("google mark", "React.createElement('span', { style: { fontFamily: 'var(--m)', fontWeight: 700, fontSize: '16px' } }, 'G')", "window.__cdOnb.mark('google')");
 patch("microsoft mark", "React.createElement('span', { style: { fontFamily: 'var(--m)', fontWeight: 700, fontSize: '16px' } }, 'M')", "window.__cdOnb.mark('microsoft')");
 /* nothing on this screen names the person: the server has not said who they are */

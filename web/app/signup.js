@@ -252,7 +252,7 @@ class Component extends DCLogic {
     document.addEventListener('keydown', this._docKey);
   }
   _docKey = (e) => { try { if (!this._meta || this._meta.type !== 'pin') return; const t = e.target; if (t && t.closest && t.closest('[data-card]')) return; if (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return; this.onKey(e); } catch (x) {} };
-  componentWillUnmount() { document.removeEventListener('keydown', this._docKey); clearInterval(this._tourI); document.removeEventListener('pointerdown', this._warm, true); document.removeEventListener('keydown', this._warm, true); document.removeEventListener('click', this._clickMark, true); document.removeEventListener('click', this._tapSnd, false); }
+  componentWillUnmount() { window.__cdOnb.cancelCredential(); window.__cdOnb.comp = null; document.removeEventListener('keydown', this._docKey); clearInterval(this._tourI); document.removeEventListener('pointerdown', this._warm, true); document.removeEventListener('keydown', this._warm, true); document.removeEventListener('click', this._clickMark, true); document.removeEventListener('click', this._tapSnd, false); }
   /* Sound timing (Sol, 14 Nov: "way off" on Mac). One sound per press, on the click, with the change it causes:
      - pointerdown/keydown only wakes the audio (builds the rooms, resumes the context); it makes no sound
      - a button's own handler plays its sound during the click; if it played none, a tap plays after it (bubble phase)
@@ -1192,7 +1192,7 @@ class Component extends DCLogic {
           Object.assign({ id: 'password', icon: this.icon('mail', 18, 'var(--ink)', 1.9), iconWrap: 'width: 24px; display: grid; place-items: center; flex: none;',
             label: 'Continue with email and password',
             s: base + fade('password') + 'border: 1px solid ' + (mode === 'password' ? 'var(--primary)' : 'var(--line)') + '; background: ' + (mode === 'password' ? 'rgba(29,107,69,0.06)' : 'rgba(255,255,255,0.7)') + '; color: var(--ink);',
-            onTap: () => { if (busy) return; this._tone('tap'); this.set('lockMode', 'password'); this.setState({ lockErr: '' }); setTimeout(() => this.focusStage(), 60); } },
+            onTap: () => { if (busy) return; this._tone('tap'); window.__cdOnb.cancelCredential(); this.set('lockMode', 'password'); this.setState({ lockErr: '' }); setTimeout(() => this.focusStage(), 60); } },
             tag('', 'plain'))
         ];
         R.authBtns = R.authBtns.filter((b) => window.__cdOnb.offers(b.id));
