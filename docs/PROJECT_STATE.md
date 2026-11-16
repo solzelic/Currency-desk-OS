@@ -1,3 +1,53 @@
+## Staging Start on Day 1, 16 November 2026
+
+Staging's sign-in page has a second staging-only button beside "Start a fresh shop":
+"Start on Day 1" (Sol, 16 Nov). One press opens a brand-new test shop on its first day,
+signed in as its owner, so Day 1, Build my desk, the tour and the first apps can be
+tried without walking the Early Access application or the sign-up. `POST
+/api/staging/day-one` (`server/src/routes/staging-day-one.ts`,
+`server/src/onboarding/staging-day-one.ts`) drives the real v2.1 services in process,
+in the page's order: the staging door's reservation (written as the ticket branch of
+`POST /api/enquiries` writes it, invited quietly), a generated password credential,
+the ordinary 6-digit code handed back in process and never mailed, verify, a generated
+strong PIN, the chapters (a one-shop Toronto exchange, CAD with USD and EUR, a small
+opening count, the owner as compliance officer, the pack's ID line, no team), the
+signature as "Staging Owner", the call stopped and the staging plan. It stops where a
+staging owner stands before Open and answers once with the CD ID and the owner's
+sign-in, plus the ordinary enrolment cookie. The sign-up page then asks the existing
+`/resume`, `/staging-open` and `/open`, and Day 1 shows over the real Home with one
+staging line giving the PIN and the sign-in. Every press is a new test shop. Nothing
+calls Stripe, a mailer or the network, and nothing posts to the ledger.
+
+Gates: the route exists only with `STAGING` exactly 1; each request needs the staging
+raw Host (forwarded hosts ignored), the `db_environment` staging marker before any
+write, and the fixture's provenance before each write step. A cross-site or non-JSON
+post is 403 before its body is read, and the sign-up page acts on `#day1` only when
+the click in that tab left a timestamp under a minute old (`cdDayOne`, no secret), so a
+link from another site does nothing. The per-address limit is shared with Start a fresh
+shop (8 an hour; an IPv6 /64 now counts as one address for both), and Start on Day 1
+adds a process-wide 30 an hour.
+
+Known limits, recorded rather than hidden:
+- The server signs the declaration, and the page posts the plan assent, without a person
+  reading either. That is for the staging door's own fixture only (test shop, do not
+  contact, `planChoice.staging`), and `staging.day_one` is audited. Compliance should
+  know Day 1 shops carry server-signed records.
+- The shown password is permanent (`mustChangePassword` false). It works through the API
+  sign-in today (`login/start` answers with the code on screen for a staging test owner),
+  but the sign-in screen cannot finish that sign-in until CD-221 shows the code. Until
+  then the way back through the UI is the 12-hour desk session in that browser, or a new
+  press. A screenshot of the Day 1 line is a lasting sign-in to that test shop.
+- The shown PIN becomes 0000 when staging next restarts or deploys (the boot PIN reset).
+- A reload while the press is answering, or before `/staging-open` answers, lands on the
+  welcome screen and leaves an invited reservation with no desk. A reload after `/open`
+  also lands on the welcome screen, without the line; `/app` still opens the desk on its
+  session. Leftover reservations and test desks are not cleaned up.
+- Hosted use needs the database marker (`npm run staging -- mark-db`), unverified as of
+  this note; without it the button answers that the staging door can't open a shop.
+
+Protected surfaces (sessions, provisioning): CTO review owed. Not release, CTO or
+Compliance acceptance.
+
 ## Signup v2.1 rate website refusal, 16 November 2026
 
 On Extras, "Your own rate website" (Coming soon) can be ticked, and the server

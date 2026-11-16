@@ -287,7 +287,9 @@ patch("day one prototype chrome ends", '      <div style="position: relative; ma
 patch("day one prototype cards end", '        <sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">', '        </sc-if><sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">');
 
 
-patch("home loading status", '{{ dkCta }}</button>', '{{ dkCta }}</button><sc-if value="{{ homeStatus }}"><p data-real-home-status="true" role="status" style="font-size:12px;color:var(--mute)">{{ homeStatus }}</p></sc-if>');
+/* and, under it, staging Start on Day 1's one line (signup-v2.1-open.js), drawn only after that launch */
+patch("home loading status", '{{ dkCta }}</button>', '{{ dkCta }}</button><sc-if value="{{ homeStatus }}"><p data-real-home-status="true" role="status" style="font-size:12px;color:var(--mute)">{{ homeStatus }}</p></sc-if>'
+  + '<sc-if value="{{ stagingDayOne }}"><p data-staging-day-one="true" role="note" style="max-width:520px;margin:14px auto 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;line-height:1.55;color:var(--ink);text-align:left;white-space:pre-line;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text">{{ stagingDayOne }}</p></sc-if>');
 patch("build my desk", "R.onDkWalk = ", "R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : ");
 
 /* ======== END OF SECTIONS ======== */

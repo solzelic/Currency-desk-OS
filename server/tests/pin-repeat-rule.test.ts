@@ -136,7 +136,12 @@ describe("PIN writers", () => {
     const desk = readFileSync(join(root, "routes/signup-desk.ts"), "utf8");
     expect(desk.indexOf("checkPin(parsed.data.pin, parsed.data.confirm)")).toBeGreaterThan(-1);
     expect(desk.indexOf("checkPin(parsed.data.pin")).toBeLessThan(desk.indexOf("savePin(db"));
-    expect(files(root).filter((p) => readFileSync(p, "utf8").includes("savePin(")).map((p) => p.slice(root.length + 1)).sort()).toEqual(["onboarding/signup-pin.ts", "routes/signup-desk.ts"]);
+    /* staging Start on Day 1 generates its PIN, keeping only one checkPin passes
+       and the desk's own list calls strong, before the same writer */
+    const day = readFileSync(join(root, "onboarding/staging-day-one.ts"), "utf8");
+    expect(day.indexOf("checkPin(pin, pin).ok && pinStrength(pin) === \"strong\"")).toBeGreaterThan(-1);
+    expect(day.indexOf("checkPin(pin, pin).ok")).toBeLessThan(day.indexOf("savePin(db"));
+    expect(files(root).filter((p) => readFileSync(p, "utf8").includes("savePin(")).map((p) => p.slice(root.length + 1)).sort()).toEqual(["onboarding/signup-pin.ts", "onboarding/staging-day-one.ts", "routes/signup-desk.ts"]);
     expect(files(root).some((p) => p.endsWith("staging-default-pin.ts"))).toBe(false);
   });
 

@@ -16,7 +16,8 @@
        the typed CurrencyDesk ID, in this tab (sessionStorage), so a reload
        comes back to the same reservation, and while the email code is
        pending a bare "1" beside it, so a reload lands back on Check your
-       inbox. Answers live on the server.
+       inbox. Answers live on the server. On staging, Start on Day 1 leaves
+       a bare timestamp (cdDayOne) that this page reads once and drops.
      - no card number reaches this page. Stripe Elements draws the card in
        Stripe's own frame; this page only holds the SetupIntent's secret.
      - no success the server did not say. Every screen that sends something
@@ -54,6 +55,18 @@
   /* Screens outside the prototype's ORDER, and where its own next() goes
      from each: _after() reads them as ORDER[0] and would open the ID. */
   var NEXT_OF = { 28: 29, 30: 4, 31: 11 };
+
+  /* Staging's Start on Day 1 (os-src/staging-fresh-shop.js) marks this tab
+     with a bare timestamp just before it opens /onboarding#day1. The mark is
+     read once and dropped on every load, and #day1 counts only with a mark
+     under a minute old: a link another site opens has none. */
+  var DAY_ONE_KEY = "cdDayOne";
+  function dayOneMarked() {
+    var raw = null;
+    try { raw = sessionStorage.getItem(DAY_ONE_KEY); sessionStorage.removeItem(DAY_ONE_KEY); } catch (e) { return false; }
+    var age = Date.now() - Number(raw);
+    return /^[0-9]{13}$/.test(String(raw)) && age >= 0 && age < 60000;
+  }
 
   function tabGet() { try { return sessionStorage.getItem(TAB_KEY) || ""; } catch (e) { return ""; } }
   /* Dropping the ID drops the inbox flag with it. */
@@ -441,6 +454,12 @@
       var ret = null;
       try { ret = JSON.parse(sessionStorage.getItem("cdSsoReturn") || "null"); sessionStorage.removeItem("cdSsoReturn"); } catch (e) { ret = null; }
       var back = /[?&]sso=1/.test(location.search) ? ssoParams() : null;
+      /* Start on Day 1: the address is tidied first, so a reload never asks twice */
+      var dayOne = dayOneMarked();
+      if (location.hash === "#day1") {
+        history.replaceState(null, "", "/onboarding");
+        if (dayOne && CD.dayOne) { CD.dayOne(c); return; }
+      }
       var id = (ret && ret.id) || tabGet();
       if (!ID.test(id)) return;
       CD.code = id;
@@ -474,7 +493,7 @@
   };
 
   /* What the other bridge files (chapters, open) share. */
-  CD.h = { call: call, api: api, why: why, NET: NET, tabSet: tabSet, STEP_OF: STEP_OF };
+  CD.h = { call: call, api: api, why: why, NET: NET, tabSet: tabSet, STEP_OF: STEP_OF, ID: ID };
 
   /* The popup comes back here (web/signup-sso.html posts it). */
   window.addEventListener("message", function (e) {

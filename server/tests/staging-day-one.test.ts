@@ -145,7 +145,7 @@ describe("closed everywhere but the staging door", () => {
 
   it("is 404 for a live, forwarded, preview or missing Host, and on a live runtime; nothing is written", async () => {
     const before = await written();
-    for (const headers of [
+    for (const headers of <Record<string, string>[]>[
       { host: "www.currencydeskos.com" },
       { host: "currencydeskos.com", "x-forwarded-host": HOST },
       { host: "www.currencydeskos.com", forwarded: `host=${HOST}` },

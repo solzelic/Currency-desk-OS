@@ -1,7 +1,8 @@
 /* Sign-up v2.1 on staging, in the browser: the code the server hands back for
-   the staging door's synthetic shop only (bridge), and the no-card Open
-   (open). Nothing here decides whether a shop is the fixture: the server does,
-   and a body without its field changes nothing. */
+   the staging door's synthetic shop only (bridge), the no-card Open (open),
+   and Start on Day 1's landing at #day1 (bridge mount, open). Nothing here
+   decides whether a shop is the fixture: the server does, and a body without
+   its field changes nothing. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

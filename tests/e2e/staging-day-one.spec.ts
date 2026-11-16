@@ -48,11 +48,23 @@ test.afterAll(async () => {
   await admin?.end();
 });
 
+/* Asked from inside the page: the host mapping is Chromium's, and the cookies are the page's. */
+async function inPage(page: Page, url: string): Promise<{ status: number; body: any }> {
+  return page.evaluate(async (u) => {
+    const r = await fetch(u, { credentials: "same-origin" });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  }, url);
+}
+
 /** The sign-in page, its Start on Day 1 button, and the server's one answer. */
-async function startOnDayOne(page: Page): Promise<DayOne> {
+async function startOnDayOne(page: Page, shot?: string): Promise<DayOne> {
   await page.goto("/app");
+  const button = page.getByRole("button", { name: /Start on Day 1/ });
+  await expect(button).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start a fresh shop/ })).toBeVisible();
+  if (shot) await page.screenshot({ path: test.info().outputPath(shot), animations: "disabled" });
   const created = page.waitForResponse((r) => r.url().endsWith("/api/staging/day-one"), { timeout: 60_000 });
-  await page.getByRole("button", { name: /Start on Day 1/ }).click();
+  await button.click();
   const res = await created;
   expect(res.status()).toBe(201);
   return (await res.json()) as DayOne;
@@ -77,29 +89,36 @@ test("Start on Day 1 opens a new test shop on its first day, signed in as its ow
   await page.setViewportSize({ width: 1280, height: 800 });
   const stripe: string[] = [];
   page.on("request", (r) => { if (/stripe\.com/.test(r.url())) stripe.push(r.url()); });
-  const body = await startOnDayOne(page);
+  const body = await startOnDayOne(page, "staging-signin-day-one-button.png");
   await onDayOne(page, body);
   await page.screenshot({ path: test.info().outputPath("staging-day-one.png"), animations: "disabled" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-staging-day-one]")).toBeVisible();
+  await page.locator("[data-staging-day-one]").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath("staging-day-one-phone.png"), animations: "disabled" });
+  await page.setViewportSize({ width: 1280, height: 800 });
   expect(stripe).toEqual([]);
 
   /* the desk session is the new owner's, on a test shop */
-  const me = await page.request.get("/api/auth/me");
-  expect(me.status()).toBe(200);
-  const user = (await me.json()).user as { tenantId: string; staffId?: string; id?: string };
-  const tenant = (await (await page.request.get(`/api/tenant?tenantId=${user.tenantId}`)).json()).tenant as { id: string; name?: string };
+  const me = await inPage(page, "/api/auth/me");
+  expect(me.status).toBe(200);
+  const user = me.body.user as { tenantId: string };
+  const tenant = (await inPage(page, "/api/tenant")).body.tenant as { id: string; name?: string };
   expect(tenant.id).toBe(user.tenantId);
+  expect(tenant.name).toBe(body.operatingName);
 
-  /* nothing secret in this browser's storage */
+  /* Nothing secret in this browser's storage. The sign-up tab keeps nothing
+     of the shop; the real Home's own settings cache (localStorage, as for
+     every owner) holds the shop's settings, never the password or PIN. */
   const storage = await page.evaluate(() => {
-    const all: Record<string, string> = {};
-    for (const s of [sessionStorage, localStorage]) for (let k = 0; k < s.length; k++) { const key = s.key(k)!; all[key] = s.getItem(key) ?? ""; }
-    return all;
+    const read = (s: Storage) => { const all: Record<string, string> = {}; for (let k = 0; k < s.length; k++) { const key = s.key(k)!; all[key] = s.getItem(key) ?? ""; } return all; };
+    return { session: read(sessionStorage), local: read(localStorage) };
   });
-  const flat = JSON.stringify(storage);
-  expect(flat).not.toContain(body.signIn.password);
-  expect(flat).not.toContain(body.signIn.email);
-  expect(Object.values(storage)).not.toContain(body.signIn.pin);
-  expect(storage.cdDayOne).toBeUndefined();
+  const session = JSON.stringify(storage.session);
+  for (const value of [body.signIn.password, body.signIn.email, body.cdId]) expect(session).not.toContain(value);
+  expect(Object.keys(storage.session)).not.toContain("cdDayOne");
+  expect(JSON.stringify(storage.local)).not.toContain(body.signIn.password);
+  for (const s of [storage.session, storage.local]) expect(Object.values(s)).not.toContain(body.signIn.pin);
 
   /* a reload drops the one-time line and lands on the welcome; the desk session still opens the shop */
   await page.reload();
@@ -107,7 +126,7 @@ test("Start on Day 1 opens a new test shop on its first day, signed in as its ow
   await expect(page.locator("[data-staging-day-one]")).toHaveCount(0);
   await page.goto("/app");
   await landOnDesktop(page);
-  expect((await (await page.request.get("/api/auth/me")).json()).user.tenantId).toBe(user.tenantId);
+  expect((await inPage(page, "/api/auth/me")).body.user.tenantId).toBe(user.tenantId);
 });
 
 test("a second press, in another browser, is another shop, and Build my desk opens it", async ({ browser }) => {
@@ -118,7 +137,7 @@ test("a second press, in another browser, is another shop, and Build my desk ope
     await page.setViewportSize({ width: 1280, height: 800 });
     const first = await startOnDayOne(page);
     await onDayOne(page, first);
-    const firstTenant = (await (await page.request.get("/api/auth/me")).json()).user.tenantId as string;
+    const firstTenant = (await inPage(page, "/api/auth/me")).body.user.tenantId as string;
     const other = await browser.newContext({ baseURL: BASE });
     try {
       const second = await other.newPage();
@@ -127,7 +146,7 @@ test("a second press, in another browser, is another shop, and Build my desk ope
       await onDayOne(second, next);
       expect(next.cdId).not.toBe(first.cdId);
       expect(next.signIn.email).not.toBe(first.signIn.email);
-      const nextTenant = (await (await second.request.get("/api/auth/me")).json()).user.tenantId as string;
+      const nextTenant = (await inPage(second, "/api/auth/me")).body.user.tenantId as string;
       expect(nextTenant).not.toBe(firstTenant);
     } finally {
       await other.close();
@@ -135,7 +154,7 @@ test("a second press, in another browser, is another shop, and Build my desk ope
     await page.getByRole("button", { name: /Build my desk/ }).click();
     await expect(page).toHaveURL(/\/app/);
     await landOnDesktop(page);
-    expect((await (await page.request.get("/api/auth/me")).json()).user.tenantId).toBe(firstTenant);
+    expect((await inPage(page, "/api/auth/me")).body.user.tenantId).toBe(firstTenant);
   } finally {
     await context.close();
   }

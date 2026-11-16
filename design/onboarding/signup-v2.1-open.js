@@ -7,6 +7,19 @@
 (function () {
   "use strict";
   var CD = window.__cdOnb, h = CD.h, call = h.call, api = h.api, why = h.why, NET = h.NET, tabSet = h.tabSet, STEP_OF = h.STEP_OF;
+  /* Start on Day 1 (staging): what the server's one answer must look like */
+  var DAY_ONE_EMAIL = /^owner\+[0-9a-f]{8}@staging\.invalid$/;
+  var DAY_ONE_PASSWORD = /^[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{4}$/;
+  var DAY_ONE_FAILED = "The staging door didn’t open a shop. Try again.";
+  var DAY_ONE_SLOW = "Too many new staging shops just now. Try again in a little while.";
+  /* One item a line (the page draws it pre-line), so a password never wraps at its hyphens. */
+  function dayOneLine(s) {
+    return ["Staging test shop. Note these now: they are not shown again.",
+      "Counter PIN " + s.pin + " (staging resets every PIN to 0000 when it next restarts or deploys)",
+      "Owner email " + s.email,
+      "Password " + s.password + " (Forgot PIN asks for it)",
+      "The sign-in page can’t sign this owner in again yet (CD-221), so this browser stays signed in for 12 hours."].join("\n");
+  }
   /* ---- money, as the server sent it ------------------------------------ */
   var STAGING_NOTE = "Staging test shop. No card is taken, nothing on this form is sent and nothing is charged: Open finishes the desk as a test shop.";
   /* the server's own line is preferred; this is for a server that sends none */
@@ -57,6 +70,8 @@
       if (CD._errAt !== i) { CD._errAt = i; if (CD.err && i !== 0) CD.err = ""; }
       if (CD.err && i !== 14 && i !== 0) R.help = CD.err;
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
+      /* Start on Day 1's one staging line: on Day 1 only, after that launch */
+      R.stagingDayOne = i === 16 && CD.launched === true && CD._dayOneLine ? CD._dayOneLine : "";
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
       /* The website refusal stands while it is ticked. Unticking clears it,
@@ -66,8 +81,9 @@
         CD._webRefused = ""; CD._cardKey = null; CD._cardFailed = false;
       }
       R.xWebRefused = CD._webRefused || "";
-      /* a desk already open is only waiting for /open: no quote, no card (both 409) */
-      var quoting = !CD._paying && !CD.alreadyOpen;
+      /* a desk already open is only waiting for /open: no quote, no card (both 409);
+         one that has opened needs neither in the second before Day 1 */
+      var quoting = !CD._paying && !CD.alreadyOpen && !CD.launched;
       if (!CD.prices && quoting) { CD.loadPrices(c); }
       var cur = " " + ((CD.prices && CD.prices.currency) || c.PRICE_CCY);
       var f = function (m) { return money(m, CD.prices && CD.prices.currency); };
@@ -255,9 +271,57 @@
         CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
       });
     },
-    walk: function () { location.assign("/app"); },
+    walk: function () { CD._dayOneLine = ""; location.assign("/app"); },
 
+    /* ---- Start on Day 1 (staging only) ----------------------------------- */
+    /* The bridge's mount() calls this for /onboarding#day1 with this tab's
+       fresh mark. The server signs up a new test shop and answers once with
+       its ID and the owner's sign-in; the page's own calls then open it, as
+       after a staging Open: /resume, /staging-open, /open. The sign-in stays
+       in page memory, for the one line on Day 1, and is never stored. The ID
+       goes into this tab only once the desk is opening, so a reload before
+       then starts afresh instead of half-way through. */
+    dayOne: function (c) {
+      var fail = function (r) {
+        CD._paying = false; CD._dayOneLine = ""; CD.code = ""; tabSet("");
+        CD.err = r && r.status === 429 ? DAY_ONE_SLOW : why(r, DAY_ONE_FAILED);
+        c._dir = -1; c.setState({ i: 0 });
+      };
+      tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._paying = true;
+      var nav = CD._nav || 0;
+      var moved = function () { return (CD._nav || 0) !== nav; };
+      c._dir = 1; c.setState({ i: 15 });
+      call("POST", "/api/staging/day-one", {}, 60000).then(function (r) {
+        if (moved()) { CD._paying = false; return; }
+        var b = r.body || {}, s = b.signIn && typeof b.signIn === "object" ? b.signIn : {};
+        if (r.status !== 201 || b.ok !== true || typeof b.cdId !== "string" || !h.ID.test(b.cdId) || !DAY_ONE_EMAIL.test(String(s.email))
+          || !/^[0-9]{4}$/.test(String(s.pin)) || !DAY_ONE_PASSWORD.test(String(s.password))) return fail(r);
+        var id = b.cdId;
+        CD.code = id; CD.known[id] = true; CD.names[id] = String(b.operatingName || ""); CD.states[id] = "reserved"; CD.signups[id] = "verified";
+        c.set("cdId", id); c.set("operatingName", CD.names[id]);
+        CD._dayOneLine = dayOneLine(s);
+        return CD.loadResume(true).then(function (res) {
+          if (res === false) { CD._paying = false; CD._dayOneLine = ""; return; }
+          if (res !== true) return fail(res);
+          return api("POST", "/staging-open", { termsSourceHash: window.__cdAgreementHash, agreed: true }).then(function (o) {
+            if (CD.code !== id || moved()) { CD._paying = false; CD._dayOneLine = ""; return; }
+            if ((o.status === 200 && o.body.ok) || (o.status === 409 && o.body.error === "already_open")) { tabSet(id); CD.waitOpen(c, 0, { id: id, nav: nav }); return; }
+            fail(o);
+          });
+        });
+      });
+    },
   });
+
+  /* Leaving Day 1 forgets the staging line, and a page brought back from the
+     browser's cache draws again without it. */
+  window.addEventListener("pagehide", function () {
+    if (!CD._dayOneLine) return;
+    CD._dayOneLine = "";
+    var line = document.querySelector("[data-staging-day-one]");
+    if (line) line.style.display = "none";
+  });
+  window.addEventListener("pageshow", function (e) { if (e && e.persisted && CD.comp) CD.comp.forceUpdate(); });
 
   window.addEventListener("message", function (e) {
     var frame = document.querySelector("iframe[data-real-home]");
