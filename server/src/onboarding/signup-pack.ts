@@ -26,6 +26,8 @@ export type SignupPack = {
   idLine: { legal: number | null; recommended: number | null; currency: string };
   law: LawRow[];
   addressFormat: "ca" | "generic";
+  exampleForeignCurrency: string | null;
+  reportName: string | null;
 };
 
 /* Waiting on Compliance (build doc §12). Ship the words when cleared. */
@@ -68,5 +70,7 @@ export function signupPack(code: string | null | undefined): SignupPack {
     idLine: ca ? { legal: 3000, recommended: 1000, currency: "CAD" } : { legal: null, recommended: null, currency: j.currency },
     law: ca ? CA_LAW : [],
     addressFormat: ca ? "ca" : "generic",
+    exampleForeignCurrency: ca ? "USD" : null,
+    reportName: ca ? "Large Cash Transaction Report" : null,
   };
 }
