@@ -89,6 +89,9 @@ export function fillRoute(route: string, ids: SweepIds): string {
     ["token", "sweep".padEnd(32, "0")],
     /* The reveal list is a GET. A teller is refused before this id is read. */
     ["recordId", "idc_sweep"],
+    /* Sign-up v2.1's sign-in providers; the sweep's ref is not a
+       CurrencyDesk ID, so the route answers 404 or 503. */
+    ["provider", "google"],
   ]);
   if (route.startsWith("/api/admin/enquiries/")) params.set("id", ids.enquiryId);
   else if (route.startsWith("/api/admin/staff/")) params.set("id", ids.staffId);

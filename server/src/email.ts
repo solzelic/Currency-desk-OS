@@ -9,6 +9,7 @@
    (SendGrid is a small addition if one-vendor billing is preferred.)
    ============================================================ */
 import { randomInt, createHash, timingSafeEqual } from "node:crypto";
+import { testMailbox } from "./email-test-mailbox.js";
 import { applicationReceived, codeEmail, contactReceivedEmail, passwordResetEmail, youreIn } from "./emails/design.js";
 
 export { contactReceivedEmail, passwordResetEmail };
@@ -24,18 +25,28 @@ export type EmailStatus = "sent" | "simulated" | "failed";
 export const replyToAddress = (): string | undefined =>
   process.env.REPLY_TO?.trim() || undefined;
 
+export const EMAIL_TIMEOUT_MS = 10_000;
+
 export async function sendEmail(
   to: string,
   subject: string,
-  body: { text: string; html?: string; replyTo?: string },
+  body: { text: string; html?: string; replyTo?: string; sensitive?: boolean },
 ): Promise<EmailStatus> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "CurrencyDesk <noreply@mail.currencydesk.com>"
+  /* The browser suite's mailbox (email-test-mailbox.ts): open only on the
+     seam entry, never on a real server. Only the messages a real server would
+     refuse to log (sign-up codes); the rest keep their simulated log line. */
+  const sink = testMailbox();
+  if (sink && body.sensitive && (!key || !from)) {
+    sink.push({ to, subject, text: body.text, at: Date.now() });
+    return "simulated";
+  }
   if (!key || !from) {
     /* A sign-in subject line is the code. Production must not write it
        down just because the provider is not configured yet. Dev and test
        still simulate — the suites read the code back from that log. */
-    if (process.env.NODE_ENV === "production") {
+    if (body.sensitive || process.env.NODE_ENV === "production") {
       const missing = [!key ? "RESEND_API_KEY" : null, !from ? "EMAIL_FROM" : null].filter((name): name is string => !!name);
       const verb = missing.length === 1 ? "is" : "are";
       console.warn(`[email refused] ${missing.join(" and ")} ${verb} not set. Nothing was sent. The message was not written to the log.`);
@@ -48,6 +59,9 @@ export async function sendEmail(
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      /* Every external call has a timeout (standards §5.5). A hung send is
+         reported as failed, the same as a refused one. */
+      signal: AbortSignal.timeout(EMAIL_TIMEOUT_MS),
       body: JSON.stringify({
         from, to, subject, text: body.text, html: body.html,
         ...(body.replyTo ? { reply_to: body.replyTo } : {}),
@@ -58,13 +72,13 @@ export async function sendEmail(
          must not hide the status, and production still does not log the
          body: a provider echo of the message would be the code. */
       const providerBody = await res.text().catch(() => "");
-      if (process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
+      if (body.sensitive || process.env.NODE_ENV === "production") console.error(`[email failed] provider status ${res.status}`);
       else console.error(`[email failed] ${res.status} ${providerBody}`);
       return "failed";
     }
     return "sent";
   } catch (err) {
-    console.error("[email failed]", err);
+    console.error("[email failed]", body.sensitive ? "transport_error" : err);
     return "failed";
   }
 }
@@ -152,7 +166,10 @@ export function inviteEmail(o: InviteOpts): { subject: string; text: string; htm
      never type it. NOT /signup — that is the application they have already
      filled in, and sending an accepted operator back to it is the one thing
      this email must not do. */
-  const setupUrl = `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
+  /* A v2.1 applicant has a CurrencyDesk ID: the button opens sign-up plainly,
+     with no token, and they type their ID there (SIGNUP-LOGIC §2.1). The older
+     setup page, opened by reference, refuses a v2.1 reservation. */
+  const setupUrl = o.cdId ? `${o.origin}/onboarding` : `${o.origin}/onboarding/${encodeURIComponent(o.reference)}`;
   return youreIn({
     name: o.name, shopName: o.shopName, reference: o.reference, setupUrl,
     cohortNo: o.cohortNo, place: o.place, issuedOn: o.issuedOn, cdId: o.cdId, call: o.call,

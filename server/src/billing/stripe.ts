@@ -46,6 +46,11 @@ export function stripeClient(config: StripeBillingConfig): Stripe {
   return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 2 });
 }
 
+/** Signup holds a database lock: bound one attempt, with idempotent client retries. */
+export function signupStripeClient(config: StripeBillingConfig): Stripe {
+  return new Stripe(config.secretKey, { apiVersion: "2026-06-24.dahlia", maxNetworkRetries: 0, timeout: 15_000 });
+}
+
 export function safeAppBaseUrl(config: StripeBillingConfig, host: string | undefined): string | null {
   const candidate = config.appBaseUrl ?? (process.env.NODE_ENV === "production" ? undefined : host ? `http://${host}` : undefined);
   if (!candidate) return null;

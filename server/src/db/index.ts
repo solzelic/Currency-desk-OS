@@ -187,6 +187,76 @@ CREATE TABLE IF NOT EXISTS enquiry_call_consents (
 CREATE INDEX IF NOT EXISTS enquiry_call_consents_idx ON enquiry_call_consents (enquiry_id, at);
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_at timestamptz;
 ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS sam_call_zone text;
+-- Sign-up v2.1 owner account, credentials and challenges (075).
+CREATE TABLE IF NOT EXISTS signup_accounts (
+  enquiry_id text PRIMARY KEY REFERENCES enquiries(id),
+  account_id text NOT NULL UNIQUE,
+  state text NOT NULL DEFAULT 'reserved' CHECK (state IN ('reserved', 'enrolling', 'verified', 'active')),
+  email_verified_at timestamptz,
+  last_step text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS signup_credentials (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  kind text NOT NULL CHECK (kind IN ('passkey', 'google', 'microsoft', 'password')),
+  attempt_hash text NOT NULL,
+  verified_at timestamptz,
+  passkey_id text UNIQUE,
+  public_key text,
+  sign_count bigint,
+  transports jsonb,
+  aaguid text,
+  backup_eligible boolean,
+  backup_state boolean,
+  device_label text,
+  sso_subject text,
+  sso_tenant text,
+  password_hash text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS signup_credentials_enquiry_idx ON signup_credentials (enquiry_id);
+CREATE UNIQUE INDEX IF NOT EXISTS signup_credentials_sso_idx ON signup_credentials (kind, sso_subject) WHERE sso_subject IS NOT NULL AND verified_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS signup_challenges (
+  id text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  purpose text NOT NULL CHECK (purpose IN ('passkey', 'google', 'microsoft')),
+  challenge text NOT NULL,
+  verifier text,
+  nonce text,
+  attempt_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS signup_challenges_idx ON signup_challenges (enquiry_id, created_at);
+-- Sign-up v2.1 email code and enrolment session (076).
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_hash text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_expires_at timestamptz;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS code_sends jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS enrolment_sessions (
+  token_hash text PRIMARY KEY,
+  enquiry_id text NOT NULL REFERENCES enquiries(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  revoked_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS enrolment_sessions_enquiry_idx ON enrolment_sessions (enquiry_id);
+-- Sign-up v2.1 counter PIN (077).
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS pin_hash text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS pin_set_at timestamptz;
+-- Sign-up v2.1 confirm, plan and SetupIntent (078).
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS confirmed_name text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS declaration_version text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS answers_hash text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS plan_choice jsonb;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS stripe_customer_id text;
+ALTER TABLE signup_accounts ADD COLUMN IF NOT EXISTS setup_intent_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS signup_accounts_setup_intent_idx ON signup_accounts (setup_intent_id) WHERE setup_intent_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS enquiry_research_runs (
   id text PRIMARY KEY,
   enquiry_id text NOT NULL REFERENCES enquiries(id),
@@ -791,6 +861,7 @@ export async function createDb(): Promise<DbHandle> {
   await client.exec(
     await readFile(new URL("./migrations/081_idv_check_records.sql", import.meta.url), "utf8"),
   );
+  await client.exec(await readFile(new URL("./migrations/080_signup_agreement_history.sql", import.meta.url), "utf8"));
   await client.exec(
     await readFile(new URL("./migrations/082_pep_answer_events.sql", import.meta.url), "utf8"),
   );

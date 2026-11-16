@@ -11,6 +11,7 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { TENANT_PLANS, type TenantPlan } from "../db/schema.js";
 import { configuredPrice, planForPrice, safeAppBaseUrl, stripeBillingConfig, stripeClient, type BillingCycle, type StripeBillingConfig } from "../billing/stripe.js";
+import { openFromSetupIntent } from "../onboarding/signup-open.js";
 
 const checkoutBody = z.object({
   plan: z.enum(["basic", "pro", "premium"]),
@@ -157,6 +158,16 @@ async function upsertInvoice(db: Db, tenantId: string, data: StripeObject) {
 async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObject): Promise<string | null> {
   const type = string(event.type) ?? "";
   const data = object(object(event.data).object);
+  /* Sign-up v2.1: the card is saved, so the desk opens (onboarding/signup-open.ts).
+     Only an intent the sign-up made carries this metadata; any other
+     SetupIntent falls through and is ignored as before. */
+  const signupEnquiry = string(object(data.metadata).currencydesk_signup_enquiry);
+  if (type === "setup_intent.succeeded" && signupEnquiry) {
+    const intentId = string(data.id);
+    if (!intentId) return null;
+    const result = await openFromSetupIntent(db, { id: intentId, customer: string(data.customer), status: string(data.status), paymentMethod: string(data.payment_method), metadata: { currencydesk_signup_enquiry: signupEnquiry, currencydesk_signup_agreement: string(object(data.metadata).currencydesk_signup_agreement) ?? "" } });
+    return result.opened ? result.tenantId : null;
+  }
   if (type === "checkout.session.completed") {
     const tenantId = string(data.client_reference_id) ?? string(object(data.metadata).currencydesk_tenant_id);
     const customerId = string(data.customer);

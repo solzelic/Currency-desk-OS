@@ -73,6 +73,8 @@ export async function publishStartingBoard(
     /** the `spreadAll` answer, a percentage as typed */
     spreadAll?: unknown;
     publishedBy?: string;
+    /** Signup v2.1 must never publish the legacy indicative fallback as a quoteable rate. */
+    requireMarketRates?: boolean;
   },
 ): Promise<{ published: boolean; currencies: string[] }> {
   const existing = await db
@@ -89,7 +91,7 @@ export async function publishStartingBoard(
   const home = String(args.homeCurrency ?? "").trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(home)) return { published: false, currencies: [] };
   const snapshot = await db
-    .select({ mids: schema.marketRates.mids })
+    .select({ id: schema.marketRates.id, mids: schema.marketRates.mids })
     .from(schema.marketRates)
     .orderBy(desc(schema.marketRates.fetchedAt))
     .limit(1);
@@ -100,25 +102,25 @@ export async function publishStartingBoard(
     .filter((code) => /^[A-Z]{3}$/.test(code) && code !== home);
   /* A desk that named no currencies still needs a board to trade off, so it
      opens with the majors rather than an empty one they cannot quote from. */
-  const codes = wanted.length ? wanted : ["USD", "EUR", "GBP"];
+  const codes = wanted.length || args.requireMarketRates ? wanted : ["USD", "EUR", "GBP"];
 
   /* Live mids and the indicative table are Canadian dollars per one
      unit. A Canadian book stores them as they are. Any other book
      restates them in its own currency. If this table cannot price
      that currency, there is no honest board to publish. */
-  const cadPerHome = home === "CAD" ? 1 : cadPerUnit(home, live);
+  const cadPerHome = home === "CAD" ? 1 : cadPerUnit(home, live, !args.requireMarketRates);
   if (!cadPerHome) return { published: false, currencies: [] };
 
   const rows: Record<string, { mid: number; show: boolean }> = {};
   for (const code of codes) {
     if (home === "CAD") {
-      const mid = live[code] ?? midFromIndicative(code);
+      const mid = args.requireMarketRates ? cadPerUnit(code, live, false) : live[code] ?? midFromIndicative(code);
       if (mid) rows[code] = { mid, show: true };
       continue;
     }
-    const cadPerCode = cadPerUnit(code, live);
+    const cadPerCode = cadPerUnit(code, live, !args.requireMarketRates);
     if (!cadPerCode) continue;
-    rows[code] = { mid: Number((cadPerCode / cadPerHome).toFixed(6)), show: true };
+    rows[code] = { mid: args.requireMarketRates ? Number(new Decimal(cadPerCode).div(cadPerHome).toFixed(12)) : Number((cadPerCode / cadPerHome).toFixed(6)), show: true };
   }
   if (!Object.keys(rows).length) return { published: false, currencies: [] };
 
@@ -132,6 +134,7 @@ export async function publishStartingBoard(
     boardRows: rows,
     boardOrder: Object.keys(rows),
     publishedBy: args.publishedBy ?? "system:provisioning",
+    ...(args.requireMarketRates ? { marketSnapshotId: snapshot[0]?.id ?? null } : {}),
   });
   return { published: true, currencies: Object.keys(rows) };
 }
@@ -142,10 +145,10 @@ function midFromIndicative(code: string): number | null {
 }
 
 /** Canadian dollars per one unit, from the live snapshot or the indicative table. */
-function cadPerUnit(code: string, live: Record<string, number>): number | null {
+function cadPerUnit(code: string, live: Record<string, number>, allowIndicative = true): number | null {
   const fromLive = live[code];
   if (typeof fromLive === "number" && Number.isFinite(fromLive) && fromLive > 0) return fromLive;
-  return midFromIndicative(code);
+  return allowIndicative ? midFromIndicative(code) : null;
 }
 
 /**

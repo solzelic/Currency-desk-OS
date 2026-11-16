@@ -337,15 +337,15 @@ export async function readDeskThresholds(
     if (!market || !amount) return null;
     return roundDownCents(amount.mul(market.rate));
   };
-  const moneyLine = (deskRaw: unknown, packRaw: unknown) =>
+  const moneyLine = (deskRaw: unknown, packRaw: unknown, allowDeskZero = false) =>
     needsConversion && !market
       ? {
           effective: null,
-          deskChoice: money(deskRaw)?.toFixed(2) ?? null,
+          deskChoice: (allowDeskZero ? statedAmount(deskRaw) : money(deskRaw))?.toFixed(2) ?? null,
           packValue: null,
           posture: "unknown" as const,
         }
-      : asMoneySetting(money(deskRaw), packMoney(packRaw), "lower_is_stricter");
+      : asMoneySetting(allowDeskZero ? statedAmount(deskRaw) : money(deskRaw), packMoney(packRaw), "lower_is_stricter");
   const remittanceIdThreshold = await remittanceLine(client, pack, market);
   const transferDueDiligence =
     pack.packId === UK_PACK_V2
@@ -361,7 +361,8 @@ export async function readDeskThresholds(
     regulator: pack.regulator,
     reportName: pack.reportName,
     reportThreshold: moneyLine(row.report_threshold, pack.reportThreshold),
-    idThreshold: moneyLine(row.id_threshold, pack.idThreshold),
+    // Migration 079 makes desk zero an explicit every-exchange policy.
+    idThreshold: moneyLine(row.id_threshold, pack.idThreshold, true),
     remittanceIdThreshold,
     aggregationHours: asCountSetting(
       /* A Philippines pack stores NULL on purpose. A desk number must

@@ -86,6 +86,14 @@ export default defineConfig({
       /* The seam is NODE_ENV development, so the fixed test key is not
          used. This value exists only for that local server. */
       ID_NUMBER_KEY: "seam-id-number-key",
+      /* Sign-up v2.1: the codes it emails are never logged, so the seam
+         entry keeps them in memory for the suite (email-test-mailbox.ts).
+         Passkeys need an origin the browser trusts: localhost, over http,
+         outside production only (onboarding/passkey.ts). */
+      CD_TEST_MAILBOX: "1",
+      SIGNUP_TEST_SEED: "1",
+      WEBAUTHN_RP_ID: "localhost",
+      WEBAUTHN_ORIGINS: `http://localhost:${PORT}`,
     },
   },
 

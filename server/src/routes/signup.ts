@@ -12,7 +12,7 @@
    ============================================================ */
 import type { FastifyInstance } from "fastify";
 import { forgetClaimedCount } from "./early-access.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { schema } from "../db/index.js";
@@ -67,7 +67,14 @@ const onboardingShape = z
 
    EARLY_ACCESS_OPEN=1 takes the gate off for general availability. Platform
    admins are unaffected — they create desks directly from the panel. */
+async function usesSignupV21(db: Db, email: string): Promise<boolean> {
+  const rows = await db.select({ cdId: schema.enquiries.cdId }).from(schema.enquiries)
+    .where(sql`lower(${schema.enquiries.email}) = ${email.toLowerCase()}`);
+  return rows.some((row) => !!row.cdId);
+}
+
 async function isInvited(db: Db, email: string): Promise<boolean> {
+  if (await usesSignupV21(db, email)) return false;
   if (process.env.EARLY_ACCESS_OPEN === "1") return true;
   const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.email, email));
   return rows.some((r) => r.kind === "early_access" && (r.status === "invited" || r.status === "accepted"));
@@ -185,7 +192,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const p = rows[0];
     /* Resend would email, and in dev it would log, a code that staging
        already showed once. Leave the stored hash as it is. */
-    if (p && !p.email.endsWith(STAGING_OWNER_DOMAIN)) await issueCode(p.email, p.businessName);
+    if (p && !(await usesSignupV21(db, p.email)) && !p.email.endsWith(STAGING_OWNER_DOMAIN)) await issueCode(p.email, p.businessName);
     return { ok: true }; // uniform response — don't reveal whether a pending signup exists
   });
 
@@ -195,7 +202,7 @@ export function registerSignupRoutes(app: FastifyInstance, db: Db) {
     const { email, code } = parsed.data;
     const rows = await db.select().from(schema.pendingSignups).where(eq(schema.pendingSignups.email, email)).limit(1);
     const p = rows[0];
-    if (!p) return reply.code(404).send({ error: "no_pending", detail: "Start the signup again — we couldn't find it." });
+    if (!p || await usesSignupV21(db, email)) return reply.code(404).send({ error: "no_pending", detail: "Start the signup again — we couldn't find it." });
     if (p.expiresAt.getTime() < Date.now()) return reply.code(410).send({ error: "expired", detail: "That code expired — request a new one." });
     if (p.attempts >= MAX_ATTEMPTS) return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries — request a new code." });
     if (!codeMatches(code, p.codeHash)) {

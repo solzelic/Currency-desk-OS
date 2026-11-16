@@ -5,18 +5,21 @@
   "//": "react, react-dom and @babel/standalone are PINNED EXACTLY, on purpose. react and react-dom are served to the browser from web/vendor, copied out of node_modules by `npm run build:site`; @babel/standalone compiles the JSX at build time in `npm run build:os`; it reaches a browser only through the uncompiled fallback shells, whose unpkg tag and SRI hash pin this exact version. A caret on any of them would let npm resolve a different version than the one the built output was produced with, which is the kind of drift nothing here would notice.",
   "scripts": {
     "build:onboarding": "node scripts/build-onboarding.mjs",
+    "build:signup": "node scripts/build-signup.mjs",
     "build:site": "node scripts/build-site.mjs",
     "build:os": "node scripts/build-os.mjs",
     "unbundle": "node scripts/unbundle-design.mjs",
     "check:parse": "node scripts/check-browser-parses.mjs && node scripts/check-public-claims.mjs",
     "check:sanctions": "node --test tests/sanctions-phrases.test.mjs && node scripts/check-sanctions-bundle.mjs",
     "test:e2e": "playwright test",
-    "build": "npm run build:onboarding && npm run build:site && npm run build:os",
+    "build": "npm run build:onboarding && npm run build:signup && npm run build:site && npm run build:os",
     "check": "npm run build && npm run check:parse && npm run test:e2e"
   },
   "devDependencies": {
     "@babel/standalone": "7.29.0",
     "@playwright/test": "^1.61.1",
+    "axe-core": "4.10.2",
+    "parse5": "8.1.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tailwindcss": "3.4.17"

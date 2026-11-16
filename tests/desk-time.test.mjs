@@ -125,6 +125,10 @@ const BASELINE = {
   /* Early Access v2.1: when SAM can call, in the applicant's own clock.
      There is no desk yet, so there is no desk zone to show it in. */
   "design/site/CurrencyDesk Early Access v2.dc.html": { time: 2, day: 0 },
+  /* Sign-up v2.1 (Sol's frozen prototype): the Day 1 header clock on the
+     drawn desk, before a desk session exists. Once the desk opens, the real
+     Home (which uses the helper) is drawn over that header. */
+  "design/onboarding/signup-v2.1/CurrencyDesk Sign-up v2.1.dc.html": { time: 1, day: 0 },
   "os-src/cdos-backend.js": { time: 0, day: 1 },
   "os-src/cdos-cheques.jsx": { time: 0, day: 1 },
   "os-src/cdos-import.jsx": { time: 0, day: 2 },

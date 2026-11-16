@@ -25,6 +25,9 @@ const BASELINE: Record<string, number> = {
   "design/emails/CurrencyDesk Emails.dc.html": 47,
   "design/kyc-handoff/kyc-verification-states.html": 26,
   "design/onboarding/currencydesk-onboarding.html": 18,
+  /* Sol's frozen sign-up v2.1 prototype, copied unchanged (PROVENANCE.md): the
+     prototype wins on copy, so its dashes are recorded rather than edited. */
+  "design/onboarding/signup-v2.1/CurrencyDesk Sign-up v2.1.dc.html": 37,
   "design/site/CurrencyDesk Compliance.dc.html": 0,
   "design/site/CurrencyDesk Contact.dc.html": 0,
   "design/site/CurrencyDesk Early Access.dc.html": 0,
