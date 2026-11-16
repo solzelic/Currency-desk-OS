@@ -86,6 +86,18 @@ the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
+**2026-11-16: failed sign-up activation logs.** When the Stripe webhook's
+`setup_intent.succeeded` fails to open a v2.1 desk, the log keeps only a
+bounded reason: the error's class, the Postgres SQLSTATE, and the Stripe event
+id and type. It no longer logs the error itself, whose message and params held
+the owner's email, password and PIN hashes and full CD ID on every Stripe
+retry. Outside `/api/onboarding/` (which already had this rule), a database
+query error on any route is logged the same way and answered 500
+`temporarily_unavailable`, not Fastify's default body that echoed the SQL and
+bound values. That covers the Early Access form and the admin CD ID reissue.
+Other errors keep Fastify's default handling. The rule is
+`server/src/error-reason.ts`.
+
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
 PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
 hashes. WebAuthn now requires explicit RP/origin configuration. Malformed breach
