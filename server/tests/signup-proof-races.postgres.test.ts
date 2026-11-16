@@ -9,6 +9,7 @@ import { loadAccount, saveCredential } from "../src/onboarding/signup-account.js
 import { sendSignupCode, verifySignupCode } from "../src/onboarding/email-code.js";
 import { confirmDesk, startPayment, openFromSetupIntent, type SignupStripe } from "../src/onboarding/signup-open.js";
 import { savePin } from "../src/onboarding/signup-pin.js";
+import { moveTo } from "../src/onboarding/pipeline.js";
 import { hashCode } from "../src/email.js";
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("signup proof under real PostgreSQL concurrency", () => {
@@ -101,6 +102,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("signup proof under real Postgre
     expect((await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, `${row.id}-staff@example.test`)))[0]?.name).toBe("Synthetic Colleague");
     expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, ob.tenantId!)))[0]?.setup?.idThreshold).toBe(0);
     expect((await loadAccount(handle.db, row.id)).state).toBe("active");
+  });
+  it("a decline racing the card's opening never leaves an open desk marked declined", async () => {
+    for (let i = 0; i < 4; i++) {
+      const { row, intent } = await paymentReady();
+      /* `row` was read at Invited, as the support panel would have it */
+      const [opened, moved] = await Promise.all([openFromSetupIntent(handle.db, intent), moveTo(handle.db, row, "declined", "support")]);
+      const after = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, row.id)))[0]!;
+      const ob = (await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, row.id)))[0]!;
+      if (opened.opened) {
+        expect(moved).toMatchObject({ ok: false, error: "changed" });
+        expect(after).toMatchObject({ status: "accepted", decidedBy: "signup-v2.1", tenantId: ob.tenantId });
+      } else {
+        expect(opened).toEqual({ opened: false, reason: "not_invited" });
+        expect(moved.ok).toBe(true);
+        expect(after).toMatchObject({ status: "declined", decidedBy: "support", tenantId: null });
+        expect(ob.tenantId).toBeNull();
+        expect((await loadAccount(handle.db, row.id)).state).toBe("verified");
+      }
+    }
   });
   it("the actual Canadian shop receives its approved identity, address and officer", async () => {
     const { row, intent } = await paymentReady();

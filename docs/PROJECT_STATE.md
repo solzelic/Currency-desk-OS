@@ -1,3 +1,22 @@
+## Signup opens only an invited application, 16 November 2026
+
+A declined or held v2.1 application could still open its desk: the owner's
+browser already held the SetupIntent secret, Stripe.js confirmed it, and the
+signed `setup_intent.succeeded` provisioned the tenant and overwrote the
+decision with accepted. Activation (card webhook and staging no-card Open) now
+locks the enquiry under the account lock and refuses anything but an Invited
+early access row with its ID (`not_invited`): nothing is provisioned, the
+account is untouched, a `signup.open_refused` audit row is written, and the
+webhook acknowledges the event so Stripe stops retrying but keeps no claim on
+it: Stripe sends no second event for that intent, so once support invites the
+application again, resending the same event from the Stripe dashboard opens
+the desk (a manual step; nothing re-opens on its own). `POST …/open` issues
+a desk session only for an application accepted for that tenant, and pipeline
+moves are compare-and-set, so a stale decline answers `changed` instead of
+overwriting an opened desk. Not done: revoking enrolment sessions or clearing
+the intent when support declines, and detaching a card saved after a decline.
+Protected surface (provisioning, money): CTO review required.
+
 ## Signup credential door throttle, 16 November 2026
 
 A crowd of made-up CurrencyDesk IDs can no longer lock every applicant out of
