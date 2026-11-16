@@ -192,6 +192,7 @@ patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "
    yet: not shown, rather than collected and dropped */
 patch("no backup yet", "R.showBackup = !!d.showBackup; R.notShowBackup = !d.showBackup;", "R.showBackup = false; R.notShowBackup = false;");
 patch("pay", "  goLive() {", "  goLive() { if (window.__cdOnb) { if (this._payValid) window.__cdOnb.pay(this); return; }");
+patch("price retry", '<div data-paysum="true"', '<sc-if value="{{ retryPricesVisible }}"><button type="button" onClick="{{ onRetryPrices }}" style="min-height:44px;padding:10px 16px;">Try loading prices again</button></sc-if><div data-paysum="true"');
 patch("prices and day one", "    return Object.assign(R, this._railVals(), this._tourVals());",
   "    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));");
 patch("setup week price", ">$5,000 once<", ">{{ xSetupPrice }}<");
@@ -204,7 +205,8 @@ patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
   const exp = lines.findIndex((l) => l.includes('<input value="{{ cardExp }}"'));
   if (num < 0 || exp < 0 || !lines[exp - 1].includes("grid-template-columns: 1fr 1fr") || !lines[exp + 1].includes('value="{{ cardCvc }}"') || lines[exp + 2].trim() !== "</div>")
     throw new Error("build-signup: card fields moved");
-  lines[num] = '                <div data-stripe-card="true" aria-label="Card details" style="min-height: 46px;"></div>';
+  lines[num] = '                <div data-stripe-card="true" role="group" aria-label="Card details" style="min-height: 46px;"></div>';
+  lines[num] += '<sc-if value="{{ retryCardVisible }}"><button type="button" onClick="{{ onRetryCard }}" style="min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;">Try the card form again</button></sc-if>';
   lines.splice(exp - 1, 4);
   const note = lines.findIndex((l) => l.includes("A backup card is worth adding."));
   if (note < 0) throw new Error("build-signup: backup note moved");

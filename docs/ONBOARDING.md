@@ -292,3 +292,11 @@ Opening counts remain draft amounts by currency, not posted cash. The page shows
 “Not posted” and the review says “Count saved by currency”; it does not value the
 count using prototype sample rates. The authoritative opening-position handoff
 and its PIN/declaration contract remain open with CTO.
+
+Payment recovery retries preparation explicitly, including script-load timeouts
+and provider construction/mount failures. Returning from a provider clears its
+query from history and calls the existing `/open` boundary; URL values are never
+proof. The unspent enrolment cookie plus webhook-activated account remain
+required. Page responses use no-store/no-referrer and application logs omit page
+queries. Reverse-proxy/CDN query logging must be checked separately before live
+provider acceptance (CD156); no infrastructure configuration is assumed here.

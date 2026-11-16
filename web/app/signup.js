@@ -5096,425 +5096,431 @@ function s3559(v,k){return "\n                ";}
 function s3561(v,k){return "\n            ";}
 function s3563(v,k){return "\n              \n              ";}
 function s3565(v,k){return "\n                ";}
-function s3566(v,k){return h("div",{key:k,"data-stripe-card":"true","aria-label":"Card details","style":style("min-height: 46px;")});}
-function s3567(v,k){return "\n                ";}
-function s3568(v,k){return h("input",{key:k,"value":(v?.["cardName"] ?? ""),"onChange":v?.["onCardName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p34"});}
-function s3569(v,k){return "\n              ";}
-function s3564(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3565(v,0),s3566(v,1),s3567(v,2),s3568(v,3),s3569(v,4));}
-function s3570(v,k){return "\n              ";}
-function s3572(v,k){return "\n                ";}
-function s3574(v,k){return "Billing address";}
-function s3573(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px;")},s3574(v,0));}
+function s3566(v,k){return h("div",{key:k,"data-stripe-card":"true","role":"group","aria-label":"Card details","style":style("min-height: 46px;")});}
+function s3569(v,k){return "Try the card form again";}
+function s3568(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryCard"],"style":style("min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3569(v,0));}
+function s3567(v,k){return (v?.["retryCardVisible"] ? h(React.Fragment,{key:k},s3568(v,0)) : null);}
+function s3570(v,k){return "\n                ";}
+function s3571(v,k){return h("input",{key:k,"value":(v?.["cardName"] ?? ""),"onChange":v?.["onCardName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p34"});}
+function s3572(v,k){return "\n              ";}
+function s3564(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3565(v,0),s3566(v,1),s3567(v,2),s3570(v,3),s3571(v,4),s3572(v,5));}
+function s3573(v,k){return "\n              ";}
 function s3575(v,k){return "\n                ";}
-function s3577(v,k){return "\n                  ";}
-function s3581(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3580(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3581(v,0));}
-function s3579(v,k){return (v?.["billSame"] ? h(React.Fragment,{key:k},s3580(v,0)) : null);}
-function s3578(v,k){return h("span",{key:k,"style":style(v?.["billBoxStyle"])},s3579(v,0));}
-function s3582(v,k){return "\n                  ";}
-function s3585(v,k){return "Same as business address";}
-function s3584(v,k){return h("b",{key:k,"style":style("font-weight: 700; font-size: 14px;")},s3585(v,0));}
-function s3587(v,k){return h(React.Fragment,{key:k},"",text(v?.["bizAddrLine"],1),"");}
-function s3586(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.4;")},s3587(v,0));}
-function s3583(v,k){return h("span",{key:k,"style":style("flex: 1; text-align: left; min-width: 0;")},s3584(v,0),s3586(v,1));}
-function s3588(v,k){return "\n                ";}
-function s3576(v,k){return h("button",{key:k,"onClick":v?.["onToggleBillSame"],"style":style(v?.["billSameStyle"])},s3577(v,0),s3578(v,1),s3582(v,2),s3583(v,3),s3588(v,4));}
-function s3589(v,k){return "\n                ";}
-function s3591(v,k){return "\n                  ";}
-function s3593(v,k){return "\n                    ";}
-function s3594(v,k){return h("input",{key:k,"value":(v?.["billStreet"] ?? ""),"onChange":v?.["onBillStreet"],"placeholder":"Street address","style":style("grid-column: span 2; width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p35"});}
-function s3595(v,k){return "\n                    ";}
-function s3596(v,k){return h("input",{key:k,"value":(v?.["billCity"] ?? ""),"onChange":v?.["onBillCity"],"placeholder":"City","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p36"});}
-function s3597(v,k){return "\n                    ";}
-function s3598(v,k){return h("input",{key:k,"value":(v?.["billPostal"] ?? ""),"onChange":v?.["onBillPostal"],"placeholder":"Postal / ZIP","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p37"});}
-function s3599(v,k){return "\n                    ";}
-function s3600(v,k){return h("input",{key:k,"value":(v?.["billRegion"] ?? ""),"onChange":v?.["onBillRegion"],"placeholder":"State / province","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p38"});}
-function s3601(v,k){return "\n                    ";}
-function s3602(v,k){return h("input",{key:k,"value":(v?.["billCountry"] ?? ""),"onChange":v?.["onBillCountry"],"placeholder":"Country","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p39"});}
-function s3603(v,k){return "\n                  ";}
-function s3592(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px;")},s3593(v,0),s3594(v,1),s3595(v,2),s3596(v,3),s3597(v,4),s3598(v,5),s3599(v,6),s3600(v,7),s3601(v,8),s3602(v,9),s3603(v,10));}
-function s3604(v,k){return "\n                ";}
-function s3590(v,k){return (v?.["billCustom"] ? h(React.Fragment,{key:k},s3591(v,0),s3592(v,1),s3604(v,2)) : null);}
-function s3605(v,k){return "\n              ";}
-function s3571(v,k){return h("div",{key:k,"style":style("margin-top: 16px;")},s3572(v,0),s3573(v,1),s3575(v,2),s3576(v,3),s3589(v,4),s3590(v,5),s3605(v,6));}
-function s3606(v,k){return "\n              ";}
-function s3608(v,k){return "\n                ";}
-function s3610(v,k){return "\n                  ";}
-function s3613(v,k){return "Backup card";}
-function s3612(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3613(v,0));}
-function s3616(v,k){return h("path",{key:k,"d":"M5 12h14"});}
-function s3615(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3616(v,0));}
-function s3617(v,k){return "Remove";}
-function s3614(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"title":"Remove backup card","style":style("display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px 4px 6px; cursor: pointer;"),className:"signup-p40"},s3615(v,0),s3617(v,1));}
-function s3611(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;")},s3612(v,0),s3614(v,1));}
-function s3618(v,k){return "\n                  ";}
-function s3620(v,k){return "\n                    ";}
-function s3621(v,k){return h("input",{key:k,"value":(v?.["backupNum"] ?? ""),"onChange":v?.["onBackupNum"],"inputMode":"numeric","placeholder":"Card number","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p41"});}
-function s3622(v,k){return "\n                    ";}
-function s3623(v,k){return h("input",{key:k,"value":(v?.["backupName"] ?? ""),"onChange":v?.["onBackupName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p42"});}
-function s3624(v,k){return "\n                    ";}
-function s3626(v,k){return "\n                      ";}
-function s3627(v,k){return h("input",{key:k,"value":(v?.["backupExp"] ?? ""),"onChange":v?.["onBackupExp"],"inputMode":"numeric","placeholder":"MM / YY","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p43"});}
-function s3628(v,k){return "\n                      ";}
-function s3629(v,k){return h("input",{key:k,"value":(v?.["backupCvc"] ?? ""),"onChange":v?.["onBackupCvc"],"inputMode":"numeric","placeholder":"CVC","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p44"});}
-function s3630(v,k){return "\n                    ";}
-function s3625(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px;")},s3626(v,0),s3627(v,1),s3628(v,2),s3629(v,3),s3630(v,4));}
-function s3631(v,k){return "\n                  ";}
-function s3619(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3620(v,0),s3621(v,1),s3622(v,2),s3623(v,3),s3624(v,4),s3625(v,5),s3631(v,6));}
-function s3632(v,k){return "\n                ";}
-function s3609(v,k){return h("div",{key:k,"style":style("margin-top: 12px;")},s3610(v,0),s3611(v,1),s3618(v,2),s3619(v,3),s3632(v,4));}
-function s3633(v,k){return "\n              ";}
-function s3607(v,k){return (v?.["showBackup"] ? h(React.Fragment,{key:k},s3608(v,0),s3609(v,1),s3633(v,2)) : null);}
-function s3634(v,k){return "\n              ";}
-function s3636(v,k){return "\n                ";}
-function s3639(v,k){return h("path",{key:k,"d":"M12 5v14M5 12h14"});}
-function s3638(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3639(v,0));}
-function s3640(v,k){return " Add a backup card";}
-function s3637(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"style":style("width: 100%; margin-top: 11px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"),className:"signup-p45"},s3638(v,0),s3640(v,1));}
-function s3641(v,k){return "\n              ";}
-function s3635(v,k){return (v?.["notShowBackup"] ? h(React.Fragment,{key:k},s3636(v,0),s3637(v,1),s3641(v,2)) : null);}
-function s3642(v,k){return "\n            ";}
-function s3562(v,k){return h("div",{key:k},s3563(v,0),s3564(v,1),s3570(v,2),s3571(v,3),s3606(v,4),s3607(v,5),s3634(v,6),s3635(v,7),s3642(v,8));}
-function s3643(v,k){return "\n\n\n                  ";}
-function s3646(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2NextL"],1),"");}
-function s3645(v,k){return h("button",{key:k,"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3646(v,0));}
-function s3644(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3645(v,0));}
-function s3647(v,k){return "\n                ";}
-function s3560(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3561(v,0),s3562(v,1),s3643(v,2),s3644(v,3),s3647(v,4));}
-function s3648(v,k){return "\n              ";}
-function s3558(v,k){return (v?.["pf2Open"] ? h(React.Fragment,{key:k},s3559(v,0),s3560(v,1),s3648(v,2)) : null);}
-function s3649(v,k){return "\n            ";}
-function s3535(v,k){return h("div",{key:k,"style":style(v?.["pf2Box"])},s3536(v,0),s3537(v,1),s3557(v,2),s3558(v,3),s3649(v,4));}
-function s3650(v,k){return "\n            ";}
-function s3652(v,k){return "\n              ";}
-function s3654(v,k){return "\n                ";}
-function s3658(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3657(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3658(v,0));}
-function s3656(v,k){return (v?.["pf3Done"] ? h(React.Fragment,{key:k},s3657(v,0)) : null);}
-function s3660(v,k){return "4";}
-function s3659(v,k){return (v?.["pf3Num"] ? h(React.Fragment,{key:k},s3660(v,0)) : null);}
-function s3655(v,k){return h("span",{key:k,"style":style(v?.["pf3Badge"])},s3656(v,0),s3659(v,1));}
-function s3661(v,k){return "\n                ";}
-function s3665(v,k){return "The agreement";}
-function s3664(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3665(v,0));}
-function s3663(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3664(v,0));}
-function s3667(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3Sum"],1),"");}
-function s3666(v,k){return h("span",{key:k,"style":style(v?.["pf3SumS"])},s3667(v,0));}
-function s3662(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3663(v,0),s3666(v,1));}
-function s3668(v,k){return "\n                ";}
-function s3671(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
-function s3670(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3671(v,0));}
-function s3669(v,k){return h("span",{key:k,"style":style(v?.["pf3Chev"])},s3670(v,0));}
-function s3672(v,k){return "\n              ";}
-function s3653(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf3Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3654(v,0),s3655(v,1),s3661(v,2),s3662(v,3),s3668(v,4),s3669(v,5),s3672(v,6));}
-function s3673(v,k){return "\n              ";}
-function s3675(v,k){return "\n                ";}
-function s3677(v,k){return "\n            ";}
-function s3679(v,k){return "\n              ";}
-function s3681(v,k){return "\n                ";}
-function s3683(v,k){return "Service agreement";}
-function s3682(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3683(v,0));}
+function s3577(v,k){return "Billing address";}
+function s3576(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px;")},s3577(v,0));}
+function s3578(v,k){return "\n                ";}
+function s3580(v,k){return "\n                  ";}
+function s3584(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3583(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3584(v,0));}
+function s3582(v,k){return (v?.["billSame"] ? h(React.Fragment,{key:k},s3583(v,0)) : null);}
+function s3581(v,k){return h("span",{key:k,"style":style(v?.["billBoxStyle"])},s3582(v,0));}
+function s3585(v,k){return "\n                  ";}
+function s3588(v,k){return "Same as business address";}
+function s3587(v,k){return h("b",{key:k,"style":style("font-weight: 700; font-size: 14px;")},s3588(v,0));}
+function s3590(v,k){return h(React.Fragment,{key:k},"",text(v?.["bizAddrLine"],1),"");}
+function s3589(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.4;")},s3590(v,0));}
+function s3586(v,k){return h("span",{key:k,"style":style("flex: 1; text-align: left; min-width: 0;")},s3587(v,0),s3589(v,1));}
+function s3591(v,k){return "\n                ";}
+function s3579(v,k){return h("button",{key:k,"onClick":v?.["onToggleBillSame"],"style":style(v?.["billSameStyle"])},s3580(v,0),s3581(v,1),s3585(v,2),s3586(v,3),s3591(v,4));}
+function s3592(v,k){return "\n                ";}
+function s3594(v,k){return "\n                  ";}
+function s3596(v,k){return "\n                    ";}
+function s3597(v,k){return h("input",{key:k,"value":(v?.["billStreet"] ?? ""),"onChange":v?.["onBillStreet"],"placeholder":"Street address","style":style("grid-column: span 2; width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p35"});}
+function s3598(v,k){return "\n                    ";}
+function s3599(v,k){return h("input",{key:k,"value":(v?.["billCity"] ?? ""),"onChange":v?.["onBillCity"],"placeholder":"City","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p36"});}
+function s3600(v,k){return "\n                    ";}
+function s3601(v,k){return h("input",{key:k,"value":(v?.["billPostal"] ?? ""),"onChange":v?.["onBillPostal"],"placeholder":"Postal / ZIP","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p37"});}
+function s3602(v,k){return "\n                    ";}
+function s3603(v,k){return h("input",{key:k,"value":(v?.["billRegion"] ?? ""),"onChange":v?.["onBillRegion"],"placeholder":"State / province","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p38"});}
+function s3604(v,k){return "\n                    ";}
+function s3605(v,k){return h("input",{key:k,"value":(v?.["billCountry"] ?? ""),"onChange":v?.["onBillCountry"],"placeholder":"Country","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p39"});}
+function s3606(v,k){return "\n                  ";}
+function s3595(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px;")},s3596(v,0),s3597(v,1),s3598(v,2),s3599(v,3),s3600(v,4),s3601(v,5),s3602(v,6),s3603(v,7),s3604(v,8),s3605(v,9),s3606(v,10));}
+function s3607(v,k){return "\n                ";}
+function s3593(v,k){return (v?.["billCustom"] ? h(React.Fragment,{key:k},s3594(v,0),s3595(v,1),s3607(v,2)) : null);}
+function s3608(v,k){return "\n              ";}
+function s3574(v,k){return h("div",{key:k,"style":style("margin-top: 16px;")},s3575(v,0),s3576(v,1),s3578(v,2),s3579(v,3),s3592(v,4),s3593(v,5),s3608(v,6));}
+function s3609(v,k){return "\n              ";}
+function s3611(v,k){return "\n                ";}
+function s3613(v,k){return "\n                  ";}
+function s3616(v,k){return "Backup card";}
+function s3615(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3616(v,0));}
+function s3619(v,k){return h("path",{key:k,"d":"M5 12h14"});}
+function s3618(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3619(v,0));}
+function s3620(v,k){return "Remove";}
+function s3617(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"title":"Remove backup card","style":style("display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px 4px 6px; cursor: pointer;"),className:"signup-p40"},s3618(v,0),s3620(v,1));}
+function s3614(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;")},s3615(v,0),s3617(v,1));}
+function s3621(v,k){return "\n                  ";}
+function s3623(v,k){return "\n                    ";}
+function s3624(v,k){return h("input",{key:k,"value":(v?.["backupNum"] ?? ""),"onChange":v?.["onBackupNum"],"inputMode":"numeric","placeholder":"Card number","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p41"});}
+function s3625(v,k){return "\n                    ";}
+function s3626(v,k){return h("input",{key:k,"value":(v?.["backupName"] ?? ""),"onChange":v?.["onBackupName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p42"});}
+function s3627(v,k){return "\n                    ";}
+function s3629(v,k){return "\n                      ";}
+function s3630(v,k){return h("input",{key:k,"value":(v?.["backupExp"] ?? ""),"onChange":v?.["onBackupExp"],"inputMode":"numeric","placeholder":"MM / YY","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p43"});}
+function s3631(v,k){return "\n                      ";}
+function s3632(v,k){return h("input",{key:k,"value":(v?.["backupCvc"] ?? ""),"onChange":v?.["onBackupCvc"],"inputMode":"numeric","placeholder":"CVC","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p44"});}
+function s3633(v,k){return "\n                    ";}
+function s3628(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px;")},s3629(v,0),s3630(v,1),s3631(v,2),s3632(v,3),s3633(v,4));}
+function s3634(v,k){return "\n                  ";}
+function s3622(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3623(v,0),s3624(v,1),s3625(v,2),s3626(v,3),s3627(v,4),s3628(v,5),s3634(v,6));}
+function s3635(v,k){return "\n                ";}
+function s3612(v,k){return h("div",{key:k,"style":style("margin-top: 12px;")},s3613(v,0),s3614(v,1),s3621(v,2),s3622(v,3),s3635(v,4));}
+function s3636(v,k){return "\n              ";}
+function s3610(v,k){return (v?.["showBackup"] ? h(React.Fragment,{key:k},s3611(v,0),s3612(v,1),s3636(v,2)) : null);}
+function s3637(v,k){return "\n              ";}
+function s3639(v,k){return "\n                ";}
+function s3642(v,k){return h("path",{key:k,"d":"M12 5v14M5 12h14"});}
+function s3641(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3642(v,0));}
+function s3643(v,k){return " Add a backup card";}
+function s3640(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"style":style("width: 100%; margin-top: 11px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"),className:"signup-p45"},s3641(v,0),s3643(v,1));}
+function s3644(v,k){return "\n              ";}
+function s3638(v,k){return (v?.["notShowBackup"] ? h(React.Fragment,{key:k},s3639(v,0),s3640(v,1),s3644(v,2)) : null);}
+function s3645(v,k){return "\n            ";}
+function s3562(v,k){return h("div",{key:k},s3563(v,0),s3564(v,1),s3573(v,2),s3574(v,3),s3609(v,4),s3610(v,5),s3637(v,6),s3638(v,7),s3645(v,8));}
+function s3646(v,k){return "\n\n\n                  ";}
+function s3649(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2NextL"],1),"");}
+function s3648(v,k){return h("button",{key:k,"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3649(v,0));}
+function s3647(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3648(v,0));}
+function s3650(v,k){return "\n                ";}
+function s3560(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3561(v,0),s3562(v,1),s3646(v,2),s3647(v,3),s3650(v,4));}
+function s3651(v,k){return "\n              ";}
+function s3558(v,k){return (v?.["pf2Open"] ? h(React.Fragment,{key:k},s3559(v,0),s3560(v,1),s3651(v,2)) : null);}
+function s3652(v,k){return "\n            ";}
+function s3535(v,k){return h("div",{key:k,"style":style(v?.["pf2Box"])},s3536(v,0),s3537(v,1),s3557(v,2),s3558(v,3),s3652(v,4));}
+function s3653(v,k){return "\n            ";}
+function s3655(v,k){return "\n              ";}
+function s3657(v,k){return "\n                ";}
+function s3661(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3660(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3661(v,0));}
+function s3659(v,k){return (v?.["pf3Done"] ? h(React.Fragment,{key:k},s3660(v,0)) : null);}
+function s3663(v,k){return "4";}
+function s3662(v,k){return (v?.["pf3Num"] ? h(React.Fragment,{key:k},s3663(v,0)) : null);}
+function s3658(v,k){return h("span",{key:k,"style":style(v?.["pf3Badge"])},s3659(v,0),s3662(v,1));}
+function s3664(v,k){return "\n                ";}
+function s3668(v,k){return "The agreement";}
+function s3667(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3668(v,0));}
+function s3666(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3667(v,0));}
+function s3670(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3Sum"],1),"");}
+function s3669(v,k){return h("span",{key:k,"style":style(v?.["pf3SumS"])},s3670(v,0));}
+function s3665(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3666(v,0),s3669(v,1));}
+function s3671(v,k){return "\n                ";}
+function s3674(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
+function s3673(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3674(v,0));}
+function s3672(v,k){return h("span",{key:k,"style":style(v?.["pf3Chev"])},s3673(v,0));}
+function s3675(v,k){return "\n              ";}
+function s3656(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf3Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3657(v,0),s3658(v,1),s3664(v,2),s3665(v,3),s3671(v,4),s3672(v,5),s3675(v,6));}
+function s3676(v,k){return "\n              ";}
+function s3678(v,k){return "\n                ";}
+function s3680(v,k){return "\n            ";}
+function s3682(v,k){return "\n              ";}
 function s3684(v,k){return "\n                ";}
-function s3686(v,k){return "Full version";}
-function s3685(v,k){return h("a",{key:k,"href":"/legal","target":"_blank","style":style("font-family: var(--m); font-size: 10px; color: var(--mute); border-bottom: 1px solid var(--line);"),className:"signup-p46"},s3686(v,0));}
-function s3687(v,k){return "\n              ";}
-function s3680(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px;")},s3681(v,0),s3682(v,1),s3684(v,2),s3685(v,3),s3687(v,4));}
-function s3688(v,k){return "\n\n              ";}
-function s3690(v,k){return "\n                ";}
-function s3692(v,k){return "CurrencyDesk Service Agreement";}
-function s3691(v,k){return h("div",{key:k,"style":style("font-family: var(--serif); font-size: 19px; line-height: 1.15; color: var(--ink);")},s3692(v,0));}
+function s3686(v,k){return "Service agreement";}
+function s3685(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3686(v,0));}
+function s3687(v,k){return "\n                ";}
+function s3689(v,k){return "Full version";}
+function s3688(v,k){return h("a",{key:k,"href":"/legal","target":"_blank","style":style("font-family: var(--m); font-size: 10px; color: var(--mute); border-bottom: 1px solid var(--line);"),className:"signup-p46"},s3689(v,0));}
+function s3690(v,k){return "\n              ";}
+function s3683(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px;")},s3684(v,0),s3685(v,1),s3687(v,2),s3688(v,3),s3690(v,4));}
+function s3691(v,k){return "\n\n              ";}
 function s3693(v,k){return "\n                ";}
-function s3695(v,k){return "Version 1.0 · effective on the day you go live";}
-function s3694(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-top: 5px;")},s3695(v,0));}
-function s3696(v,k){return "\n\n                ";}
-function s3698(v,k){return "This agreement is between CurrencyDesk and the business named in your account. By opening your desk you accept it on that business's behalf and confirm you're authorised to do so.";}
-function s3697(v,k){return h("p",{key:k,"style":style("font-size: 12.5px; line-height: 1.6; color: var(--mute); margin: 13px 0 0;")},s3698(v,0));}
+function s3695(v,k){return "CurrencyDesk Service Agreement";}
+function s3694(v,k){return h("div",{key:k,"style":style("font-family: var(--serif); font-size: 19px; line-height: 1.15; color: var(--ink);")},s3695(v,0));}
+function s3696(v,k){return "\n                ";}
+function s3698(v,k){return "Version 1.0 · effective on the day you go live";}
+function s3697(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-top: 5px;")},s3698(v,0));}
 function s3699(v,k){return "\n\n                ";}
-function s3701(v,k){return "1 · What you're getting";}
-function s3700(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3701(v,0));}
-function s3702(v,k){return "\n                ";}
-function s3704(v,k){return "Access to the CurrencyDesk platform for the plan you selected, for as long as the account is in good standing. We may add, change or retire individual features; we won't materially reduce what your plan does without telling you first.";}
-function s3703(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3704(v,0));}
-function s3705(v,k){return "\n\n                ";}
-function s3707(v,k){return "2 · Fees, billing and renewal";}
-function s3706(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3707(v,0));}
-function s3708(v,k){return "\n                ";}
-function s3710(v,k){return "Your subscription starts when you go live and renews automatically each period until cancelled. Fees are charged to the card on file. ID verification is coming and is not billed yet. Setup services are one-time and non-refundable once delivered. Prices are exclusive of tax. We may change pricing with thirty days' notice, effective at your next renewal.";}
-function s3709(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3710(v,0));}
+function s3701(v,k){return "This agreement is between CurrencyDesk and the business named in your account. By opening your desk you accept it on that business's behalf and confirm you're authorised to do so.";}
+function s3700(v,k){return h("p",{key:k,"style":style("font-size: 12.5px; line-height: 1.6; color: var(--mute); margin: 13px 0 0;")},s3701(v,0));}
+function s3702(v,k){return "\n\n                ";}
+function s3704(v,k){return "1 · What you're getting";}
+function s3703(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3704(v,0));}
+function s3705(v,k){return "\n                ";}
+function s3707(v,k){return "Access to the CurrencyDesk platform for the plan you selected, for as long as the account is in good standing. We may add, change or retire individual features; we won't materially reduce what your plan does without telling you first.";}
+function s3706(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3707(v,0));}
+function s3708(v,k){return "\n\n                ";}
+function s3710(v,k){return "2 · Fees, billing and renewal";}
+function s3709(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3710(v,0));}
 function s3711(v,k){return "\n                ";}
-function s3713(v,k){return "Promotional codes apply only to the subscription fee, for the stated period, on the plan they were issued against. If a payment fails we may retry, charge a backup card if you've added one, and suspend access if it stays unpaid.";}
+function s3713(v,k){return "Your subscription starts when you go live and renews automatically each period until cancelled. Fees are charged to the card on file. ID verification is coming and is not billed yet. Setup services are one-time and non-refundable once delivered. Prices are exclusive of tax. We may change pricing with thirty days' notice, effective at your next renewal.";}
 function s3712(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3713(v,0));}
-function s3714(v,k){return "\n\n                ";}
-function s3716(v,k){return "3 · Cancellation and refunds";}
-function s3715(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3716(v,0));}
-function s3717(v,k){return "\n                ";}
-function s3719(v,k){return "Cancel any time from your account; access continues to the end of the paid period. Fees already paid are not refunded except where the law requires it. We can suspend or close an account for non-payment, unlawful use, or a serious breach of this agreement.";}
-function s3718(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3719(v,0));}
-function s3720(v,k){return "\n\n                ";}
-function s3722(v,k){return "4 · Compliance stays yours";}
-function s3721(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3722(v,0));}
-function s3723(v,k){return "\n                ";}
-function s3725(v,k){return "This is the part that matters most. CurrencyDesk is software. It helps you watch thresholds, prepare reports and keep records — ";}
-function s3727(v,k){return "it does not file on your behalf and it is not compliance advice.";}
-function s3726(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3727(v,0));}
-function s3728(v,k){return " You remain the registered money services business. You remain responsible for your registration, your reporting obligations, your record retention, and for reviewing and submitting anything the system prepares. Nothing here transfers a regulatory duty to us.";}
-function s3724(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3725(v,0),s3726(v,1),s3728(v,2));}
-function s3729(v,k){return "\n\n                ";}
-function s3731(v,k){return "5 · Your data and your clients' data";}
-function s3730(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3731(v,0));}
-function s3732(v,k){return "\n                ";}
-function s3734(v,k){return "Your records stay yours. You grant us the licence needed to host, process, back up and display them so the service works, and to have our processors do the same. We handle personal information under our Privacy Policy, which forms part of this agreement.";}
-function s3733(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3734(v,0));}
+function s3714(v,k){return "\n                ";}
+function s3716(v,k){return "Promotional codes apply only to the subscription fee, for the stated period, on the plan they were issued against. If a payment fails we may retry, charge a backup card if you've added one, and suspend access if it stays unpaid.";}
+function s3715(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3716(v,0));}
+function s3717(v,k){return "\n\n                ";}
+function s3719(v,k){return "3 · Cancellation and refunds";}
+function s3718(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3719(v,0));}
+function s3720(v,k){return "\n                ";}
+function s3722(v,k){return "Cancel any time from your account; access continues to the end of the paid period. Fees already paid are not refunded except where the law requires it. We can suspend or close an account for non-payment, unlawful use, or a serious breach of this agreement.";}
+function s3721(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3722(v,0));}
+function s3723(v,k){return "\n\n                ";}
+function s3725(v,k){return "4 · Compliance stays yours";}
+function s3724(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3725(v,0));}
+function s3726(v,k){return "\n                ";}
+function s3728(v,k){return "This is the part that matters most. CurrencyDesk is software. It helps you watch thresholds, prepare reports and keep records — ";}
+function s3730(v,k){return "it does not file on your behalf and it is not compliance advice.";}
+function s3729(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3730(v,0));}
+function s3731(v,k){return " You remain the registered money services business. You remain responsible for your registration, your reporting obligations, your record retention, and for reviewing and submitting anything the system prepares. Nothing here transfers a regulatory duty to us.";}
+function s3727(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3728(v,0),s3729(v,1),s3731(v,2));}
+function s3732(v,k){return "\n\n                ";}
+function s3734(v,k){return "5 · Your data and your clients' data";}
+function s3733(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3734(v,0));}
 function s3735(v,k){return "\n                ";}
-function s3737(v,k){return "You confirm you have the right to give us any client information you enter, and that you'll collect and use it lawfully in your jurisdiction. We may use aggregated and de-identified data — data that cannot identify you, your business or your clients — to operate, secure and improve the service.";}
+function s3737(v,k){return "Your records stay yours. You grant us the licence needed to host, process, back up and display them so the service works, and to have our processors do the same. We handle personal information under our Privacy Policy, which forms part of this agreement.";}
 function s3736(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3737(v,0));}
-function s3738(v,k){return "\n\n                ";}
-function s3740(v,k){return "6 · Your account and your team";}
-function s3739(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3740(v,0));}
-function s3741(v,k){return "\n                ";}
-function s3743(v,k){return "You're responsible for your credentials and for everything done under accounts you create for your team, including what they can see and do. Tell us promptly if you think an account has been compromised.";}
-function s3742(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3743(v,0));}
-function s3744(v,k){return "\n\n                ";}
-function s3746(v,k){return "7 · Acceptable use";}
-function s3745(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3746(v,0));}
-function s3747(v,k){return "\n                ";}
-function s3749(v,k){return "Don't use the service to break the law, to launder money, to evade sanctions, to store someone else's data without the right to, or to attack, reverse-engineer or resell the platform. Don't misrepresent rates or records you produce with it.";}
-function s3748(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3749(v,0));}
-function s3750(v,k){return "\n\n                ";}
-function s3752(v,k){return "8 · Early access";}
-function s3751(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3752(v,0));}
-function s3753(v,k){return "\n                ";}
-function s3755(v,k){return "If you're on an early-access or founding plan, you understand the platform is still being built. Features may change, break, or be withdrawn. In exchange for preferential pricing you agree we may contact you for feedback, and that feedback you give us can be used to improve the product without obligation or payment. Any founding rate we've confirmed in writing is held for the life of that account.";}
-function s3754(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3755(v,0));}
-function s3756(v,k){return "\n\n                ";}
-function s3758(v,k){return "9 · Availability and warranties";}
-function s3757(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3758(v,0));}
-function s3759(v,k){return "\n                ";}
-function s3761(v,k){return "We work hard to keep the desk up, but the service is provided \"as is\" and \"as available\". To the fullest extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. We don't warrant that the service will be uninterrupted, error-free, or that it will make you compliant.";}
-function s3760(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3761(v,0));}
-function s3762(v,k){return "\n\n                ";}
-function s3764(v,k){return "10 · Limitation of liability";}
-function s3763(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3764(v,0));}
-function s3765(v,k){return "\n                ";}
-function s3767(v,k){return "To the fullest extent the law allows, neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, lost business, lost data or regulatory penalties. Our total liability for any claim is capped at the fees you paid us in the twelve months before the claim arose. Some jurisdictions don't allow these limits; where that's so, they apply to the extent permitted.";}
-function s3766(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3767(v,0));}
-function s3768(v,k){return "\n\n                ";}
-function s3770(v,k){return "11 · Indemnity";}
-function s3769(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3770(v,0));}
-function s3771(v,k){return "\n                ";}
-function s3773(v,k){return "You'll defend and indemnify us against claims arising from your use of the service, your records, your clients, or your breach of this agreement or of the law that applies to your business.";}
-function s3772(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3773(v,0));}
-function s3774(v,k){return "\n\n                ";}
-function s3776(v,k){return "12 · Third parties";}
-function s3775(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3776(v,0));}
-function s3777(v,k){return "\n                ";}
-function s3779(v,k){return "The desk relies on third-party providers for things like payments, verification and rate data. Their terms govern their part, and we're not responsible for their acts or omissions.";}
-function s3778(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3779(v,0));}
-function s3780(v,k){return "\n\n                ";}
-function s3782(v,k){return "13 · Intellectual property";}
-function s3781(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3782(v,0));}
-function s3783(v,k){return "\n                ";}
-function s3785(v,k){return "The platform, its design and everything in it stays ours. You get a limited, non-exclusive, non-transferable right to use it while your account is active.";}
-function s3784(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3785(v,0));}
-function s3786(v,k){return "\n\n                ";}
-function s3788(v,k){return "14 · Changes to this agreement";}
-function s3787(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3788(v,0));}
-function s3789(v,k){return "\n                ";}
-function s3791(v,k){return "We may update these terms. For material changes we'll email the address on your account before they take effect. Continuing to use the service after that date means you accept the new version.";}
-function s3790(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3791(v,0));}
-function s3792(v,k){return "\n\n                ";}
-function s3794(v,k){return "15 · Law and disputes";}
-function s3793(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3794(v,0));}
-function s3795(v,k){return "\n                ";}
-function s3797(v,k){return "This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada that apply there, and both parties submit to the exclusive jurisdiction of the courts of Ontario. Claims must be brought individually, not as part of a class action. Before filing anything, talk to us — most things are resolved with an email.";}
-function s3796(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3797(v,0));}
-function s3798(v,k){return "\n\n                ";}
-function s3800(v,k){return "16 · The rest";}
-function s3799(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3800(v,0));}
-function s3801(v,k){return "\n                ";}
-function s3803(v,k){return "If a clause is unenforceable, the rest survives. Not enforcing something once doesn't waive it. You can't assign this agreement without our consent; we may assign it in a merger or sale. This agreement and the Privacy Policy are the whole understanding between us on this subject.";}
-function s3802(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3803(v,0));}
-function s3804(v,k){return "\n\n                ";}
-function s3806(v,k){return "\n                  ";}
-function s3808(v,k){return "End of agreement";}
-function s3807(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--primary); font-weight: 700;")},s3808(v,0));}
+function s3738(v,k){return "\n                ";}
+function s3740(v,k){return "You confirm you have the right to give us any client information you enter, and that you'll collect and use it lawfully in your jurisdiction. We may use aggregated and de-identified data — data that cannot identify you, your business or your clients — to operate, secure and improve the service.";}
+function s3739(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3740(v,0));}
+function s3741(v,k){return "\n\n                ";}
+function s3743(v,k){return "6 · Your account and your team";}
+function s3742(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3743(v,0));}
+function s3744(v,k){return "\n                ";}
+function s3746(v,k){return "You're responsible for your credentials and for everything done under accounts you create for your team, including what they can see and do. Tell us promptly if you think an account has been compromised.";}
+function s3745(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3746(v,0));}
+function s3747(v,k){return "\n\n                ";}
+function s3749(v,k){return "7 · Acceptable use";}
+function s3748(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3749(v,0));}
+function s3750(v,k){return "\n                ";}
+function s3752(v,k){return "Don't use the service to break the law, to launder money, to evade sanctions, to store someone else's data without the right to, or to attack, reverse-engineer or resell the platform. Don't misrepresent rates or records you produce with it.";}
+function s3751(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3752(v,0));}
+function s3753(v,k){return "\n\n                ";}
+function s3755(v,k){return "8 · Early access";}
+function s3754(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3755(v,0));}
+function s3756(v,k){return "\n                ";}
+function s3758(v,k){return "If you're on an early-access or founding plan, you understand the platform is still being built. Features may change, break, or be withdrawn. In exchange for preferential pricing you agree we may contact you for feedback, and that feedback you give us can be used to improve the product without obligation or payment. Any founding rate we've confirmed in writing is held for the life of that account.";}
+function s3757(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3758(v,0));}
+function s3759(v,k){return "\n\n                ";}
+function s3761(v,k){return "9 · Availability and warranties";}
+function s3760(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3761(v,0));}
+function s3762(v,k){return "\n                ";}
+function s3764(v,k){return "We work hard to keep the desk up, but the service is provided \"as is\" and \"as available\". To the fullest extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. We don't warrant that the service will be uninterrupted, error-free, or that it will make you compliant.";}
+function s3763(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3764(v,0));}
+function s3765(v,k){return "\n\n                ";}
+function s3767(v,k){return "10 · Limitation of liability";}
+function s3766(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3767(v,0));}
+function s3768(v,k){return "\n                ";}
+function s3770(v,k){return "To the fullest extent the law allows, neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, lost business, lost data or regulatory penalties. Our total liability for any claim is capped at the fees you paid us in the twelve months before the claim arose. Some jurisdictions don't allow these limits; where that's so, they apply to the extent permitted.";}
+function s3769(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3770(v,0));}
+function s3771(v,k){return "\n\n                ";}
+function s3773(v,k){return "11 · Indemnity";}
+function s3772(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3773(v,0));}
+function s3774(v,k){return "\n                ";}
+function s3776(v,k){return "You'll defend and indemnify us against claims arising from your use of the service, your records, your clients, or your breach of this agreement or of the law that applies to your business.";}
+function s3775(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3776(v,0));}
+function s3777(v,k){return "\n\n                ";}
+function s3779(v,k){return "12 · Third parties";}
+function s3778(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3779(v,0));}
+function s3780(v,k){return "\n                ";}
+function s3782(v,k){return "The desk relies on third-party providers for things like payments, verification and rate data. Their terms govern their part, and we're not responsible for their acts or omissions.";}
+function s3781(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3782(v,0));}
+function s3783(v,k){return "\n\n                ";}
+function s3785(v,k){return "13 · Intellectual property";}
+function s3784(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3785(v,0));}
+function s3786(v,k){return "\n                ";}
+function s3788(v,k){return "The platform, its design and everything in it stays ours. You get a limited, non-exclusive, non-transferable right to use it while your account is active.";}
+function s3787(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3788(v,0));}
+function s3789(v,k){return "\n\n                ";}
+function s3791(v,k){return "14 · Changes to this agreement";}
+function s3790(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3791(v,0));}
+function s3792(v,k){return "\n                ";}
+function s3794(v,k){return "We may update these terms. For material changes we'll email the address on your account before they take effect. Continuing to use the service after that date means you accept the new version.";}
+function s3793(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3794(v,0));}
+function s3795(v,k){return "\n\n                ";}
+function s3797(v,k){return "15 · Law and disputes";}
+function s3796(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3797(v,0));}
+function s3798(v,k){return "\n                ";}
+function s3800(v,k){return "This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada that apply there, and both parties submit to the exclusive jurisdiction of the courts of Ontario. Claims must be brought individually, not as part of a class action. Before filing anything, talk to us — most things are resolved with an email.";}
+function s3799(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3800(v,0));}
+function s3801(v,k){return "\n\n                ";}
+function s3803(v,k){return "16 · The rest";}
+function s3802(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3803(v,0));}
+function s3804(v,k){return "\n                ";}
+function s3806(v,k){return "If a clause is unenforceable, the rest survives. Not enforcing something once doesn't waive it. You can't assign this agreement without our consent; we may assign it in a merger or sale. This agreement and the Privacy Policy are the whole understanding between us on this subject.";}
+function s3805(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3806(v,0));}
+function s3807(v,k){return "\n\n                ";}
 function s3809(v,k){return "\n                  ";}
-function s3811(v,k){return "Questions before you sign? ";}
-function s3813(v,k){return "Ask us";}
-function s3812(v,k){return h("a",{key:k,"href":"/contact","target":"_blank","style":style("color: var(--primary); font-weight: 600;")},s3813(v,0));}
-function s3814(v,k){return " — we'd rather answer now.";}
-function s3810(v,k){return h("div",{key:k,"style":style("font-size: 11.5px; color: var(--faint); margin-top: 5px;")},s3811(v,0),s3812(v,1),s3814(v,2));}
-function s3815(v,k){return "\n                ";}
-function s3805(v,k){return h("div",{key:k,"style":style("margin: 18px 0 0; padding-top: 13px; border-top: 1px solid var(--hair); text-align: center;")},s3806(v,0),s3807(v,1),s3809(v,2),s3810(v,3),s3815(v,4));}
-function s3816(v,k){return "\n              ";}
-function s3689(v,k){return h("div",{key:k,"data-terms-box":"true","onScroll":v?.["onTermsScroll"],"style":style(v?.["termsBoxStyle"])},s3690(v,0),s3691(v,1),s3693(v,2),s3694(v,3),s3696(v,4),s3697(v,5),s3699(v,6),s3700(v,7),s3702(v,8),s3703(v,9),s3705(v,10),s3706(v,11),s3708(v,12),s3709(v,13),s3711(v,14),s3712(v,15),s3714(v,16),s3715(v,17),s3717(v,18),s3718(v,19),s3720(v,20),s3721(v,21),s3723(v,22),s3724(v,23),s3729(v,24),s3730(v,25),s3732(v,26),s3733(v,27),s3735(v,28),s3736(v,29),s3738(v,30),s3739(v,31),s3741(v,32),s3742(v,33),s3744(v,34),s3745(v,35),s3747(v,36),s3748(v,37),s3750(v,38),s3751(v,39),s3753(v,40),s3754(v,41),s3756(v,42),s3757(v,43),s3759(v,44),s3760(v,45),s3762(v,46),s3763(v,47),s3765(v,48),s3766(v,49),s3768(v,50),s3769(v,51),s3771(v,52),s3772(v,53),s3774(v,54),s3775(v,55),s3777(v,56),s3778(v,57),s3780(v,58),s3781(v,59),s3783(v,60),s3784(v,61),s3786(v,62),s3787(v,63),s3789(v,64),s3790(v,65),s3792(v,66),s3793(v,67),s3795(v,68),s3796(v,69),s3798(v,70),s3799(v,71),s3801(v,72),s3802(v,73),s3804(v,74),s3805(v,75),s3816(v,76));}
-function s3817(v,k){return "\n\n              ";}
-function s3819(v,k){return "\n                ";}
-function s3823(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3822(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3823(v,0));}
-function s3821(v,k){return (v?.["termsRead"] ? h(React.Fragment,{key:k},s3822(v,0)) : null);}
-function s3820(v,k){return h("span",{key:k,"style":style(v?.["termsBoxIconStyle"])},s3821(v,0));}
-function s3824(v,k){return "\n                ";}
-function s3826(v,k){return h(React.Fragment,{key:k},"",text(v?.["termsLabel"],1),"");}
-function s3825(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0; text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--mute);")},s3826(v,0));}
-function s3827(v,k){return "\n              ";}
-function s3818(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onToggleTerms"],"style":style(v?.["termsRowStyle"])},s3819(v,0),s3820(v,1),s3824(v,2),s3825(v,3),s3827(v,4));}
-function s3828(v,k){return "\n            ";}
-function s3678(v,k){return h("div",{key:k},s3679(v,0),s3680(v,1),s3688(v,2),s3689(v,3),s3817(v,4),s3818(v,5),s3828(v,6));}
-function s3829(v,k){return "\n\n\n                  ";}
-function s3832(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3NextL"],1),"");}
-function s3831(v,k){return h("button",{key:k,"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3832(v,0));}
-function s3830(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3831(v,0));}
-function s3833(v,k){return "\n                ";}
-function s3676(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3677(v,0),s3678(v,1),s3829(v,2),s3830(v,3),s3833(v,4));}
-function s3834(v,k){return "\n              ";}
-function s3674(v,k){return (v?.["pf3Open"] ? h(React.Fragment,{key:k},s3675(v,0),s3676(v,1),s3834(v,2)) : null);}
-function s3835(v,k){return "\n            ";}
-function s3651(v,k){return h("div",{key:k,"style":style(v?.["pf3Box"])},s3652(v,0),s3653(v,1),s3673(v,2),s3674(v,3),s3835(v,4));}
-function s3836(v,k){return "\n            ";}
-function s3242(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; gap: 9px;")},s3243(v,0),s3368(v,1),s3369(v,2),s3534(v,3),s3535(v,4),s3650(v,5),s3651(v,6),s3836(v,7));}
-function s3837(v,k){return h("div",{key:k,"style":style("height: 4px;")});}
+function s3811(v,k){return "End of agreement";}
+function s3810(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--primary); font-weight: 700;")},s3811(v,0));}
+function s3812(v,k){return "\n                  ";}
+function s3814(v,k){return "Questions before you sign? ";}
+function s3816(v,k){return "Ask us";}
+function s3815(v,k){return h("a",{key:k,"href":"/contact","target":"_blank","style":style("color: var(--primary); font-weight: 600;")},s3816(v,0));}
+function s3817(v,k){return " — we'd rather answer now.";}
+function s3813(v,k){return h("div",{key:k,"style":style("font-size: 11.5px; color: var(--faint); margin-top: 5px;")},s3814(v,0),s3815(v,1),s3817(v,2));}
+function s3818(v,k){return "\n                ";}
+function s3808(v,k){return h("div",{key:k,"style":style("margin: 18px 0 0; padding-top: 13px; border-top: 1px solid var(--hair); text-align: center;")},s3809(v,0),s3810(v,1),s3812(v,2),s3813(v,3),s3818(v,4));}
+function s3819(v,k){return "\n              ";}
+function s3692(v,k){return h("div",{key:k,"data-terms-box":"true","onScroll":v?.["onTermsScroll"],"style":style(v?.["termsBoxStyle"])},s3693(v,0),s3694(v,1),s3696(v,2),s3697(v,3),s3699(v,4),s3700(v,5),s3702(v,6),s3703(v,7),s3705(v,8),s3706(v,9),s3708(v,10),s3709(v,11),s3711(v,12),s3712(v,13),s3714(v,14),s3715(v,15),s3717(v,16),s3718(v,17),s3720(v,18),s3721(v,19),s3723(v,20),s3724(v,21),s3726(v,22),s3727(v,23),s3732(v,24),s3733(v,25),s3735(v,26),s3736(v,27),s3738(v,28),s3739(v,29),s3741(v,30),s3742(v,31),s3744(v,32),s3745(v,33),s3747(v,34),s3748(v,35),s3750(v,36),s3751(v,37),s3753(v,38),s3754(v,39),s3756(v,40),s3757(v,41),s3759(v,42),s3760(v,43),s3762(v,44),s3763(v,45),s3765(v,46),s3766(v,47),s3768(v,48),s3769(v,49),s3771(v,50),s3772(v,51),s3774(v,52),s3775(v,53),s3777(v,54),s3778(v,55),s3780(v,56),s3781(v,57),s3783(v,58),s3784(v,59),s3786(v,60),s3787(v,61),s3789(v,62),s3790(v,63),s3792(v,64),s3793(v,65),s3795(v,66),s3796(v,67),s3798(v,68),s3799(v,69),s3801(v,70),s3802(v,71),s3804(v,72),s3805(v,73),s3807(v,74),s3808(v,75),s3819(v,76));}
+function s3820(v,k){return "\n\n              ";}
+function s3822(v,k){return "\n                ";}
+function s3826(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3825(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3826(v,0));}
+function s3824(v,k){return (v?.["termsRead"] ? h(React.Fragment,{key:k},s3825(v,0)) : null);}
+function s3823(v,k){return h("span",{key:k,"style":style(v?.["termsBoxIconStyle"])},s3824(v,0));}
+function s3827(v,k){return "\n                ";}
+function s3829(v,k){return h(React.Fragment,{key:k},"",text(v?.["termsLabel"],1),"");}
+function s3828(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0; text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--mute);")},s3829(v,0));}
+function s3830(v,k){return "\n              ";}
+function s3821(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onToggleTerms"],"style":style(v?.["termsRowStyle"])},s3822(v,0),s3823(v,1),s3827(v,2),s3828(v,3),s3830(v,4));}
+function s3831(v,k){return "\n            ";}
+function s3681(v,k){return h("div",{key:k},s3682(v,0),s3683(v,1),s3691(v,2),s3692(v,3),s3820(v,4),s3821(v,5),s3831(v,6));}
+function s3832(v,k){return "\n\n\n                  ";}
+function s3835(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3NextL"],1),"");}
+function s3834(v,k){return h("button",{key:k,"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3835(v,0));}
+function s3833(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3834(v,0));}
+function s3836(v,k){return "\n                ";}
+function s3679(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3680(v,0),s3681(v,1),s3832(v,2),s3833(v,3),s3836(v,4));}
+function s3837(v,k){return "\n              ";}
+function s3677(v,k){return (v?.["pf3Open"] ? h(React.Fragment,{key:k},s3678(v,0),s3679(v,1),s3837(v,2)) : null);}
 function s3838(v,k){return "\n            ";}
-function s3841(v,k){return "\n              ";}
-function s3844(v,k){return h("path",{key:k,"d":"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.8A2 2 0 0 1 4.8 2.8H12a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8Z"});}
-function s3845(v,k){return h("path",{key:k,"d":"M7.5 7.5h.01"});}
-function s3843(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3844(v,0),s3845(v,1));}
-function s3846(v,k){return "Have a code?";}
-function s3842(v,k){return h("button",{key:k,"onClick":v?.["onTogglePromo"],"style":style("display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; padding: 0; background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;"),className:"signup-p47"},s3843(v,0),s3846(v,1));}
-function s3847(v,k){return "\n            ";}
-function s3840(v,k){return (v?.["promoClosed"] ? h(React.Fragment,{key:k},s3841(v,0),s3842(v,1),s3847(v,2)) : null);}
-function s3848(v,k){return "\n            ";}
-function s3850(v,k){return "\n              ";}
-function s3852(v,k){return "\n                ";}
-function s3853(v,k){return h("input",{key:k,"value":(v?.["promoVal"] ?? ""),"onChange":v?.["onPromo"],"placeholder":"Promotional code","autoCapitalize":"characters","data-focus":"true","style":style(v?.["promoInputStyle"])});}
-function s3854(v,k){return "\n                ";}
-function s3856(v,k){return "Apply";}
-function s3855(v,k){return h("button",{key:k,"onClick":v?.["onApplyPromo"],"style":style(v?.["promoBtnStyle"])},s3856(v,0));}
-function s3857(v,k){return "\n              ";}
-function s3851(v,k){return h("div",{key:k,"style":style("display: flex; gap: 8px; margin-top: 16px;")},s3852(v,0),s3853(v,1),s3854(v,2),s3855(v,3),s3857(v,4));}
-function s3858(v,k){return "\n            ";}
-function s3849(v,k){return (v?.["promoOpen"] ? h(React.Fragment,{key:k},s3850(v,0),s3851(v,1),s3858(v,2)) : null);}
-function s3859(v,k){return "\n            ";}
-function s3861(v,k){return "\n              ";}
-function s3863(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoMsg"],1),"");}
-function s3862(v,k){return h("div",{key:k,"style":style(v?.["promoMsgStyle"])},s3863(v,0));}
+function s3654(v,k){return h("div",{key:k,"style":style(v?.["pf3Box"])},s3655(v,0),s3656(v,1),s3676(v,2),s3677(v,3),s3838(v,4));}
+function s3839(v,k){return "\n            ";}
+function s3242(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; gap: 9px;")},s3243(v,0),s3368(v,1),s3369(v,2),s3534(v,3),s3535(v,4),s3653(v,5),s3654(v,6),s3839(v,7));}
+function s3840(v,k){return h("div",{key:k,"style":style("height: 4px;")});}
+function s3841(v,k){return "\n            ";}
+function s3844(v,k){return "Try loading prices again";}
+function s3843(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryPrices"],"style":style("min-height:44px;padding:10px 16px;")},s3844(v,0));}
+function s3842(v,k){return (v?.["retryPricesVisible"] ? h(React.Fragment,{key:k},s3843(v,0)) : null);}
+function s3847(v,k){return "\n              ";}
+function s3850(v,k){return h("path",{key:k,"d":"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.8A2 2 0 0 1 4.8 2.8H12a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8Z"});}
+function s3851(v,k){return h("path",{key:k,"d":"M7.5 7.5h.01"});}
+function s3849(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3850(v,0),s3851(v,1));}
+function s3852(v,k){return "Have a code?";}
+function s3848(v,k){return h("button",{key:k,"onClick":v?.["onTogglePromo"],"style":style("display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; padding: 0; background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;"),className:"signup-p47"},s3849(v,0),s3852(v,1));}
+function s3853(v,k){return "\n            ";}
+function s3846(v,k){return (v?.["promoClosed"] ? h(React.Fragment,{key:k},s3847(v,0),s3848(v,1),s3853(v,2)) : null);}
+function s3854(v,k){return "\n            ";}
+function s3856(v,k){return "\n              ";}
+function s3858(v,k){return "\n                ";}
+function s3859(v,k){return h("input",{key:k,"value":(v?.["promoVal"] ?? ""),"onChange":v?.["onPromo"],"placeholder":"Promotional code","autoCapitalize":"characters","data-focus":"true","style":style(v?.["promoInputStyle"])});}
+function s3860(v,k){return "\n                ";}
+function s3862(v,k){return "Apply";}
+function s3861(v,k){return h("button",{key:k,"onClick":v?.["onApplyPromo"],"style":style(v?.["promoBtnStyle"])},s3862(v,0));}
+function s3863(v,k){return "\n              ";}
+function s3857(v,k){return h("div",{key:k,"style":style("display: flex; gap: 8px; margin-top: 16px;")},s3858(v,0),s3859(v,1),s3860(v,2),s3861(v,3),s3863(v,4));}
 function s3864(v,k){return "\n            ";}
-function s3860(v,k){return (v?.["promoMsgShow"] ? h(React.Fragment,{key:k},s3861(v,0),s3862(v,1),s3864(v,2)) : null);}
-function s3865(v,k){return "\n\n            ";}
+function s3855(v,k){return (v?.["promoOpen"] ? h(React.Fragment,{key:k},s3856(v,0),s3857(v,1),s3864(v,2)) : null);}
+function s3865(v,k){return "\n            ";}
 function s3867(v,k){return "\n              ";}
-function s3870(v,k){return "Due today";}
-function s3869(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--primary-deep);")},s3870(v,0));}
-function s3872(v,k){return h(React.Fragment,{key:k},"",text(v?.["dueToday"],1),"");}
-function s3871(v,k){return h("span",{key:k,"style":style("font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--primary-deep);")},s3872(v,0));}
-function s3868(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed rgba(29,107,69,0.3);")},s3869(v,0),s3871(v,1));}
+function s3869(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoMsg"],1),"");}
+function s3868(v,k){return h("div",{key:k,"style":style(v?.["promoMsgStyle"])},s3869(v,0));}
+function s3870(v,k){return "\n            ";}
+function s3866(v,k){return (v?.["promoMsgShow"] ? h(React.Fragment,{key:k},s3867(v,0),s3868(v,1),s3870(v,2)) : null);}
+function s3871(v,k){return "\n\n            ";}
 function s3873(v,k){return "\n              ";}
-function s3877(v,k){return h("rect",{key:k,"x":"3","y":"8","width":"18","height":"13","rx":"2"});}
-function s3878(v,k){return h("path",{key:k,"d":"M12 8v13M3 12h18M12 8S10.5 3 7.5 3.8C5 4.5 6.5 8 12 8zM12 8s1.5-5 4.5-4.2C19 4.5 17.5 8 12 8z"});}
-function s3876(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"#fff","strokeWidth":"2.2","strokeLinecap":"round","strokeLinejoin":"round"},s3877(v,0),s3878(v,1));}
-function s3875(v,k){return h("span",{key:k,"style":style("flex: none; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,255,255,0.16); display: grid; place-items: center;")},s3876(v,0));}
-function s3881(v,k){return "Nothing is due until your first transaction.";}
-function s3880(v,k){return h("b",{key:k,"style":style("font-weight: 800;")},s3881(v,0));}
-function s3882(v,k){return " You’re part of the founding cohort: your plan starts the day your desk makes its first exchange.";}
-function s3879(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; line-height: 1.45;")},s3880(v,0),s3882(v,1));}
-function s3874(v,k){return h("div",{key:k,"style":style("display: flex; gap: 10px; align-items: center; margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: #1D6B45; color: #fff;")},s3875(v,0),s3879(v,1));}
-function s3883(v,k){return "\n              ";}
-function s3885(v,k){return h(React.Fragment,{key:k},"",text(v?.["fromLive"],1),"");}
-function s3884(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px;")},s3885(v,0));}
-function s3886(v,k){return "\n              ";}
-function s3889(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderPlan"],1),"");}
-function s3888(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3889(v,0));}
-function s3891(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderRecur"],1),"");}
-function s3890(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 14px; font-weight: 700; color: var(--primary-deep);")},s3891(v,0));}
-function s3887(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between;")},s3888(v,0),s3890(v,1));}
+function s3876(v,k){return "Due today";}
+function s3875(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--primary-deep);")},s3876(v,0));}
+function s3878(v,k){return h(React.Fragment,{key:k},"",text(v?.["dueToday"],1),"");}
+function s3877(v,k){return h("span",{key:k,"style":style("font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--primary-deep);")},s3878(v,0));}
+function s3874(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed rgba(29,107,69,0.3);")},s3875(v,0),s3877(v,1));}
+function s3879(v,k){return "\n              ";}
+function s3883(v,k){return h("rect",{key:k,"x":"3","y":"8","width":"18","height":"13","rx":"2"});}
+function s3884(v,k){return h("path",{key:k,"d":"M12 8v13M3 12h18M12 8S10.5 3 7.5 3.8C5 4.5 6.5 8 12 8zM12 8s1.5-5 4.5-4.2C19 4.5 17.5 8 12 8z"});}
+function s3882(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"#fff","strokeWidth":"2.2","strokeLinecap":"round","strokeLinejoin":"round"},s3883(v,0),s3884(v,1));}
+function s3881(v,k){return h("span",{key:k,"style":style("flex: none; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,255,255,0.16); display: grid; place-items: center;")},s3882(v,0));}
+function s3887(v,k){return "Nothing is due until your first transaction.";}
+function s3886(v,k){return h("b",{key:k,"style":style("font-weight: 800;")},s3887(v,0));}
+function s3888(v,k){return " You’re part of the founding cohort: your plan starts the day your desk makes its first exchange.";}
+function s3885(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; line-height: 1.45;")},s3886(v,0),s3888(v,1));}
+function s3880(v,k){return h("div",{key:k,"style":style("display: flex; gap: 10px; align-items: center; margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: #1D6B45; color: #fff;")},s3881(v,0),s3885(v,1));}
+function s3889(v,k){return "\n              ";}
+function s3891(v,k){return h(React.Fragment,{key:k},"",text(v?.["fromLive"],1),"");}
+function s3890(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px;")},s3891(v,0));}
 function s3892(v,k){return "\n              ";}
-function s3896(v,k){return "Rate website · reserved, billed from launch";}
-function s3895(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3896(v,0));}
-function s3898(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebPrice"],1),"");}
-function s3897(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3898(v,0));}
-function s3894(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3895(v,0),s3897(v,1));}
-function s3893(v,k){return (v?.["hasWeb"] ? h(React.Fragment,{key:k},s3894(v,0)) : null);}
-function s3899(v,k){return "\n              ";}
-function s3903(v,k){return h(React.Fragment,{key:k},"Included: ",text(v?.["freeLine"],1),"");}
-function s3902(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3903(v,0));}
-function s3905(v,k){return "Free";}
-function s3904(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; font-weight: 700; color: var(--primary);")},s3905(v,0));}
-function s3901(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3902(v,0),s3904(v,1));}
-function s3900(v,k){return (v?.["hasFree"] ? h(React.Fragment,{key:k},s3901(v,0)) : null);}
-function s3906(v,k){return "\n              ";}
-function s3910(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsLabel"],1),"");}
-function s3909(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3910(v,0));}
-function s3912(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsMath"],1),"");}
-function s3911(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3912(v,0));}
-function s3908(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3909(v,0),s3911(v,1));}
-function s3907(v,k){return (v?.["hasLocs"] ? h(React.Fragment,{key:k},s3908(v,0)) : null);}
-function s3913(v,k){return "\n              ";}
-function s3917(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowLabel"],1),"");}
-function s3916(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--primary-deep); font-weight: 700;")},s3917(v,0));}
-function s3919(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowValue"],1),"");}
-function s3918(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3919(v,0));}
-function s3915(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3916(v,0),s3918(v,1));}
-function s3914(v,k){return (v?.["promoOk"] ? h(React.Fragment,{key:k},s3915(v,0)) : null);}
-function s3920(v,k){return "\n              ";}
-function s3924(v,k){return h(React.Fragment,{key:k},"",text(v?.["onceLabel"],1),"");}
-function s3923(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3924(v,0));}
-function s3926(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderOnce"],1),"");}
-function s3925(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--ink);")},s3926(v,0));}
-function s3922(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3923(v,0),s3925(v,1));}
-function s3921(v,k){return (v?.["hasOnce"] ? h(React.Fragment,{key:k},s3922(v,0)) : null);}
-function s3927(v,k){return "\n              ";}
-function s3930(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualSaveStr"],1),"");}
-function s3929(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; font-weight: 700; color: var(--primary); margin-top: 8px;")},s3930(v,0));}
-function s3928(v,k){return (v?.["hasAnnualSave"] ? h(React.Fragment,{key:k},s3929(v,0)) : null);}
-function s3931(v,k){return "\n              ";}
-function s3934(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualNudge"],1),"");}
-function s3933(v,k){return h("button",{key:k,"onClick":v?.["onNudgeAnnual"],"style":style("display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--primary); text-decoration: underline; text-underline-offset: 3px;")},s3934(v,0));}
-function s3932(v,k){return (v?.["notAnnual"] ? h(React.Fragment,{key:k},s3933(v,0)) : null);}
-function s3935(v,k){return "\n            ";}
-function s3866(v,k){return h("div",{key:k,"style":style("margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(29,107,69,0.08); border: 1px solid rgba(29,107,69,0.22);")},s3867(v,0),s3868(v,1),s3873(v,2),s3874(v,3),s3883(v,4),s3884(v,5),s3886(v,6),s3887(v,7),s3892(v,8),s3893(v,9),s3899(v,10),s3900(v,11),s3906(v,12),s3907(v,13),s3913(v,14),s3914(v,15),s3920(v,16),s3921(v,17),s3927(v,18),s3928(v,19),s3931(v,20),s3932(v,21),s3935(v,22));}
-function s3936(v,k){return "\n            ";}
-function s3938(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveLabel"],1),"");}
-function s3940(v,k){return h("path",{key:k,"d":"M5 12h14M13 6l6 6-6 6"});}
-function s3939(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"17","height":"17","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round","style":style("margin-left: 9px;")},s3940(v,0));}
-function s3937(v,k){return h("button",{key:k,"onClick":v?.["onGoLive"],"disabled":v?.["payDisabled"],"style":style(v?.["goLiveStyle"]),className:"signup-p48 signup-p49"},s3938(v,0),s3939(v,1));}
+function s3895(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderPlan"],1),"");}
+function s3894(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3895(v,0));}
+function s3897(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderRecur"],1),"");}
+function s3896(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 14px; font-weight: 700; color: var(--primary-deep);")},s3897(v,0));}
+function s3893(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between;")},s3894(v,0),s3896(v,1));}
+function s3898(v,k){return "\n              ";}
+function s3902(v,k){return "Rate website · reserved, billed from launch";}
+function s3901(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3902(v,0));}
+function s3904(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebPrice"],1),"");}
+function s3903(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3904(v,0));}
+function s3900(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3901(v,0),s3903(v,1));}
+function s3899(v,k){return (v?.["hasWeb"] ? h(React.Fragment,{key:k},s3900(v,0)) : null);}
+function s3905(v,k){return "\n              ";}
+function s3909(v,k){return h(React.Fragment,{key:k},"Included: ",text(v?.["freeLine"],1),"");}
+function s3908(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3909(v,0));}
+function s3911(v,k){return "Free";}
+function s3910(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; font-weight: 700; color: var(--primary);")},s3911(v,0));}
+function s3907(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3908(v,0),s3910(v,1));}
+function s3906(v,k){return (v?.["hasFree"] ? h(React.Fragment,{key:k},s3907(v,0)) : null);}
+function s3912(v,k){return "\n              ";}
+function s3916(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsLabel"],1),"");}
+function s3915(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3916(v,0));}
+function s3918(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsMath"],1),"");}
+function s3917(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3918(v,0));}
+function s3914(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3915(v,0),s3917(v,1));}
+function s3913(v,k){return (v?.["hasLocs"] ? h(React.Fragment,{key:k},s3914(v,0)) : null);}
+function s3919(v,k){return "\n              ";}
+function s3923(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowLabel"],1),"");}
+function s3922(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--primary-deep); font-weight: 700;")},s3923(v,0));}
+function s3925(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowValue"],1),"");}
+function s3924(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3925(v,0));}
+function s3921(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3922(v,0),s3924(v,1));}
+function s3920(v,k){return (v?.["promoOk"] ? h(React.Fragment,{key:k},s3921(v,0)) : null);}
+function s3926(v,k){return "\n              ";}
+function s3930(v,k){return h(React.Fragment,{key:k},"",text(v?.["onceLabel"],1),"");}
+function s3929(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3930(v,0));}
+function s3932(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderOnce"],1),"");}
+function s3931(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--ink);")},s3932(v,0));}
+function s3928(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3929(v,0),s3931(v,1));}
+function s3927(v,k){return (v?.["hasOnce"] ? h(React.Fragment,{key:k},s3928(v,0)) : null);}
+function s3933(v,k){return "\n              ";}
+function s3936(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualSaveStr"],1),"");}
+function s3935(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; font-weight: 700; color: var(--primary); margin-top: 8px;")},s3936(v,0));}
+function s3934(v,k){return (v?.["hasAnnualSave"] ? h(React.Fragment,{key:k},s3935(v,0)) : null);}
+function s3937(v,k){return "\n              ";}
+function s3940(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualNudge"],1),"");}
+function s3939(v,k){return h("button",{key:k,"onClick":v?.["onNudgeAnnual"],"style":style("display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--primary); text-decoration: underline; text-underline-offset: 3px;")},s3940(v,0));}
+function s3938(v,k){return (v?.["notAnnual"] ? h(React.Fragment,{key:k},s3939(v,0)) : null);}
 function s3941(v,k){return "\n            ";}
-function s3943(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveSub"],1),"");}
-function s3942(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 11px; color: var(--faint); text-align: center; margin-top: 9px; line-height: 1.5;")},s3943(v,0));}
-function s3944(v,k){return "\n\n            ";}
-function s3946(v,k){return "\n              ";}
-function s3949(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
-function s3950(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
-function s3948(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3949(v,0),s3950(v,1));}
-function s3947(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3948(v,0));}
-function s3951(v,k){return "\n              ";}
-function s3954(v,k){return "Cancel any time";}
-function s3953(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3954(v,0));}
-function s3956(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
-function s3955(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3956(v,0));}
-function s3952(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3953(v,0),s3955(v,1));}
-function s3957(v,k){return "\n            ";}
-function s3945(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3946(v,0),s3947(v,1),s3951(v,2),s3952(v,3),s3957(v,4));}
-function s3958(v,k){return "\n\n            ";}
-function s3961(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
-function s3962(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
-function s3960(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3961(v,0),s3962(v,1));}
-function s3963(v,k){return " Encrypted connection ";}
-function s3965(v,k){return "← Back to review";}
-function s3964(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s3965(v,0));}
-function s3959(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s3960(v,0),s3963(v,1),s3964(v,2));}
-function s3839(v,k){return h("div",{key:k,"data-paysum":"true"},s3840(v,0),s3848(v,1),s3849(v,2),s3859(v,3),s3860(v,4),s3865(v,5),s3866(v,6),s3936(v,7),s3937(v,8),s3941(v,9),s3942(v,10),s3944(v,11),s3945(v,12),s3958(v,13),s3959(v,14));}
-function s3966(v,k){return "\n          ";}
-function s3229(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3230(v,0),s3231(v,1),s3233(v,2),s3234(v,3),s3236(v,4),s3237(v,5),s3241(v,6),s3242(v,7),s3837(v,8),s3838(v,9),s3839(v,10),s3966(v,11));}
-function s3967(v,k){return "\n        ";}
-function s3209(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3210(v,0),s3211(v,1),s3228(v,2),s3229(v,3),s3967(v,4));}
-function s3968(v,k){return "\n      ";}
-function s3207(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3208(v,0),s3209(v,1),s3968(v,2));}
-function s3969(v,k){return "\n    ";}
-function s3205(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3206(v,0),s3207(v,1),s3969(v,2)) : null);}
-function s3970(v,k){return "\n  ";}
-function s2908(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2909(v,0),s2910(v,1),s3202(v,2),s3204(v,3),s3205(v,4),s3970(v,5)) : null);}
+function s3872(v,k){return h("div",{key:k,"style":style("margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(29,107,69,0.08); border: 1px solid rgba(29,107,69,0.22);")},s3873(v,0),s3874(v,1),s3879(v,2),s3880(v,3),s3889(v,4),s3890(v,5),s3892(v,6),s3893(v,7),s3898(v,8),s3899(v,9),s3905(v,10),s3906(v,11),s3912(v,12),s3913(v,13),s3919(v,14),s3920(v,15),s3926(v,16),s3927(v,17),s3933(v,18),s3934(v,19),s3937(v,20),s3938(v,21),s3941(v,22));}
+function s3942(v,k){return "\n            ";}
+function s3944(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveLabel"],1),"");}
+function s3946(v,k){return h("path",{key:k,"d":"M5 12h14M13 6l6 6-6 6"});}
+function s3945(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"17","height":"17","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round","style":style("margin-left: 9px;")},s3946(v,0));}
+function s3943(v,k){return h("button",{key:k,"onClick":v?.["onGoLive"],"disabled":v?.["payDisabled"],"style":style(v?.["goLiveStyle"]),className:"signup-p48 signup-p49"},s3944(v,0),s3945(v,1));}
+function s3947(v,k){return "\n            ";}
+function s3949(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveSub"],1),"");}
+function s3948(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 11px; color: var(--faint); text-align: center; margin-top: 9px; line-height: 1.5;")},s3949(v,0));}
+function s3950(v,k){return "\n\n            ";}
+function s3952(v,k){return "\n              ";}
+function s3955(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
+function s3956(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
+function s3954(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3955(v,0),s3956(v,1));}
+function s3953(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3954(v,0));}
+function s3957(v,k){return "\n              ";}
+function s3960(v,k){return "Cancel any time";}
+function s3959(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3960(v,0));}
+function s3962(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
+function s3961(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3962(v,0));}
+function s3958(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3959(v,0),s3961(v,1));}
+function s3963(v,k){return "\n            ";}
+function s3951(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3952(v,0),s3953(v,1),s3957(v,2),s3958(v,3),s3963(v,4));}
+function s3964(v,k){return "\n\n            ";}
+function s3967(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
+function s3968(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
+function s3966(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3967(v,0),s3968(v,1));}
+function s3969(v,k){return " Encrypted connection ";}
+function s3971(v,k){return "← Back to review";}
+function s3970(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s3971(v,0));}
+function s3965(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s3966(v,0),s3969(v,1),s3970(v,2));}
+function s3845(v,k){return h("div",{key:k,"data-paysum":"true"},s3846(v,0),s3854(v,1),s3855(v,2),s3865(v,3),s3866(v,4),s3871(v,5),s3872(v,6),s3942(v,7),s3943(v,8),s3947(v,9),s3948(v,10),s3950(v,11),s3951(v,12),s3964(v,13),s3965(v,14));}
+function s3972(v,k){return "\n          ";}
+function s3229(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3230(v,0),s3231(v,1),s3233(v,2),s3234(v,3),s3236(v,4),s3237(v,5),s3241(v,6),s3242(v,7),s3840(v,8),s3841(v,9),s3842(v,10),s3845(v,11),s3972(v,12));}
+function s3973(v,k){return "\n        ";}
+function s3209(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3210(v,0),s3211(v,1),s3228(v,2),s3229(v,3),s3973(v,4));}
+function s3974(v,k){return "\n      ";}
+function s3207(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3208(v,0),s3209(v,1),s3974(v,2));}
+function s3975(v,k){return "\n    ";}
+function s3205(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3206(v,0),s3207(v,1),s3975(v,2)) : null);}
+function s3976(v,k){return "\n  ";}
+function s2908(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2909(v,0),s2910(v,1),s3202(v,2),s3204(v,3),s3205(v,4),s3976(v,5)) : null);}
 function s351(v,k){return h("div",{key:k,"style":style("--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --panel: #FFFFFF; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.07); --hair: rgba(23,20,15,0.07); --mute: #6E675E; --faint: #736C62; --primary: #1D6B45; --primary-deep: #17583A; --green-live: #1f8a4c; --green-soft: #E2EFE8; --amber: #9a6b1f; --amber-soft: #f5e8cf; --teal: #1F6F6B; --plum: #5E4B8B; --brass: #9a7406; --clay: #C2452D; --flag: #c0392b; --glass: saturate(180%) blur(30px); position: relative; min-height: 100vh; width: 100%; display: grid; place-items: center; overflow: hidden; font-family: var(--f); color: var(--ink); background-color: #e7e4dd; background-image: radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: auto, 22px 22px;")},s353(v,0),s361(v,1),s363(v,2),s364(v,3),s502(v,4),s504(v,5),s505(v,6),s2905(v,7),s2907(v,8),s2908(v,9));}
-function s3972(v,k){return "\n  ";}
-function s349(v,k){return h("div",{key:k,"data-product":"true","style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s351(v,0),s3972(v,1));}
+function s3978(v,k){return "\n  ";}
+function s349(v,k){return h("div",{key:k,"data-product":"true","style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s351(v,0),s3978(v,1));}
 function s347(v,k){return h("div",{key:k,"style":style("display: flex; height: 100vh; width: 100%; overflow: hidden;")},s348(v,0),s349(v,1));}
 class Signup extends React.Component{constructor(p){super(p);this.state={revision:0};this.logic=new Component(p);this.logic.__host=this;}componentDidMount(){this.logic.componentDidMount?.();}componentDidUpdate(p){this.logic.componentDidUpdate?.(p,this.logic.__previous||this.logic.state);}componentWillUnmount(){this.logic.componentWillUnmount?.();}render(){const v={...this.props,...this.logic.renderVals()};return h('div',{className:'sc-host'},s3(v,0),s347(v,1));}}
 ReactDOM.createRoot(document.getElementById('dc-root')).render(h(Signup,{startStep:0,prefillDemo:false}));

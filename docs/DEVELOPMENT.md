@@ -105,3 +105,9 @@ After a staging deploy, confirm Render's deployed SHA and the staging
 records. Production promotion uses that same verified commit on `release`
 only after the owner's explicit approval. Verify the production deploy's
 commit separately and retain the previous deployed commit for recovery.
+
+Signup page return queries must not be logged or used as payment proof. Its
+no-referrer/no-store response hook is synchronous: do not add a second async
+onSend hook. That extra yield can double-send existing async guard refusals and
+crash a real HTTP server despite injection tests passing. The return-log suite
+also exercises two unauthenticated refusals over an actual local listening socket.

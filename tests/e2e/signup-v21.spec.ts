@@ -231,6 +231,10 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await page.screenshot({ path: test.info().outputPath("sam-consent-saved.png") });
     await page.locator("button").filter({ hasText: /^Continue$/ }).first().click();
     await expect(page.getByText(/Card payments aren['’]t switched on here yet\. Nothing was charged\./).first()).toBeVisible();
+    const retried = page.waitForResponse(r => r.url().endsWith(`/api/onboarding/${cdId}/payment`));
+    await page.getByRole("button", { name: "Try the card form again", exact: true }).click();
+    expect((await retried).status()).toBe(503);
+    await expect(page.getByRole("button", { name: "Try the card form again", exact: true })).toBeVisible();
     // Opt-out is effective even with payment unavailable; no payment action is needed.
     await page.getByRole("button", { name: /^Extras/ }).click();
     await sam.click();
@@ -259,7 +263,10 @@ test.describe("sign-up v2.1, the visitor's path", () => {
       expect(fixture("activate")).toEqual({ opened: false, reason: "already_open" });
       const beforeTills = fixture("tills");
       expect((beforeTills.rows || beforeTills)[0].n).toBe(0);
-      await page.evaluate(() => { const CD = (window as unknown as { __cdOnb: { comp: unknown; waitOpen: (c: unknown, n: number) => void } }).__cdOnb; CD.waitOpen(CD.comp, 0); });
+      // Simulate only the provider's return navigation; /open still consumes
+      // the actual enrolment cookie and waits for real server activation.
+      await page.goto("/onboarding?payment=return&setup_intent=seti_synthetic&setup_intent_client_secret=synthetic-return");
+      await expect(page).toHaveURL(/\/onboarding$/);
       const frame = page.frameLocator("iframe[data-real-home]");
       await expect(frame.locator("[data-signup-home]")).toHaveAttribute("data-signup-home", activated.tenantId);
       await expect(frame.locator("#os")).toHaveAttribute("inert", "");
@@ -277,6 +284,10 @@ test.describe("sign-up v2.1, the visitor's path", () => {
       expect(await frame.locator("#os").evaluate(() => JSON.parse(localStorage.getItem("cdos_settings") || "{}").idRequiredOver)).toBe(0);
       expect((await page.request.get(`/api/onboarding/${cdId}/resume`)).status()).toBe(401);
       await page.screenshot({ path: test.info().outputPath("day-one-real-home.png"), animations: "disabled" });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect(frame.locator("[data-signup-home]")).toHaveAttribute("data-signup-home", activated.tenantId);
+      await expect(frame.locator("#os")).toHaveAttribute("inert", "");
+      await page.screenshot({ path: test.info().outputPath("day-one-real-home-phone.png"), animations: "disabled" });
     }
   });
 

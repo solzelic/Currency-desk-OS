@@ -134,6 +134,7 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._paying = false;
         CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
@@ -389,6 +390,9 @@
         CD.names[CD.code] = String(c.state.data.operatingName || ""); CD.states[CD.code] = "reserved";
         return;
       }
+      var returnQuery = new URLSearchParams(location.search);
+      var paymentReturn = returnQuery.get("payment") === "return" || returnQuery.has("setup_intent") || returnQuery.has("setup_intent_client_secret");
+      if (paymentReturn) history.replaceState(null, "", "/onboarding");
       var ret = null;
       try { ret = JSON.parse(sessionStorage.getItem("cdSsoReturn") || "null"); sessionStorage.removeItem("cdSsoReturn"); } catch (e) { ret = null; }
       var back = /[?&]sso=1/.test(location.search) ? ssoParams() : null;
@@ -402,6 +406,7 @@
         CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
         CD.states[id] = r.body.state; CD.alreadyOpen = r.body.state === "active";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
+        if (paymentReturn && CD.resumePayment) { CD.resumePayment(c); return; }
         if (r.body.state === "active") { CD.alreadyOpen = true; c.setState({ i: 0 }); return; }
         if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
         if (r.body.signup) { CD.loadResume(false); return; }
@@ -663,14 +668,17 @@
       return { plan: d.plan || "ai", term: d.term || "monthly",
         extras: { brief: d.brief !== false, call: d.call !== false, website: !!(d.addons || {}).website, setupWeek: !!(d.addons || {}).onsite } };
     },
-    paymentKey: function (c) { return JSON.stringify({ choice: CD.paymentChoice(c), locations: c.locCount(), answers: CD._answersRevision || 0 }); },
+    paymentKey: function (c) { return JSON.stringify({ id: CD.code, choice: CD.paymentChoice(c), locations: c.locCount(), answers: CD._answersRevision || 0 }); },
     /* ---- the plan and the card (screen 24) ------------------------------- */
     loadPrices: function (c) {
-      if (CD._pricing || CD._priceFailed) return;
-      CD._pricing = true;
+      var key = JSON.stringify([CD.code, CD._answersRevision || 0]);
+      if (CD._priceKey === key && (CD._pricing || CD._priceFailed)) return;
+      CD._priceKey = key; CD._pricing = true; CD._priceFailed = false;
+      var request = CD._priceRequest = (CD._priceRequest || 0) + 1;
       /* the seeded review page has no session: it shows the public list price */
       (CD.seeded ? call("GET", "/api/onboarding/prices") : api("GET", "/prices")).then(function (r) {
-        if (r.status !== 200) CD._priceFailed = true;
+        if (request !== CD._priceRequest || key !== JSON.stringify([CD.code, CD._answersRevision || 0])) return;
+        if (r.status !== 200 || !r.body.plans) CD._priceFailed = true;
         CD._pricing = false;
         if (r.status === 200 && r.body.plans) { CD.prices = r.body; c.forceUpdate(); }
         else { CD.err = why(r, "We couldn’t load the prices just now."); c.forceUpdate(); }
@@ -694,7 +702,7 @@
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
-      if (!CD.prices) { CD.loadPrices(c); }
+      if (!CD.prices && !CD._paying) { CD.loadPrices(c); }
       var cur = " " + ((CD.prices && CD.prices.currency) || c.PRICE_CCY);
       var f = function (m) { return money(m, CD.prices && CD.prices.currency); };
       var blank = "—";
@@ -722,9 +730,13 @@
       R.xSetupPrice = CD.prices ? f(CD.prices.setupWeekMinor) + " once" : blank;
       R.xWebPrice = "$99" + cur + "/mo"; /* coming soon: shown by the design, never sold (the server refuses it) */
       (R.addonRows || []).forEach(function (a) { if (/setup week/i.test(a.name) && CD.prices) a.priceStr = f(CD.prices.setupWeekMinor) + cur + " once"; });
+      R.retryCardVisible = !!CD._cardFailed && !CD._paying && !CD.seeded;
+      R.onRetryCard = function () { CD.retryCard(c); };
+      R.retryPricesVisible = !!CD._priceFailed;
+      R.onRetryPrices = function () { CD._priceFailed = false; CD.loadPrices(c); c.forceUpdate(); };
       if (CD.payErr) R.goLiveSub = CD.payErr;
       if (CD._paying) { R.goLiveLabel = "Opening " + (d.operatingName || "your desk") + "…"; }
-      if (R.pf2Open && !CD.seeded) { CD.card(c); setTimeout(CD.mountCard, 0); setTimeout(CD.cardNote, 0); }
+      if (R.pf2Open && !CD.seeded && !CD._paying) { CD.card(c); setTimeout(CD.mountCard, 0); setTimeout(CD.cardNote, 0); }
       return R;
     },
     fmt: money,
@@ -732,30 +744,36 @@
        the empty box the build leaves where the prototype drew card fields.
        It needs a SetupIntent, which needs the plan the person chose, so it
        starts when the Payment section opens and restarts if that changes. */
+    retryCard: function (c) {
+      if (CD._paying || CD._cardBusy) return;
+      CD._cardKey = null; CD.card(c); c.forceUpdate();
+    },
     card: function (c) {
       var choice = CD.paymentChoice(c), key = CD.paymentKey(c);
-      if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD.payErr)) return;
-      if (CD._pe) { try { CD._pe.destroy(); } catch (e) { /* already gone with its box */ } CD._pe = null; CD._elements = null; }
-      CD._cardKey = key; CD._cardBusy = true; CD.cardComplete = false; CD.payErr = "";
+      if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD._cardFailed)) return;
+      if (CD._pe) { try { CD._pe.destroy(); } catch (e) {} }
+      CD._pe = null; CD._elements = null; CD._secret = null; CD._intent = null;
+      if (CD._box) { CD._box.removeAttribute("data-mounted"); CD._box.textContent = ""; }
+      CD._cardKey = key; CD._cardBusy = true; CD._cardFailed = false; CD.cardComplete = false; CD.payErr = "";
       var sequence = CD._cardRequest = (CD._cardRequest || 0) + 1;
+      var current = function () { return CD._cardKey === key && key === CD.paymentKey(c) && sequence === CD._cardRequest; };
+      var fail = function (message) { if (!current()) return; CD._cardBusy = false; CD._cardFailed = true; CD._elements = null; CD.payErr = message; c.forceUpdate(); };
       api("POST", "/payment", choice, 20000).then(function (r) {
-        if (CD._cardKey !== key || sequence !== CD._cardRequest) return;
-        CD._cardBusy = false;
-        if (r.status !== 200 || !r.body.clientSecret) { CD.payErr = why(r, "Card payments aren’t available just now. Nothing was charged."); c.forceUpdate(); return; }
-        if (!r.body.setupIntentId || r.body.termsSourceHash !== window.__cdAgreementHash) { CD.payErr = "The agreement has changed. Reload this page to review it before opening your desk."; c.forceUpdate(); return; }
-        CD._secret = r.body.clientSecret;
-        CD._intent = r.body.setupIntentId;
+        if (!current()) return;
+        if (r.status !== 200 || !r.body.clientSecret) { fail(why(r, "Card payments aren’t available just now. Nothing was charged.")); return; }
+        if (!r.body.setupIntentId || r.body.termsSourceHash !== window.__cdAgreementHash) { fail("The agreement has changed. Reload this page to review it before opening your desk."); return; }
+        CD._secret = r.body.clientSecret; CD._intent = r.body.setupIntentId;
         return stripeJs().then(function () {
-          if (CD._cardKey !== key || sequence !== CD._cardRequest) return;
+          if (!current()) return;
           var pk = r.body.publishableKey;
-          if (!window.Stripe || !pk) { CD.payErr = "Card payments aren’t switched on here yet. Nothing was charged."; c.forceUpdate(); return; }
+          if (!window.Stripe || !pk) { fail("Card payments aren’t switched on here yet. Nothing was charged."); return; }
           CD._stripe = CD._stripe || window.Stripe(pk);
           CD._elements = CD._stripe.elements({ clientSecret: CD._secret, appearance: { theme: "stripe", variables: { colorPrimary: "#1D6B45", colorText: "#17140F", borderRadius: "10px", fontFamily: "Schibsted Grotesk, system-ui, sans-serif" } } });
           CD._pe = CD._elements.create("payment", { layout: "tabs", fields: { billingDetails: { name: "never", address: "never" } }, wallets: { applePay: "never", googlePay: "never" } });
-          CD._pe.on("change", function (e) { CD.cardComplete = !!e.complete; c.forceUpdate(); });
-          CD.mountCard();
-        }, function () { if (sequence !== CD._cardRequest) return; CD.payErr = "The card form didn’t load. Check your connection and try again. Nothing was charged."; c.forceUpdate(); });
-      });
+          CD._pe.on("change", function (e) { if (!current()) return; CD.cardComplete = !!e.complete; c.forceUpdate(); });
+          CD._cardBusy = false; CD.mountCard(); c.forceUpdate();
+        });
+      }).catch(function () { fail("The card form didn’t load. Check your connection and try again. Nothing was charged."); });
     },
     /* No card form (Stripe off, or unreachable): say why where the card would be. */
     cardNote: function () {
@@ -770,8 +788,9 @@
       if (!box || !CD._pe || box.getAttribute("data-mounted") === "1") return;
       /* the section folds and opens again with a new box: move the frame */
       if (CD._box && CD._box !== box) { try { CD._pe.unmount(); } catch (e) { /* the old box went with the fold */ } }
-      CD._box = box; box.setAttribute("data-mounted", "1");
-      try { CD._pe.mount(box); } catch (e) { console.error("[signup] card form did not mount", e && e.name); }
+      CD._box = box; box.textContent = ""; box.setAttribute("role", "group");
+      try { CD._pe.mount(box); box.setAttribute("data-mounted", "1"); }
+      catch (e) { CD._cardFailed = true; CD._elements = null; CD.payErr = "The card form didn’t load. Try again. Nothing was charged."; if (CD.comp) CD.comp.forceUpdate(); }
     },
     /* Open {Shop}: Stripe confirms the SetupIntent (no money moves; a bank
        may ask the person to approve). Then the desk opens when Stripe's
@@ -791,15 +810,24 @@
           if (r.status === 409) CD._cardKey = null;
           CD._paying = false; CD.payErr = why(r, "Your desk or plan changed. Review it before opening your desk."); c.forceUpdate(); return;
         }
-        return CD._stripe.confirmSetup({ elements: elements, redirect: "if_required", confirmParams: { payment_method_data: { billing_details: billing }, return_url: location.origin + "/onboarding" } })
+        return CD._stripe.confirmSetup({ elements: elements, redirect: "if_required", confirmParams: { payment_method_data: { billing_details: billing }, return_url: location.origin + "/onboarding?payment=return" } })
         .then(function (res) {
           if (res.error) { CD._paying = false; CD.payErr = res.error.message || "The card wasn’t accepted. Nothing was charged."; c.forceUpdate(); return; }
           CD.waitOpen(c, 0);
-        }, function () { CD._paying = false; CD.payErr = NET; c.forceUpdate(); });
-      });
+        });
+      }).catch(function () { CD._paying = false; CD.payErr = NET; c.forceUpdate(); });
     },
-    waitOpen: function (c, n) {
+    resumePayment: function (c) {
+      // A URL is only a navigation hint. /open requires the unspent enrolment
+      // cookie and a webhook-activated account; no query value proves payment.
+      CD._paying = true; c.setState({ i: 15 }); CD.waitOpen(c, 0);
+    },
+    waitOpen: function (c, n, attempt) {
+      attempt = attempt || { id: CD.code, nav: CD._nav || 0 };
+      var current = function () { return attempt.id === CD.code && attempt.nav === (CD._nav || 0); };
+      if (!current()) return;
       api("POST", "/open", {}).then(function (r) {
+        if (!current()) return;
         if (r.status === 200 && r.body.ok) {
           CD._paying = false; CD.launched = true; CD.tenantId = r.body.tenantId; tabSet("");
           c.set("cdId", r.body.cdId || CD.code); if (r.body.operatingName) c.set("operatingName", r.body.operatingName);
@@ -812,7 +840,7 @@
         }
         if (r.status === 202 || r.status === 0) {
           if (n === 10) { CD.payErr = "Your card is saved. The desk is still opening; this can take a minute. Stay on this page."; c.forceUpdate(); }
-          if (n < 60) { setTimeout(function () { CD.waitOpen(c, n + 1); }, n < 10 ? 1000 : 3000); return; }
+          if (n < 60) { setTimeout(function () { CD.waitOpen(c, n + 1, attempt); }, n < 10 ? 1000 : 3000); return; }
           CD._paying = false; CD.payErr = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Come back to this page in a few minutes; we’ll pick up from here."; c.forceUpdate(); return;
         }
         CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
@@ -835,8 +863,14 @@
     stripeLoading = new Promise(function (ok, no) {
       var s = document.createElement("script");
       s.src = "https://js.stripe.com/v3/"; s.async = true;
-      var t = setTimeout(function () { no(new Error("stripe_timeout")); }, 15000);
-      s.onload = function () { clearTimeout(t); ok(); }; s.onerror = function () { clearTimeout(t); stripeLoading = null; no(new Error("stripe_load")); };
+      var settled = false;
+      function finish(error) {
+        if (settled) return; settled = true; clearTimeout(t); s.onload = null; s.onerror = null;
+        if (error) { s.remove(); stripeLoading = null; no(error); } else ok();
+      }
+      var t = setTimeout(function () { finish(new Error("stripe_timeout")); }, 15000);
+      s.onload = function () { finish(window.Stripe ? null : new Error("stripe_missing")); };
+      s.onerror = function () { finish(new Error("stripe_load")); };
       document.head.appendChild(s);
     });
     return stripeLoading;
