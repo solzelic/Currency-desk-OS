@@ -109,6 +109,11 @@ patch("no browser copy", "    try { const save = (this.state.i === 15 || this.st
   "    if (false) try { const save = (this.state.i === 15 || this.state.i === 16) ? 0 : this.state.i;");
 patch("stand-in data", "  fresh() { return {", "  fresh() { return window.__cdOnb.blank(this._protoFresh()); }\n  _protoFresh() { return {");
 patch("seed keeps the review data", "Object.assign({}, this.demo(), this.fresh(), {", "Object.assign({}, this.demo(), this._protoFresh(), {");
+/* Resume supplies the verified reservation's web name. Never display the
+   prototype's example business when that optional name is absent. */
+patch("real desk record name", "d.workspace || d.webName || 'yorkfx'", "d.workspace || d.webName || d.operatingName || ''");
+/* The server pack already supplies the complete registration hint. */
+patch("registration hint once", "j.hint + ' No number yet? Skip and add it later.'", "j.hint", 2);
 
 /* ---- Continue saves, skips save what skipping means -------------------- */
 patch("continue", "  next() { if (this.state.i === 11 && !this.state.seal)",

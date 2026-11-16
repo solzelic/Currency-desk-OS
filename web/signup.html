@@ -332,7 +332,7 @@
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
         /* the reserved address heads the Confirm record (the prototype's R.recDesk) */
-        if (typeof b.workspace === "string" && b.workspace) data.workspace = b.workspace;
+        data.workspace = typeof b.workspace === "string" ? b.workspace : "";
         CD.callPreference = b.callPreference || null; data.call = !!(CD.callPreference && CD.callPreference.call);
         if (CD.pack) data.country = CD.pack.code;
         var modes = {};
