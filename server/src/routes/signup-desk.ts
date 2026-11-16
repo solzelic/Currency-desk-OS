@@ -10,6 +10,7 @@
      POST /api/onboarding/:id/confirm  { signed: true, name }   the declaration
      POST /api/onboarding/:id/plan     { plan, term, extras }   → SetupIntent secret
      POST /api/onboarding/:id/open     → a real desk session once Stripe has said yes
+     POST /api/onboarding/:id/staging-open   the staging door's synthetic shop only: no card
    ============================================================ */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -26,7 +27,8 @@ import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { acceptServiceAgreement, SERVICE_AGREEMENT_SOURCE_HASH, confirmDesk, declarationName, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { acceptServiceAgreement, SERVICE_AGREEMENT_SOURCE_HASH, confirmDesk, declarationName, openStagingDesk, prepareStagingPlan, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { stagingSignupFixture } from "../onboarding/signup-staging.js";
 import { stripeBillingConfig, signupStripeClient } from "../billing/stripe.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
@@ -189,11 +191,21 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const details = r.row.details ?? {};
     if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") return reply.code(409).send({ error: "billing_country_unavailable" });
     if (body.data.extras.website) return reply.code(409).send({ error: "website_coming_soon" });
-    const client = stripe();
-    if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });
     const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers ?? {};
     const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
     const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };
+    /* The staging door's synthetic shop: no card processor, no card form.
+       Open is POST …/staging-open (onboarding/signup-staging.ts). */
+    if (await stagingSignupFixture(db, r.row, req.headers)) {
+      try {
+        return { ok: true, ...(await prepareStagingPlan(db, r.row, choice)) };
+      } catch (err) {
+        req.log.warn({ reason: err instanceof Error && /^signup_[a-z_]+$/.test(err.message) ? err.message : "staging_plan_invalid", id: idTail(r.cdId) }, "signup staging plan refused");
+        return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
+      }
+    }
+    const client = stripe();
+    if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });
     try {
       const payment = await startPayment(db, client, r.row, choice, !prepare);
       return { ok: true, ...payment, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null };
@@ -210,6 +222,21 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!body.success) return reply.code(400).send({ error: "invalid_agreement" });
     if (!(await acceptServiceAgreement(db, r.row.id, body.data.setupIntentId))) return reply.code(409).send({ error: "agreement_changed", detail: "Your desk or plan changed. Review it and open the card section again." });
     return { ok: true };
+  });
+
+  /* The staging door's Open: the owner's assent, then the same activation a
+     paid desk gets, as a test shop. Any other reservation is 404. The browser
+     then asks POST …/open for its real session, as after a card. */
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/staging-open", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    if (!(await stagingSignupFixture(db, r.row, req.headers))) return reply.code(404).send({ error: "not_found" });
+    const body = z.object({ termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH), agreed: z.literal(true) }).strict().safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_agreement" });
+    const result = await openStagingDesk(db, r.row.id);
+    if (result.opened || result.reason === "already_open") return { ok: true };
+    door.logRefusal({ reason: `staging_open_${result.reason}`, id: idTail(r.cdId), connection: r.connection });
+    return reply.code(409).send({ error: "agreement_changed", detail: "Your desk or plan changed. Review it and open the payment section again." });
   });
 
   /* The plan screen's prices (build doc §6, payment), for the locations the

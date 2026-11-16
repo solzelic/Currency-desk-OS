@@ -125,14 +125,14 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
-        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._paying = false;
+        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._staging = false; CD._paying = false;
         CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
-      CD.code = ""; CD.alreadyOpen = false; tabSet("");
+      CD.code = ""; CD.alreadyOpen = false; CD.verify.code = ""; tabSet("");
       if (CD.comp) CD.comp.set("operatingName", "");
       function select() {
-        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
+        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; CD.verify.code = ""; tabSet(id);
         if (CD.comp) CD.comp.set("operatingName", CD.names[id] || "");
       }
       if (!ID.test(id)) return;
@@ -187,9 +187,10 @@
             },
             deviceLabel: c.deviceInfo().device,
           };
+          var id = CD.code;
           return api("POST", "/passkey/verify", body).then(function (v) {
             if (v.status !== 200 || !v.body.ok) return fail(why(v, cancelled));
-            CD.codeSent = v.body.codeSent !== false;
+            CD.codeSent = v.body.codeSent !== false; CD.stagingCode(v.body, id);
             c.setState({ pkScan: "ok" });
             setTimeout(function () { c.setState({ pkPhase: "done", pkScan: false }); c.set("passkeyDone", true);
               setTimeout(function () { if (c.state.i === 5) c.next(); }, 900); }, 400);
@@ -218,21 +219,21 @@
       });
     },
     ssoFinish: function (c, prov, code, state) {
-      var label = prov === "google" ? "Google" : "Microsoft";
+      var label = prov === "google" ? "Google" : "Microsoft", id = CD.code;
       api("POST", "/sso/callback", { provider: prov, code: code, state: state }).then(function (r) {
         if (r.status !== 200 || !r.body.ok) {
           c.setState({ ssoPhase: "idle", lockErr: why(r, "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.") });
           return;
         }
-        CD.codeSent = r.body.codeSent !== false;
+        CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id);
         c.setState({ ssoPhase: "idle" }); c.set("lockMode", prov); c.set("ssoDone", prov);
         setTimeout(function () { if (c.state.i === 5) c.next(); }, 900);
       });
     },
     password: function (c) {
-      var d = c.state.data;
+      var d = c.state.data, id = CD.code;
       return api("POST", "/password", { password: d.ownerPass || "", confirm: d.pass2 || "" }).then(function (r) {
-        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; c.set("ownerPass", ""); c.set("pass2", ""); return true; }
+        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id); c.set("ownerPass", ""); c.set("pass2", ""); return true; }
         c.setState({ lockErr: why(r, "That password wasn’t saved. Try again.") });
         return false;
       });
@@ -243,19 +244,31 @@
       return { q: "Check your inbox.", help: "We just sent a 6-digit code to the email you applied with. This is the address we write to.",
         resend: "No email yet?", fixLead: "Wrong address?", fixTail: " — you’ll need this address every time you sign in." };
     },
+    /* The staging door's synthetic shop has no inbox: the server hands its
+       code to this browser alone, and the frozen "Staging code" row shows it
+       (it hides "Send it again" while it does). Never kept; a late reply for
+       another ID is dropped. Any other reservation never gets one. */
+    stagingCode: function (body, id) {
+      if (CD.code !== id) return;
+      CD.verify.code = body && typeof body.stagingCode === "string" && /^[0-9]{6}$/.test(body.stagingCode) ? body.stagingCode : "";
+    },
     /* "Send it again" only. The first code went when the credential saved. */
     sendCode: function () {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/send", {}).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return true;
+        if (r.status === 200 && r.body.ok !== false) { CD.stagingCode(r.body, id); return true; }
         CD.err = why(r, "We couldn’t send that code just now.");
         return false;
       });
     },
     checkCode: function (entered) {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/verify", { code: entered }).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return CD.loadResume(true).then(function () { return true; });
+        if (r.status === 200 && r.body.ok !== false) { if (CD.code === id) CD.verify.code = ""; return CD.loadResume(true).then(function () { return true; }); }
+        /* a spent or lapsed staging code: bring "Send it again" back */
+        if (CD.code === id && /^(expired|too_many_attempts|no_code|no_candidate|not_enrolling)$/.test(String(r.body.error || ""))) CD.verify.code = "";
         CD.err = why(r, r.status === 0 ? NET : "That code isn’t right.");
         return false;
       });
