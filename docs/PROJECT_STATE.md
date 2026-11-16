@@ -58,6 +58,8 @@ check (ID resend 29px, confirm 16px). Short desktop cards may now grow to the
 viewport less 24px, the split card's existing margin, instead of 92vh; the
 review's Vault count row keeps the prototype's own count note instead of an
 always-on second line. macOS geometry is unchanged or back on the prototype.
+The phone 44px target floor no longer narrows the hero action (Open it) below
+the prototype's own 260px width.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and

@@ -2382,7 +2382,7 @@ function s811(v,k){return h(React.Fragment,{key:k},"",text(v?.["heroNote"],1),""
 function s810(v,k){return h("p",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-top: 16px;")},s811(v,0));}
 function s812(v,k){return "\n                ";}
 function s814(v,k){return h(React.Fragment,{key:k},"",text(v?.["ctaLabel"],1),"");}
-function s813(v,k){return h("button",{key:k,"onClick":v?.["onCta"],"disabled":v?.["ctaDisabled"],"style":style(v?.["heroCtaStyle"]),className:"signup-p1"},s814(v,0));}
+function s813(v,k){return h("button",{key:k,"data-herocta":"true","onClick":v?.["onCta"],"disabled":v?.["ctaDisabled"],"style":style(v?.["heroCtaStyle"]),className:"signup-p1"},s814(v,0));}
 function s815(v,k){return "\n              ";}
 function s710(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; align-items: center; text-align: center; padding: 26px 4px 10px;")},s711(v,0),s712(v,1),s726(v,2),s727(v,3),s729(v,4),s730(v,5),s732(v,6),s733(v,7),s736(v,8),s737(v,9),s809(v,10),s810(v,11),s812(v,12),s813(v,13),s815(v,14));}
 function s816(v,k){return "\n            ";}
