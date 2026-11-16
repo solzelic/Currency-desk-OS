@@ -415,7 +415,8 @@
       secondary = badge.secondary || badge.primary;
       primary = fromInquiry;
     }
-    const passed = primary === "Check passed" || primary === "Check passed (test)" || (latest && latest.result === "pass");
+    const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
+    const passed = !stale && (primary === "Check passed" || primary === "Check passed (test)" || (latest && (latest.result === "pass" || latest.result === "returning_confirmed")));
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -439,7 +440,7 @@
       {latest && <div data-testid="id-check-photo-line" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{latest.photoOnFile ? "Small photo from the ID, for comparison by eye." : (latest.photoLine || "No photo on file")}</div>}
       {photo && <img alt="Small photo from the ID" src={photo} width={96} height={96} className="mt-2" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }} />}
       <div className="flex flex-wrap gap-2 mt-2">
-        {canEdit && !passed && <button type="button" data-testid="id-check-start" onClick={() => setOpen(true)} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>{checksOn ? "Check ID" : "Check ID in person"}</button>}
+        {role !== "auditor" && !passed && <button type="button" data-testid="id-check-start" onClick={() => setOpen(true)} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>{checksOn ? "Check ID" : "Check ID in person"}</button>}
         {canReveal && latest && latest.maskedNumber && <button type="button" data-testid="id-check-reveal-open" onClick={() => setReveal(true)} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>Show number</button>}
         {role && role !== "auditor" && latest && latest.photoOnFile && <button type="button" onClick={showPhoto} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>Show the photo</button>}
       </div>

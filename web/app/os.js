@@ -53886,7 +53886,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       secondary = badge.secondary || badge.primary;
       primary = fromInquiry;
     }
-    const passed = primary === "Check passed" || primary === "Check passed (test)" || latest && latest.result === "pass";
+    const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
+    const passed = !stale && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -53967,7 +53968,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }), /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-2 mt-2"
-    }, canEdit && !passed && /*#__PURE__*/React.createElement("button", {
+    }, role !== "auditor" && !passed && /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "id-check-start",
       onClick: () => setOpen(true),

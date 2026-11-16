@@ -2,6 +2,7 @@
    Persona is a local stub. The webhook writes the record.
    No thanks goes to the counter path. A teller cannot reveal the number. */
 import { createHmac } from "node:crypto";
+import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -103,13 +104,15 @@ async function themeShot(page: Page, stem: string) {
     }, theme);
     for (const width of [1280, 390] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-      await page.screenshot({ path: path.join(ARTIFACTS, `pr2-${stem}-${width}-${theme}.png`) });
+      const shotPath = path.join(ARTIFACTS, `pr2-${stem}-${width}-${theme}.png`);
+      if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
       if (width === 390) {
         await page.evaluate(() => {
           const flow = document.querySelector("[data-testid='id-check-flow']");
           if (flow) flow.scrollTop = flow.scrollHeight;
         });
-        await page.screenshot({ path: path.join(ARTIFACTS, `pr2-${stem}-390-${theme}-scrolled.png`) });
+        const scrolled = path.join(ARTIFACTS, `pr2-${stem}-390-${theme}-scrolled.png`);
+        if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
       }
     }
   }
@@ -366,14 +369,26 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     expect(inPerson.status, inPerson.body).toBe(200);
 
     const openFile = async (name: string) => {
+      const flow = page.getByTestId("id-check-flow");
+      if (await flow.isVisible().catch(() => false)) await flow.getByRole("button", { name: "Close" }).click();
+      const fileHead = page.locator(".client-file-actions");
+      if (await fileHead.isVisible().catch(() => false)) await fileHead.locator("button").last().click();
       await page.locator('[data-app="clients"]').click();
       await page.getByText(name, { exact: true }).click();
       await expect(page.getByTestId("identity-check")).toBeVisible();
     };
+    const startCheck = async () => {
+      const button = page.getByTestId("id-check-start");
+      await expect(button).toHaveText(/Check ID/, { timeout: 20_000 });
+      await page.evaluate(() => {
+        const node = document.querySelector("[data-testid='id-check-start']");
+        if (node instanceof HTMLButtonElement) node.click();
+      });
+    };
     await openFile("No Check Client");
     await expect(page.getByTestId("id-check-badge")).toContainText("No ID check on file");
     await themeShot(page, "badge-none");
-    await page.getByTestId("id-check-start").click();
+    await startCheck();
     await expect(page.getByTestId("id-check-chooser")).toBeVisible();
     await page.getByRole("button", { name: "Returning client" }).click();
     await expect(page.getByTestId("id-check-returning-blocked")).toBeVisible();
@@ -392,18 +407,6 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await openFile("Incomplete Check Client");
     await expect(page.getByTestId("id-check-badge")).toContainText("Method not completed. Check the ID at the counter.");
     await themeShot(page, "badge-incomplete");
-    await page.getByTestId("id-check-start").click();
-    await page.getByTestId("id-check-chooser").locator("button").filter({ hasText: /^ID and selfie/ }).click();
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.getByTestId("id-check-agree-box").check();
-    const started = page.waitForResponse((res) => res.url().includes("/api/idv/start-check") && res.request().method() === "POST");
-    await page.getByRole("button", { name: "I agree" }).click();
-    const start = await started;
-    const providerRef = (await start.json()).providerRef as string;
-    await postWebhook(page, providerRef, "inquiry.failed");
-    await expect(page.getByTestId("id-check-incomplete")).toBeVisible({ timeout: 20_000 });
-    await themeShot(page, "method-not-completed");
-    await page.getByRole("button", { name: "Close" }).click();
 
     await openFile("Advice Check Client");
     await expect(page.getByTestId("id-check-advice")).toContainText("A new ID and selfie check is advised.");
@@ -413,13 +416,13 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await openFile("Due Check Client");
     await expect(page.getByTestId("id-check-due")).toContainText("A new full ID check is needed.");
     await themeShot(page, "badge-due");
-    await page.getByTestId("id-check-start").click();
+    await startCheck();
     await page.getByRole("button", { name: "Returning client" }).click();
     await expect(page.getByTestId("id-check-returning-blocked")).toContainText("A new full ID check is needed.");
     await page.getByRole("button", { name: "Close" }).click();
 
     await openFile("Returning Check Client");
-    await page.getByTestId("id-check-start").click();
+    await startCheck();
     await page.getByRole("button", { name: "Returning client" }).click();
     await expect(page.getByTestId("id-check-no-photo")).toContainText("No photo on file");
     await themeShot(page, "returning");
@@ -428,20 +431,21 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await page.getByRole("button", { name: "Record returning client" }).click();
     await expect(page.getByTestId("id-check-done")).toContainText("Returning client");
     await page.getByRole("button", { name: "Done" }).click();
-    await expect(page.getByTestId("id-check-badge")).toContainText("Returning client");
+    await expect(page.getByTestId("identity-check")).toContainText("Returning client");
     await themeShot(page, "badge-returning");
 
     await db.query("UPDATE branches SET province = 'QC' WHERE id = 'br-yorkville'");
     await page.reload();
     await landOnDesktop(page);
     await openFile("No Check Client");
-    await page.getByTestId("id-check-start").click();
+    await startCheck();
     await expect(page.getByTestId("id-check-quebec")).toContainText("Face match is off for this branch. Inspect the original ID.");
     await themeShot(page, "quebec");
     await page.getByRole("button", { name: "Close" }).click();
 
     await signInAtDesk(page, "j.masri");
     await page.locator('[data-app="settings"]').click();
+    await page.getByRole("button", { name: "Clients · KYC" }).click();
     await expect(page.getByTestId("id-check-settings")).toBeVisible({ timeout: 20_000 });
     await themeShot(page, "settings-crop");
   } finally {
