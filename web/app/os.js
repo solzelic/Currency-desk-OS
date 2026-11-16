@@ -27503,7 +27503,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       return /*#__PURE__*/React.createElement("div", {
         "data-tour": "identification",
         "data-testid": "client-where",
-        className: "mb-3 p-3.5",
+        className: "client-where mb-3 p-3.5 min-w-0 max-w-full",
         style: {
           background: CD.panel,
           border: `1px solid ${CD.line}`,
@@ -27516,16 +27516,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           fontFamily: 'Space Mono, monospace'
         }
       }, "Where they are"), /*#__PURE__*/React.createElement("div", {
-        className: "flex items-start gap-2 flex-wrap min-w-0"
+        className: "flex items-start gap-2 min-w-0 max-w-full"
       }, /*#__PURE__*/React.createElement(Pill, {
         text: standing.title,
         c: tone,
         bg: soft
       }), /*#__PURE__*/React.createElement("span", {
-        className: "text-[12.5px] min-w-0 flex-1",
+        "data-testid": "client-where-line",
+        className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
         style: {
-          color: CD.ink,
-          overflowWrap: "anywhere"
+          color: CD.ink
         }
       }, standing.line)), /*#__PURE__*/React.createElement("div", {
         className: "text-[11.5px] mt-1.5",
@@ -27561,13 +27561,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         fontFamily: 'Space Mono, monospace'
       }
     }, "Where they are"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-wrap"
+      className: "flex items-start gap-2 min-w-0 max-w-full"
     }, /*#__PURE__*/React.createElement(Pill, {
       text: documentStanding[0],
       c: tone,
       bg: soft
     }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12.5px]",
+      "data-testid": "client-where-line",
+      className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
       style: {
         color: CD.ink
       }
@@ -28054,7 +28055,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "x",
       s: 18
     })))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto px-6 py-5"
+      className: "flex-1 overflow-auto px-6 py-5 min-w-0 max-w-full"
     }, (rec.possibleDuplicate || (rec.sameNameClientIds || []).length > 0) && /*#__PURE__*/React.createElement("div", {
       className: "mb-4 flex items-start gap-2.5 px-3.5 py-3",
       style: {

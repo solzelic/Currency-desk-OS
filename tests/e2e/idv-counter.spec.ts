@@ -182,7 +182,7 @@ async function enableChecks(request: APIRequestContext) {
       faceCropEnabled: true,
       privacyContact: "Privacy officer",
       privacyEmail: "privacy@yorkfx.example",
-      privacyPhone: "4165550100",
+      privacyPhone: "416-555-0100",
       privacyPolicyUrl: "https://yorkfx.example/privacy",
     },
   });
@@ -422,6 +422,23 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("client-where")).not.toContainText("Not identified");
     await expect(profile.getByText("KYC / ID gap")).toHaveCount(0);
     await expect(file.getByTestId("id-check-photo-line")).toHaveText("Photo from ID, for comparison by eye");
+    for (const width of [390, 360]) {
+      await page.setViewportSize({ width, height: 844 });
+      const where = await page.getByTestId("client-where-line").evaluate((el) => {
+        const line = el.getBoundingClientRect();
+        const card = el.closest(".client-file")?.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          text: el.textContent || "",
+          whiteSpace: style.whiteSpace,
+          pastCard: card ? line.right > card.right + 1 : true,
+        };
+      });
+      expect(where.text, `${width}`).toContain("Persona");
+      expect(where.whiteSpace, `${width}`).not.toBe("nowrap");
+      expect(where.pastCard, `${width} ${where.text}`).toBe(false);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expect(file).not.toContainText("No photo on file");
     await file.getByRole("button", { name: "Show the photo" }).click();
     const photo = file.getByTestId("id-check-photo");
@@ -643,11 +660,91 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await page.locator('[data-app="settings"]').click();
     await page.getByRole("button", { name: "Clients · KYC" }).click();
     await expect(page.getByTestId("id-check-settings")).toBeVisible({ timeout: 20_000 });
-    await themeShot(page, "settings-crop");
+    await expect(page.getByLabel("Privacy phone")).toHaveValue("416-555-0100");
+    const settingsWin = page.locator(".win").filter({ has: page.getByTestId("id-check-settings") });
+    await page.locator(".win").evaluateAll((nodes) => {
+      nodes.forEach((node) => {
+        if (node.querySelector("[data-testid='id-check-settings']")) return;
+        const close = node.querySelector(".win-close");
+        if (close instanceof HTMLButtonElement) close.click();
+      });
+    });
+    await expect(page.locator(".win")).toHaveCount(1);
+    if (process.env.PR2B_SHOTS === "1") {
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((value) => {
+          (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
+        }, theme);
+        for (const width of [1280, 390] as const) {
+          await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          await settingsWin.evaluate((el) => {
+            const bar = el.querySelector(".win-bar");
+            if (!bar) return;
+            const zoom = () => bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+            if (el.classList.contains("max")) zoom();
+            zoom();
+          });
+          await expect(settingsWin).toHaveClass(/max/);
+          const shotPath = path.join(ARTIFACTS, `pr2-settings-crop-${width}-${theme}.png`);
+          if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
+          if (width === 390) {
+            await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            const scrolled = path.join(ARTIFACTS, `pr2-settings-crop-390-${theme}-scrolled.png`);
+            if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
+          }
+        }
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.evaluate(() => {
+        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+      });
+    }
   } finally {
     await db.query("UPDATE branches SET province = 'ON' WHERE id = 'br-yorkville'");
     await request.put("/api/settings/idv", { data: { checksEnabled: false } }).catch(() => {});
     await db.end();
+  }
+});
+
+test("settings is one opaque window and the privacy phone is formatted", async ({ page, request }) => {
+  test.skip(process.env.PR2B_SHOTS !== "1", "screenshot pass");
+  test.setTimeout(120_000);
+  await enableChecks(request);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInAtDesk(page, "j.masri");
+  await landOnDesktop(page);
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.locator(".win .win-close").evaluateAll((nodes) => {
+    nodes.forEach((node) => { if (node instanceof HTMLButtonElement) node.click(); });
+  });
+  await page.locator('[data-app="settings"]').click();
+  await page.getByRole("button", { name: "Clients · KYC" }).click();
+  await expect(page.getByTestId("id-check-settings")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel("Privacy phone")).toHaveValue("416-555-0100");
+  const settingsWin = page.locator(".win").filter({ has: page.getByTestId("id-check-settings") });
+  await expect(settingsWin).toHaveCount(1);
+  for (const theme of ["light", "dark"] as const) {
+    await page.evaluate((value) => {
+      (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
+    }, theme);
+    for (const width of [1280, 390] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await settingsWin.evaluate((el) => {
+        const bar = el.querySelector(".win-bar");
+        if (!bar) return;
+        const zoom = () => bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+        if (el.classList.contains("max")) zoom();
+        zoom();
+      });
+      await expect(settingsWin).toHaveClass(/max/);
+      const shotPath = path.join(ARTIFACTS, `pr2-settings-crop-${width}-${theme}.png`);
+      await page.screenshot({ path: shotPath });
+      if (width === 390) {
+        await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        await page.screenshot({ path: path.join(ARTIFACTS, `pr2-settings-crop-390-${theme}-scrolled.png`) });
+      }
+    }
   }
 });
 
@@ -662,7 +759,7 @@ test("the notice leaves out the photo sentence when the crop is off", async ({ p
       faceCropEnabled: false,
       privacyContact: "Privacy officer",
       privacyEmail: "privacy@yorkfx.example",
-      privacyPhone: "4165550100",
+      privacyPhone: "416-555-0100",
       privacyPolicyUrl: "https://yorkfx.example/privacy",
     },
   });

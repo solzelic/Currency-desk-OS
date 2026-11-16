@@ -3531,6 +3531,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 /* While an ID check sheet is open, the deal's post bar stays off
    the screen at every width. The sheet also covers it. */
 body[data-id-check="open"] .cd-tx-actions { display: none !important; }
+/* Where they are names the method and the date. The line wraps at
+   every width. It is not one clipped row. */
+.client-file { min-width: 0; max-width: 100%; }
+.client-where,
+.client-where-line {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.win.max,
+.win.max .win-body {
+  background: var(--paper, #f6f4ef);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 [data-testid="id-check-flow"] button,
 [data-testid="id-check-flow"] input,
 [data-testid="id-check-flow"] select,

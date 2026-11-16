@@ -1107,11 +1107,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const on = !!standing.onFile;
       const tone = on ? CD.green : CD.flag;
       const soft = on ? CD.greenSoft : CD.flagSoft;
-      return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+      return (<div data-tour="identification" data-testid="client-where" className="client-where mb-3 p-3.5 min-w-0 max-w-full" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
-        <div className="flex items-start gap-2 flex-wrap min-w-0">
+        <div className="flex items-start gap-2 min-w-0 max-w-full">
           <Pill text={standing.title} c={tone} bg={soft} />
-          <span className="text-[12.5px] min-w-0 flex-1" style={{ color: CD.ink, overflowWrap: "anywhere" }}>{standing.line}</span>
+          <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{standing.line}</span>
         </div>
         <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
       </div>);
@@ -1129,9 +1129,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
     return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-start gap-2 min-w-0 max-w-full">
         <Pill text={documentStanding[0]} c={tone} bg={soft} />
-        <span className="text-[12.5px]" style={{ color: CD.ink }}>{documentStanding[1]}</span>
+        <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{documentStanding[1]}</span>
       </div>
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
     </div>);
@@ -1279,7 +1279,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         </div>
 
         {/* body */}
-        <div className="flex-1 overflow-auto px-6 py-5">
+        <div className="flex-1 overflow-auto px-6 py-5 min-w-0 max-w-full">
           {/* THE COLLISION, SAID OUT LOUD.
 
               The old store keyed customers by name, so two people called
