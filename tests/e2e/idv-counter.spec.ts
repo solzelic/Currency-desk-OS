@@ -1366,7 +1366,7 @@ test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) 
     await expect(postRow).not.toContainText("Customer identified");
     await expect(page.getByTestId("before-you-post")).toContainText("ID typed by hand, not checked");
     await expect(page.getByTestId("before-you-post")).not.toContainText(/ready/i);
-    const postMark = await page.getByTestId("post-id-mark").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const postMark = await page.getByTestId("post-id-row-mark").evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(postMark).not.toBe("rgb(31, 138, 76)");
     await expect(page.getByRole("button", { name: "Get server quote" })).toBeEnabled();
     await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
