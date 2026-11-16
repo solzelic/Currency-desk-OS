@@ -7,7 +7,10 @@ decision with accepted. Activation (card webhook and staging no-card Open) now
 locks the enquiry under the account lock and refuses anything but an Invited
 early access row with its ID (`not_invited`): nothing is provisioned, the
 account is untouched, a `signup.open_refused` audit row is written, and the
-webhook acknowledges the event so Stripe stops retrying. `POST …/open` issues
+webhook acknowledges the event so Stripe stops retrying but keeps no claim on
+it: Stripe sends no second event for that intent, so once support invites the
+application again, resending the same event from the Stripe dashboard opens
+the desk (a manual step; nothing re-opens on its own). `POST …/open` issues
 a desk session only for an application accepted for that tenant, and pipeline
 moves are compare-and-set, so a stale decline answers `changed` instead of
 overwriting an opened desk. Not done: revoking enrolment sessions or clearing

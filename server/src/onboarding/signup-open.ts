@@ -247,7 +247,8 @@ async function lockedReservation(db: Db, enquiryId: string): Promise<Enquiry | u
    desk. Declined or on hold is support's answer, and a card saved or a
    webhook retried after it must not overturn it. A refusal writes nothing
    to the account; it is recorded for support (a card may now be saved at
-   Stripe with no desk) and answered, so the webhook acknowledges it once. */
+   Stripe with no desk) and answered, so the webhook acknowledges it and
+   leaves the event resendable (routes/billing.ts). */
 const invited = (row: Enquiry): boolean => row.kind === "early_access" && !!row.cdId && row.status === "invited";
 async function notInvited(db: Db, row: Enquiry): Promise<OpenResult> {
   await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", action: "signup.open_refused", detail: { enquiryId: row.id, reason: "not_invited", status: row.status } });
