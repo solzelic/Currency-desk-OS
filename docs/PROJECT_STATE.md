@@ -19,6 +19,12 @@ Payment-form failures now have an explicit retry, stale quotes cannot replace
 current answers, and provider return navigation resumes the session-protected
 opening handoff. Signup page queries are omitted from application request logs;
 the page forbids referrers/caching and clears return query data from history.
+Focused controls keep their native Enter action instead of accidentally advancing
+the wizard; payment folds expose actual disabled states and phone controls have
+44px minimum targets. All 38 states pass axe and Tab reachability on desktop and
+phone (76 audits); axe gradient/occlusion and video manual checks are retained as
+incomplete, not certified. The AOT lifecycle uses the last committed state so a
+forced update cannot replay chapter focus; new-password autofill is enabled.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 

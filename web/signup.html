@@ -1424,6 +1424,14 @@
     @keyframes cdScanBar { 0% { transform: translateX(-100%); } 100% { transform: translateX(230%); } }
   </style>
 <style>@media (max-width: 720px) { [data-card] [role="tab"] { min-height: 44px !important; } }</style>
+<style>
+[data-product] button, [data-product] a[href] { min-height:24px; }
+[data-product] a[href] { display:inline-flex;align-items:center; }
+[data-product] :is(button,a,input,[tabindex]):focus-visible { outline:2px solid #1D6B45;outline-offset:3px; }
+@media(max-width:720px) {
+ [data-product] :is(button,a[href],input,[role=tab],[role=button]) { min-height:44px!important;min-width:44px!important;box-sizing:border-box; }
+}
+</style>
 
 <style>html,body{height:100%;margin:0}#dc-root,#dc-root>.sc-host{height:100%}.signup-p0:not(:disabled):hover{background: #1D6B45 !important;}
 .signup-p1:not(:disabled):active{transform: translateY(1px) scale(0.995) !important;}
