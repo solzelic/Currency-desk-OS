@@ -26,12 +26,17 @@ describe("idv source locks", () => {
   });
 
   it("does not say Approved on the identity check", () => {
-    const text = readFileSync(join(import.meta.dirname, "../../os-src/cdos-clients.jsx"), "utf8");
-    const block = text.slice(text.indexOf("function IdentityCheck"), text.indexOf("function ProcessStanding"));
-    expect(block).not.toContain("Approved");
-    expect(block).toContain("Check passed (test)");
-    expect(block).toContain("ID details from this check are not saved on the desk. Enter the ID with Fix ID.");
-    expect(block).toContain("Check passed");
+    const clients = readFileSync(join(import.meta.dirname, "../../os-src/cdos-clients.jsx"), "utf8");
+    const delegated = clients.slice(clients.indexOf("function IdentityCheck"), clients.indexOf("function ProcessStanding"));
+    expect(delegated).toContain("window.CDOS.IdCheck.Panel");
+    expect(delegated).not.toContain("Approved");
+    const panelFile = readFileSync(join(import.meta.dirname, "../../os-src/cdos-id-check.jsx"), "utf8");
+    const panel = panelFile.slice(panelFile.indexOf("function Panel"), panelFile.indexOf("function DealBar"));
+    expect(panel).not.toContain("Approved");
+    expect(panel).toContain("Check passed (test)");
+    expect(panel).toContain("Check passed");
+    expect(panel).toContain("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
+    expect(panel).not.toContain("ID details from this check are not saved on the desk");
   });
 
   it("compares the webhook signature with timingSafeEqual", () => {
