@@ -1,6 +1,7 @@
 /* Staging "Start on Day 1", in the browser: the sign-in page's button makes
    a brand-new test shop and lands its owner on Day 1, over the real Home,
-   signed in. This file makes its own database and starts a staging-shaped
+   signed in. The press goes straight to Day 1's welcome, which says the shop
+   is opening until it has. This file makes its own database and starts a staging-shaped
    server on it (Chromium maps staging.currencydeskos.com to 127.0.0.1),
    then runs the real CLI to mark the database staging, which the door needs. */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
@@ -129,21 +130,37 @@ test("Start on Day 1 opens a new test shop on its first day, signed in as its ow
   expect((await inPage(page, "/api/auth/me")).body.user.tenantId).toBe(user.tenantId);
 });
 
-test("while the press answers, a neutral hold covers the page, nothing under it can be pressed, and the stand-in shop never shows", async ({ page }) => {
-  test.setTimeout(240_000);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  /* Every text the sign-up page draws, from its first paint: the prototype's
-     stand-in shop and owner (SIGNUP-LOGIC section 13) must never be one. */
+/* From the press: what the sign-up page ever drew, and whether the real Home
+   was ever visible before it had drawn itself (the sign-in it starts on). */
+async function watchDayOne(page: Page) {
   await page.addInitScript(() => {
     if (location.pathname !== "/onboarding") return;
-    const seen: string[] = [];
-    (window as unknown as { __standIn: string[] }).__standIn = seen;
+    const seen = { standIn: [] as string[], screens: [] as string[], homeShownEarly: 0 };
+    (window as unknown as { __dayOne: typeof seen }).__dayOne = seen;
     const look = () => {
-      const text = document.getElementById("dc-root")?.textContent ?? "";
-      for (const s of ["York Currency Exchange", "Masri", "Daniel Osei", "yorkcurrency"]) if (text.includes(s) && !seen.includes(s)) seen.push(s);
+      const root = document.getElementById("dc-root");
+      /* the prototype's stand-in shop and owner (SIGNUP-LOGIC section 13), the
+         plan screen's landing, its sample desk and the old hold */
+      const text = root?.textContent ?? "";
+      for (const s of ["York Currency Exchange", "Masri", "Daniel Osei", "yorkcurrency", "Your desk is set up", "SAMPLE RATES", "Opening a staging test shop"]) if (text.includes(s) && !seen.standIn.includes(s)) seen.standIn.push(s);
+      const screen = root?.querySelector("[data-signup-screen]")?.getAttribute("data-signup-screen");
+      if (screen && seen.screens[seen.screens.length - 1] !== screen) seen.screens.push(screen);
+      if (root?.querySelector("[data-desk]") && seen.screens[seen.screens.length - 1] !== "desk") seen.screens.push("desk");
     };
-    new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true });
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+    setInterval(() => {
+      const frame = document.querySelector<HTMLIFrameElement>("iframe[data-real-home]");
+      if (!frame || Number(getComputedStyle(frame).opacity) === 0) return;
+      if (!frame.contentDocument?.querySelector("[data-signup-home]")) seen.homeShownEarly++;
+    }, 40);
   });
+}
+const watched = (page: Page) => page.evaluate(() => (window as unknown as { __dayOne: { standIn: string[]; screens: string[]; homeShownEarly: number } }).__dayOne);
+
+test("the press goes straight to Day 1: its welcome says the shop is opening, Build my desk waits, nothing else can be pressed, and no stand-in, landing or sign-in shows", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await watchDayOne(page);
   /* the server's answer held 3 seconds, as a slow staging database would */
   await page.route("**/api/staging/day-one", async (route) => {
     await new Promise((r) => setTimeout(r, 3000));
@@ -153,30 +170,62 @@ test("while the press answers, a neutral hold covers the page, nothing under it 
   const created = page.waitForResponse((r) => r.url().endsWith("/api/staging/day-one"), { timeout: 60_000 });
   await page.getByRole("button", { name: /Start on Day 1/ }).click();
 
-  const hold = page.locator("[data-staging-day-one-hold]");
-  await expect(hold).toBeVisible();
-  await expect(hold).toHaveAttribute("role", "status");
-  await expect(hold).toContainText("Opening a staging test shop");
-  await expect(page.locator("[data-signup-root]")).toHaveAttribute("inert", "");
+  const build = page.locator("[data-build-my-desk]");
+  await expect(build).toBeVisible();
+  await expect(build).toBeDisabled();
+  await expect(build).toHaveText("Opening your desk…");
+  await expect(build).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByText("Welcome to CurrencyDesk.")).toBeVisible();
+  await expect(page.getByText("Signing up a new staging test shop and opening its desk.")).toBeVisible();
+  await expect(page.locator("[data-staging-day-one-hold]")).toHaveCount(0);
+  await expect(page.locator("[data-signup-root]")).not.toHaveAttribute("inert", /.*/);
   await expect(page.locator("[data-paymodal]")).toHaveCount(0);
-  await expect(page.locator("[data-signup-screen]")).toHaveAttribute("data-signup-screen", "17");
-  await page.screenshot({ path: test.info().outputPath("staging-day-one-hold.png"), animations: "disabled" });
-  /* a click, Tab and Enter, and Escape change nothing under it */
+  await page.screenshot({ path: test.info().outputPath("staging-day-one-opening.png"), animations: "disabled" });
+  /* a click, Tab and Enter, and Escape change nothing */
   await page.mouse.click(640, 640);
+  await build.click({ force: true });
   await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-signup-screen]")).toHaveAttribute("data-signup-screen", "17");
-  await expect(hold).toBeVisible();
+  await expect(build).toBeDisabled();
+  await expect(page.locator("[data-desk]")).toHaveCount(1);
 
   const res = await created;
   expect(res.status()).toBe(201);
   const body = (await res.json()) as DayOne;
   /* the press is carried through to Day 1, not dropped */
   await onDayOne(page, body);
-  await expect(hold).toHaveCount(0);
-  await expect(page.locator("[data-signup-root]")).not.toHaveAttribute("inert", /.*/);
-  expect(await page.evaluate(() => (window as unknown as { __standIn: string[] }).__standIn)).toEqual([]);
+  await expect(build).toBeEnabled();
+  await expect(build).toHaveText("Build my desk →");
+  const seen = await watched(page);
+  expect(seen.standIn).toEqual([]);
+  /* Day 1 was the only screen the press ever drew */
+  expect(seen.screens).toEqual(["desk"]);
+  expect(seen.homeShownEarly).toBe(0);
+});
+
+test("an /open that takes a while keeps Day 1's welcome and says so there, then opens", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await watchDayOne(page);
+  /* the first twelve /open calls answer "still opening", as a slow webhook would */
+  let held = 0;
+  await page.route("**/api/onboarding/*/open", async (route) => {
+    if (held++ < 12) return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ok: false, opening: true }) });
+    return route.continue();
+  });
+  const body = await startOnDayOne(page);
+  const status = page.locator("[data-real-home-status]");
+  await expect(status).toHaveText("Still opening the desk. This can take a minute. Stay on this page.", { timeout: 60_000 });
+  await expect(page.locator("[data-build-my-desk]")).toBeDisabled();
+  await expect(page.getByText(`Opening ${body.operatingName}.`)).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("staging-day-one-still-opening-phone.png"), animations: "disabled" });
+  await onDayOne(page, body);
+  await expect(page.locator("[data-build-my-desk]")).toBeEnabled();
+  const seen = await watched(page);
+  expect(seen.standIn).toEqual([]);
+  expect(seen.screens).toEqual(["desk"]);
+  expect(seen.homeShownEarly).toBe(0);
 });
 
 test("a second press, in another browser, is another shop, and Build my desk opens it", async ({ browser }) => {
