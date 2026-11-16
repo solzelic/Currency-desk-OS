@@ -51,6 +51,12 @@ foreign-exchange and money-order lines, including a looser choice.
 It must not lift the CAD 1,000 lines. A lower number tightens every
 line.
 
+Zero is a number the desk states: identify on every deal. Sign-up
+v2.1 stores it when the owner picks "every exchange". It is not read
+as "no number". Only NULL follows the pack. At zero an unidentified
+customer is refused at any amount, and the foreign-exchange ticket is
+needed on every exchange.
+
 ## What version 2 enforces
 
 Identification, PCMLTFR s.95. Foreign exchange and money orders at

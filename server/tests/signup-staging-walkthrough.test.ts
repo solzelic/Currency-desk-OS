@@ -19,7 +19,8 @@ import { buildApp } from "../src/app.js";
 import { resetFreshShopThrottle } from "../src/routes/staging-fresh-shop.js";
 import { STAGING_DOOR_REASON } from "../src/routes/early-access.js";
 import { loadAccount } from "../src/onboarding/signup-account.js";
-import { SERVICE_AGREEMENT_SOURCE_HASH } from "../src/onboarding/signup-open.js";
+import { openStagingDesk, SERVICE_AGREEMENT_SOURCE_HASH } from "../src/onboarding/signup-open.js";
+import { moveTo } from "../src/onboarding/pipeline.js";
 import { databaseMarkedStaging, stagingFixtureOwner, stagingFixtureRow } from "../src/onboarding/signup-staging.js";
 import { hashCode } from "../src/email.js";
 import * as billing from "../src/billing/stripe.js";
@@ -366,6 +367,27 @@ describe("every gate closes the helper on its own", () => {
     expect(ob.tenantId).toBeTruthy();
     expect(await handle.db.select().from(schema.auditEvents).where(and(eq(schema.auditEvents.tenantId, ob.tenantId!), eq(schema.auditEvents.action, "signup.completed")))).toHaveLength(1);
     expect(await handle.db.select().from(schema.signupAgreements).where(and(eq(schema.signupAgreements.enquiryId, r.id), eq(schema.signupAgreements.kind, "plan")))).toHaveLength(1);
+  });
+});
+
+describe("the no-card Open follows the same decision as a card", () => {
+  it("a synthetic shop held or declined after its plan opens nothing and records no assent", async () => {
+    for (const to of ["hold", "declined"] as const) {
+      const r = await reservation("fixture");
+      const jar: Jar = {};
+      await signed(jar, r.base);
+      expect((await call(jar, "POST", `${r.base}/payment`, PLAN)).statusCode).toBe(200);
+      const before = await loadAccount(handle.db, r.id);
+      const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, r.id)))[0]!;
+      expect((await moveTo(handle.db, row, to, "support", { quiet: true })).ok).toBe(true);
+      /* the route's guard answers first; the activation refuses on its own too */
+      expect((await call(jar, "POST", `${r.base}/staging-open`, AGREE)).statusCode).toBe(404);
+      expect(await openStagingDesk(handle.db, r.id)).toEqual({ opened: false, reason: "not_invited" });
+      expect(await loadAccount(handle.db, r.id)).toEqual(before);
+      expect((await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, r.id)))[0]).toMatchObject({ status: to, tenantId: null });
+      expect((await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, r.id)))[0]!.tenantId).toBeNull();
+      expect(await handle.db.select().from(schema.signupAgreements).where(and(eq(schema.signupAgreements.enquiryId, r.id), eq(schema.signupAgreements.kind, "plan")))).toHaveLength(0);
+    }
   });
 });
 

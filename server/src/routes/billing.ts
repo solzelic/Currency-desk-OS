@@ -12,6 +12,7 @@ import { audit } from "../audit.js";
 import { TENANT_PLANS, type TenantPlan } from "../db/schema.js";
 import { configuredPrice, planForPrice, safeAppBaseUrl, stripeBillingConfig, stripeClient, type BillingCycle, type StripeBillingConfig } from "../billing/stripe.js";
 import { openFromSetupIntent } from "../onboarding/signup-open.js";
+import { errorReason } from "../error-reason.js";
 
 const checkoutBody = z.object({
   plan: z.enum(["basic", "pro", "premium"]),
@@ -155,17 +156,27 @@ async function upsertInvoice(db: Db, tenantId: string, data: StripeObject) {
   });
 }
 
-async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObject): Promise<string | null> {
+/* applyEvent's answer for an event that is acknowledged but must stay
+   resendable: the webhook lets go of its stripe_events claim. */
+const RESENDABLE = Symbol("resendable");
+
+async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObject): Promise<string | null | typeof RESENDABLE> {
   const type = string(event.type) ?? "";
   const data = object(object(event.data).object);
   /* Sign-up v2.1: the card is saved, so the desk opens (onboarding/signup-open.ts).
      Only an intent the sign-up made carries this metadata; any other
-     SetupIntent falls through and is ignored as before. */
+     SetupIntent falls through and is ignored as before. A refusal returns,
+     so the event is acknowledged and Stripe does not retry it. */
   const signupEnquiry = string(object(data.metadata).currencydesk_signup_enquiry);
   if (type === "setup_intent.succeeded" && signupEnquiry) {
     const intentId = string(data.id);
     if (!intentId) return null;
     const result = await openFromSetupIntent(db, { id: intentId, customer: string(data.customer), status: string(data.status), paymentMethod: string(data.payment_method), metadata: { currencydesk_signup_enquiry: signupEnquiry, currencydesk_signup_agreement: string(object(data.metadata).currencydesk_signup_agreement) ?? "" } });
+    /* Declined, held or in review meanwhile. Stripe sends no second
+       succeeded event for this intent, and a dashboard resend reuses this
+       event's id, so the claim must not outlive the refusal: if support
+       invites the application again, resending this event opens the desk. */
+    if (!result.opened && result.reason === "not_invited") return RESENDABLE;
     return result.opened ? result.tenantId : null;
   }
   if (type === "checkout.session.completed") {
@@ -290,11 +301,19 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
     if (!claimed.length) return { received: true, duplicate: true };
     try {
       const tenantId = await applyEvent(db, config, event);
+      if (tenantId === RESENDABLE) {
+        await db.delete(schema.stripeEvents).where(eq(schema.stripeEvents.stripeEventId, id));
+        return { received: true };
+      }
       await db.update(schema.stripeEvents).set({ tenantId, processedAt: new Date() }).where(eq(schema.stripeEvents.stripeEventId, id));
       return { received: true };
     } catch (error) {
+      /* Never the error itself: a failed sign-up activation is a database
+         error holding the owner's email, password and PIN hashes and full
+         CD ID, and Stripe retries it for days. Logged before the claim is
+         released, so the reason survives a failed release. */
+      req.log.error({ reason: "webhook_processing_failed", ...errorReason(error), stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
       await db.delete(schema.stripeEvents).where(eq(schema.stripeEvents.stripeEventId, id));
-      req.log.error({ err: error, stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
       return reply.code(500).send({ error: "webhook_processing_failed" });
     }
   });
