@@ -319,6 +319,21 @@ IP/Host. Database host overrides are parsed with the PostgreSQL driver parser.
 The mailbox is memory-only and cleared when its server closes. It is not a
 staging code-delivery mechanism.
 
+### Signup on staging: the synthetic shop
+
+`server/src/onboarding/signup-staging.ts` is the staging code-delivery and
+no-card path, for the staging door's own reservation only. `stagingSignupFixture`
+requires `stagingDoorOpen` on the raw Host (forwarded hosts ignored), exactly one
+`db_environment` row `staging`, and server-written provenance: `details.stagingFresh`,
+the "staging test shop" do-not-contact reason, and `owner+<h8>@staging.invalid` with
+`details.slug` `stg-<h8>`. For that reservation the credential and resend responses
+carry `stagingCode` (the ordinary code, never mailed), `POST …/payment` prepares the
+plan without Stripe, and `POST /api/onboarding/:id/staging-open` records assent and
+runs the shared activation as a test shop; `POST …/open` then upgrades the session.
+`stagingFixtureOwner(db, headers, staffId, tenantId)` is the same proof for a returning
+owner (tenant, accepted reservation, email and slug correlated). Nothing ever mails a
+`@staging.invalid` address. Without the database marker every gate stays closed.
+
 `design/onboarding/signup-v2.1-audio.js` owns signup click sound scheduling and
 the account-menu mute preference. Pointer/key press only wakes the context;
 action or fallback sound runs on a frame within 180ms, once per click. It drops

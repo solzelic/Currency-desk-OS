@@ -27,6 +27,7 @@ import { audit } from "../audit.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { CODE_TTL_MS, MAX_CODE_ATTEMPTS } from "./verify.js";
 import { sha256, withSignupAccount, signupReservationMatches } from "./signup-account.js";
+import { STAGING_OWNER_DOMAIN } from "../routes/staging-fresh-shop.js";
 
 export const SENDS_PER_WINDOW = 3;
 export const SEND_WINDOW_MS = 15 * 60 * 1000;
@@ -50,10 +51,17 @@ export function signupCodeEmail(code: string, operatingName: string) {
   return { subject, text, html };
 }
 
-export type SendResult = { sent: true; delivery: EmailStatus } | { sent: false; reason: "too_soon"; retryInMs: number } | { sent: false; reason: "not_enrolling" };
+export type SendResult =
+  | { sent: true; delivery: EmailStatus }
+  | { sent: true; delivery: "on_screen"; code: string }
+  | { sent: false; reason: "too_soon"; retryInMs: number } | { sent: false; reason: "not_enrolling" };
 
-/** Issue a fresh code (replacing any other) and send it to the email on file. */
-export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string, mail: Mailer = sendEmail, now = Date.now()): Promise<SendResult> {
+/** Issue a fresh code (replacing any other) and send it to the email on file.
+    `onScreen` is only for the staging door's synthetic shop, after
+    stagingSignupFixture has passed (onboarding/signup-staging.ts): the same
+    code, limits and hash, handed back to the caller and never mailed. A
+    staging.invalid address is never mailed either way. */
+export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string, mail: Mailer = sendEmail, now = Date.now(), opts: { onScreen?: boolean } = {}): Promise<SendResult> {
   const prepared = await withSignupAccount(db, row.id, async (tx, account) => {
     if (account.state !== "enrolling" || (row.cdId && !(await signupReservationMatches(tx, row.id, row.cdId)))) return { sent: false, reason: "not_enrolling" } as const;
     const recent = (account.codeSends ?? []).filter((t) => now - t < SEND_WINDOW_MS);
@@ -69,6 +77,8 @@ export async function sendSignupCode(db: Db, row: Enquiry, operatingName: string
   });
   if (!prepared.sent) return prepared;
   const code = prepared.code;
+  if (opts.onScreen) return { sent: true, delivery: "on_screen", code };
+  if (row.email.toLowerCase().endsWith(STAGING_OWNER_DOMAIN)) return { sent: true, delivery: "failed" };
   const message = signupCodeEmail(code, operatingName);
   const delivery = await mail(row.email, message.subject, { text: message.text, html: message.html, sensitive: true });
   return { sent: true, delivery };

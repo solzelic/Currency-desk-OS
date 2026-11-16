@@ -174,6 +174,7 @@ function isSplit(rows: IdRow[], packLine: Decimal | null): boolean {
 }
 
 /* The desk's own identification number. NULL means follow the pack.
+   Zero is a stated line, every deal (sign-up v2.1, migration 079).
    On a split pack that number is the foreign-exchange line the
    settings screen edits. It may replace the $3,000 foreign-exchange
    and money-order lines, including a looser choice, which the screen
@@ -187,12 +188,12 @@ function effectiveLine(
   desk: Decimal | null,
 ): { amount: Decimal; comparator: string } | null {
   if (!packRow || packRow.amount === null) {
-    if (desk && (key === "fx" || key === "money_order")) {
+    if (desk !== null && (key === "fx" || key === "money_order")) {
       return { amount: desk, comparator: "gte" };
     }
     return null;
   }
-  if (!desk) return { amount: packRow.amount, comparator: packRow.comparator };
+  if (desk === null) return { amount: packRow.amount, comparator: packRow.comparator };
   if (key === "fx" || key === "money_order") {
     return { amount: desk, comparator: "gte" };
   }
@@ -209,7 +210,10 @@ async function deskMoney(
     `SELECT ${column} AS amount FROM legal_entities WHERE id = $1`,
     [legalEntityId],
   );
-  return positive(found.rows[0]?.amount);
+  const amount = found.rows[0]?.amount;
+  /* Only the identification column may hold a zero line. A zero
+     reporting number is not a desk choice and still reads as none. */
+  return column === "id_threshold" ? lineAmount(amount) : positive(amount);
 }
 
 type LargeCashRule = {

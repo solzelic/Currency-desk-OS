@@ -1,3 +1,102 @@
+## Signup v2.1 rate website refusal, 16 November 2026
+
+On Extras, "Your own rate website" (Coming soon) can be ticked, and the server
+refuses it when the card step asks for a SetupIntent (`409 website_coming_soon`):
+nothing reserves or bills the site yet. The refusal now carries its own line,
+"Your own rate website isn't open yet. Untick it to carry on. Nothing was
+charged.", and the page shows it beside the add-on with Extras open (and under
+Open and in the card box), not "Card payments aren't available just now". The
+owner's other choices stay as they were. The card retry is hidden, because it
+cannot help. Unticking clears the line, and Payment asks for the card afresh.
+Billing and what is charged are unchanged. To decide (Sol): the design reserves
+the site now ("Reserve it now and you're first in line", "Rate website ·
+reserved, billed from launch"); the server does not, and the page still shows
+those design lines. Not release, CTO or Compliance acceptance.
+
+## Signup v2.1 coming back carries on, 16 November 2026
+
+Coming back to sign-up v2.1 now carries on where the owner stopped. This is
+client only (`design/onboarding/signup-v2.1-{bridge,open}.js`); no server route
+changed. A reload after more shops (screen 30) or adding a person (31) opens
+registration or the team screen, where the prototype's own Continue goes, not
+the ID screen that every way forward then refused. A new tab in the same browser
+that types the ID resumes from its live enrolment instead of asking for a
+sign-in again. Another browser, or one idle past the 24-hour enrolment, is told
+its sign-in is set in the browser where it was chosen: signing in again from
+elsewhere does not exist yet (CD-221). An open desk whose hand-off this browser
+still holds asks `POST /open` before sending anyone to `/login`; after the
+opening poll gives up, Check again asks once more instead of confirming the card
+twice. A reload on Check your inbox lands back on it from a bare per-tab
+`cdSignupInbox` flag ("1", nothing personal, cleared once the code passes); the
+unreachable `enrolling` branch is gone. The Confirm record is headed with the
+reserved address instead of the prototype's yorkfx. Not release, CTO or
+Compliance acceptance.
+
+## Signup opens only an invited application, 16 November 2026
+
+A declined or held v2.1 application could still open its desk: the owner's
+browser already held the SetupIntent secret, Stripe.js confirmed it, and the
+signed `setup_intent.succeeded` provisioned the tenant and overwrote the
+decision with accepted. Activation (card webhook and staging no-card Open) now
+locks the enquiry under the account lock and refuses anything but an Invited
+early access row with its ID (`not_invited`): nothing is provisioned, the
+account is untouched, a `signup.open_refused` audit row is written, and the
+webhook acknowledges the event so Stripe stops retrying but keeps no claim on
+it: Stripe sends no second event for that intent, so once support invites the
+application again, resending the same event from the Stripe dashboard opens
+the desk (a manual step; nothing re-opens on its own). `POST …/open` issues
+a desk session only for an application accepted for that tenant, and pipeline
+moves are compare-and-set, so a stale decline answers `changed` instead of
+overwriting an opened desk. Not done: revoking enrolment sessions or clearing
+the intent when support declines, and detaching a card saved after a decline.
+Protected surface (provisioning, money): CTO review required.
+
+## Signup credential door throttle, 16 November 2026
+
+A crowd of made-up CurrencyDesk IDs can no longer lock every applicant out of
+saving a sign-in. Each in-memory throttle in `server/src/onboarding/cd-id-door.ts`
+used to refuse every key once it held 10,000. About 1,000 addresses (one IPv6
+/64), each sending ten well-shaped IDs nobody holds, turned every real passkey,
+Google/Microsoft or password save into 429 for 15 minutes. A full table also
+stopped locking connections on `/state` and dropped resends. Each throttle now
+forgets the key it saw longest ago (`THROTTLE_KEYS`, 10,000), and a key that
+keeps asking while locked stays locked. The credential routes count the
+connection before the lookup and the ID only once it names a reservation, so an
+unknown ID is a miss against its connection alone. The limits are unchanged: 12
+per ID and 30 per connection per 15 minutes, and 10 misses close for 15 minutes.
+The counters are still per process and per address. A sender rotating more than
+10,000 addresses can outlast the per-connection counts, so durable shared
+counters and /64 bucketing remain release review items. Protected surface
+(auth): CTO review required.
+
+## Signup staging payment refusal — 16 November 2026
+
+If a synthetic staging reservation loses a fixture gate after verification,
+`/payment` and `/plan` now return `503 staging_unavailable` before constructing
+a Stripe client. A configured processor must never be the fallback for an
+`@staging.invalid` address. The regression closes the database marker after
+real credential/code/PIN/signature steps with a configured processor spy;
+it failed before the guard and passes with no Stripe call or billing identifiers.
+The shared staging-owner helper and CD221-owned authentication files are unchanged.
+This is a staging walkthrough safeguard, not release or CTO acceptance.
+
+## Signup v2.1 staging walkthrough — 16 November 2026
+
+A synthetic shop from the staging door can now walk the real v2.1 page end to end on
+staging: credential, the 6-digit code shown in the frozen "Staging code" row, PIN,
+chapters, signature, plan, Open with no card, Day 1 in the real Home, sign out, and the
+existing staging sign-in. Only that reservation qualifies: the staging runtime and raw
+Host, the `db_environment` staging marker, and server-written provenance
+(`owner+<h8>@staging.invalid`, `stg-<h8>`, stagingFresh, the staging do-not-contact
+reason). It reuses the ordinary code limits, PIN, answers, signature, assent record,
+provisioning and session upgrade. No Stripe customer, intent or `stripe_customers` row is
+created, the live webhook is untouched, and the desk is a test shop. Ordinary reservations
+and live are unchanged, and no `@staging.invalid` address is ever mailed. Hosted use
+needs the staging database marker (`npm run staging -- mark-db`), which is unverified as
+of this note; without it the page asks for an emailed code as before. Not release, CTO or
+Compliance approval. The legacy sign-in screen does not yet show the staging sign-in code
+(CD221 owns it).
+
 ## Signup v2.1 staging integration — 16 November 2026
 
 Sol requested merging signup to staging. This integration combines the reviewed
@@ -85,6 +184,27 @@ Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
+
+**2026-11-16, the every-exchange ID line is enforced at the counter.** Sign-up
+stores `id_threshold` 0.00 for "every exchange" and opens every desk on
+`pack-ca-v2`. That pack's split gate read zero as no desk line and identified at
+CAD 3,000, while Settings said 0.00. It now reads zero as a stated line: an
+unidentified customer is refused at any amount, and the foreign-exchange ticket
+is asked for on every exchange. NULL still follows the pack. A desk number still
+cannot lift the CAD 1,000 lines. Other country gates still drop a zero; nothing
+writes one for them today. Compliance and CTO review are required.
+
+**2026-11-16: failed sign-up activation logs.** When the Stripe webhook's
+`setup_intent.succeeded` fails to open a v2.1 desk, the log keeps only a
+bounded reason: the error's class, the Postgres SQLSTATE, and the Stripe event
+id and type. It no longer logs the error itself, whose message and params held
+the owner's email, password and PIN hashes and full CD ID on every Stripe
+retry. Outside `/api/onboarding/` (which already had this rule), a database
+query error on any route is logged the same way and answered 500
+`temporarily_unavailable`, not Fastify's default body that echoed the SQL and
+bound values. That covers the Early Access form and the admin CD ID reissue.
+Other errors keep Fastify's default handling. The rule is
+`server/src/error-reason.ts`.
 
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
 PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
@@ -178,7 +298,7 @@ Full map, routes and build commands: `docs/REPOSITORY_MAP.md`.
 
 ## Current active work
 
-- **Persona ID check at the counter, UI half (draft, PR 2b).** Stacked on PR 2a at `c72b0407`. A teller starts a check from a staged deal. The customer sees the notice and the unticked face-match consent on the counter device, including the United States and "Your ID details are kept for at least 5 years because the law requires it." No thanks goes to in person. Quebec, and a branch with no province, offer only in person, including a start that sends no tier. The client file shows the server line: "ID checked [date], [method]", and in sandbox also "Check passed (test)". A returning client reads "Returning client, ID checked [original date], [original method]". A past expiry reads "Expired [date]". The number shows the last 4. Reveal is the 2a roles, with a reason from the list, and the audit list. Returning client says "No photo on file" when there is no crop, and still runs. The small photo from the ID is shown only while the shop keeps it and the retention date has not passed. Settings has the per-shop off switch. In person with no number key shows "ID number storage is not set up for this shop yet." ID on file means the latest qualifying record stores the last 4, the number is not flagged unavailable, the document is not expired, and the check is under 5 years. A check older than 5 years that still has the last 4 reads "This check is too old. A new ID check is needed." and does not say the file has no number. A returning client counts only through an original record that meets the same test. A missing or unreadable original is not on file. A returning record under sanctions review is not on file through that original. A typed ID counts only when the server has an in-person record: an accepted government photo ID, the full number stored, the issuer and country, the staff member who saw it, the date, this shop, under 5 years, and an expiry that has not passed. The line is "ID seen in person by [the staff member's name], [type], expires [date], checked [date]". A typed ID missing the staff member or the date reads "ID typed in, check not recorded" and Fix ID opens the in-person check. That prompt does not block a deal. Until the server standing has loaded, the desk says Checking ID and does not treat typed papers as ID on file. A check that does not finish says to try again or to check the ID in person. A PEP review stays editable so a compliance officer can close it. The answer log does not. Expired, declined, under review, pending, and incomplete show the gap and never say "ID checked". The header chip, Where they are, the deal customer card, the bell, the dashboard, the ledger, reports, transfers, compliance flags, and the client list Needs attention count all read that server standing. Tellers do not see ID, selfie and database. Returning client appears only when this shop holds a full check. The default check is the large button. The other checks sit under More options. The returning-client PEP question is "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?" with Yes, No, and Not asked. Each answer is appended with the date and the staff member, and the log refuses an update or a delete. A Yes opens a compliance review and does not hold the deal. Consent is `consent-v0.3.9-draft`. The crop sentence names the 5 year keep. The save sends the copy the customer saw, and a mismatch is 409 with nothing stored. The one-time link is https on a Persona host, checked again before the page renders it. Notice links are https only. The small photo on a passed check is "Photo from ID, for comparison by eye". Sandbox only. No billing. Persona 30-day redaction policy (images, selfies, facial geometry, including Accounts) must be on before any real customer check. CD-219, addendum 4.4.
+- **Persona ID check at the counter, UI half (draft, PR 2b).** Stacked on PR 2a at `c72b0407`. A teller starts a check from a staged deal. The customer sees the notice and the unticked face-match consent on the counter device, including the United States and "Your ID details are kept for at least 5 years because the law requires it." No thanks goes to in person. Quebec, and a branch with no province, offer only in person, including a start that sends no tier. The client file shows the server line: "ID checked [date], [method]", and in sandbox also "Check passed (test)". A returning client reads "Returning client, ID checked [original date], [original method]". A past expiry reads "Expired [date]". The number shows the last 4. Reveal is the 2a roles, with a reason from the list, and the audit list. Returning client says "No photo on file" when there is no crop, and still runs. The small photo from the ID is shown only while the shop keeps it and the retention date has not passed. Settings has the per-shop off switch. In person with no number key shows "ID number storage is not set up for this shop yet." ID on file means the latest qualifying record stores the last 4, the number is not flagged unavailable, the document is not expired, and the check is under 5 years. A check older than 5 years that still has the last 4 reads "This check is too old. A new ID check is needed." and does not say the file has no number. A returning client counts only through an original record that meets the same test. A missing or unreadable original is not on file. A returning record under sanctions review is not on file through that original. A typed ID counts only when the server has an in-person record: an accepted government photo ID, the full number stored, the issuer and country, the staff member who saw it, the date, this shop, under 5 years, and an expiry that has not passed. The line is "ID seen in person by [the staff member's name], [type], expires [date], checked [date]". A typed ID missing the staff member or the date reads "ID typed in, check not recorded". Record the ID and Fix ID open the document sheet (type, number, and expiry). Check ID is the separate check. That prompt does not block a deal. Papers typed by hand, with no check on file, read "ID typed by hand, not checked" on the file, the list, the deal, and the deal nudge. That file does not say the ID is on file or verified. Until the server standing has loaded, the desk says Checking ID and does not treat typed papers as ID on file. A check that does not finish says to try again or to check the ID in person. A PEP review stays editable so a compliance officer can close it. The answer log does not. Expired, declined, under review, pending, and incomplete show the gap and never say "ID checked". The header chip, Where they are, the deal customer card, the bell, the dashboard, the ledger, reports, transfers, compliance flags, and the client list Needs attention count all read that server standing. Tellers do not see ID, selfie and database. Returning client appears only when this shop holds a full check. The default check is the large button. The other checks sit under More options. The returning-client PEP question is "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?" with Yes, No, and Not asked. Each answer is appended with the date and the staff member, and the log refuses an update or a delete. A Yes opens a compliance review and does not hold the deal. Consent is `consent-v0.3.9-draft`. The crop sentence names the 5 year keep. The save sends the copy the customer saw, and a mismatch is 409 with nothing stored. The one-time link is https on a Persona host, checked again before the page renders it. Notice links are https only. The small photo on a passed check is "Photo from ID, for comparison by eye". Sandbox only. No billing. Persona 30-day redaction policy (images, selfies, facial geometry, including Accounts) must be on before any real customer check. CD-219, addendum 4.4.
 
 - **Persona ID check record, server half (draft, PR 2a).** On `cursor/persona-pr2a-server-c6f8`, based on `staging`. Tiers follow Compliance: 1 in person, 2 returning client, 3 ID and selfie, 4 ID, selfie and database. The old words quick, verify, and plus still post as 2, 3, and 4. This PR records in person and ID and selfie. Tier 4 reports the database step off and runs as ID and selfie. Returning client is a same-shop sanctions and PEP re-screen. It does not start Persona. A clear one is stored as returning_confirmed and reads "Returning client, ID checked [original date], [original method]". If there is no photo it says "No photo on file" and still runs. A past expiry is stored and is never a pass. The read says Expired and that date. The face crop is on by default, one 96 by 96 PNG from the portrait on the ID document photo (not the selfie). It is kept only when that inquiry's consent showed it, the shop switch is still on, and the check passed. A declined, failed, or expired check stores none. It is kept 5 years and hidden after that. A per-shop switch turns it off. No automatic face match. No full ID image and no selfie is stored. The document number and the crop use HKDF-SHA256 subkeys of `ID_NUMBER_KEY`, with the purpose, tenant, and record id bound as additional data, a new 96-bit nonce, and `key_version` 1. Decrypt tries the current key, then `ID_NUMBER_KEY_PREVIOUS`. The fixed dev key is only when `NODE_ENV` is exactly `test` and `RENDER_EXTERNAL_HOSTNAME` is empty. A Persona check with a missing key still stores the check, without the number or the crop. The client read returns the last 4 only. The checks list uses the same client lookup as the status read, including the ledger connection when that is where the file lives. A client with no check gets an empty list. Reveal is a separate POST for supervisor, branch manager, compliance officer, and administrator, with a reason, and the audit row is written in the same transaction. Quebec, and a branch with no province, are counter only, including a start that sends no tier (treated as tier 3 for that gate). Consent is stored before the one-time link, and the inquiry must belong to that tenant, shop, and client. The desk sends quick as 2, verify as 3, and plus as 4, and still sends the PEP answer for quick and verify. Each check record is kept 5 years (`retain_until`). A delete is allowed only after that date. Clearing the face crop columns is allowed only after `face_crop_retained_until`. Other updates, and truncates, stay blocked. In person with no `ID_NUMBER_KEY` answers 503 "ID number storage is not set up for this shop yet." Sandbox keys only. Persona 30-day redaction policy (images, selfies, facial geometry, including Accounts) must be on before any real customer check. CD-219, addendum 4.4.
 
@@ -1805,6 +1925,9 @@ Residual, not blocking: the uncompiled editor shells remain fetchable at
 React production URLs in its bundler template. Neither is a product-route
 regression. Review this stamp — and every section above — whenever a PR
 changes what is true.
+
+### CD-206 hosted walkthrough display corrections (16 Nov 2026)
+Hosted staging 900cfaa completed fresh synthetic signup through a real owner workspace and logout. Returning login still needs the coordinated CD221 integration. The walkthrough found a duplicate registration skip hint and a prototype `yorkfx` desk-record title: the page now consumes the verified resume workspace and the complete pack hint, with the operating name as the title fallback. No server, auth, schema, legal wording or billing changes. CD206 remains In progress.
 
 ### CD-206 Astra server correction candidate (15 Nov 2026)
 Server review has corrected credential/provider boundaries, proof concurrency, legacy bypass/privacy, and transactional payment activation. Migration 079 preserves the explicit every-exchange ID choice. This is bounded server work, not slice acceptance: UI/Day 1/tour and the integration gaps recorded in docs/ONBOARDING.md remain; ticket stays In progress. CTO protected-surface approval and end-to-end provider/payment/browser verification remain required.

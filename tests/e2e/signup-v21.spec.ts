@@ -359,6 +359,103 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await expect(page.getByText("Where’s the shop?")).toBeVisible({ timeout: 15_000 });
   });
 
+  /* Screens 30 and 31 are outside the prototype's ORDER: a reload after
+     either once landed on the ID, and every way forward from there was
+     refused (the sign-in was already set). */
+  test("a reload after more shops, or after adding a person, carries on from there", async ({ page, request }) => {
+    const email = `owner-${unique()}@synthetic.example`;
+    const { cdId } = await apply(request, email, `Harbour Exchange ${unique()}`);
+    const saved = () => page.waitForResponse((r) => r.url().endsWith(`/api/onboarding/${cdId}/answers`));
+    await page.goto("/onboarding");
+    await toSignIn(page, cdId);
+    await withPassword(page);
+    await proveInbox(page, request, email);
+    await choosePin(page);
+    await press(page, /^That’s it/);
+    await card(page).locator("input:visible").last().fill("Harbour Foreign Exchange Inc.");
+    await press(page, /^Next/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Where’s the shop?")).toBeVisible();
+    await press(page, /by hand/i);
+    const at = (k: string) => card(page).locator(`input[data-k="${k}"]`);
+    await at("street").fill("77 Harbour St");
+    await at("postal").fill("M5J 2V2");
+    await at("city").fill("Toronto");
+    await at("region").fill("ON");
+    await press(page, /^Use this address/);
+    await expect(page.getByText("Just the one shop?")).toBeVisible();
+    await card(page).getByRole("button", { name: /We have more than one/ }).click();
+    await expect(page.getByText("More than one shop. Good.")).toBeVisible();
+    const more = saved();
+    await press(page, /^Continue with 2 shops/);
+    expect((await more).status()).toBe(200);
+    await expect(page.getByText(/FINTRAC registration number/)).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(/FINTRAC registration number/)).toBeVisible({ timeout: 15_000 });
+
+    await press(page, /^Continue/);
+    await expect(page.getByText("The money.")).toBeVisible();
+    await press(page, /^Pick my currencies/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Count the vault.")).toBeVisible();
+    await press(page, /I’ll count it on day one/);
+    await expect(page.getByText("Your rates, online. Free.")).toBeVisible();
+    await press(page, /^Good. Now my rules/);
+    await press(page, /^Set my rules/);
+    await press(page, /That’s me, Daniel Okafor/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("When should the desk ask for ID?")).toBeVisible();
+    await press(page, /^Use this line/);
+    await expect(page.getByText("Who else works the counter?")).toBeVisible();
+    await press(page, /^Add someone/);
+    await card(page).getByPlaceholder("Samira", { exact: true }).fill("Amara");
+    await card(page).getByPlaceholder("Haddad", { exact: true }).fill("Synthetic");
+    const added = saved();
+    await press(page, /^Add Amara/);
+    expect((await added).status()).toBe(200);
+    await expect(card(page).getByText("Amara Synthetic").first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Who else works the counter?")).toBeVisible({ timeout: 15_000 });
+    await expect(card(page).getByText("Amara Synthetic").first()).toBeVisible();
+  });
+
+  test("a new tab in the same browser carries on; another browser is told where its sign-in is", async ({ page, request, browser }) => {
+    const email = `owner-${unique()}@synthetic.example`;
+    const { cdId } = await apply(request, email, `Harbour Exchange ${unique()}`);
+    await page.goto("/onboarding");
+    await toSignIn(page, cdId);
+    await withPassword(page);
+    await proveInbox(page, request, email);
+    await choosePin(page);
+    await press(page, /^That’s it/);
+    await card(page).locator("input:visible").last().fill("Harbour Foreign Exchange Inc.");
+    await press(page, /^Next/);
+    await press(page, /^Continue/);
+    await expect(page.getByText("Where’s the shop?")).toBeVisible();
+
+    /* a new tab, as the email's link opens one: the ID is typed again and Open it carries on */
+    const tab = await page.context().newPage();
+    await tab.goto("/onboarding");
+    await tab.getByRole("button", { name: /^Start/ }).click();
+    await tab.getByPlaceholder("CD-YORK-7K42").pressSequentially(cdId, { delay: 25 });
+    await expect(tab.getByText("Recognised", { exact: true })).toBeVisible();
+    await press(tab, /^Open it/);
+    await expect(tab.getByText("Where’s the shop?")).toBeVisible({ timeout: 15_000 });
+    await expect(tab.getByText("How will you sign in?")).toHaveCount(0);
+    await tab.close();
+
+    /* another browser holds no enrolment: the sign-in is refused, and the page says where to carry on */
+    const other = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+    const away = await other.newPage();
+    await away.goto("/onboarding");
+    await toSignIn(away, cdId);
+    const refused = away.waitForResponse((r) => r.url().endsWith(`/api/onboarding/${cdId}/password`));
+    await withPassword(away);
+    expect((await refused).status()).toBe(409);
+    await expect(away.getByText(/already set in the browser where you chose it/)).toBeVisible();
+    await other.close();
+  });
+
   test("lost ID: the answer is the same whatever the email", async ({ page }) => {
     await page.goto("/onboarding");
     await page.getByRole("button", { name: /^Start/ }).click();

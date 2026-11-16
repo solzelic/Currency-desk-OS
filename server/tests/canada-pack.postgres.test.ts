@@ -11,7 +11,7 @@ import { createDb, type DbHandle } from "../src/db/index.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { resolvePack } from "../src/ledger/jurisdiction.js";
 import { ObligationService } from "../src/ledger/obligations.js";
-import { requireIdentification, type LedgerActor } from "../src/ledger/service.js";
+import { LedgerService, requireIdentification, type LedgerActor } from "../src/ledger/service.js";
 import { ThresholdService } from "../src/ledger/threshold-control.js";
 import type { IdentificationDeal } from "../src/ledger/canada-rules.js";
 
@@ -33,6 +33,8 @@ const V1 = "le-ca2-v1";
 const V2 = "le-ca2-v2";
 const LOOSE = "le-ca2-loose";
 const TIGHT = "le-ca2-tight";
+const EVERY = "le-ca2-every";
+const BETWEEN = "le-ca2-between";
 const OPTIN = "le-ca2-optin";
 const STAY = "le-ca2-stay";
 const GB = "le-ca2-gb";
@@ -274,6 +276,9 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     await entity(V2, "pack-ca-v2", 2);
     await entity(LOOSE, "pack-ca-v2", 2, "5000.00");
     await entity(TIGHT, "pack-ca-v2", 2, "500.00");
+    /* Sign-up v2.1 writes 0.00 when the owner picks "every exchange". */
+    await entity(EVERY, "pack-ca-v2", 2, "0.00");
+    await entity(BETWEEN, "pack-ca-v2", 2, "2500.00");
     await entity(OPTIN, "pack-ca-v1", 1, "2500.00");
     await entity(STAY, "pack-ca-v1", 1);
     await entity(GB, "pack-gb-v1", 1);
@@ -456,6 +461,94 @@ postgres("Canada pack version 2 on PostgreSQL", () => {
     await expect(gate(TIGHT, "500.00", false, fx(unknown))).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
     await expect(gate(TIGHT, "499.00", false, { kind: "remittance_send", cash: true, cashIn: true, customerId: unknown })).resolves.toBeTruthy();
     await expect(gate(TIGHT, "500.00", false, { kind: "remittance_send", cash: true, cashIn: true, customerId: unknown })).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+  });
+
+  /* Sign-up v2.1 opens every desk on this pack, and its "every
+     exchange" choice stores 0.00 (migration 079). Zero is the desk's
+     stated line. It is not a missing number that falls back to the
+     pack's CAD 3,000. */
+  it("identifies every deal, however small, when the desk's line is zero", async () => {
+    const unknown = `ca2-unknown-${EVERY}`;
+    for (const amount of ["0.01", "500.00", "2999.99"]) {
+      await expect(gate(EVERY, amount, false, fx(unknown))).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    }
+    for (const deal of [
+      { kind: "money_order", cash: true, cashIn: true, customerId: unknown },
+      { kind: "remittance_send", cash: true, cashIn: true, customerId: unknown },
+      { kind: "cheque_cashing", cash: true, cashIn: false, customerId: unknown },
+    ]) {
+      await expect(gate(EVERY, "0.01", false, deal)).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    }
+  });
+
+  it("still trades with a verified customer at a zero line, with the ticket on every exchange", async () => {
+    await book(EVERY);
+    const known = `ca2-known-${EVERY}`;
+    /* The foreign-exchange ticket follows the desk's line here, as it
+       does at any number the desk sets, so zero asks for it every time. */
+    await expect(gate(EVERY, "0.01", true, fx(known))).rejects.toMatchObject({ code: "FX_TICKET" });
+    await pool.query(
+      `INSERT INTO desk_clients
+         (client_id, tenant_id, legal_entity_id, display_name, address_line, occupation, date_of_birth)
+       VALUES ('cli-ca2-every', $1, $2, 'Ada Conductor', '14 Elm Street', 'Teacher', '1984-03-02')
+       ON CONFLICT DO NOTHING`,
+      [TENANT, EVERY],
+    );
+    await pool.query("UPDATE ledger_customers SET client_id = 'cli-ca2-every' WHERE customer_id = $1", [known]);
+    await expect(gate(EVERY, "0.01", true, fx(known))).resolves.toMatchObject({ identificationRequired: false });
+  });
+
+  it("refuses a small unidentified exchange at the counter on a zero line, and NULL follows the pack", async () => {
+    const teller = await book(EVERY);
+    const scope = scopeOf(EVERY);
+    await pool.query(
+      `INSERT INTO ledger_rates (tenant_id, legal_entity_id, branch_id, workspace_id, currency, units_per_cad)
+       VALUES ($1,$2,$3,$4,'USD',0.73) ON CONFLICT DO NOTHING`,
+      [scope.tenantId, scope.legalEntityId, scope.branchId, scope.workspaceId],
+    );
+    await pool.query(
+      `INSERT INTO ledger_till_balances (tenant_id, legal_entity_id, branch_id, workspace_id, till_id, currency, available_amount)
+       VALUES ($1,$2,$3,$4,$5,'USD',10000) ON CONFLICT DO NOTHING`,
+      [scope.tenantId, scope.legalEntityId, scope.branchId, scope.workspaceId, scope.tillId],
+    );
+    const ledger = new LedgerService(pool);
+    const exchange = (key: string, inputAmount: string) =>
+      ledger.post(teller, {
+        idempotencyKey: key,
+        customerId: `ca2-unknown-${EVERY}`,
+        from: "CAD",
+        to: "USD",
+        inputAmount,
+        feeCad: "0.00",
+        purpose: "Travel",
+        sourceOfFunds: "Salary",
+      });
+    const posted = async () =>
+      (await pool.query("SELECT count(*)::int AS n FROM ledger_transactions WHERE legal_entity_id = $1", [EVERY])).rows[0].n;
+
+    await pool.query("UPDATE legal_entities SET id_threshold = 0 WHERE id = $1", [EVERY]);
+    await expect(exchange("ca2-every-20", "20.00")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    expect(await posted()).toBe(0);
+
+    /* NULL means follow the pack: CAD 20 is under the CAD 3,000 line. */
+    await pool.query("UPDATE legal_entities SET id_threshold = NULL WHERE id = $1", [EVERY]);
+    await expect(exchange("ca2-every-null-20", "20.00")).resolves.toMatchObject({ transactionId: expect.any(String) });
+    await expect(exchange("ca2-every-null-3000", "3000.00")).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    expect(await posted()).toBe(1);
+    await pool.query("UPDATE legal_entities SET id_threshold = 0 WHERE id = $1", [EVERY]);
+  });
+
+  it("does not let a desk number above a CAD 1,000 line loosen that line", async () => {
+    /* 2,500 tightens the CAD 3,000 foreign-exchange line. It is above the
+       CAD 1,000 remittance and transfer lines, which stay where the law
+       puts them. */
+    const unknown = "ca2-between-walkin";
+    await expect(gate(BETWEEN, "2499.99", false, fx(unknown))).resolves.toBeTruthy();
+    await expect(gate(BETWEEN, "2500.00", false, fx(unknown))).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    await expect(gate(BETWEEN, "999.99", false, { kind: "remittance_send", cash: true, cashIn: true, customerId: unknown })).resolves.toBeTruthy();
+    for (const [kind, cashIn] of [["remittance_send", true], ["remittance_receive", false], ["bill_payment", true]] as const) {
+      await expect(gate(BETWEEN, "1000.00", false, { kind, cash: true, cashIn, customerId: unknown })).rejects.toMatchObject({ code: "COMPLIANCE_BLOCKED" });
+    }
   });
 
   it("requires identity when the 24-hour cash total reaches the report line", async () => {

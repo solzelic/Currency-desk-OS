@@ -12,9 +12,11 @@
    law says: the server does, and this renders what it answered.
 
    What never happens here:
-     - nothing personal is stored in the browser. The only thing kept is
+     - nothing personal is stored in the browser. The only things kept are
        the typed CurrencyDesk ID, in this tab (sessionStorage), so a reload
-       comes back to the same reservation. Answers live on the server.
+       comes back to the same reservation, and while the email code is
+       pending a bare "1" beside it, so a reload lands back on Check your
+       inbox. Answers live on the server.
      - no card number reaches this page. Stripe Elements draws the card in
        Stripe's own frame; this page only holds the SetupIntent's secret.
      - no success the server did not say. Every screen that sends something
@@ -25,6 +27,7 @@
 
   var ID = /^CD-[A-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
   var TAB_KEY = "cdSignupId";
+  var INBOX_KEY = "cdSignupInbox";
   var SOUND_KEY = "cdSound";
 
   /* The screen numbers are the prototype's (its ORDER); the step names are
@@ -48,11 +51,15 @@
     shops: [29], "shops-more": [30], registration: [4], money: [22], currencies: [6], count: [8], online: [26],
     rules: [23], officer: [9], idline: [10], team: [11], "add-person": [31], confirm: [13], confirmed: [24], pay: [15], day1: [16],
   };
-  /* Screens whose Continue saves answers (the server ignores fields a
-     screen does not own, and keeps last_step for every one of these). */
+  /* Screens outside the prototype's ORDER, and where its own next() goes
+     from each: _after() reads them as ORDER[0] and would open the ID. */
+  var NEXT_OF = { 28: 29, 30: 4, 31: 11 };
 
   function tabGet() { try { return sessionStorage.getItem(TAB_KEY) || ""; } catch (e) { return ""; } }
-  function tabSet(v) { try { if (v) sessionStorage.setItem(TAB_KEY, v); else sessionStorage.removeItem(TAB_KEY); } catch (e) { /* storage blocked: a reload starts at the ID */ } }
+  /* Dropping the ID drops the inbox flag with it. */
+  function tabSet(v) { try { if (v) sessionStorage.setItem(TAB_KEY, v); else { sessionStorage.removeItem(TAB_KEY); sessionStorage.removeItem(INBOX_KEY); } } catch (e) { /* storage blocked: a reload starts at the ID */ } }
+  function inboxSet(on) { try { if (on) sessionStorage.setItem(INBOX_KEY, "1"); else sessionStorage.removeItem(INBOX_KEY); } catch (e) { /* storage blocked: a reload starts at the ID */ } }
+  function inboxGet() { try { return sessionStorage.getItem(INBOX_KEY) === "1"; } catch (e) { return false; } }
 
   function call(method, path, body, ms) {
     var ctl = typeof AbortController === "function" ? new AbortController() : null;
@@ -77,12 +84,20 @@
   }
   var NET = "We couldn’t reach CurrencyDesk just now. Check your connection and try again.";
   function why(r, fallback) { return (r && r.body && typeof r.body.detail === "string" && r.body.detail) || fallback; }
+  /* A sign-in refused because the email code already passed, in a browser
+     holding no enrolment for it (another browser, or one idle for a day).
+     That enrolment is the only way back until the Sign-in pack (CD-221)
+     adds one, so say where it is rather than "carry on" from nowhere. */
+  var SET_ELSEWHERE = "Your sign-in is already set in the browser where you chose it. Open this page there, within a day of your last step, and type your ID to carry on. Signing in from another browser isn’t ready yet.";
+  function refused(r, fallback) { return r && r.body && r.body.error === "already_verified" ? SET_ELSEWHERE : why(r, fallback); }
 
   var CD = window.__cdOnb = {
     code: "",
     known: {},
     names: {},
     states: {},
+    /* what GET /state said this browser's enrolment is, per ID ("" for none) */
+    signups: {},
     checking: "",
     throttled: false,
     err: "",
@@ -125,14 +140,14 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
-        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._paying = false;
-        CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
+        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._staging = false; CD._paying = false;
+        CD.callPreference = null; CD._consentBusy = false; CD.consentError = ""; CD._openStalled = null;
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
-      CD.code = ""; CD.alreadyOpen = false; tabSet("");
+      CD.code = ""; CD.alreadyOpen = false; CD.verify.code = ""; tabSet("");
       if (CD.comp) CD.comp.set("operatingName", "");
       function select() {
-        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
+        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; CD.verify.code = ""; tabSet(id);
         if (CD.comp) CD.comp.set("operatingName", CD.names[id] || "");
       }
       if (!ID.test(id)) return;
@@ -146,7 +161,7 @@
           if (r.status === 429) { CD.throttled = true; done(); return; }
           if (r.status === 200 && r.body.valid) {
             CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
-            CD.states[id] = r.body.state; select();
+            CD.states[id] = r.body.state; CD.signups[id] = typeof r.body.signup === "string" ? r.body.signup : ""; select();
           } else if (r.status === 404) CD.known[id] = false;
           else CD.err = NET;
           done();
@@ -164,7 +179,7 @@
       var fail = function (msg) { c.setState({ pkPhase: "idle", pkScan: false, lockErr: msg }); };
       var cancelled = "The passkey wasn’t created. Nothing was saved. Try again, or choose another way.";
       api("POST", "/passkey/options", {}).then(function (r) {
-        if (r.status !== 200 || !r.body.options) return fail(why(r, cancelled));
+        if (r.status !== 200 || !r.body.options) return fail(refused(r, cancelled));
         var o = r.body.options;
         var pub = {
           rp: o.rp, challenge: b64d(o.challenge),
@@ -187,9 +202,10 @@
             },
             deviceLabel: c.deviceInfo().device,
           };
+          var id = CD.code;
           return api("POST", "/passkey/verify", body).then(function (v) {
-            if (v.status !== 200 || !v.body.ok) return fail(why(v, cancelled));
-            CD.codeSent = v.body.codeSent !== false;
+            if (v.status !== 200 || !v.body.ok) return fail(refused(v, cancelled));
+            CD.codeSent = v.body.codeSent !== false; CD.stagingCode(v.body, id); CD.awaitingCode(id);
             c.setState({ pkScan: "ok" });
             setTimeout(function () { c.setState({ pkPhase: "done", pkScan: false }); c.set("passkeyDone", true);
               setTimeout(function () { if (c.state.i === 5) c.next(); }, 900); }, 400);
@@ -208,7 +224,7 @@
       var phone = window.innerWidth < 720;
       var win = phone ? null : window.open("about:blank", "cd-sso", "width=480,height=640");
       api("GET", "/sso/" + prov + "/start").then(function (r) {
-        if (r.status !== 200 || !r.body.url) { if (win) win.close(); return fail(why(r, "That way in isn’t available yet. Choose another.")); }
+        if (r.status !== 200 || !r.body.url) { if (win) win.close(); return fail(refused(r, "That way in isn’t available yet. Choose another.")); }
         try { sessionStorage.setItem("cdSsoReturn", JSON.stringify({ id: CD.code, provider: prov })); } catch (e) { /* no return trip on a phone without storage */ }
         if (!win) { location.assign(r.body.url); return; }
         win.location = r.body.url;
@@ -218,22 +234,22 @@
       });
     },
     ssoFinish: function (c, prov, code, state) {
-      var label = prov === "google" ? "Google" : "Microsoft";
+      var label = prov === "google" ? "Google" : "Microsoft", id = CD.code;
       api("POST", "/sso/callback", { provider: prov, code: code, state: state }).then(function (r) {
         if (r.status !== 200 || !r.body.ok) {
-          c.setState({ ssoPhase: "idle", lockErr: why(r, "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.") });
+          c.setState({ ssoPhase: "idle", lockErr: refused(r, "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.") });
           return;
         }
-        CD.codeSent = r.body.codeSent !== false;
+        CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id); CD.awaitingCode(id);
         c.setState({ ssoPhase: "idle" }); c.set("lockMode", prov); c.set("ssoDone", prov);
         setTimeout(function () { if (c.state.i === 5) c.next(); }, 900);
       });
     },
     password: function (c) {
-      var d = c.state.data;
+      var d = c.state.data, id = CD.code;
       return api("POST", "/password", { password: d.ownerPass || "", confirm: d.pass2 || "" }).then(function (r) {
-        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; c.set("ownerPass", ""); c.set("pass2", ""); return true; }
-        c.setState({ lockErr: why(r, "That password wasn’t saved. Try again.") });
+        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id); CD.awaitingCode(id); c.set("ownerPass", ""); c.set("pass2", ""); return true; }
+        c.setState({ lockErr: refused(r, "That password wasn’t saved. Try again.") });
         return false;
       });
     },
@@ -243,29 +259,49 @@
       return { q: "Check your inbox.", help: "We just sent a 6-digit code to the email you applied with. This is the address we write to.",
         resend: "No email yet?", fixLead: "Wrong address?", fixTail: " — you’ll need this address every time you sign in." };
     },
+    /* The staging door's synthetic shop has no inbox: the server hands its
+       code to this browser alone, and the frozen "Staging code" row shows it
+       (it hides "Send it again" while it does). Never kept; a late reply for
+       another ID is dropped. Any other reservation never gets one. */
+    stagingCode: function (body, id) {
+      if (CD.code !== id) return;
+      CD.verify.code = body && typeof body.stagingCode === "string" && /^[0-9]{6}$/.test(body.stagingCode) ? body.stagingCode : "";
+    },
+    /* A candidate credential is saved and its code is on the way. */
+    awaitingCode: function (id) { if (CD.code === id) inboxSet(true); },
     /* "Send it again" only. The first code went when the credential saved. */
     sendCode: function () {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/send", {}).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return true;
+        if (r.status === 200 && r.body.ok !== false) { CD.stagingCode(r.body, id); return true; }
         CD.err = why(r, "We couldn’t send that code just now.");
         return false;
       });
     },
     checkCode: function (entered) {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/verify", { code: entered }).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return CD.loadResume(true).then(function () { return true; });
+        if (r.status === 200 && r.body.ok !== false) {
+          if (CD.code === id) { CD.verify.code = ""; CD.signups[id] = "verified"; inboxSet(false); }
+          return CD.loadResume(true).then(function () { return true; });
+        }
+        /* a spent or lapsed staging code: bring "Send it again" back */
+        if (CD.code === id && /^(expired|too_many_attempts|no_code|no_candidate|not_enrolling)$/.test(String(r.body.error || ""))) CD.verify.code = "";
         CD.err = why(r, r.status === 0 ? NET : "That code isn’t right.");
         return false;
       });
     },
 
     /* ---- after the code: the server's copy of everything ------------------ */
+    /* true once the answers are in; false if this tab moved on meanwhile;
+       otherwise the server's refusal, for a caller that has to say why */
     loadResume: function (fresh) {
       var id = CD.code, nav = CD._nav || 0;
       return api("GET", "/resume").then(function (r) {
-        if (CD.code !== id || (CD._nav || 0) !== nav || r.status !== 200) return false;
+        if (CD.code !== id || (CD._nav || 0) !== nav) return false;
+        if (r.status !== 200) return r;
         var c = CD.comp, b = r.body;
         CD.pack = b.pack || null;
         CD.applyPack(c, CD.pack);
@@ -273,6 +309,8 @@
         var data = CD.fromServer ? CD.fromServer(b.answers || {}) : {};
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
+        /* the reserved address heads the Confirm record (the prototype's R.recDesk) */
+        data.workspace = typeof b.workspace === "string" ? b.workspace : "";
         CD.callPreference = b.callPreference || null; data.call = !!(CD.callPreference && CD.callPreference.call);
         if (CD.pack) data.country = CD.pack.code;
         var modes = {};
@@ -280,7 +318,7 @@
         CD.pinSet = !!b.pinSet;
         return new Promise(function (resolve) { c.setState(function (s) { return { data: Object.assign({}, s.data, data), cntMode: modes }; }, function () {
           var to = SCREEN_OF[b.lastStep];
-          if (to != null && b.saved && b.lastStep !== "22-confirm") to = c._after(to);
+          if (to != null && b.saved && b.lastStep !== "22-confirm") to = NEXT_OF[to] != null ? NEXT_OF[to] : c._after(to);
           if (to != null) CD._resumeTo = fresh ? to : null;
           if (!fresh && to != null) { c._dir = 1; c.setState({ i: to }); }
           resolve(true);
@@ -312,7 +350,23 @@
       var go = function () { CD._busy = false; if (!current()) return; CD._pass = i; c.next(); };
       var stop = function (msg) { CD._busy = false; if (current()) { CD.err = msg || ""; c.forceUpdate(); } };
       if (i === 0) {
+        var held = CD.signups[id];
+        /* an open desk whose opening hand-off this browser still holds:
+           POST /open gives the desk session; sign in only if it says no */
+        if (CD.alreadyOpen && held && CD.resumePayment) { CD.resumePayment(c, true); return false; }
         if (CD.alreadyOpen) { CD.err = "This desk is already open. Sign in."; location.assign("/login"); return false; }
+        /* this browser's enrolment (the code passed in another tab): carry
+           on where they stopped; if it lapsed meanwhile, chapter 1 as before */
+        if (held) {
+          CD._busy = true;
+          CD.loadResume(false).then(function (res) {
+            CD._busy = false;
+            if (res === true || !current()) return;
+            if (res && res.status === 401) { CD.signups[id] = ""; go(); return; }
+            stop(why(res, NET));
+          });
+          return false;
+        }
         return true;
       }
       if (i === 5) {
@@ -395,13 +449,20 @@
         if ((CD._refRequest || 0) !== bootRequest) return;
         if (r.status !== 200 || !r.body.valid) { tabSet(""); return; }
         CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
-        CD.states[id] = r.body.state; CD.alreadyOpen = r.body.state === "active";
+        var active = r.body.state === "active", held = typeof r.body.signup === "string" ? r.body.signup : "";
+        CD.states[id] = r.body.state; CD.signups[id] = held; CD.alreadyOpen = active;
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
-        if (paymentReturn && CD.resumePayment) { CD.resumePayment(c); return; }
-        if (r.body.state === "active") { CD.alreadyOpen = true; c.setState({ i: 0 }); return; }
+        if (held || active) inboxSet(false);
+        if (paymentReturn && CD.resumePayment) { CD.resumePayment(c, active); return; }
+        /* opened by Stripe's webhook after the page stopped asking, or the tab
+           closed while it was opening: this browser's enrolment is the hand-off */
+        if (active && held && CD.resumePayment) { CD.resumePayment(c, true); return; }
+        if (active) { c.setState({ i: 0 }); return; }
         if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
-        if (r.body.signup) { CD.loadResume(false); return; }
-        if (r.body.state === "enrolling") { c.setState({ i: 5 }); return; }
+        if (held) { CD.loadResume(false); return; }
+        /* /state answers only reserved or active, so a code still pending is
+           this tab's own flag: back to Check your inbox, nothing resent */
+        if (inboxGet()) { c.setState({ i: 14 }); return; }
         c.setState({ i: 0 });
       });
     },

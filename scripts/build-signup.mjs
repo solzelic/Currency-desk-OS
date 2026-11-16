@@ -109,6 +109,11 @@ patch("no browser copy", "    try { const save = (this.state.i === 15 || this.st
   "    if (false) try { const save = (this.state.i === 15 || this.state.i === 16) ? 0 : this.state.i;");
 patch("stand-in data", "  fresh() { return {", "  fresh() { return window.__cdOnb.blank(this._protoFresh()); }\n  _protoFresh() { return {");
 patch("seed keeps the review data", "Object.assign({}, this.demo(), this.fresh(), {", "Object.assign({}, this.demo(), this._protoFresh(), {");
+/* Resume supplies the verified reservation's web name. Never display the
+   prototype's example business when that optional name is absent. */
+patch("real desk record name", "d.workspace || d.webName || 'yorkfx'", "d.workspace || d.webName || d.operatingName || ''");
+/* The server pack already supplies the complete registration hint. */
+patch("registration hint once", "j.hint + ' No number yet? Skip and add it later.'", "j.hint", 2);
 
 /* ---- Continue saves, skips save what skipping means -------------------- */
 patch("continue", "  next() { if (this.state.i === 11 && !this.state.seal)",
@@ -149,6 +154,10 @@ patch("passkey only where it works", "        R.authNote = mode === 'password'",
 patch("send my ID",
   "onIdSend: () => { if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test((this.state.idEmail || '').trim())) return; this._tone('done'); this.setState({ idSend: 'sent', idEmail: this.state.idEmail.trim() }); },",
   "onIdSend: () => { if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test((this.state.idEmail || '').trim())) return; const em = this.state.idEmail.trim(); window.__cdOnb.resendId(em).then((ok) => { if (ok) { this._tone('done'); this.setState({ idSend: 'sent', idEmail: em }); } else { window.__cdOnb.err = 'We couldn\\u2019t send that just now. Check your connection and try again.'; this.forceUpdate(); } }); },");
+
+/* ---- staging door's synthetic shop: its code is on screen, not emailed --- */
+patch("staging inbox copy", "help:'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });",
+  "help: window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code ? 'Staging test shop: no email is sent. Your 6-digit code is below.' : 'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });");
 
 /* ---- the pack decides the recommended ID line ------------------------- */
 patch("recommended line", "  idRec(j) { const L =", "  idRec(j) { if (j.idRecommended) return j.idRecommended; const L =");
@@ -230,11 +239,12 @@ patch("places pick", "  _adPick(a) {", "  _adPick(a) { if (a && a.placeId) retur
 
 /* ======== OPEN (signup-v2.1-open.js): plan, card, Day 1, tour ======== */
 /* ---- the plan: the server's prices, Stripe's card ---------------------- */
-patch("card complete", "(d.cardNum || '').replace(/\\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && ",
-  "!!window.__cdOnb.cardComplete && ", 2);
+/* the staging door's synthetic shop sends no card details anywhere: its name on card is not required */
+patch("card complete", "(d.cardNum || '').replace(/\\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && (d.cardName || '').trim().length > 1 && ",
+  "!!window.__cdOnb.cardComplete && (!!window.__cdOnb._staging || (d.cardName || '').trim().length > 1) && ", 2);
 patch("no last four", "const last4 = (d.cardNum || '').replace(/\\s/g, '').slice(-4);", "const last4 = '';");
 patch("no backup promised", "'Card, billing address, a backup if you like'", "'Card and billing address'");
-patch("card summary", "'Card •••• ' + last4 + ' · '", "'Card ready · '");
+patch("card summary", "'Card •••• ' + last4 + ' · '", "(window.__cdOnb && window.__cdOnb._staging ? 'Staging test shop, no card · ' : 'Card ready · ')");
 patch("not while paying", "this._payValid = this._payValid && read;", "this._payValid = this._payValid && read && !window.__cdOnb._paying;");
 patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "R.promoMsg = 'That code isn\\u2019t one we recognise.';");
 /* a backup card needs its own SetupIntent, which the server does not make
@@ -242,10 +252,15 @@ patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "
 patch("no backup yet", "R.showBackup = !!d.showBackup; R.notShowBackup = !d.showBackup;", "R.showBackup = false; R.notShowBackup = false;");
 patch("pay", "  goLive() {", "  goLive() { if (window.__cdOnb) { if (this._payValid) window.__cdOnb.pay(this); return; }");
 patch("price retry", '<div data-paysum="true"', '<sc-if value="{{ retryPricesVisible }}"><button type="button" onClick="{{ onRetryPrices }}" style="min-height:44px;padding:10px 16px;">Try loading prices again</button></sc-if><div data-paysum="true"');
+/* the card is confirmed but the desk has not opened yet: ask /open again (the bridge's checkOpen) */
+patch("open check again", "{{ goLiveSub }}</div>", '{{ goLiveSub }}</div><sc-if value="{{ checkOpenVisible }}"><button type="button" onClick="{{ onCheckOpen }}" style="display:block;margin:12px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;">Check again</button></sc-if>');
 patch("prices and day one", "    return Object.assign(R, this._railVals(), this._tourVals());",
   "    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));");
 patch("setup week price", ">$5,000 once<", ">{{ xSetupPrice }}<");
 patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
+/* the server refuses the Coming soon website: its line goes beside the add-on, above the advert */
+patch("website refused", '<sc-if value="{{ xWebOpen }}" hint-placeholder-val="{{ false }}">',
+  '<sc-if value="{{ xWebRefused }}"><p data-web-refused="true" role="alert" style="margin:0;padding:0 14px 12px;font-size:12px;line-height:1.4;color:#B23A2A;">{{ xWebRefused }}</p></sc-if><sc-if value="{{ xWebOpen }}" hint-placeholder-val="{{ false }}">');
 
 /* card number, expiry and CVC: Stripe's frame instead of our inputs */
 {
