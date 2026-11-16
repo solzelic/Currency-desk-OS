@@ -35,7 +35,7 @@ async function ready() {
   await handle.db.update(schema.signupAccounts).set({ state: "verified", pinHash: "synthetic-test-hash", emailVerifiedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, id));
   await handle.db.insert(schema.signupCredentials).values({ id: randomUUID(), enquiryId: id, kind: "password", passwordHash: "synthetic-test-hash", attemptHash: "synthetic", verifiedAt: new Date() });
   await handle.db.insert(schema.enrolmentSessions).values({ enquiryId: id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60000) });
-  await handle.db.insert(schema.onboarding).values({ enquiryId: id, answers: { operatingName: `Assent ${id}`, bizName: "Synthetic Inc.", street: "1 Test", city: "Toronto", region: "ON", postal: "M1A 1A1", complianceMode: "me", currencies: ["CAD"], idOver: "0", team: [] } });
+  await handle.db.insert(schema.onboarding).values({ enquiryId: id, answers: { operatingName: `Assent ${id}`, bizName: "Synthetic Inc.", street: "1 Test", city: "Toronto", region: "ON", postal: "M1A 1A1", complianceMode: "me", currencies: ["CAD", "USD", "GBP"], idOver: "0", team: [] } });
   expect(await confirmDesk(handle.db, id, "Synthetic Owner")).toBe(true);
   const base = `/api/onboarding/${cdId}`;
   const post = (suffix: string, payload: unknown, authenticated = true) => app.inject({ method: "POST", url: base + suffix, payload: payload as object, cookies: authenticated ? { cd_enrol: token } : {} });
@@ -66,7 +66,11 @@ describe("card preparation is not service agreement assent", () => {
     const evidence = await r.records();
     expect(evidence).toHaveLength(1);
     expect(evidence[0]?.record).toMatchObject({ agreed: true, setupIntentId, termsSourceHash, selected: { plan: "full", term: "monthly", locations: 1 } });
-    expect((await openFromSetupIntent(handle.db, succeeded(setupIntentId))).opened).toBe(true);
+    const opened = await openFromSetupIntent(handle.db, succeeded(setupIntentId));
+    expect(opened.opened).toBe(true);
+    if (!opened.opened) throw new Error("activation failed");
+    // No market snapshot was seeded: a real opening must not invent a tradable board.
+    expect(await handle.db.select().from(schema.rateBoards).where(eq(schema.rateBoards.tenantId, opened.tenantId))).toEqual([]);
   });
   it("rejects an old intent after choices change, and never carries assent into the new choice", async () => {
     const r = await ready();
