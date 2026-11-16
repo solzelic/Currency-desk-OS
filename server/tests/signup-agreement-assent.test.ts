@@ -89,3 +89,20 @@ describe("card preparation is not service agreement assent", () => {
     expect(await r.records()).toHaveLength(1);
   });
 });
+
+it("a saved card/plan never revives a later call opt-out when the tenant opens", async () => {
+  const r = await ready();
+  await handle.db.update(schema.enquiries).set({ details: { jurisdiction: "CA", phone: "+14165550123" } }).where(eq(schema.enquiries.id, r.id));
+  const { SAM_CONSENT_TEXT } = await import("../src/enquiries/sam.js");
+  const assent = { call: true, version: sha256(SAM_CONSENT_TEXT), target: sha256("+14165550123") };
+  expect((await r.post("/preferences", assent)).statusCode).toBe(200);
+  const prepare = await r.post("/payment", { ...choice, extras: { ...choice.extras, call: true } });
+  const { setupIntentId, termsSourceHash } = prepare.json();
+  expect((await r.post("/agreement", { setupIntentId, termsSourceHash, agreed: true })).statusCode).toBe(200);
+  expect((await r.post("/preferences", { call: false })).statusCode).toBe(200);
+  const result = await openFromSetupIntent(handle.db, succeeded(setupIntentId));
+  expect(result.opened).toBe(true);
+  if (!result.opened) throw new Error("synthetic activation failed");
+  const tenant = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, result.tenantId)))[0];
+  expect(tenant?.setup?.signup).toMatchObject({ call: false });
+});

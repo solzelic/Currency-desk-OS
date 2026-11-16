@@ -263,3 +263,21 @@ with the current intent and displayed source hash before Stripe confirmation.
 Acceptance binds the current plan, answer signature and intent; answer edits
 invalidate it. Legacy `POST …/plan` still requires explicit `agreed: true`.
 This does not complete first-exchange subscription activation or legal approval.
+
+### Signup call preference
+
+Post-proof resume returns the current SAM permission, exact consent sentence and
+SHA-256 version, a masked phone and a target binding for the current number. The
+page reflects that evidence; an absent answer is not a pre-ticked consent. An
+existing Early Access consent counts only while its text and phone still match.
+Authenticated `POST …/preferences` saves opt-in, stop and reconsent under the signup
+account lock. Consent rows preserve the exact sentence, number, timestamp, IP and
+user agent; the audit links the immutable evidence to the verified account without
+copying phone/IP into audit detail. Retries do not duplicate the same choice.
+
+Opt-out cancels the saved schedule immediately, independently of payment. Tenant
+activation reads the latest consent rather than reviving an older plan's choice.
+The existing Early Access booking route shares that lock and rechecks the latest
+permission, so a queued booking cannot restore a schedule after an opt-out.
+Reconsent does not schedule or place a call. Calling-service integration, holiday
+hours, sales permission and Compliance's wording approval remain separate gates.

@@ -21,7 +21,7 @@ import { enrolmentFor } from "../onboarding/email-code.js";
 import { loadAccount, withSignupAccount, sha256, type Account } from "../onboarding/signup-account.js";
 import { checkPin, savePin } from "../onboarding/signup-pin.js";
 import { answersBody, parseAnswers, resumable } from "../onboarding/signup-answers.js";
-import { stopSignupCalls } from "../onboarding/signup-preferences.js";
+import { stopSignupCalls, signupCallPreference, saveSignupCallPreference } from "../onboarding/signup-preferences.js";
 import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
@@ -141,8 +141,27 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
       answers: resumable(seeded(r.row, row.answers ?? {})),
       pack: signupPack(typeof d.jurisdiction === "string" ? d.jurisdiction : null),
       you: ownerDetails(r.row),
+      callPreference: await signupCallPreference(db, r.row.id),
       workspace: typeof d.workspace === "string" ? d.workspace.split(".")[0] : null,
     };
+  });
+
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/preferences", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    const body = z.discriminatedUnion("call", [
+      z.object({ call: z.literal(false) }).strict(),
+      z.object({ call: z.literal(true), version: z.string().regex(/^[a-f0-9]{64}$/), target: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+    ]).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_preference" });
+    const result = await saveSignupCallPreference(db, r.row.id, body.data, {
+      ipAddress: r.connection, userAgent: req.headers["user-agent"]?.slice(0, 512) ?? null,
+    });
+    if (!result.ok) {
+      door.logRefusal({ reason: result.error, id: idTail(r.cdId), connection: r.connection });
+      return reply.code(409).send({ error: result.error, detail: "Your call details changed. Reload to review them before choosing again." });
+    }
+    return result;
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/confirm", async (req, reply) => {

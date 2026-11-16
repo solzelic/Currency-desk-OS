@@ -134,6 +134,7 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
       CD.code = ""; CD.alreadyOpen = false; tabSet("");
@@ -280,6 +281,7 @@
         var data = CD.fromServer ? CD.fromServer(b.answers || {}) : {};
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
+        CD.callPreference = b.callPreference || null; data.call = !!(CD.callPreference && CD.callPreference.call);
         if (CD.pack) data.country = CD.pack.code;
         var modes = {};
         Object.keys((b.answers || {}).count || {}).forEach(function (cc) { modes[cc] = b.answers.count[cc].mode; });
@@ -369,7 +371,7 @@
       /* the prototype's fresh state carries its stand-in shop and owner
          (SIGNUP-LOGIC §13): a real visitor starts with nothing of theirs
          shown until the server says it */
-      return Object.assign({}, f, { operatingName: "", ownerName: "", ownerEmail: "", phone: "", country: "" });
+      return Object.assign({}, f, { operatingName: "", ownerName: "", ownerEmail: "", phone: "", country: "", call: false });
     },
     mount: function (c) {
       CD.comp = c;
@@ -383,7 +385,7 @@
            SIGNUP_TEST_SEED is set outside production (routes/signup-page.ts),
            for reference/tools/capture.cjs. A visitor never gets one. */
         CD.seeded = true; CD.code = "CD-YORK-7K42"; CD.known[CD.code] = true;
-        c._pkJump = SEED[seedStep][1] || ""; c.railJump(SEED[seedStep][0]);
+        c._pkJump = SEED[seedStep][1] || ""; c.railJump(SEED[seedStep][0]); c.set("call", false);
         CD.names[CD.code] = String(c.state.data.operatingName || ""); CD.states[CD.code] = "reserved";
         return;
       }
@@ -840,6 +842,41 @@
     return stripeLoading;
   }
 
+})();
+</script>
+<script>
+/* The displayed preference is the server's evidence, not a preselected box. */
+(function () {
+  "use strict";
+  var CD = window.__cdOnb, api = CD.h.api, why = CD.h.why;
+  CD.toggleCall = function (c) {
+    var pref = CD.callPreference;
+    if (CD._consentBusy || !pref || (!pref.call && !pref.canCall)) return;
+    var id = CD.code;
+    var choice = pref.call ? { call: false } : { call: true, version: pref.version, target: pref.target };
+    CD._consentBusy = true; CD.consentError = ""; c.forceUpdate();
+    api("POST", "/preferences", choice).then(function (r) {
+      if (CD.code !== id) return;
+      CD._consentBusy = false;
+      if (r.status === 200 && r.body.preference) {
+        CD.callPreference = r.body.preference; c.set("call", r.body.preference.call);
+      } else {
+        CD.consentError = why(r, "Your call preference wasn’t saved. Try again.");
+        // Keep the last saved choice visible; a failed request is not consent.
+        c.forceUpdate();
+      }
+    });
+  };
+  var priced = CD.priced;
+  CD.priced = function (c, R) {
+    R = priced(c, R);
+    var p = CD.callPreference;
+    R.onXCall = function () { c._tone("tap"); CD.toggleCall(c); };
+    R.samBusy = !!CD._consentBusy || !p || (!p.call && !p.canCall);
+    R.samText = p ? p.text + " Number: " + p.phone + "." : "Call consent is available after you verify your email.";
+    R.samStatus = CD.consentError || (CD._consentBusy ? "Saving your call preference…" : p && p.call ? "Permission saved. Tap to switch it off." : "No call permission is saved.");
+    return R;
+  };
 })();
 </script>
 <script defer src="/web/vendor/react.production.min.js"></script>

@@ -36,6 +36,7 @@ import { isStagingRuntime } from "../auth/staging-runtime.js";
 import { stagingOnboardingMark } from "../routes/staging-fresh-shop.js";
 import { packForCountry } from "../ledger/jurisdiction.js";
 import { signupPack } from "./signup-pack.js";
+import { signupCallPreference } from "./signup-preferences.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
@@ -236,7 +237,8 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
     const m = z.object({ first: z.string(), last: z.string() }).passthrough().parse(member);
     return { ...m, name: `${m.first} ${m.last}`.trim() };
   });
-  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: choice.data.call }, fromApplication(row));
+  const callConsent = choice.data.call && (await signupCallPreference(db, enquiryId)).call;
+  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: callConsent }, fromApplication(row));
   const spec = specFromAnswers(resolved, row);
   spec.email = row.email;
   const pack = signupPack(typeof row.details?.jurisdiction === "string" ? row.details.jurisdiction : null);
@@ -246,7 +248,7 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   if (values.complianceMode === "me") spec.setup.compliance = { mode: "me", name: row.name ?? "", email: row.email };
   else if (values.complianceMode === "else") spec.setup.compliance = { mode: "other", name: values.compName ?? "", email: values.compEmail ?? "" };
   // Retain what remains to be completed without pretending it is ledger money.
-  spec.setup.signup = { version: "2.1", locationCount: choice.data.locations, brief: choice.data.brief, call: choice.data.call,
+  spec.setup.signup = { version: "2.1", locationCount: choice.data.locations, brief: choice.data.brief, call: callConsent,
     vaultCount: values.count ?? null, vaultCountStatus: values.countLater ? "deferred" : "pending-ledger-integration" };
 
   const d = row.details ?? {};

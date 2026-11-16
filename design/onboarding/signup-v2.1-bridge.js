@@ -125,6 +125,7 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
       CD.code = ""; CD.alreadyOpen = false; tabSet("");
@@ -271,6 +272,7 @@
         var data = CD.fromServer ? CD.fromServer(b.answers || {}) : {};
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
+        CD.callPreference = b.callPreference || null; data.call = !!(CD.callPreference && CD.callPreference.call);
         if (CD.pack) data.country = CD.pack.code;
         var modes = {};
         Object.keys((b.answers || {}).count || {}).forEach(function (cc) { modes[cc] = b.answers.count[cc].mode; });
@@ -360,7 +362,7 @@
       /* the prototype's fresh state carries its stand-in shop and owner
          (SIGNUP-LOGIC §13): a real visitor starts with nothing of theirs
          shown until the server says it */
-      return Object.assign({}, f, { operatingName: "", ownerName: "", ownerEmail: "", phone: "", country: "" });
+      return Object.assign({}, f, { operatingName: "", ownerName: "", ownerEmail: "", phone: "", country: "", call: false });
     },
     mount: function (c) {
       CD.comp = c;
@@ -374,7 +376,7 @@
            SIGNUP_TEST_SEED is set outside production (routes/signup-page.ts),
            for reference/tools/capture.cjs. A visitor never gets one. */
         CD.seeded = true; CD.code = "CD-YORK-7K42"; CD.known[CD.code] = true;
-        c._pkJump = SEED[seedStep][1] || ""; c.railJump(SEED[seedStep][0]);
+        c._pkJump = SEED[seedStep][1] || ""; c.railJump(SEED[seedStep][0]); c.set("call", false);
         CD.names[CD.code] = String(c.state.data.operatingName || ""); CD.states[CD.code] = "reserved";
         return;
       }
