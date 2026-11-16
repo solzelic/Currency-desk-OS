@@ -1264,13 +1264,22 @@
       R.tourFileLabel = 'Review for ' + (pack.regulator || 'your regulator') + ' →';
       return R;
     };
+    var observedMotion = media.matches;
     function changed() {
+      observedMotion = media.matches;
       clearInterval(c._tourI); if (c.state.tour && !media.matches) c._tourI = setInterval(function () { c._tourTick(); }, 150);
       c._playVids(); c.forceUpdate();
     }
+    // Manual navigation stops the tour clock. Reconcile on actual playback too,
+    // so a delayed preference notification cannot leave a moving clip on screen.
+    // No timer or render on ordinary playback; pause before replacing the video.
+    function playback(e) {
+      if (e.target.matches('[data-tour] video,[data-product] video') && media.matches !== observedMotion) changed();
+    }
     media.addEventListener('change', changed);
+    document.addEventListener('timeupdate', playback, true);
     var unmount = c.componentWillUnmount.bind(c);
-    c.componentWillUnmount = function () { media.removeEventListener('change', changed); if (c._tourResize) c._tourResize.disconnect(); unmount(); };
+    c.componentWillUnmount = function () { media.removeEventListener('change', changed); document.removeEventListener('timeupdate', playback, true); if (c._tourResize) c._tourResize.disconnect(); unmount(); };
     return mount(c);
   };
   CD.priced = function (c, r) {
