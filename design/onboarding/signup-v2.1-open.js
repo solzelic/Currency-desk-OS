@@ -57,7 +57,9 @@
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
-      if (!CD.prices && !CD._paying) { CD.loadPrices(c); }
+      /* a desk already open is only waiting for /open: no quote, no card (both 409) */
+      var quoting = !CD._paying && !CD.alreadyOpen;
+      if (!CD.prices && quoting) { CD.loadPrices(c); }
       var cur = " " + ((CD.prices && CD.prices.currency) || c.PRICE_CCY);
       var f = function (m) { return money(m, CD.prices && CD.prices.currency); };
       var blank = "—";
@@ -89,9 +91,11 @@
       R.onRetryCard = function () { CD.retryCard(c); };
       R.retryPricesVisible = !!CD._priceFailed;
       R.onRetryPrices = function () { CD._priceFailed = false; CD.loadPrices(c); c.forceUpdate(); };
+      R.checkOpenVisible = !!CD._openStalled && !CD._paying;
+      R.onCheckOpen = function () { CD.checkOpen(c); };
       if (CD.payErr) R.goLiveSub = CD.payErr;
       if (CD._paying) { R.goLiveLabel = "Opening " + (d.operatingName || "your desk") + "…"; }
-      if (R.pf2Open && !CD.seeded && !CD._paying) { CD.card(c); setTimeout(CD.mountCard, 0); setTimeout(CD.cardNote, 0); }
+      if (R.pf2Open && !CD.seeded && quoting) { CD.card(c); setTimeout(CD.mountCard, 0); setTimeout(CD.cardNote, 0); }
       return R;
     },
     fmt: money,
@@ -156,6 +160,8 @@
        webhook has told the server, and only then; the page asks until it
        has, and says so if it is taking a while. */
     pay: function (c) {
+      /* the card is already confirmed: Open only asks again, never confirms twice */
+      if (CD._openStalled) return CD.checkOpen(c);
       if (CD._staging) return CD.stagingPay(c);
       if (!CD._stripe || !CD._elements || CD._paying || !c.state.termsRead) return;
       if (CD._cardKey !== CD.paymentKey(c)) { CD.payErr = "Your plan changed. Open Payment again to update the card form."; CD.cardComplete = false; c.forceUpdate(); return; }
@@ -191,10 +197,19 @@
         CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
       });
     },
-    resumePayment: function (c) {
+    resumePayment: function (c, active) {
       // A URL is only a navigation hint. /open requires the unspent enrolment
       // cookie and a webhook-activated account; no query value proves payment.
-      CD._paying = true; c.setState({ i: 15 }); CD.waitOpen(c, 0);
+      // `active`: GET /state already said the desk is open.
+      CD._paying = true; CD._openStalled = null; c.setState({ i: 15 });
+      CD.waitOpen(c, 0, { id: CD.code, nav: CD._nav || 0, active: !!active });
+    },
+    /* Check again, after the page stopped asking: the same /open, once more. */
+    checkOpen: function (c) {
+      var was = CD._openStalled;
+      if (!was || CD._paying || was.id !== CD.code) return;
+      CD._openStalled = null; CD._paying = true; CD.payErr = ""; c.forceUpdate();
+      CD.waitOpen(c, 0, { id: CD.code, nav: CD._nav || 0, active: was.active });
     },
     waitOpen: function (c, n, attempt) {
       attempt = attempt || { id: CD.code, nav: CD._nav || 0 };
@@ -215,7 +230,14 @@
         if (r.status === 202 || r.status === 0) {
           if (n === 10) { CD.payErr = "Your card is saved. The desk is still opening; this can take a minute. Stay on this page."; c.forceUpdate(); }
           if (n < 60) { setTimeout(function () { CD.waitOpen(c, n + 1, attempt); }, n < 10 ? 1000 : 3000); return; }
-          CD._paying = false; CD.payErr = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Come back to this page in a few minutes; we’ll pick up from here."; c.forceUpdate(); return;
+          CD._paying = false; CD._openStalled = attempt;
+          CD.payErr = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Check again in a minute. If you leave, come back to this page in this browser; once it has opened, we’ll pick up from here.";
+          c.forceUpdate(); return;
+        }
+        if (attempt.active && (r.status === 401 || r.status === 409)) {
+          /* the desk is open, but this browser's hand-off is spent or gone: sign in */
+          CD._paying = false; CD.signups[CD.code] = ""; CD.alreadyOpen = true; CD.err = "This desk is already open. Sign in.";
+          c._dir = -1; c.setState({ i: 0 }); return;
         }
         CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
       });
