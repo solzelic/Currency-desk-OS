@@ -111,10 +111,11 @@ export async function startSso(db: Db, cfg: ProviderConfig, o: { enquiryId: stri
   return `${cfg.authorize}?${q.toString()}`;
 }
 
-/** A provider that answered, with an HTTP error. A 4xx is a refusal (a spent or
- * foreign code); a 5xx is the provider being unavailable. Carries no body. */
+/** HTTP failure without a provider body or description. Only the parsed
+ * invalid_grant token error identifies a refused code; configuration, quota
+ * and key-discovery failures must not count as guesses at the applicant ID. */
 export class ProviderHttpError extends Error {
-  constructor(host: string, readonly status: number) {
+  constructor(host: string, readonly status: number, readonly oauthError: "invalid_grant" | null = null) {
     super(`${host} answered ${status}`);
     this.name = "ProviderHttpError";
   }
@@ -127,7 +128,16 @@ export const fetchJson: FetchJson = async (url, init) => {
     method: init.method, signal: init.signal,
     ...(init.body ? { body: init.body, headers: { "content-type": "application/x-www-form-urlencoded" } } : {}),
   });
-  if (!res.ok) throw new ProviderHttpError(new URL(url).host, res.status);
+  if (!res.ok) {
+    let oauthError: "invalid_grant" | null = null;
+    if (init.method === "POST" && res.status === 400) {
+      // Parse just the known code; never retain/log provider descriptions.
+      const body: unknown = await res.json();
+      const parsed = z.object({ error: z.literal("invalid_grant") }).safeParse(body);
+      if (parsed.success) oauthError = parsed.data.error;
+    }
+    throw new ProviderHttpError(new URL(url).host, res.status, oauthError);
+  }
   return res.json();
 };
 
@@ -203,6 +213,7 @@ export async function finishSso(
   if (!spent.length) return { ok: false, status: 400, reason: "no_state" };
 
   let claims: Record<string, unknown> | null;
+  let exchangingCode = true;
   try {
     const tokens = z.object({ id_token: z.string().min(1).max(32_768) }).parse(await http(cfg.token, {
       method: "POST", signal: AbortSignal.timeout(SSO_TIMEOUT_MS),
@@ -211,9 +222,10 @@ export async function finishSso(
         client_id: cfg.clientId, client_secret: cfg.clientSecret, code_verifier: row.verifier ?? "",
       }),
     }));
+    exchangingCode = false;
     claims = typeof tokens?.id_token === "string" ? await verifyIdToken(cfg, tokens.id_token, http) : null;
   } catch (err) {
-    if (err instanceof ProviderHttpError && err.status >= 400 && err.status < 500) {
+    if (exchangingCode && err instanceof ProviderHttpError && err.status === 400 && err.oauthError === "invalid_grant") {
       console.warn(`[signup sso] ${cfg.provider} refused the code: ${err.status}`);
       return { ok: false, status: 400, reason: "code_refused" };
     }

@@ -1,3 +1,30 @@
+## Signup provider failure and navigation recovery (CD-206, 17 November 2026)
+
+Astra review of #795/#798 reproduced readiness-request retry loops and late
+provider replies surviving Back. The additive correction keeps readiness lookup
+one-shot per page load (including failure), parses its public response shape,
+retires popup callbacks/watchers and device prompts on navigation, another method
+or unmount, and ignores responses/advance timers from the abandoned attempt.
+The callback window no longer claims a successful sign-in before server proof.
+A response already committed by the server is not rolled back by browser Back;
+the existing same-browser email-proof and resume rules remain authoritative.
+
+Provider HTTP 408/429, client configuration errors and key-discovery errors are
+unavailable responses, not guesses at an applicant ID. Only a token-endpoint
+400 carrying the parsed OAuth `invalid_grant` code counts as a refused code.
+No provider descriptions or token bodies are kept in errors/logs. Existing
+request throttles, single-use state, email matching and proof are unchanged.
+
+Validation: five client regression cases failed before the relevant correction;
+all 79 signup client tests now pass. Four server refusal-classification cases
+failed before correction; focused credential suite passes 36/36 with synthetic
+signed tokens and local in-memory PGlite. Added browser regressions are pending,
+as are full local PostgreSQL/browser final-head gates: CD221 owns the sequential
+heavy-run lease. No new provider registrations, deployment or real provider /
+hardware success. #799's Microsoft proof exception is not part of this correction
+and remains a separate decision; current credential identity contracts and
+CD221-owned auth/session/OS SignIn files are unchanged. CD206 remains In progress.
+
 ## Signup credential browser lifecycle (CD-206, 16 November 2026)
 
 The page half of real Google, Microsoft and passkey sign-up

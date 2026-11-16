@@ -10,7 +10,7 @@ const drain = () => new Promise(r => setImmediate(r));
 const ORIGIN = 'https://signup.example.test';
 
 function harness({ search = '', stored = {} } = {}) {
-  const pending = [], listeners = {}, channels = [], cleaned = [];
+  const pending = [], listeners = {}, channels = [], cleaned = [], intervals = new Map(); let timerId = 0;
   class FakeChannel {
     constructor(name) { this.name = name; this.sent = []; channels.push(this); }
     postMessage(m) { this.sent.push(m); }
@@ -26,15 +26,15 @@ function harness({ search = '', stored = {} } = {}) {
     navigator: {},
     document: { hasFocus: () => true },
     fetch: (...args) => new Promise(resolve => pending.push({ args, resolve })),
-    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
-    AbortController, URLSearchParams, URL, Promise, BroadcastChannel: FakeChannel, console,
+    setTimeout: () => 0, clearTimeout() {}, setInterval: fn => { intervals.set(++timerId, fn); return timerId; }, clearInterval: id => intervals.delete(id),
+    AbortController, URLSearchParams, URL, Promise, atob, btoa, Uint8Array, BroadcastChannel: FakeChannel, console,
   };
   vm.runInNewContext(fs.readFileSync(new URL('../design/onboarding/signup-v2.1-bridge.js', import.meta.url), 'utf8'), context);
   const CD = context.window.__cdOnb;
-  const c = { state: { i: 0, data: {} }, set(k, v) { this.state.data[k] = v; }, setState(v, cb) { Object.assign(this.state, typeof v === 'function' ? v(this.state) : v); cb?.(); }, forceUpdate() {}, next() { this.state.i++; }, deviceInfo: () => ({ device: 'Mac' }) };
+  const c = { state: { i: 5, data: {} }, set(k, v) { this.state.data[k] = v; }, setState(v, cb) { Object.assign(this.state, typeof v === 'function' ? v(this.state) : v); cb?.(); }, forceUpdate() {}, next() { this.state.i++; }, deviceInfo: () => ({ device: 'Mac' }) };
   const reply = (n, status, body) => pending[n].resolve({ status, json: () => Promise.resolve(body) });
   const urls = () => pending.map(p => p.args[0]);
-  return { CD, c, pending, reply, urls, listeners, channels, cleaned, store, context };
+  return { CD, c, pending, reply, urls, listeners, channels, cleaned, store, context, intervals };
 }
 
 test('only the ways in this server can finish from this page are offered; all of them until it answers', async () => {
@@ -97,4 +97,60 @@ test('a provider error in the popup is a red line, never a callback', async () =
   assert.equal(h.pending.length, 1);
   assert.equal(h.c.state.ssoPhase, 'idle');
   assert.equal(h.c.state.lockErr, 'That Microsoft sign-in didn’t finish. Nothing was saved. Try again, or choose another way.');
+});
+
+
+test('a failed methods lookup cannot create a render-driven retry loop', async () => {
+  const h = harness(); h.CD.comp = h.c;
+  h.c.forceUpdate = () => { h.CD.offers('google'); };
+  h.CD.offers('google');
+  h.reply(0, 503, { error: 'unavailable' }); await drain();
+  assert.equal(h.pending.length, 1, 'failure renders without another automatic request');
+  assert.equal(h.CD.offers('password'), true);
+});
+
+test('Back abandons a pending provider start before it navigates the popup', async () => {
+  const h = harness(); h.CD.comp = h.c; h.CD.code = 'CD-TEST-2222';
+  const popup = { closed: false, close() { this.closed = true; } };
+  h.context.window.open = () => popup;
+  h.CD.sso(h.c, 'google'); h.CD.navigation(); h.c.state.i = 20;
+  h.reply(0, 200, { url: 'https://accounts.google.com/o/oauth2/v2/auth?state=old' }); await drain();
+  assert.equal(popup.location, undefined);
+  assert.equal(popup.closed, true);
+  assert.equal(h.intervals.size, 0);
+});
+
+test('Back and re-entering the same credential screen ignores a late provider success', async () => {
+  const h = harness(); h.CD.comp = h.c; h.CD.code = 'CD-TEST-2222';
+  h.context.window.open = () => ({ closed: false, close() {} });
+  h.CD.sso(h.c, 'google');
+  h.reply(0, 200, { url: 'https://accounts.google.com/o/oauth2/v2/auth?state=old' }); await drain();
+  h.listeners.message({ origin: ORIGIN, data: { type: 'cd-sso', code: 'synthetic', state: 'old' } });
+  h.CD.navigation(); h.c.state.i = 5; h.c.state.data.lockMode = 'password';
+  h.reply(1, 200, { ok: true, codeSent: true }); await drain();
+  assert.equal(h.c.state.data.lockMode, 'password');
+  assert.equal(h.c.state.data.ssoDone, undefined);
+  assert.equal(h.store.cdSignupInbox, undefined);
+});
+
+test('after abandoning the popup, its late channel message cannot submit a credential', async () => {
+  const h = harness(); h.CD.comp = h.c; h.CD.code = 'CD-TEST-2222';
+  h.context.window.open = () => ({ closed: false, close() {} });
+  h.CD.sso(h.c, 'google');
+  h.reply(0, 200, { url: 'https://accounts.google.com/o/oauth2/v2/auth?state=old' }); await drain();
+  h.CD.navigation();
+  h.channels[0].onmessage({ data: { type: 'cd-sso', code: 'synthetic', state: 'old' } });
+  assert.equal(h.pending.length, 1);
+  assert.equal(h.intervals.size, 0);
+});
+
+
+test('a passkey options response after Back cannot open the device prompt', async () => {
+  const h = harness(); h.CD.comp = h.c; h.CD.code = 'CD-TEST-2222';
+  let prompts = 0;
+  h.context.navigator.credentials = { create() { prompts++; return new Promise(() => {}); } };
+  h.CD.passkey(h.c); h.CD.navigation(); h.c.state.i = 20;
+  h.reply(0, 200, { options: { challenge: 'eA', user: { id: 'eA' }, rp: {}, pubKeyCredParams: [] } }); await drain();
+  assert.equal(prompts, 0);
+  assert.equal(h.c.state.pkPhase, 'idle');
 });

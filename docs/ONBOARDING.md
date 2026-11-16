@@ -362,3 +362,20 @@ proof. The unspent enrolment cookie plus webhook-activated account remain
 required. Page responses use no-store/no-referrer and application logs omit page
 queries. Reverse-proxy/CDN query logging must be checked separately before live
 provider acceptance (CD156); no infrastructure configuration is assumed here.
+
+
+### Provider failure and abandoned browser attempts
+
+The readiness lookup is one-shot per page load. An unavailable or malformed
+readiness response leaves the methods to report their own server failures;
+it does not retry from React render. Reload rechecks configuration. Back,
+unmount, or choosing another credential retires the waiting popup channel and
+watcher, aborts an active device prompt, and invalidates pending UI updates.
+Browser cancellation does not undo a credential write already committed on the
+server; the normal email proof and resume rules still apply.
+
+Only a token-endpoint HTTP 400 with parsed `error: invalid_grant` is a refused
+code. Rate limits, transport/configuration failures and signing-key discovery
+failures return unavailable without incrementing the ID miss counter. Error
+descriptions are not retained. This follows OAuth 2.0's distinct invalid-grant
+and invalid-client categories ([RFC 6749 section 5.2](https://www.rfc-editor.org/rfc/rfc6749#section-5.2)).

@@ -199,10 +199,14 @@
 
     /* ---- the credential (screen 4) --------------------------------------- */
     passkey: function (c) {
+      CD.cancelCredential();
+      var id = CD.code, attempt = CD._ssoAttempt;
+      var current = function () { return CD.code === id && CD._ssoAttempt === attempt && c.state.i === 5; };
       c.setState({ pkPhase: "asking", lockErr: "" });
-      var fail = function (msg) { c.setState({ pkPhase: "idle", pkScan: false, lockErr: msg }); };
+      var fail = function (msg) { if (current()) c.setState({ pkPhase: "idle", pkScan: false, lockErr: msg }); };
       var cancelled = "The passkey wasn’t created. Nothing was saved. Try again, or choose another way.";
       api("POST", "/passkey/options", {}).then(function (r) {
+        if (!current()) return;
         if (r.status !== 200 || !r.body.options) return fail(refused(r, cancelled));
         var o = r.body.options;
         var pub = {
@@ -212,7 +216,9 @@
           authenticatorSelection: o.authenticatorSelection,
           excludeCredentials: (o.excludeCredentials || []).map(function (x) { return { id: b64d(x.id), type: x.type, transports: x.transports }; }),
         };
-        return navigator.credentials.create({ publicKey: pub }).then(function (cred) {
+        CD._credentialAbort = new AbortController();
+        return navigator.credentials.create({ publicKey: pub, signal: CD._credentialAbort.signal }).then(function (cred) {
+          if (!current()) return;
           var res = cred.response;
           var body = {
             response: {
@@ -226,16 +232,16 @@
             },
             deviceLabel: c.deviceInfo().device,
           };
-          var id = CD.code;
           return api("POST", "/passkey/verify", body).then(function (v) {
+            if (!current()) return;
             if (v.status !== 200 || !v.body.ok) return fail(refused(v, cancelled));
             CD.codeSent = v.body.codeSent !== false; CD.stagingCode(v.body, id); CD.awaitingCode(id);
             c.setState({ pkScan: "ok" });
-            setTimeout(function () { c.setState({ pkPhase: "done", pkScan: false }); c.set("passkeyDone", true);
-              setTimeout(function () { if (c.state.i === 5) c.next(); }, 900); }, 400);
+            setTimeout(function () { if (!current()) return; c.setState({ pkPhase: "done", pkScan: false }); c.set("passkeyDone", true);
+              setTimeout(function () { if (current()) c.next(); }, 900); }, 400);
           });
         }, function () { fail(cancelled); });
-      });
+      }).catch(function () { fail(cancelled); });
     },
     /* Which of the four buttons to draw. Only what this server can finish,
        for this page's own origin; while the server has not answered, all
@@ -252,12 +258,32 @@
       if (CD._methods) return;
       CD._methods = call("GET", "/api/onboarding/methods", undefined, 8000).then(function (r) {
         var b = r.body;
-        if (r.status === 200 && b.password === true && Array.isArray(b.passkeyOrigins)) CD.methods = b;
-        else CD._methods = null;
+        if (r.status === 200 && b.password === true && typeof b.passkey === "boolean"
+          && typeof b.google === "boolean" && typeof b.microsoft === "boolean"
+          && Array.isArray(b.passkeyOrigins) && b.passkeyOrigins.every(function (v) { return typeof v === "string"; })
+          && (b.ssoOrigin === null || typeof b.ssoOrigin === "string")) CD.methods = b;
+        /* Keep this one-shot promise on failure too. Retrying from render
+           makes every failed response trigger the next request indefinitely.
+           The individual methods still report their server refusal; reload
+           rechecks deployment readiness. */
         if (CD.comp) CD.comp.forceUpdate();
       });
     },
+    cancelCredential: function () {
+      CD._ssoAttempt = (CD._ssoAttempt || 0) + 1;
+      CD._ssoWait = null; CD._ssoState = "";
+      if (CD._credentialAbort) CD._credentialAbort.abort();
+      CD._credentialAbort = null;
+      if (CD.comp && CD.comp.state.pkPhase === "asking") CD.comp.setState({ pkPhase: "idle", pkScan: false });
+      if (CD._ssoWatch) clearInterval(CD._ssoWatch);
+      CD._ssoWatch = null;
+      if (CD._ssoWindow) CD._ssoWindow.close();
+      CD._ssoWindow = null;
+      try { sessionStorage.removeItem("cdSsoReturn"); } catch (e) { /* no persisted return when storage is unavailable */ }
+      if (CD.comp && CD.comp.state.ssoPhase === "busy") CD.comp.setState({ ssoPhase: "idle" });
+    },
     sso: function (c, prov) {
+      CD.cancelCredential();
       var label = prov === "google" ? "Google" : "Microsoft";
       c.setState({ ssoPhase: "busy", ssoProv: prov, lockErr: "" });
       var fail = function (msg) { c.setState({ ssoPhase: "idle", lockErr: msg }); };
@@ -268,8 +294,8 @@
          back (ssoReturn below). */
       var phone = window.innerWidth < 720;
       var win = phone ? null : window.open("about:blank", "cd-sso", "width=480,height=640");
-      var attempt = CD._ssoAttempt = (CD._ssoAttempt || 0) + 1;
-      CD._ssoWait = null;
+      var attempt = CD._ssoAttempt;
+      CD._ssoWindow = win;
       api("GET", "/sso/" + prov + "/start").then(function (r) {
         if (attempt !== CD._ssoAttempt) { if (win) win.close(); return; }
         if (r.status !== 200 || !r.body.url) { if (win) win.close(); return fail(refused(r, "That way in isn’t available yet. Choose another.")); }
@@ -284,7 +310,7 @@
            only once this page has had the focus back for a moment. A late
            answer after that still finishes. */
         var focusedClosed = 0;
-        var watch = setInterval(function () {
+        var watch = CD._ssoWatch = setInterval(function () {
           if (attempt !== CD._ssoAttempt) { clearInterval(watch); return; }
           focusedClosed = win.closed && document.hasFocus() ? focusedClosed + 1 : 0;
           if (focusedClosed < 3) return;
@@ -296,7 +322,7 @@
           clearInterval(watch);
           if (attempt !== CD._ssoAttempt) return;
           if (back.error || !back.code) return fail(CD.ssoRefusal(label, back.error));
-          CD.ssoFinish(c, prov, back.code, back.state);
+          CD.ssoFinish(c, prov, back.code, back.state, attempt);
         };
       });
     },
@@ -306,16 +332,19 @@
         ? "The " + label + " sign-in was cancelled. Nothing was linked. Try again, or choose another way."
         : "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.";
     },
-    ssoFinish: function (c, prov, code, state) {
+    ssoFinish: function (c, prov, code, state, attempt) {
       var label = prov === "google" ? "Google" : "Microsoft", id = CD.code;
+      if (attempt === undefined) attempt = CD._ssoAttempt || 0;
+      var current = function () { return CD.code === id && (CD._ssoAttempt || 0) === attempt && c.state.i === 5; };
       api("POST", "/sso/callback", { provider: prov, code: code, state: state }).then(function (r) {
+        if (!current()) return;
         if (r.status !== 200 || !r.body.ok) {
           c.setState({ ssoPhase: "idle", lockErr: refused(r, "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.") });
           return;
         }
         CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id); CD.awaitingCode(id);
         c.setState({ ssoPhase: "idle" }); c.set("lockMode", prov); c.set("ssoDone", prov);
-        setTimeout(function () { if (c.state.i === 5) c.next(); }, 900);
+        setTimeout(function () { if (current()) c.next(); }, 900);
       });
     },
     password: function (c) {
@@ -470,7 +499,7 @@
     /* Skip links ("I'll add this later" and the like): chapters decide (signup-v2.1-chapters.js). */
     /* Continue, the skips and Back (build patch) ask Start on Day 1's hold first (open.js holding) */
     beforeGo: function (c, n) { if (CD.holding && CD.holding()) return false; CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
-    navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; },
+    navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; CD.cancelCredential(); },
     signInAgain: function (c, msg) {
       /* The enrolment session lapsed (24 hours idle) or was opened in another
          browser. Resuming with the credential belongs to the Sign-in pack;
