@@ -261,7 +261,7 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc(c); const st = state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
                 </button>); })}
@@ -299,18 +299,20 @@
       return () => { live = false; };
     }, [rec && rec.clientId]);
     const standingNow = standing || (rec && rec.idStanding) || null;
-    const idMissing = standingNow ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
-    const idExpired = standingNow ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < TODAY);
-    const idOk = standingNow ? standingNow.onFile : (!idMissing && !idExpired);
+    /* A qualifying check, or an expired document on that check, replaces the
+       typed papers. A file with no qualifying check still shows the ID the
+       teller just recorded. */
+    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
+    const idMissing = checkSpeaks ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
+    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < TODAY);
+    const idOk = checkSpeaks ? !!standingNow.onFile : (!idMissing && !idExpired);
     // green ONLY after a real provider verification (Verified / Verified Plus).
     // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
     const verified = (() => { try { const ch = (window.CDOS.KYC && window.CDOS.KYC.checksFor(name)) || []; return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
-    const badge = standingNow
+    const badge = checkSpeaks
       ? (standingNow.onFile
         ? { t: standingNow.chip || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
-        : idExpired
-          ? { t: standingNow.chip || 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-          : { t: standingNow.chip || 'Missing ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' })
+        : { t: standingNow.chip || 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' })
       : (idMissing ? { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
         : idExpired ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
         : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }

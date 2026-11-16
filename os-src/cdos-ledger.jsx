@@ -180,13 +180,14 @@
       return () => { liveFlag = false; };
     }, [rec && rec.clientId]);
     const standingNow = standing || (rec && rec.idStanding) || null;
-    const idMissing = standingNow ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
-    const idExpired = standingNow ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < businessDate());
-    const idOk = standingNow ? standingNow.onFile : (!idMissing && !idExpired);
+    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
+    const idMissing = checkSpeaks ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
+    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < businessDate());
+    const idOk = checkSpeaks ? !!standingNow.onFile : (!idMissing && !idExpired);
     const idTone = idOk ? CD.green : CD.flag;
-    /* Papers on file come from the server standing when this client has one. */
-    const idLabel = standingNow ? (standingNow.onFile ? "ID on file" : idExpired ? "ID expired" : "No ID on file") : (idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file");
-    const maskedId = standingNow ? "" : (rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "");
+    /* A qualifying check speaks for the file. A recorded ID with no check still shows. */
+    const idLabel = checkSpeaks ? (standingNow.onFile ? "ID on file" : "ID expired") : (idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file");
+    const maskedId = checkSpeaks ? "" : (rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "");
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -392,7 +393,7 @@
     const rec = clients[customer];
     const kyc = newClient
       ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
-      : window.CDOS.idFileKyc(rec);
+      : (window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : (!rec || !rec.idType || !rec.idNum ? "missing ID" : (rec.idExpiry && rec.idExpiry < businessDate() ? "ID expired" : "ok")));
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const governed = !!((packNow && packNow.packId) || (settings && settings.baselineRules));
     const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
@@ -518,7 +519,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const state = window.CDOS.idFileKyc(clients[n]); const st = state === 'ok' ? 'ID on file' : state; const ok = st === 'ID on file'; return (
+                    {shownNames.map(n => { const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[n]) : (!clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : 'ok'); const st = state === 'ok' ? 'ID on file' : state; const ok = st === 'ID on file'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
                         <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
                       </button>); })}

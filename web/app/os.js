@@ -30421,13 +30421,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       };
     }, [rec && rec.clientId]);
     const standingNow = standing || rec && rec.idStanding || null;
-    const idMissing = standingNow ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
-    const idExpired = standingNow ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < businessDate();
-    const idOk = standingNow ? standingNow.onFile : !idMissing && !idExpired;
+    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
+    const idMissing = checkSpeaks ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
+    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < businessDate();
+    const idOk = checkSpeaks ? !!standingNow.onFile : !idMissing && !idExpired;
     const idTone = idOk ? CD.green : CD.flag;
-    /* Papers on file come from the server standing when this client has one. */
-    const idLabel = standingNow ? standingNow.onFile ? "ID on file" : idExpired ? "ID expired" : "No ID on file" : idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file";
-    const maskedId = standingNow ? "" : rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "";
+    /* A qualifying check speaks for the file. A recorded ID with no check still shows. */
+    const idLabel = checkSpeaks ? standingNow.onFile ? "ID on file" : "ID expired" : idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file";
+    const maskedId = checkSpeaks ? "" : rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "";
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -30891,7 +30892,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, [customer, live, inCadEquiv]);
     const structuring = !single && customer && limit.amount != null && recentTotal != null && (reportCmp === 'gt' ? recentTotal > limit.amount : recentTotal >= limit.amount);
     const rec = clients[customer];
-    const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : window.CDOS.idFileKyc(rec);
+    const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : !rec || !rec.idType || !rec.idNum ? "missing ID" : rec.idExpiry && rec.idExpiry < businessDate() ? "ID expired" : "ok";
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const governed = !!(packNow && packNow.packId || settings && settings.baselineRules);
     const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
@@ -31185,7 +31186,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         zIndex: 20
       }
     }, shownNames.map(n => {
-      const state = window.CDOS.idFileKyc(clients[n]);
+      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[n]) : !clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : 'ok';
       const st = state === 'ok' ? 'ID on file' : state;
       const ok = st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
@@ -36500,7 +36501,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, shown.map(n => {
       const c = clients[n] || {};
-      const state = window.CDOS.idFileKyc(c);
+      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !c.idNum ? 'missing ID' : 'ok';
       const st = state === 'ok' ? 'ID on file' : state;
       const ok = false;
       const onfile = st === 'ID on file';
@@ -36605,9 +36606,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
     }, [rec && rec.clientId]);
     const standingNow = standing || rec && rec.idStanding || null;
-    const idMissing = standingNow ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
-    const idExpired = standingNow ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < TODAY;
-    const idOk = standingNow ? standingNow.onFile : !idMissing && !idExpired;
+    /* A qualifying check, or an expired document on that check, replaces the
+       typed papers. A file with no qualifying check still shows the ID the
+       teller just recorded. */
+    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
+    const idMissing = checkSpeaks ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
+    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < TODAY;
+    const idOk = checkSpeaks ? !!standingNow.onFile : !idMissing && !idExpired;
     // green ONLY after a real provider verification (Verified / Verified Plus).
     // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
     const verified = (() => {
@@ -36618,18 +36623,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         return false;
       }
     })();
-    const badge = standingNow ? standingNow.onFile ? {
+    const badge = checkSpeaks ? standingNow.onFile ? {
       t: standingNow.chip || 'ID on file',
       c: CD.green,
       bg: CD.greenSoft,
       ic: 'checkcircle'
-    } : idExpired ? {
-      t: standingNow.chip || 'ID expired',
-      c: CD.flag,
-      bg: CD.flagSoft,
-      ic: 'alert'
     } : {
-      t: standingNow.chip || 'Missing ID',
+      t: standingNow.chip || 'ID expired',
       c: CD.flag,
       bg: CD.flagSoft,
       ic: 'alert'
@@ -40556,7 +40556,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       settings
     }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const kyc = window.CDOS.idFileKyc(clients[senderName]);
+    const kyc = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[senderName]) : !clients[senderName] || !clients[senderName].idType || !clients[senderName].idNum ? "missing ID" : "ok";
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() || [] : [];
@@ -56177,7 +56177,7 @@ ${snap}`;
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
           const idNum = kycIdNumber(c);
-          const state = window.CDOS.idFileKyc(c);
+          const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !idNum ? 'missing ID' : 'ok';
           const st = state === 'ok' ? 'ID on file' : state;
           return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
@@ -57498,7 +57498,8 @@ ${snap}`;
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
-          const state = window.CDOS.idFileKyc(clients[n]);
+          const c = clients[n] || {};
+          const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !kycIdNumber(c) ? 'missing ID' : 'ok';
           if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
           if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft];
           return ['ID on file', CD.green, CD.greenSoft];
