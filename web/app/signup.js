@@ -718,7 +718,7 @@ class Component extends DCLogic {
       lively, i,
       screenAnim: type === 'explain' ? 'animation: cdIntroIn 0.7s cubic-bezier(0.2,0.8,0.2,1) both;' : 'animation: ' + (this._dir < 0 ? 'cdScreenBack' : 'cdScreenFwd') + ' 0.5s cubic-bezier(0.2,0.8,0.2,1) both;',
       splitOn: ['form', 'verify', 'shopname', 'address', 'shopq', 'currencies', 'count', 'idline', 'team', 'addperson', 'review'].indexOf(type) >= 0 && !M.hero ? '1' : '0',
-      cardMaxH: (type === 'explain' || M.formTop === 'lock') ? 'none' : type === 'pin' ? 'calc(100vh - 20px)' : 'min(92vh, 840px)',
+      cardMaxH: (type === 'explain' || M.formTop === 'lock') ? 'none' : type === 'pin' ? 'calc(100vh - 20px)' : 'var(--cd-card-max, min(92vh, 840px))',
       hasHeadNote: false,
       stageWrap: 'position: relative; z-index: 1; width: 100%; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); padding: ' + (type === 'pin' ? '10px' : '24px') + '; box-sizing: border-box; ' + ((type === 'explain' || M.formTop === 'lock') ? 'place-items: start center; padding-top: 36px;' : 'place-items: center;'),
       cardWidth: type === 'explain' ? (M.wide ? ((M.vid || M.pinVis) ? 'min(1160px, 100%)' : 'min(760px, 100%)') : 'min(600px, 100%)') : 'min(500px, 100%)',

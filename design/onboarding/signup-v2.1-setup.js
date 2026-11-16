@@ -9,7 +9,8 @@
     if (Array.isArray(R.reviewCards)) R.reviewCards = R.reviewCards.map(function (card) {
       if (card.t !== "Vault count") return card;
       var entered = Object.keys(d.count || {}).length || Object.values(d.float || {}).some(function (v) { return String(v || "").trim(); });
-      return Object.assign({}, card, { main: d.countLater || !entered ? "Count inside" : "Count saved by currency", sub: "Confirm opening cash inside before the first shift.", hasSub: true });
+      /* Only the valued main line changes; the prototype's own "n of m counted" sub stays. */
+      return Object.assign({}, card, { main: d.countLater || !entered ? "Count inside" : "Count saved by currency" });
     });
     return R;
   };
