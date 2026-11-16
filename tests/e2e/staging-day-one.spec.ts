@@ -129,6 +129,56 @@ test("Start on Day 1 opens a new test shop on its first day, signed in as its ow
   expect((await inPage(page, "/api/auth/me")).body.user.tenantId).toBe(user.tenantId);
 });
 
+test("while the press answers, a neutral hold covers the page, nothing under it can be pressed, and the stand-in shop never shows", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  /* Every text the sign-up page draws, from its first paint: the prototype's
+     stand-in shop and owner (SIGNUP-LOGIC section 13) must never be one. */
+  await page.addInitScript(() => {
+    if (location.pathname !== "/onboarding") return;
+    const seen: string[] = [];
+    (window as unknown as { __standIn: string[] }).__standIn = seen;
+    const look = () => {
+      const text = document.getElementById("dc-root")?.textContent ?? "";
+      for (const s of ["York Currency Exchange", "Masri", "Daniel Osei", "yorkcurrency"]) if (text.includes(s) && !seen.includes(s)) seen.push(s);
+    };
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  /* the server's answer held 3 seconds, as a slow staging database would */
+  await page.route("**/api/staging/day-one", async (route) => {
+    await new Promise((r) => setTimeout(r, 3000));
+    await route.continue();
+  });
+  await page.goto("/app");
+  const created = page.waitForResponse((r) => r.url().endsWith("/api/staging/day-one"), { timeout: 60_000 });
+  await page.getByRole("button", { name: /Start on Day 1/ }).click();
+
+  const hold = page.locator("[data-staging-day-one-hold]");
+  await expect(hold).toBeVisible();
+  await expect(hold).toHaveAttribute("role", "status");
+  await expect(hold).toContainText("Opening a staging test shop");
+  await expect(page.locator("[data-signup-root]")).toHaveAttribute("inert", "");
+  await expect(page.locator("[data-paymodal]")).toHaveCount(0);
+  await expect(page.locator("[data-signup-screen]")).toHaveAttribute("data-signup-screen", "17");
+  await page.screenshot({ path: test.info().outputPath("staging-day-one-hold.png"), animations: "disabled" });
+  /* a click, Tab and Enter, and Escape change nothing under it */
+  await page.mouse.click(640, 640);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-signup-screen]")).toHaveAttribute("data-signup-screen", "17");
+  await expect(hold).toBeVisible();
+
+  const res = await created;
+  expect(res.status()).toBe(201);
+  const body = (await res.json()) as DayOne;
+  /* the press is carried through to Day 1, not dropped */
+  await onDayOne(page, body);
+  await expect(hold).toHaveCount(0);
+  await expect(page.locator("[data-signup-root]")).not.toHaveAttribute("inert", /.*/);
+  expect(await page.evaluate(() => (window as unknown as { __standIn: string[] }).__standIn)).toEqual([]);
+});
+
 test("a second press, in another browser, is another shop, and Build my desk opens it", async ({ browser }) => {
   test.setTimeout(240_000);
   const context = await browser.newContext({ baseURL: BASE });

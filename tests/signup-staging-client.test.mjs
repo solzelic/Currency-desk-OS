@@ -141,17 +141,23 @@ function landing({ hash = '#day1', flag = 'fresh', stored = {} } = {}) {
   };
   for (const f of ['bridge', 'chapters', 'open']) vm.runInNewContext(read(f), context);
   const CD = context.window.__cdOnb;
+  /* every screen the page moves to, with the shop name it then has: the
+     prototype draws its stand-in shop on a shop screen with no name */
+  const shown = [];
   const c = { state: { i: 17, data: {}, landKey: 0 }, _after: i => i, JURIS: [],
     set(k, v) { this.state.data[k] = v; },
-    setState(v, cb) { Object.assign(this.state, typeof v === 'function' ? v(this.state) : v); cb?.(); },
+    setState(v, cb) { const p = typeof v === 'function' ? v(this.state) : v; Object.assign(this.state, p); if ('i' in p) shown.push({ i: p.i, name: this.state.data.operatingName || '' }); cb?.(); },
     forceUpdate() {} };
   CD.mount(c);
   const reply = (n, status, body) => pending[n].resolve({ status, json: () => Promise.resolve(body) });
   const paths = () => pending.map(p => `${p.args[1].method} ${p.args[0]}`);
   const tick = () => timers.splice(0).forEach(fn => fn());
   const fire = (type, e = {}) => (listeners[type] || []).forEach(fn => fn(e));
-  return { CD, c, pending, reply, paths, tick, replaced, sets, removed, local, store, fire, node };
+  return { CD, c, pending, reply, paths, tick, replaced, sets, removed, local, store, fire, node, shown };
 }
+/* What the page draws for the hold, from the bridge's own render values. */
+const holdOf = h => { const R = h.CD.priced(h.c, {}); return { on: R.dayOneHold, inert: R.holdInert, title: R.dayOneHoldTitle }; };
+const HOLD_NEUTRAL = 'Opening a staging test shop…';
 const resumedDay = { state: 'verified', lastStep: '20-team', saved: true, pinSet: true, answers: { operatingName: 'Staging Shop 1A2B' }, you: { name: 'Staging Owner' }, pack: null, callPreference: { call: false } };
 /* A whole Day 1 landing, through /open and the one-second step to screen 16. */
 async function landed(stagingOpen = [200, { ok: true }]) {
@@ -171,9 +177,14 @@ test('Start on Day 1: the click’s own tab lands, posts once, then the page’s
   assert.deepEqual(h.paths(), ['POST /api/staging/day-one']);
   assert.equal(h.pending[0].args[1].headers['content-type'], 'application/json');
   assert.equal(h.pending[0].args[1].body, '{}');
-  assert.equal(h.c.state.i, 15); assert.equal(h.CD._paying, true);
+  /* while the press answers: the welcome, under a neutral hold, never the plan screen */
+  assert.equal(h.c.state.i, 17); assert.equal(h.CD._paying, true);
+  assert.deepEqual(holdOf(h), { on: true, inert: '', title: HOLD_NEUTRAL });
   h.reply(0, 201, dayReply()); await drain();
   assert.deepEqual(h.paths().slice(1), [`GET /api/onboarding/${DAY.cdId}/resume`]);
+  /* the server has named the shop: the hold says it, and still covers the page */
+  assert.deepEqual(holdOf(h), { on: true, inert: '', title: 'Opening Staging Shop 1A2B…' });
+  assert.equal(h.c.state.i, 17);
   /* nothing in this tab names the reservation until the desk is opening */
   assert.equal(h.store.get('cdSignupId'), undefined);
   h.reply(1, 200, resumedDay); await drain(); await drain();
@@ -182,11 +193,18 @@ test('Start on Day 1: the click’s own tab lands, posts once, then the page’s
   h.reply(2, 200, { ok: true }); await drain();
   assert.equal(h.store.get('cdSignupId'), DAY.cdId);
   assert.equal(h.paths()[3], `POST /api/onboarding/${DAY.cdId}/open`);
+  /* the plan screen, named, is under the hold only while /open answers */
+  assert.equal(h.c.state.i, 15); assert.equal(holdOf(h).on, true);
   h.reply(3, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
   assert.equal(h.CD.launched, true); assert.equal(h.store.get('cdSignupId'), undefined);
+  /* open: the hold lifts on the landing, and the page can be pressed again */
+  assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' });
+  assert.equal(h.CD.holding(), false);
   h.tick();
   assert.equal(h.c.state.i, 16);
   assert.equal(h.paths().filter(p => p === 'POST /api/staging/day-one').length, 1);
+  /* no shop screen was ever shown without the server's name for it */
+  assert.deepEqual(h.shown, [{ i: 15, name: 'Staging Shop 1A2B' }, { i: 16, name: 'Staging Shop 1A2B' }]);
   /* the one staging line, on Day 1 only */
   const line = h.CD.priced(h.c, {}).stagingDayOne;
   assert.match(line, /Counter PIN 4821/);
@@ -226,6 +244,10 @@ test('a malformed or refused Day 1 reply shows no line, never opens, and lands o
     [201, dayReply({ signIn: { email: DAY.email, password: DAY.password, pin: '48210' } })],
     [201, dayReply({ signIn: { email: DAY.email, password: 'short', pin: DAY.pin } })],
     [201, dayReply({ signIn: undefined })],
+    /* no name: the plan screen would fall back to the prototype's stand-in shop */
+    [201, dayReply({ operatingName: undefined })],
+    [201, dayReply({ operatingName: '  ' })],
+    [201, dayReply({ operatingName: 42 })],
     [200, dayReply()],
     [404, { error: 'not_found' }],
     [429, { error: 'slow_down' }],
@@ -244,7 +266,51 @@ test('a malformed or refused Day 1 reply shows no line, never opens, and lands o
     assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '', label);
     assert.equal(h.store.get('cdSignupId'), undefined, label);
     assert.equal(h.CD.code, '', label);
+    /* the hold lifts with the reason, and the ID screen can be used */
+    assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' }, label);
+    assert.deepEqual(h.shown, [{ i: 0, name: '' }], label);
   }
+});
+
+test('while the press answers, nothing under the hold moves the page', () => {
+  const h = landing();
+  assert.equal(h.CD.holding(), true);
+  /* Continue, the skips and Back (the build patches back() to ask holding() first) */
+  assert.equal(h.CD.beforeNext(h.c), false);
+  assert.equal(h.CD.beforeGo(h.c, 13), false);
+  assert.deepEqual(h.shown, []);
+  assert.equal(h.c.state.i, 17);
+});
+
+test('a 201 is never dropped: whatever moved meanwhile, the new shop opens in this tab', async () => {
+  const h = landing();
+  /* as a navigation that slipped past the hold would: the old page dropped the 201 here and stranded the tab */
+  h.CD.navigation();
+  h.reply(0, 201, dayReply()); await drain();
+  assert.deepEqual(h.paths().slice(1), [`GET /api/onboarding/${DAY.cdId}/resume`]);
+  h.reply(1, 200, resumedDay); await drain(); await drain();
+  h.reply(2, 200, { ok: true }); await drain();
+  h.reply(3, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
+  h.tick();
+  assert.equal(h.CD.launched, true); assert.equal(h.c.state.i, 16);
+  assert.match(h.CD.priced(h.c, {}).stagingDayOne, /4821/);
+});
+
+test('an /open that refuses after the hold lifts it onto the named plan screen with the reason; a later Open draws no hold', async () => {
+  const h = landing();
+  h.reply(0, 201, dayReply()); await drain();
+  h.reply(1, 200, resumedDay); await drain(); await drain();
+  h.reply(2, 200, { ok: true }); await drain();
+  h.reply(3, 500, { error: 'server', detail: 'The desk didn’t open. Nothing was charged.' }); await drain();
+  assert.equal(h.CD.launched, false);
+  assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' });
+  assert.equal(h.c.state.i, 15); assert.equal(h.c.state.data.operatingName, 'Staging Shop 1A2B');
+  assert.equal(h.CD.payErr, 'The desk didn’t open. Nothing was charged.');
+  assert.equal(h.CD.code, DAY.cdId);
+  assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '');
+  /* the owner's own Open from here is an ordinary Open: no hold over it */
+  h.CD._paying = true;
+  assert.equal(h.CD.holding(), false); assert.equal(holdOf(h).on, false);
 });
 
 test('a refused resume or staging-open stops before /open and says why', async () => {
@@ -281,4 +347,13 @@ test('the built page draws the staging Day 1 line once, only when it is set', ()
   const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
   assert.equal(page.split('"data-staging-day-one":"true"').length - 1, 1);
   assert.match(page, /v\?\.\["stagingDayOne"\] \?/);
+});
+
+test('the built page draws the Day 1 hold once, over a page made inert, and Back asks the hold first', () => {
+  const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
+  assert.equal(page.split('"data-staging-day-one-hold":"true"').length - 1, 1);
+  assert.match(page, /\(v\?\.\["dayOneHold"\] \? h\(React\.Fragment,\{key:k\},s\d+\(v,0\)\) : null\)/);
+  assert.equal(page.split('"data-signup-root":"true","inert":v?.["holdInert"]').length - 1, 1);
+  assert.equal(page.split('back() { if (window.__cdOnb.holding()) return; window.__cdOnb.navigation();').length - 1, 1);
+  assert.ok(page.includes('"Signing up a new test shop and opening its desk. This takes a few seconds."'));
 });
