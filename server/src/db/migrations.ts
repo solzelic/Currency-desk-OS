@@ -114,6 +114,9 @@ export const migrations: readonly Migration[] = [
   /* 077 names the shop's compliance officer, keeps review decisions for
      5 years, and refuses clearing a confirmed match. */
   ["077_sanctions_review_rules", "src/db/migrations/077_sanctions_review_rules.sql"],
+  /* 081 is the ID check record, the consent row, and the face crop.
+     078 to 080 are claimed by open sign-up PRs, so this file is 081. */
+  ["081_idv_check_records", "src/db/migrations/081_idv_check_records.sql"],
 ] as const;
 
 type MigrationReader = {

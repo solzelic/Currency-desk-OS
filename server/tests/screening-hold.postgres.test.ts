@@ -269,25 +269,34 @@ postgres("sanctions hold and review", () => {
 
     const missing = await app.inject({
       method: "POST", url: "/api/screening/id-check", cookies: teller,
-      payload: { clientId, tier: "1" },
+      payload: { clientId, tier: "2" },
     });
     expect(missing.statusCode).toBe(400);
     expect(missing.json().error).toBe("pep_answer_required");
+    const inPerson = await app.inject({
+      method: "POST", url: "/api/screening/id-check", cookies: teller,
+      payload: { clientId, tier: "1" },
+    });
+    expect(inPerson.statusCode, inPerson.body).toBe(200);
 
-    for (const tier of ["1", "2", "quick", "verify", "3", "plus"]) {
+    for (const tier of ["1", "2", "3", "4", "quick", "verify", "plus"]) {
       const body: Record<string, unknown> = { clientId, tier };
-      if (tier === "1" || tier === "2" || tier === "quick" || tier === "verify") body.pepAnswer = false;
+      if (tier === "2" || tier === "3" || tier === "quick" || tier === "verify") body.pepAnswer = false;
       const screened = await app.inject({
         method: "POST", url: "/api/screening/id-check", cookies: teller, payload: body,
       });
       expect(screened.statusCode, `${tier} ${screened.body}`).toBe(200);
       expect(screened.json().screened).toBe(true);
+      expect(screened.json().tier).toBe(
+        tier === "quick" ? "2" : tier === "verify" ? "3" : tier === "plus" ? "4" : tier,
+      );
       const raw = JSON.stringify(screened.json());
       expect(raw).not.toMatch(/ca-sema|ca-cc|sourceKey|matchedName|score/);
       if (screened.json().state === "needs_review") expect(screened.json().message).toBe(TELLER_HOLD_MESSAGE);
     }
     const pep = await pool.query("SELECT is_pep, tier, answered_by FROM client_pep_answers WHERE client_id=$1", [clientId]);
     expect(pep.rows[0].is_pep).toBe(false);
+    expect(pep.rows[0].tier).toBe("3");
     expect(pep.rows[0].answered_by).toBe("m.costa");
     expect(readFileSync(new URL("../src/screening/provider.ts", import.meta.url), "utf8")).not.toMatch(/fetch\(/);
   });

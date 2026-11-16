@@ -44,6 +44,7 @@ import { registerClientRoutes } from "./clients/routes.js";
 import { registerIdvCreditRoutes } from "./idv/credit-routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 import { registerIdvRoutes, type IdvRouteOptions } from "./idv/routes.js";
+import { registerIdvRecordRoutes } from "./idv/record-routes.js";
 import { readOnlyClientLookup } from "./idv/store.js";
 import { registerScreeningRoutes } from "./screening/routes.js";
 
@@ -311,6 +312,7 @@ export async function buildApp(
     ...idv,
     clients: idv?.clients ?? (shared ? readOnlyClientLookup(shared) : undefined),
   });
+  registerIdvRecordRoutes(app, db, idv);
 
   // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;

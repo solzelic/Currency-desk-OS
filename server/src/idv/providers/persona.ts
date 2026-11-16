@@ -74,6 +74,18 @@ export function personaPassLabel(
   return personaKeyIsSandbox(key, env) ? PASS_LABEL_TEST : PASS_LABEL;
 }
 
+/* The key alone, for a fetch that does not send a template. */
+export function personaApiKey(
+  input: { apiKeyRef?: string | null; shopCode?: string },
+  env: NodeJS.ProcessEnv,
+): string | null {
+  const requested = (input.apiKeyRef ?? "").trim();
+  const name = requested === "" ? SHARED : requested;
+  if (!personaKeyAllowed(name, input.shopCode ?? "")) return null;
+  const apiKey = (env[name] ?? "").trim();
+  return apiKey === "" ? null : apiKey;
+}
+
 export function personaConnection(
   input: { apiKeyRef?: string | null; templateId?: string | null; shopCode?: string },
   env: NodeJS.ProcessEnv,

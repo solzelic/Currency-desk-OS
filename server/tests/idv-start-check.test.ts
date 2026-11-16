@@ -52,6 +52,13 @@ function payload(name: string, eventId: string, referenceId: string, providerRef
 }
 
 const fetchStub: typeof fetch = async (input, init) => {
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    return new Response(JSON.stringify({
+      data: { id: "inq_get", type: "inquiry", attributes: { status: "approved" } },
+      included: [],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   calls += 1;
   attempt += 1;
   const body = String(init?.body ?? "");

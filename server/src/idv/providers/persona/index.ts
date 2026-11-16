@@ -8,6 +8,7 @@
    https://docs.withpersona.com/api-reference/inquiries/create-an-inquiry */
 import * as crypto from "node:crypto";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvStart, IdvWebhookInput } from "../../provider.js";
+import { personaFetch } from "../../persona-guard.js";
 import { personaConnection } from "../persona.js";
 
 const WINDOW_MS = 5 * 60 * 1000;
@@ -115,18 +116,20 @@ export async function startPersonaCheck(
   const body = personaInquiryBody(template, input.referenceId);
   let status = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-    const res = await fetchImpl(`${base}/inquiries`, {
-      method: "POST",
-      redirect: "manual",
-      headers: {
-        authorization: `Bearer ${key}`,
-        accept: "application/json",
-        "content-type": "application/json",
-        "idempotency-key": input.referenceId,
-        "key-inflection": "kebab",
-        "persona-version": PERSONA_VERSION,
+    const res = await personaFetch({
+      key, env, base, path: "/inquiries", fetchImpl,
+      init: {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          accept: "application/json",
+          "content-type": "application/json",
+          "idempotency-key": input.referenceId,
+          "key-inflection": "kebab",
+          "persona-version": PERSONA_VERSION,
+        },
+        body,
       },
-      body,
     });
     status = res.status;
     if (status === 200 || status === 201) {

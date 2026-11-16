@@ -20,7 +20,11 @@ const BAD_BODY = "The identity check settings could not be read.";
 const PROVIDER = "That identity provider is not available.";
 const TEMPLATE_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const PROVIDER_SHAPE = /^[a-z][a-z0-9_-]{0,31}$/;
-const KNOWN = new Set(["shopid", "provider", "apikeyref", "templateid", "retentiondays", "checksenabled"]);
+const KNOWN = new Set([
+  "shopid", "provider", "apikeyref", "templateid", "retentiondays", "checksenabled",
+  "templateidtier3", "templateidtier4", "privacycontact", "privacyemail", "privacyphone",
+  "privacypolicyurl", "facecropenabled",
+]);
 
 /* Site handle, otherwise the shop name. Capitals, digits, and underscores. */
 export function shopEnvCode(source: { siteSlug?: string | null; name?: string | null }): string {
@@ -39,6 +43,13 @@ export type IdvShopConfig = {
   provider: string;
   apiKeyRef: string | null;
   templateId: string | null;
+  templateIdTier3: string | null;
+  templateIdTier4: string | null;
+  privacyContact: string | null;
+  privacyEmail: string | null;
+  privacyPhone: string | null;
+  privacyPolicyUrl: string | null;
+  faceCropEnabled: boolean;
   retentionDays: number | null;
   checksEnabled: boolean;
 };
@@ -48,6 +59,13 @@ type Patch = {
   provider?: string;
   apiKeyRef?: string | null;
   templateId?: string | null;
+  templateIdTier3?: string | null;
+  templateIdTier4?: string | null;
+  privacyContact?: string | null;
+  privacyEmail?: string | null;
+  privacyPhone?: string | null;
+  privacyPolicyUrl?: string | null;
+  faceCropEnabled?: boolean;
   retentionDays?: number | null;
   checksEnabled?: boolean;
 };
@@ -88,6 +106,43 @@ export function parseIdvShopConfig(body: unknown, shopCode: string): Parsed {
     else if (provider.fieldIssue({ apiKeyRef: null, templateId: raw.templateId, shopCode }) === "template") return reject(422, TEMPLATE);
     else patch.templateId = raw.templateId;
   }
+  const optionalTemplate = (key: "templateIdTier3" | "templateIdTier4") => {
+    if (!(key in raw)) return null;
+    const value = raw[key];
+    if (value === null || value === "") {
+      patch[key] = null;
+      return null;
+    }
+    if (typeof value !== "string" || !TEMPLATE_SHAPE.test(value)) return reject(422, TEMPLATE);
+    if (provider.fieldIssue({ apiKeyRef: null, templateId: value, shopCode }) === "template") return reject(422, TEMPLATE);
+    patch[key] = value;
+    return null;
+  };
+  const tier3 = optionalTemplate("templateIdTier3");
+  if (tier3) return tier3;
+  const tier4 = optionalTemplate("templateIdTier4");
+  if (tier4) return tier4;
+  const optionalText = (key: "privacyContact" | "privacyEmail" | "privacyPhone" | "privacyPolicyUrl", max: number) => {
+    if (!(key in raw)) return null;
+    const value = raw[key];
+    if (value === null || value === "") {
+      patch[key] = null;
+      return null;
+    }
+    if (typeof value !== "string" || value.trim().length > max) return reject(400, BAD_BODY);
+    patch[key] = value.trim();
+    return null;
+  };
+  for (const [key, max] of [
+    ["privacyContact", 120], ["privacyEmail", 120], ["privacyPhone", 40], ["privacyPolicyUrl", 300],
+  ] as const) {
+    const refused = optionalText(key, max);
+    if (refused) return refused;
+  }
+  if ("faceCropEnabled" in raw) {
+    if (typeof raw.faceCropEnabled !== "boolean") return reject(400, ENABLED);
+    patch.faceCropEnabled = raw.faceCropEnabled;
+  }
   if ("retentionDays" in raw) {
     if (raw.retentionDays === null) patch.retentionDays = null;
     else if (typeof raw.retentionDays !== "number" || !Number.isInteger(raw.retentionDays)) return reject(400, RETENTION);
@@ -109,6 +164,13 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void 
       provider: row?.provider ?? defaultIdvProvider().id,
       apiKeyRef: row?.apiKeyRef ?? null,
       templateId: row?.templateId ?? null,
+      templateIdTier3: row?.templateIdTier3 ?? null,
+      templateIdTier4: row?.templateIdTier4 ?? null,
+      privacyContact: row?.privacyContact ?? null,
+      privacyEmail: row?.privacyEmail ?? null,
+      privacyPhone: row?.privacyPhone ?? null,
+      privacyPolicyUrl: row?.privacyPolicyUrl ?? null,
+      faceCropEnabled: row?.faceCropEnabled ?? true,
       retentionDays: row?.retentionDays ?? null,
       checksEnabled: row?.checksEnabled ?? false,
     };
@@ -135,6 +197,13 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void 
       provider: parsed.patch.provider ?? current.provider,
       apiKeyRef: parsed.patch.apiKeyRef !== undefined ? parsed.patch.apiKeyRef : current.apiKeyRef,
       templateId: parsed.patch.templateId !== undefined ? parsed.patch.templateId : current.templateId,
+      templateIdTier3: parsed.patch.templateIdTier3 !== undefined ? parsed.patch.templateIdTier3 : current.templateIdTier3,
+      templateIdTier4: parsed.patch.templateIdTier4 !== undefined ? parsed.patch.templateIdTier4 : current.templateIdTier4,
+      privacyContact: parsed.patch.privacyContact !== undefined ? parsed.patch.privacyContact : current.privacyContact,
+      privacyEmail: parsed.patch.privacyEmail !== undefined ? parsed.patch.privacyEmail : current.privacyEmail,
+      privacyPhone: parsed.patch.privacyPhone !== undefined ? parsed.patch.privacyPhone : current.privacyPhone,
+      privacyPolicyUrl: parsed.patch.privacyPolicyUrl !== undefined ? parsed.patch.privacyPolicyUrl : current.privacyPolicyUrl,
+      faceCropEnabled: parsed.patch.faceCropEnabled !== undefined ? parsed.patch.faceCropEnabled : current.faceCropEnabled,
       retentionDays: parsed.patch.retentionDays !== undefined ? parsed.patch.retentionDays : current.retentionDays,
       checksEnabled: parsed.patch.checksEnabled !== undefined ? parsed.patch.checksEnabled : current.checksEnabled,
     };
