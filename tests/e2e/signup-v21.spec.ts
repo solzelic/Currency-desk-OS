@@ -283,11 +283,21 @@ test.describe("sign-up v2.1, the visitor's path", () => {
       expect(ownTenant.id).toBe(activated.tenantId); expect(ownTenant.setup.idThreshold).toBe(0);
       expect(await frame.locator("#os").evaluate(() => JSON.parse(localStorage.getItem("cdos_settings") || "{}").idRequiredOver)).toBe(0);
       expect((await page.request.get(`/api/onboarding/${cdId}/resume`)).status()).toBe(401);
+      /* Day 1's Account must not sit on the real Home's header (owner name, avatar). */
+      const clearOfHeader = async (label: string) => {
+        await expect(page.locator("[data-signup-account] summary"), label).toBeVisible();
+        const account = await page.locator("[data-signup-account] summary").boundingBox();
+        const shopName = await frame.locator(".tenant-name:visible, header.phone-head:visible").first().boundingBox();
+        expect(account && shopName, label).toBeTruthy();
+        expect(account!.y, `${label}: Account sits below the Home header`).toBeGreaterThan(shopName!.y + shopName!.height);
+      };
       await page.screenshot({ path: test.info().outputPath("day-one-real-home.png"), animations: "disabled" });
+      await clearOfHeader("desktop");
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(frame.locator("[data-signup-home]")).toHaveAttribute("data-signup-home", activated.tenantId);
       await expect(frame.locator("#os")).toHaveAttribute("inert", "");
       await page.screenshot({ path: test.info().outputPath("day-one-real-home-phone.png"), animations: "disabled" });
+      await clearOfHeader("phone");
     }
   });
 

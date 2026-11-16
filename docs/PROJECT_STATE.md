@@ -60,6 +60,9 @@ review's Vault count row keeps the prototype's own count note instead of an
 always-on second line. macOS geometry is unchanged or back on the prototype.
 The phone 44px target floor no longer narrows the hero action (Open it) below
 the prototype's own 260px width.
+On Day 1 the Account/sound control sits in the welcome card instead of the
+viewport's top-right corner, where it covered the real Home's owner name and
+avatar on desktop and phone.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
