@@ -53384,6 +53384,16 @@ ${(filing.map || []).map(blockHTML).join('')}
       }, body);
     }));
   }
+  function Skel({
+    width
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "id-check-skel",
+      style: {
+        width: width || "100%"
+      }
+    });
+  }
   function Flow({
     clientId,
     dealId,
@@ -53441,6 +53451,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       if (step !== "link" || !inquiryId) return undefined;
       let live = true;
       let timer = 0;
+      const waitMs = window.CDOS && window.CDOS.idCheckWaitMs || 90000;
+      const giveUp = window.setTimeout(() => {
+        if (live) setStep("failed");
+      }, waitMs);
       const pull = () => {
         const client = api();
         if (!client) return;
@@ -53454,7 +53468,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           const finish = () => {
             setRecord(found);
             setPack(body);
-            if (found.result === "method_not_completed") setStep("incomplete");else setStep("done");
+            if (found.result === "method_not_completed") setStep("failed");else setStep("done");
             if (onDone) onDone(found);
           };
           if (dealId) client.linkDeal(found.recordId, dealId).then(finish).catch(finish);else finish();
@@ -53466,6 +53480,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       return () => {
         live = false;
         window.clearTimeout(timer);
+        window.clearTimeout(giveUp);
       };
     }, [step, inquiryId, clientId, dealId, onDone]);
     const counter = !!(copy && copy.counterOnly);
@@ -53481,15 +53496,32 @@ ${(filing.map || []).map(blockHTML).join('')}
         setStep(pack.due || !full ? "blocked" : "returning");
       } else if (next === "4") return;else setStep("notice");
     };
+    useEffect(() => {
+      const onKey = event => {
+        if (event.key === "Escape") {
+          onClose();
+          return;
+        }
+        if (event.key !== "Enter" || step !== "chooser") return;
+        const target = event.target;
+        if (target && target.closest && target.closest("button, a, input, select, textarea")) return;
+        event.preventDefault();
+        pick(counter ? "1" : "3");
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [step, counter, onClose, pack]);
     const agree = async () => {
       const client = api();
       if (!client || busy || !agreed) return;
       setBusy(true);
       setError("");
+      setStep("opening");
       try {
         const started = await client.start(clientId, tier);
         if (started && started.connected === false) {
           setError(started.message || "Identity checks are not connected.");
+          setStep("consent");
           setBusy(false);
           return;
         }
@@ -53517,7 +53549,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         } else if (err && (err.code === "COUNTER_ONLY" || /Inspect the original ID/.test(err.message || ""))) {
           setCounterLine(err.message || "");
           setStep("chooser");
-        } else setError(err && err.message || "The ID check could not be started.");
+        } else setStep("failed");
       }
       setBusy(false);
     };
@@ -53618,6 +53650,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     }));
     const shell = (testid, title, body) => /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-flow",
+      tabIndex: -1,
       className: "fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6",
       style: {
         background: "var(--cd-scrim)",
@@ -53647,6 +53680,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, title), /*#__PURE__*/React.createElement("button", {
       type: "button",
+      "data-testid": "id-check-close",
       onClick: onClose,
       className: "text-[13px] font-medium",
       style: {
@@ -53670,11 +53704,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, error))));
     if (!copy) return shell("id-check-loading", "ID check", /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px]",
-      style: {
-        color: CD.mute
-      }
-    }, "Reading the notice."));
+      "data-testid": "id-check-loading",
+      className: "space-y-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, null), /*#__PURE__*/React.createElement(Skel, {
+      width: "70%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "46%"
+    })));
     if (step === "chooser") {
       const records = pack && pack.records || [];
       const full = records.some(item => item.result === "pass" && item.method !== "returning_client");
@@ -53786,6 +53823,15 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, item.note)))))));
     }
+    if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-loading",
+      className: "space-y-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, null), /*#__PURE__*/React.createElement(Skel, {
+      width: "78%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "42%"
+    })));
     if (step === "notice") return shell("id-check-notice", "Before we check your ID", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
       text: copy.notice
     }), /*#__PURE__*/React.createElement("div", {
@@ -53853,7 +53899,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       href: linkUrl,
       target: "_blank",
       rel: "noopener noreferrer",
-      className: "text-[12.5px] break-all",
+      className: "id-check-figure text-[12.5px] break-all",
       style: {
         color: CD.ink
       }
@@ -53864,28 +53910,33 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.ink
       }
     }, "The ID check link could not be opened."), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px]",
-      style: {
-        color: CD.mute
-      }
-    }, "Waiting for the check to finish.")));
-    if (step === "incomplete") return shell("id-check-incomplete", "Method not completed", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-result-wait",
+      className: "space-y-2 mt-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, {
+      width: "58%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "36%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "24%"
+    }))));
+    if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-error",
+      className: "space-y-3"
+    }, /*#__PURE__*/React.createElement("div", {
       className: "text-[13px]",
       style: {
         color: CD.ink
       }
-    }, "Method not completed. Check the ID at the counter."), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] mt-1.5",
-      style: {
-        color: CD.mute
-      }
-    }, "Shows the check done on this date. Not a guarantee of identity."), /*#__PURE__*/React.createElement("div", {
-      className: "mt-3"
-    }, /*#__PURE__*/React.createElement("button", {
+    }, "The ID check did not finish. Try again, or check the ID in person."), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: () => setStep("inperson"),
+      "data-testid": "id-check-error-in-person",
+      onClick: () => {
+        setError("");
+        setStep("inperson");
+      },
       style: btnStyle(false)
-    }, "Check the ID at the counter"))));
+    }, "Check the ID in person")));
     if (step === "blocked") return shell("id-check-returning-blocked", "Returning client", /*#__PURE__*/React.createElement("div", {
       className: "space-y-2"
     }, /*#__PURE__*/React.createElement("div", {
@@ -54112,7 +54163,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.mute
       }
     }, pack && pack.detail || "Shows the check done on this date. Not a guarantee of identity."), record && record.maskedNumber && /*#__PURE__*/React.createElement("div", {
-      className: "text-[13px]",
+      className: "id-check-figure text-[13px]",
       style: {
         color: CD.ink,
         fontFamily: "Space Mono, monospace"
@@ -54400,7 +54451,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, pack.due), latest && latest.maskedNumber && /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-masked",
-      className: "text-[13px] mt-1.5",
+      className: "id-check-figure text-[13px] mt-1.5",
       style: {
         color: CD.ink,
         fontFamily: "Space Mono, monospace"

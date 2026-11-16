@@ -372,8 +372,22 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByText("I agree to the face match.", { exact: true })).toHaveCount(1);
     await themeShot(page, "consent");
     const started = page.waitForResponse((res) => res.url().includes("/api/idv/start-check") && res.request().method() === "POST");
+    let releaseStart = () => {};
+    if (process.env.PR2B_SHOTS === "1") {
+      const gate = new Promise((resolve) => { releaseStart = resolve; });
+      await page.route("**/api/idv/start-check", async (route) => {
+        await gate;
+        await route.continue();
+      });
+    }
     await page.getByTestId("id-check-agree-box").check();
     await agree.click();
+    if (process.env.PR2B_SHOTS === "1") {
+      await expect(page.getByTestId("id-check-loading")).toBeVisible();
+      await themeShot(page, "loading");
+      releaseStart();
+      await page.unroute("**/api/idv/start-check");
+    }
     const start = await started;
     expect(start.ok(), await start.text()).toBeTruthy();
     const providerRef = (await start.json()).providerRef as string;
@@ -682,6 +696,8 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     expect(failed.ok(), await failed.text()).toBeTruthy();
     await postWebhook(page, (await failed.json()).providerRef as string, "inquiry.failed");
     await expect(page.getByTestId("id-check-incomplete")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.");
+    await themeShot(page, "error");
     await themeShot(page, "method-not-completed");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
@@ -915,6 +931,96 @@ test("the notice leaves out the photo sentence when the crop is off", async ({ p
   } finally {
     await request.put("/api/settings/idv", { data: { checksEnabled: false, faceCropEnabled: true } }).catch(() => {});
   }
+});
+
+async function openDefaultCheck(page: Page, request: APIRequestContext) {
+  await enableChecks(request);
+  await signInAtDesk(page, "m.costa");
+  const name = `Key ${Date.now()}`;
+  const created = await page.evaluate(async (legalName) => {
+    const res = await fetch("/api/clients", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ legalName, kind: "individual" }),
+    });
+    return { status: res.status, body: await res.json() };
+  }, name);
+  expect(created.status).toBe(201);
+  await page.locator('[data-app="clients"]').click();
+  await page.getByText(name, { exact: true }).click();
+  await page.getByTestId("id-check-start").click();
+  await expect(page.getByTestId("id-check-chooser")).toBeVisible();
+}
+
+test("Enter picks the default check", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  await page.getByTestId("id-check-flow").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("id-check-notice")).toBeVisible();
+});
+
+test("Escape closes the ID check", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("id-check-flow")).toHaveCount(0);
+});
+
+test("tab order runs top to bottom", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  const ordered = await page.getByTestId("id-check-flow").evaluate((root) => {
+    const nodes = Array.from(root.querySelectorAll("button, a, input, select, textarea")).filter((el) => !(el as HTMLButtonElement).disabled);
+    let prev = -1;
+    for (const el of nodes) {
+      const top = el.getBoundingClientRect().top;
+      if (top + 1 < prev) return false;
+      prev = top;
+    }
+    return nodes.length > 1;
+  });
+  expect(ordered).toBe(true);
+});
+
+test("Space toggles the consent checkbox", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  await page.getByTestId("id-check-primary").click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  const box = page.getByTestId("id-check-agree-box");
+  await box.focus();
+  await page.keyboard.press("Space");
+  await expect(box).toBeChecked();
+  await page.keyboard.press("Space");
+  await expect(box).not.toBeChecked();
+});
+
+test("a failed Persona check offers the in-person check", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  await page.route("**/api/idv/start-check", (route) => route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "link_failed" }) }));
+  await page.getByTestId("id-check-primary").click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByTestId("id-check-agree-box").check();
+  await page.getByRole("button", { name: "I agree" }).click();
+  await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.");
+  await page.getByTestId("id-check-error-in-person").click();
+  await expect(page.getByTestId("id-check-in-person")).toBeVisible();
+});
+
+test("a Persona check that times out offers the in-person check", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await openDefaultCheck(page, request);
+  await page.evaluate(() => { (window as unknown as { CDOS: { idCheckWaitMs?: number } }).CDOS.idCheckWaitMs = 400; });
+  await page.getByTestId("id-check-primary").click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByTestId("id-check-agree-box").check();
+  await page.getByRole("button", { name: "I agree" }).click();
+  await expect(page.getByTestId("id-check-link-url")).toBeVisible();
+  await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.", { timeout: 10_000 });
+  await page.getByTestId("id-check-error-in-person").click();
+  await expect(page.getByTestId("id-check-in-person")).toBeVisible();
 });
 
 test("ID on file agrees on the chip, the file, the deal, the flags, and Needs attention", async ({ page, request }) => {

@@ -127,6 +127,9 @@
     </div>);
   }
 
+  function Skel({ width }) {
+    return <div className="id-check-skel" style={{ width: width || "100%" }} />;
+  }
   function Flow({ clientId, dealId, onClose, onDone, initialStep }) {
     const [step, setStep] = useState(initialStep || "chooser");
     const [copy, setCopy] = useState(null);
@@ -159,6 +162,8 @@
       if (step !== "link" || !inquiryId) return undefined;
       let live = true;
       let timer = 0;
+      const waitMs = (window.CDOS && window.CDOS.idCheckWaitMs) || 90000;
+      const giveUp = window.setTimeout(() => { if (live) setStep("failed"); }, waitMs);
       const pull = () => {
         const client = api();
         if (!client) return;
@@ -169,7 +174,7 @@
           const finish = () => {
             setRecord(found);
             setPack(body);
-            if (found.result === "method_not_completed") setStep("incomplete");
+            if (found.result === "method_not_completed") setStep("failed");
             else setStep("done");
             if (onDone) onDone(found);
           };
@@ -178,7 +183,7 @@
         }).catch(() => { if (live) timer = window.setTimeout(pull, 2000); });
       };
       timer = window.setTimeout(pull, 600);
-      return () => { live = false; window.clearTimeout(timer); };
+      return () => { live = false; window.clearTimeout(timer); window.clearTimeout(giveUp); };
     }, [step, inquiryId, clientId, dealId, onDone]);
 
     const counter = !!(copy && copy.counterOnly);
@@ -193,14 +198,32 @@
       } else if (next === "4") return;
       else setStep("notice");
     };
+    useEffect(() => {
+      const onKey = (event) => {
+        if (event.key === "Escape") { onClose(); return; }
+        if (event.key !== "Enter" || step !== "chooser") return;
+        const target = event.target;
+        if (target && target.closest && target.closest("button, a, input, select, textarea")) return;
+        event.preventDefault();
+        pick(counter ? "1" : "3");
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [step, counter, onClose, pack]);
     const agree = async () => {
       const client = api();
       if (!client || busy || !agreed) return;
       setBusy(true);
       setError("");
+      setStep("opening");
       try {
         const started = await client.start(clientId, tier);
-        if (started && started.connected === false) { setError(started.message || "Identity checks are not connected."); setBusy(false); return; }
+        if (started && started.connected === false) {
+          setError(started.message || "Identity checks are not connected.");
+          setStep("consent");
+          setBusy(false);
+          return;
+        }
         const saved = await client.consent({
           clientId, choice: "agreed", language: "en", inquiryId: started.providerRef,
           copyVersion: copy && copy.version, faceCropShown: !!(copy && copy.faceCrop),
@@ -221,7 +244,7 @@
         } else if (err && (err.code === "COUNTER_ONLY" || /Inspect the original ID/.test(err.message || ""))) {
           setCounterLine(err.message || "");
           setStep("chooser");
-        } else setError((err && err.message) || "The ID check could not be started.");
+        } else setStep("failed");
       }
       setBusy(false);
     };
@@ -297,11 +320,11 @@
     const setField = (key, value) => setForm((cur) => ({ ...cur, [key]: value }));
     const shell = (testid, title, body) => (
       <Portal>
-        <div data-testid="id-check-flow" className="fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6" style={{ background: "var(--cd-scrim)", zIndex: 9400 }}>
+        <div data-testid="id-check-flow" tabIndex={-1} className="fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6" style={{ background: "var(--cd-scrim)", zIndex: 9400 }}>
           <div className="id-check-sheet w-full" style={{ maxWidth: 560, background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 16, boxShadow: "0 30px 70px -20px var(--cd-scrim)", fontFamily: '"Archivo", system-ui, sans-serif', color: CD.ink }}>
             <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
               <div className="id-check-kicker text-[10px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: '"Space Mono", monospace' }}>{title}</div>
-              <button type="button" onClick={onClose} className="text-[13px] font-medium" style={{ minHeight: 44, padding: "0 16px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.paper, fontFamily: '"Archivo", system-ui, sans-serif' }}>Close</button>
+              <button type="button" data-testid="id-check-close" onClick={onClose} className="text-[13px] font-medium" style={{ minHeight: 44, padding: "0 16px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.paper, fontFamily: '"Archivo", system-ui, sans-serif' }}>Close</button>
             </div>
             <div data-testid={testid} className="px-5 py-4">{body}</div>
             {error && <div role="alert" data-testid="id-check-storage" className="text-[13px] px-5 pb-4" style={{ color: CD.ink }}>{error}</div>}
@@ -310,7 +333,7 @@
       </Portal>
     );
 
-    if (!copy) return shell("id-check-loading", "ID check", <div className="text-[12.5px]" style={{ color: CD.mute }}>Reading the notice.</div>);
+    if (!copy) return shell("id-check-loading", "ID check", (<div data-testid="id-check-loading" className="space-y-3" aria-busy="true"><Skel /><Skel width="70%" /><Skel width="46%" /></div>));
 
     if (step === "chooser") {
       const records = (pack && pack.records) || [];
@@ -343,6 +366,7 @@
         </div>}
       </div>));
     }
+    if (step === "opening") return shell("id-check-opening", "ID and selfie", (<div data-testid="id-check-loading" className="space-y-3" aria-busy="true"><Skel /><Skel width="78%" /><Skel width="42%" /></div>));
     if (step === "notice") return shell("id-check-notice", "Before we check your ID", (<div>
       <CopyBlock text={copy.notice} />
       <div className="mt-3"><button type="button" onClick={() => { setAgreed(false); setStep("consent"); }} style={btnStyle(false)}>Continue</button></div>
@@ -366,14 +390,13 @@
       {tier === "4" && <div className="text-[13px]" style={{ color: CD.ink }}>{databaseMessage || "The database step is not on yet. This check runs ID and selfie."}</div>}
       <div className="text-[13px]" style={{ color: CD.ink }}>Hand the counter device to the customer. The check opens at this link.</div>
       {linkUrl
-        ? <a data-testid="id-check-link-url" href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</a>
+        ? <a data-testid="id-check-link-url" href={linkUrl} target="_blank" rel="noopener noreferrer" className="id-check-figure text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</a>
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}
-      <div className="text-[12px]" style={{ color: CD.mute }}>Waiting for the check to finish.</div>
+      <div data-testid="id-check-result-wait" className="space-y-2 mt-3" aria-busy="true"><Skel width="58%" /><Skel width="36%" /><Skel width="24%" /></div>
     </div>));
-    if (step === "incomplete") return shell("id-check-incomplete", "Method not completed", (<div>
-      <div className="text-[13px]" style={{ color: CD.ink }}>Method not completed. Check the ID at the counter.</div>
-      <div className="text-[12px] mt-1.5" style={{ color: CD.mute }}>Shows the check done on this date. Not a guarantee of identity.</div>
-      <div className="mt-3"><button type="button" onClick={() => setStep("inperson")} style={btnStyle(false)}>Check the ID at the counter</button></div>
+    if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", (<div data-testid="id-check-error" className="space-y-3">
+      <div className="text-[13px]" style={{ color: CD.ink }}>The ID check did not finish. Try again, or check the ID in person.</div>
+      <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>
     </div>));
     if (step === "blocked") return shell("id-check-returning-blocked", "Returning client", (<div className="space-y-2">
       <div className="text-[13px]" style={{ color: CD.ink }}>{error || (pack && pack.due) || "Returning client needs an earlier ID check at this shop."}</div>
@@ -420,7 +443,7 @@
       <div className="text-[13px]" style={{ color: CD.ink }}>{shown.primary}</div>
       {shown.secondary && <div className="text-[12.5px]" style={{ color: CD.ink }}>{shown.secondary}</div>}
       <div className="text-[12px]" style={{ color: CD.mute }}>{(pack && pack.detail) || "Shows the check done on this date. Not a guarantee of identity."}</div>
-      {record && record.maskedNumber && <div className="text-[13px]" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{record.maskedNumber}</div>}
+      {record && record.maskedNumber && <div className="id-check-figure text-[13px]" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{record.maskedNumber}</div>}
       {record && record.photoLine && <div className="text-[12.5px]" style={{ color: CD.mute }}>{record.photoLine}</div>}
       <div className="mt-2"><button type="button" onClick={onClose} style={btnStyle(false)}>Done</button></div>
     </div>));
@@ -568,7 +591,7 @@
       {pack && pack.detail && latest && <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{pack.detail}</div>}
       {pack && pack.advice && <div data-testid="id-check-advice" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.advice}</div>}
       {pack && pack.due && <div data-testid="id-check-due" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.due}</div>}
-      {latest && latest.maskedNumber && <div data-testid="id-check-masked" className="text-[13px] mt-1.5" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{latest.maskedNumber}</div>}
+      {latest && latest.maskedNumber && <div data-testid="id-check-masked" className="id-check-figure text-[13px] mt-1.5" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{latest.maskedNumber}</div>}
       {latest && <div data-testid="id-check-photo-line" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{latest.photoOnFile ? "Photo from ID, for comparison by eye" : (latest.photoLine || "No photo on file")}</div>}
       {photo && <figure className="mt-2">
         <img data-testid="id-check-photo" alt="Photo from ID, for comparison by eye" src={photo} width={96} height={96} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, background: "#E4E1D8" }} />

@@ -3569,6 +3569,19 @@ body[data-id-check="open"] .cd-tx-actions { display: none !important; }
   white-space: normal !important;
   overflow-wrap: anywhere;
 }
+.id-check-skel {
+  height: 14px;
+  border-radius: 6px;
+  background: var(--cd-line, #E4E1D8);
+}
+.id-check-figure,
+[data-testid="id-check-masked"],
+[data-testid="id-check-badge"],
+[data-testid="id-check-record-line"],
+[data-testid="client-where"],
+[data-testid="identity-check"] {
+  font-variant-numeric: tabular-nums;
+}
 .win.max,
 .win.max .win-body {
   background: var(--paper, #f6f4ef);
