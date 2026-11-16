@@ -131,7 +131,7 @@
       if (CD.comp) CD.comp.set("operatingName", "");
       function select() {
         CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
-        if (CD.comp) CD.comp.set("operatingName", CD.names[id]);
+        if (CD.comp) CD.comp.set("operatingName", CD.names[id] || "");
       }
       if (!ID.test(id)) return;
       if (CD.known[id] === true) { select(); return; }
@@ -375,6 +375,7 @@
            for reference/tools/capture.cjs. A visitor never gets one. */
         CD.seeded = true; CD.code = "CD-YORK-7K42"; CD.known[CD.code] = true;
         c._pkJump = SEED[seedStep][1] || ""; c.railJump(SEED[seedStep][0]);
+        CD.names[CD.code] = String(c.state.data.operatingName || ""); CD.states[CD.code] = "reserved";
         return;
       }
       var ret = null;

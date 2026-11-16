@@ -248,3 +248,18 @@ migration changes still require protected-surface CTO review.
 PIN changes and their audit event now commit together under the account lock.
 Every onboarding 409/410/423/429 response logs a bounded machine reason and
 status, without response detail, code, credential or card data.
+
+### Integrated page review: agreement and rendering
+
+The frozen v2.1 design remains source. `build:signup` applies counted bridge
+patches and `scripts/signup-aot.mjs` compiles its conditions, loops and markup
+to ordinary React calls in `web/app/signup.js`. Unknown constructs fail the
+build. React stays pinned and self-hosted; signup no longer loads `support.js`
+or evaluates a logic class in the visitor's browser. No generated file is edited.
+
+Opening Payment calls authenticated `POST …/payment` to prepare a SetupIntent
+without agreement assent. The explicit Open action calls `POST …/agreement`
+with the current intent and displayed source hash before Stripe confirmation.
+Acceptance binds the current plan, answer signature and intent; answer edits
+invalidate it. Legacy `POST …/plan` still requires explicit `agreed: true`.
+This does not complete first-exchange subscription activation or legal approval.

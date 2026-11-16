@@ -1,4 +1,11 @@
 <!-- CD-206 review in progress; not whole-slice acceptance. -->
+**Integrated review in progress:** signup now builds ordinary React code into
+`web/app/signup.js`; it no longer uses the marketing dc-runtime compiler in the
+visitor’s browser. Forward corrections prevent identifier/username collisions,
+separate card preparation from explicit version-bound agreement assent, and
+guard stale client replies and exact count inputs. Full integrated acceptance,
+Day 1 Home, consent/staff/cash/billing handoffs and protected CTO review remain open.
+
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
 PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
 hashes. WebAuthn now requires explicit RP/origin configuration. Malformed breach
