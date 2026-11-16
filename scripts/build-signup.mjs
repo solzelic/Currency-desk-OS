@@ -211,8 +211,11 @@ patch("accessible control targets", "</helmet>", `<style>
 [data-product] :is(button,a,input,[tabindex]):focus-visible { outline:2px solid #1D6B45;outline-offset:3px; }
 @media(max-width:720px) {
  [data-product] :is(button,a[href],input,[role=tab],[role=button]) { min-height:44px!important;min-width:44px!important;box-sizing:border-box; }
+ [data-product] button[data-herocta] { min-width:260px!important; }
 }
 </style>\n</helmet>`);
+/* The hero action is already 260px wide in the prototype; the 44px floor above must not narrow it. */
+patch("hero action identity", '<button onClick="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"', '<button data-herocta="true" onClick="{{ onCta }}" disabled="{{ ctaDisabled }}" style="{{ heroCtaStyle }}"');
 
 patchSignupTour(patch, patchRegion);
 

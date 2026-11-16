@@ -68,3 +68,14 @@ for (const [width, height] of [[1280, 760], [1440, 860]]) test(`all signup state
   await info.attach('wide-text-scroll-evidence', { body: JSON.stringify({ width, height, evidence }), contentType: 'application/json' });
   expect(evidence.filter(e => e.documentScrolls || e.productScrolls || e.cardScrolls), 'No state scrolls the document, product viewport or card body with wider text').toEqual([]);
 });
+
+/* The phone 44px floor must not narrow controls the prototype already draws wider. */
+test('the hero action keeps the prototype width on phones', async ({ page }) => {
+  for (const [width, height] of [[390, 844], [360, 740]]) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/onboarding?step=id');
+    await page.waitForTimeout(2500);
+    const box = await page.locator('[data-product]').getByRole('button', { name: 'Open it', exact: true }).boundingBox();
+    expect(box?.width, `Open it at ${width}px`).toBeGreaterThanOrEqual(260);
+  }
+});
