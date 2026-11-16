@@ -263,5 +263,23 @@ describe("activation consistency regressions", () => {
     expect((await call("POST", `${r.base}/plan`, PLAN)).json().error).toBe("billing_country_unavailable");
     expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
   });
+  it("the rate website is coming soon: the refusal says so and what to do, and prepares nothing", async () => {
+    const r = await readyToPay();
+    const before = intents.length;
+    const { agreed: _agreed, ...choice } = { ...PLAN, plan: "full", term: "annual", extras: { brief: false, call: true, website: true, setupWeek: true } };
+    for (const [path, body] of [["payment", choice], ["plan", { ...choice, agreed: true }]] as const) {
+      const res = await call("POST", `${r.base}/${path}`, body);
+      expect(res.statusCode, res.body).toBe(409);
+      expect(res.json()).toEqual({ error: "website_coming_soon", detail: "Your own rate website isn't open yet. Untick it to carry on. Nothing was charged." });
+    }
+    expect(intents.length).toBe(before);
+    const account = await loadAccount(handle.db, r.id);
+    expect(account.state).toBe("verified");
+    expect(account.setupIntentId).toBeNull();
+    /* the owner's other choices stand: the same plan without it goes on to the card */
+    const res = await call("POST", `${r.base}/payment`, { ...choice, extras: { ...choice.extras, website: false } });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await loadAccount(handle.db, r.id)).planChoice).toMatchObject({ plan: "full", term: "annual", brief: false, call: true, website: false, setupWeek: true });
+  });
 
 });

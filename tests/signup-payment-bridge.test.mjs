@@ -79,3 +79,48 @@ test('a synchronous provider confirmation failure leaves the owner able to try a
 test('an opening response from a previous reservation cannot launch another desk', async () => {
  const h=harness();h.CD.code='CD-FIRS-2222';h.CD.waitOpen(h.c,0);h.CD.code='CD-NEXT-3333';h.pending[0]({status:200,body:{ok:true,tenantId:'old'}});await drain();assert.notEqual(h.CD.launched,true);
 });
+
+/* The rate website is Coming soon and the server refuses it: the page says so
+   beside the add-on, reopens Extras, and changes none of the owner's choices. */
+function websiteTicked() {
+  const h = harness(), folds = [];
+  Object.assign(h.c, { PRICE_CCY: 'CAD', setState: s => { folds.push(s); Object.assign(h.c.state, s); } });
+  h.c.state.i = 15;
+  h.c.state.data = { plan: 'full', term: 'annual', brief: false, call: true, addons: { website: true, onsite: true }, cardName: 'Synthetic Owner' };
+  return { ...h, folds };
+}
+test('the rate website refusal shows the server line beside the add-on and keeps every other choice', async () => {
+  const h = websiteTicked(), kept = JSON.stringify(h.c.state.data);
+  h.CD.card(h.c);
+  assert.equal(h.requests[0].body.extras.website, true);
+  h.pending[0]({ status: 409, body: { error: 'website_coming_soon', detail: 'Synthetic: the website is not open.' } }); await drain();
+  const R = h.CD.priced(h.c, {});
+  assert.equal(R.xWebRefused, 'Synthetic: the website is not open.');
+  assert.equal(R.goLiveSub, 'Synthetic: the website is not open.');
+  assert.equal(R.retryCardVisible, false, 'trying the card again cannot help');
+  assert.deepEqual(h.folds.at(-1), { payOpen: 1 }, 'Extras opens, where the add-on is');
+  assert.equal(JSON.stringify(h.c.state.data), kept);
+});
+test('without a server line the refusal still names the website, never card payments', async () => {
+  const h = websiteTicked();
+  h.CD.card(h.c); h.pending[0]({ status: 409, body: { error: 'website_coming_soon' } }); await drain();
+  assert.match(h.CD.payErr, /rate website isn’t open yet\. Untick it to carry on\./);
+  assert.doesNotMatch(h.CD.payErr, /Card payments/);
+  assert.equal(h.CD.priced(h.c, {}).xWebRefused, h.CD.payErr);
+});
+test('unticking the website clears the line, and ticking it again asks the server again', async () => {
+  const h = websiteTicked();
+  h.CD.card(h.c); h.pending[0]({ status: 409, body: { error: 'website_coming_soon', detail: 'Synthetic line' } }); await drain();
+  h.c.state.data.addons.website = false;
+  const R = h.CD.priced(h.c, {});
+  assert.equal(R.xWebRefused, ''); assert.equal(h.CD.payErr, ''); assert.equal(R.retryCardVisible, false);
+  h.c.state.data.addons.website = true;
+  const asked = h.requests.filter(r => r.path === '/payment').length;
+  h.CD.card(h.c);
+  assert.equal(h.requests.filter(r => r.path === '/payment').length, asked + 1);
+});
+test('the built page draws the refusal beside the website add-on, as an alert', () => {
+  const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
+  assert.match(page, /"data-web-refused":"true","role":"alert"/);
+  assert.match(page, /v\?\.\["xWebRefused"\] \?/);
+});
