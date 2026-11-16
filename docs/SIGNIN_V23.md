@@ -167,3 +167,8 @@ exception for the omitted, unverified shop line remains unchanged. Tests also
 assert the actual viewport equals the supplied JSON viewport. Candidate PNG/JSON
 is attached before overflow, viewport and reference-hash assertions; reference
 evidence is attached after the fixture passes integrity checks.
+
+Successful CI runs must retain the Playwright report and test-results attachments
+as well as failed runs. The workflow uploads both with the existing seven-day
+retention so the exact run's original/candidate PNG and JSON can be inspected;
+a green summary alone is not a claim that those attachments were reviewed.
