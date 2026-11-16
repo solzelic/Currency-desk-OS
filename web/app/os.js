@@ -29095,7 +29095,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         style: {
           borderTop: `1px solid ${CD.lineSoft}`
         }
-      }, [['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+      }, [['TXNS', String(c.st.n)], ['VOLUME', c.st.vol == null ? 'None yet' : fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || 'Not set']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
         key: l,
         className: "px-3 py-2.5",
         style: {
@@ -36752,7 +36752,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here')), /*#__PURE__*/React.createElement("span", {
       "data-testid": "deal-id-badge",
-      className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
+      className: "cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
         background: badge.bg,
         color: badge.c,
@@ -36770,7 +36770,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement(CCstat, {
       label: "ID on file",
       sentence: phone,
-      value: idMissing ? '—' : rec.idType || 'ID',
+      value: idMissing ? 'Not set' : rec.idType || 'ID',
       sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
@@ -36782,7 +36782,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
-      value: s.top || '—',
+      value: s.top || 'None yet',
       sub: s.count > 0 ? s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
       divider: true
@@ -38155,7 +38155,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneSheet ? phoneDay(TODAY) : TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneDay(TODAY)))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: requestClose,
       "aria-label": "Close",
@@ -38402,7 +38402,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       on: liveFace.rounded,
       hold: quotePending
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
-      value: shownOut ? unitText(shownOut, outCcy) : '—',
+      value: shownOut ? unitText(shownOut, outCcy) : 'Not set',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -38713,7 +38713,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " ", rateShown(home, payoutCcy, amtN, out.amt)), /*#__PURE__*/React.createElement(SheetRateNote, {
       on: pricedRate(amtN, out.amt, payoutCcy).rounded
     })), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? unitText(out.amt, payoutCcy) : '—',
+      value: out.amt ? unitText(out.amt, payoutCcy) : 'Not set',
       ccy: payoutCcy,
       readOnly: true,
       accent: CD.green,
@@ -51849,16 +51849,32 @@ ${(filing.map || []).map(blockHTML).join('')}
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
       let live = true;
       const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.idvStatus) return undefined;
-      api.idvStatus(clientId).then(body => {
-        if (!live || !body) return;
-        setIdvStatus(typeof body.status === 'string' ? body.status : '');
-        setChecksOn(!!body.checksEnabled);
-      }).catch(() => {});
+      const checksApi = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (api && api.idvStatus) {
+        api.idvStatus(clientId).then(body => {
+          if (!live || !body) return;
+          setIdvStatus(typeof body.status === 'string' ? body.status : '');
+          setChecksOn(!!body.checksEnabled);
+        }).catch(() => {});
+      }
+      if (!checksApi || !checksApi.checks) {
+        setRecordState('no');
+        return () => {
+          live = false;
+        };
+      }
+      checksApi.checks(clientId).then(body => {
+        if (!live) return;
+        const records = body && body.records;
+        setRecordState(records && records.length ? 'yes' : 'no');
+      }).catch(() => {
+        if (live) setRecordState('no');
+      });
       return () => {
         live = false;
       };
@@ -51897,6 +51913,11 @@ ${(filing.map || []).map(blockHTML).join('')}
         };
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
+
+    /* The Identity check panel is the record. This older card stays off
+       once that record exists, so the file does not say there is no
+       verification under a check that is already on the file. */
+    if (recordState !== 'no' || idvStatus) return null;
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       "data-testid": "client-identity",
@@ -54113,10 +54134,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Expiry", /*#__PURE__*/React.createElement("input", {
+    }, "Expiry date", /*#__PURE__*/React.createElement("input", {
+      type: "date",
       value: form.expiryDate,
       onChange: e => setField("expiryDate", e.target.value),
-      placeholder: "YYYY-MM-DD",
       className: "text-sm px-2.5 py-2 outline-none mt-1",
       style: inputStyle
     })), /*#__PURE__*/React.createElement("label", {
@@ -54456,7 +54477,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         color: CD.ink,
         fontFamily: "Space Mono, monospace"
       }
-    }, latest.maskedNumber), latest && /*#__PURE__*/React.createElement("div", {
+    }, latest.maskedNumber), latest && !photo && /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-photo-line",
       className: "text-[11.5px] mt-1.5",
       style: {
@@ -54680,16 +54701,32 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "A small photo from the ID is kept for comparison by eye. It is on unless you turn it off."), /*#__PURE__*/React.createElement("label", {
+    }, "A small photo from the ID is kept for comparison by eye. It is on unless you turn it off."), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between gap-3 py-1.5 text-[13px]",
       style: {
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("span", null, "Identity checks"), /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: row.checksEnabled === true,
-      onChange: e => set("checksEnabled", e.target.checked)
-    })), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, "Identity checks"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": row.checksEnabled === true,
+      "aria-label": "Identity checks",
+      onClick: () => set("checksEnabled", row.checksEnabled !== true),
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: row.checksEnabled === true ? CD.ink : "var(--cd-disabled)",
+        borderRadius: 999,
+        border: "none",
+        padding: 0
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: row.checksEnabled === true ? 22 : 2,
+        background: "var(--cd-panel)",
+        borderRadius: 999
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between gap-3 py-1.5 text-[13px]",
       style: {
         color: CD.ink

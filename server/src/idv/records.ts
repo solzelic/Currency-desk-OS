@@ -591,6 +591,11 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     if (deal && !list.includes(deal)) list.push(deal);
     dealsByRecord.set(id, list);
   }
+  const staffNameById = await staffDisplayNames(q, actor.tenantId, found.rows.flatMap((row) => [
+    str(row, "inspector_staff_id") || "",
+    str(row, "original_inspector") || "",
+  ]));
+  const staffName = (id: string | null) => (id && staffNameById.get(id.toLowerCase())) || null;
   const records = found.rows.map((row) => {
     const when = new Date(String(row.verified_at));
     const stamp = branchStamp(when, facts.timeZone);
@@ -631,6 +636,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       issuingJurisdiction: str(row, "issuing_jurisdiction"),
       issuingCountry: str(row, "issuing_country"),
       staffSeen: str(row, "inspector_staff_id"),
+      staffName: staffName(str(row, "inspector_staff_id")),
       seenOn: stamp.date,
       documentType: docType,
       expiryIso,
@@ -648,6 +654,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
         issuingJurisdiction: str(row, "original_jurisdiction"),
         issuingCountry: str(row, "original_country"),
         staffSeen: str(row, "original_inspector"),
+        staffName: staffName(str(row, "original_inspector")),
         seenOn: originalSeen,
         documentType: originalType,
         expiryIso: originalExpiry,
@@ -701,6 +708,25 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       pepReview: await openPepReview(q, actor, clientId),
     },
   };
+}
+
+async function staffDisplayNames(q: Q, tenantId: string, ids: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.map((id) => id.trim().toLowerCase()).filter(Boolean))];
+  const names = new Map<string, string>();
+  if (!wanted.length) return names;
+  try {
+    const found = await q.query(
+      `SELECT staff_id, name FROM staff_users WHERE tenant_id = $1 AND lower(staff_id) = ANY($2::text[])`,
+      [tenantId, wanted],
+    );
+    for (const row of found.rows) {
+      const name = String(row.name || "").trim();
+      if (name) names.set(String(row.staff_id).toLowerCase(), name);
+    }
+  } catch {
+    /* A check database without the staff list still prints the staff id. */
+  }
+  return names;
 }
 
 async function typedGapStanding(q: Q, actor: DeskActor, clientId: string): Promise<IdFileStanding> {
@@ -758,7 +784,8 @@ export type StandingInput = {
   numberStored?: boolean;
   issuingJurisdiction?: string | null;
   issuingCountry?: string | null;
-  staffSeen?: string | null;
+      staffSeen?: string | null;
+  staffName?: string | null;
   seenOn?: string | null;
   documentType?: string | null;
   expiryIso?: string | null;
@@ -815,7 +842,7 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
   if (qualifiesAsId(latest)) {
     const shown = latest.method === "in_person"
       ? seenInPersonLine(
-        latest.staffSeen || "",
+        latest.staffName || latest.staffSeen || "",
         latest.documentType || "photo ID",
         civilDateWords(latest.expiryIso || ""),
         latest.seenOn || "",

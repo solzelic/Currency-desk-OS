@@ -1620,7 +1620,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                 </div>
                 {/* rate-board readout: the numbers that matter, in mono */}
                 <div className="grid grid-cols-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  {[['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => (
+                  {[['TXNS', String(c.st.n)], ['VOLUME', c.st.vol == null ? 'None yet' : fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || 'Not set']].map(([l, v], i) => (
                     <div key={l} className="px-3 py-2.5" style={{ borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none' }}>
                       <div className="text-[8.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div>
                       <div className="text-[12.5px] font-bold truncate" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{v}</div>

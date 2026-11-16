@@ -133,32 +133,52 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
 }
 
-async function showIdentity(page: Page) {
-  await page.evaluate(() => {
+async function showIdentity(page: Page, stem = "") {
+  await page.evaluate((which) => {
     const flow = document.querySelector("[data-testid='id-check-flow']");
     if (flow instanceof HTMLElement) flow.scrollTop = 0;
     const scroller = document.querySelector(".client-file .overflow-auto");
+    const where = document.querySelector("[data-testid='client-where']");
     const panel = document.querySelector("[data-testid='identity-check']");
-    if (scroller instanceof HTMLElement && panel instanceof HTMLElement) {
-      const top = panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    const frameWhere = which === "badge-in-person" || which === "badge-due";
+    const target = frameWhere && where instanceof HTMLElement ? where : panel;
+    if (scroller instanceof HTMLElement && target instanceof HTMLElement) {
+      const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
       scroller.scrollTop = Math.max(0, top - 12);
     } else if (scroller instanceof HTMLElement) {
       scroller.scrollTop = 0;
     }
-  });
+  }, stem);
+}
+
+async function dropStubClients(db: { query(text: string, values?: unknown[]): Promise<unknown> }, names: string[]) {
+  const where = `display_name = ANY($1::text[])
+    OR display_name LIKE 'Old %'
+    OR display_name ~ '[0-9]{5,}'
+    OR display_name ILIKE '%earlier%'
+    OR display_name ILIKE '%check client%'
+    OR display_name ILIKE 'key %'
+    OR display_name ILIKE 'crop %'
+    OR display_name ILIKE 'other file%'
+    OR display_name ILIKE 'seam %'
+    OR display_name ILIKE 'agree %'`;
+  for (const table of ["client_pep_answers", "client_pep_reviews"]) {
+    await db.query(`DELETE FROM ${table} WHERE client_id IN (SELECT client_id FROM desk_clients WHERE ${where})`, [names]);
+  }
+  await db.query(`DELETE FROM desk_clients WHERE ${where}`, [names]);
 }
 
 async function themeShot(page: Page, stem: string) {
   if (process.env.PR2B_SHOTS !== "1") return;
   await dismissTour(page);
-  await showIdentity(page);
+  await showIdentity(page, stem);
   for (const theme of ["light", "dark"] as const) {
     await page.evaluate((value) => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
     }, theme);
     for (const width of [1280, 390] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-      await showIdentity(page);
+      await showIdentity(page, stem);
       const shotPath = path.join(ARTIFACTS, `pr2-${stem}-${width}-${theme}.png`);
       if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
       if (width === 390) {
@@ -173,7 +193,7 @@ async function themeShot(page: Page, stem: string) {
         });
         const scrolled = path.join(ARTIFACTS, `pr2-${stem}-390-${theme}-scrolled.png`);
         if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
-        await showIdentity(page);
+        await showIdentity(page, stem);
       }
     }
   }
@@ -343,21 +363,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await signInAtDesk(page, "m.costa");
     await page.setViewportSize({ width: 1280, height: 900 });
     const legalName = "Maria Santos";
-    await db.query(
-      `UPDATE desk_clients
-          SET display_name = 'Old ' || substr(md5(client_id), 1, 4)
-        WHERE display_name <> 'Maria Santos'
-          AND (
-            display_name ~ '[0-9]{5,}'
-            OR display_name ILIKE '%earlier%'
-            OR display_name ILIKE '%check client%'
-            OR display_name ILIKE 'key %'
-            OR display_name ILIKE 'crop %'
-            OR display_name ILIKE 'other file%'
-            OR display_name ILIKE 'seam %'
-          )`,
-    );
-    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = 'Maria Santos'");
+    await dropStubClients(db, ["Maria Santos"]);
     const created = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -546,7 +552,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "file-teller");
 
     const otherName = "Ada Other";
-    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = 'Ada Other'");
+    await dropStubClients(db, ["Ada Other"]);
     const other = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -632,9 +638,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   const returningName = "Returning";
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
-  for (const fixed of [noneName, progressName, reviewName, declinedName, incompleteName, adviceName, dueName, returningName]) {
-    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = $1", [fixed]);
-  }
+  await dropStubClients(db, [noneName, progressName, reviewName, declinedName, incompleteName, adviceName, dueName, returningName]);
   const none = await made(noneName);
   const progress = await made(progressName);
   const review = await made(reviewName);
@@ -738,13 +742,13 @@ test("counter screens for the other badge states", async ({ page, request }) => 
 
     await openFile(adviceName);
     await expect(page.getByTestId("client-standing")).toContainText("ID on file");
-    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by M. Costa, Passport, expires 1 Apr 2030, checked");
     await expect(page.getByTestId("id-check-advice")).toContainText("A new ID and selfie check is advised.");
     await expect(page.getByTestId("id-check-badge")).toContainText("photo ID, in person");
     await themeShot(page, "badge-advice");
     await openFile(returningName);
     await expect(page.getByTestId("client-standing")).toContainText("ID on file");
-    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 15 Jan 2030, checked");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by M. Costa, Passport, expires 15 Jan 2030, checked");
     await expect(page.getByTestId("id-check-advice")).toHaveCount(0);
     await themeShot(page, "badge-in-person");
     await openFile(dueName);
@@ -1159,7 +1163,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await closeFile();
     await openName(names.typed);
     await expect(page.getByTestId("client-standing")).toContainText("ID on file");
-    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by M. Costa, Passport, expires 1 Apr 2030, checked");
     await closeFile();
     await openName(names.noStaff);
     await expect(page.getByTestId("client-standing")).toContainText("Missing ID");

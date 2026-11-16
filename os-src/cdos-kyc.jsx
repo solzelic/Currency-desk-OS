@@ -547,16 +547,25 @@
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
       let live = true;
       const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.idvStatus) return undefined;
-      api.idvStatus(clientId).then(body => {
-        if (!live || !body) return;
-        setIdvStatus(typeof body.status === 'string' ? body.status : '');
-        setChecksOn(!!body.checksEnabled);
-      }).catch(() => {});
+      const checksApi = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (api && api.idvStatus) {
+        api.idvStatus(clientId).then(body => {
+          if (!live || !body) return;
+          setIdvStatus(typeof body.status === 'string' ? body.status : '');
+          setChecksOn(!!body.checksEnabled);
+        }).catch(() => {});
+      }
+      if (!checksApi || !checksApi.checks) { setRecordState('no'); return () => { live = false; }; }
+      checksApi.checks(clientId).then(body => {
+        if (!live) return;
+        const records = body && body.records;
+        setRecordState(records && records.length ? 'yes' : 'no');
+      }).catch(() => { if (live) setRecordState('no'); });
       return () => { live = false; };
     }, [clientId]);
     const idvWords = {
@@ -584,6 +593,11 @@
         return { ...c, [name]: next };
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
+
+    /* The Identity check panel is the record. This older card stays off
+       once that record exists, so the file does not say there is no
+       verification under a check that is already on the file. */
+    if (recordState !== 'no' || idvStatus) return null;
 
     return (<div className="p-4" data-testid="client-identity" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="flex items-center gap-2.5 mb-3">

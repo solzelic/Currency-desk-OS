@@ -333,12 +333,12 @@
             <div className="flex items-center gap-2"><span className="font-semibold truncate" style={{ color: CD.ink }}>{name}</span>{s.count >= 3 && <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 999, fontWeight: 600 }}><Ic n="star" s={10} c="var(--cd-brass-text)" /> Regular</span>}</div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here'}</div>
           </div>
-          <span data-testid="deal-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
+          <span data-testid="deal-id-badge" className="cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" sentence={phone} value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
+          <CCstat label="ID on file" sentence={phone} value={idMissing ? 'Not set' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`} sentence={phone} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
-          <CCstat label="Usually" value={s.top || '—'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
+          <CCstat label="Usually" value={s.top || 'None yet'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
       </div>
     );
@@ -1144,7 +1144,7 @@
         <div ref={sheetRef} onMouseDown={e => e.stopPropagation()} className="cd-tx w-full flex flex-col" style={{ maxWidth: 940, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 16, boxShadow: '0 24px 70px var(--cd-scrim)', overflow: 'hidden' }}>
           {/* header */}
           <div className="cd-tx-head flex-none flex items-center justify-between px-5 py-3.5" style={{ borderBottom: `1px solid ${CD.line}`, background: 'var(--cd-panel)' }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="cd-tx-quiet text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneSheet ? phoneDay(TODAY) : TODAY}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 32, height: 32, background: CD.ink, borderRadius: 9 }}><Ic n={meta.icon} s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="cd-tx-quiet text-[11px]" style={{ color: CD.mute }}>{meta.short} · {me.name} · {phoneDay(TODAY)}</div></div></div>
             <button type="button" onClick={requestClose} aria-label="Close" className="cd-tx-x p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
@@ -1244,7 +1244,7 @@
                     <SheetRateNote on={liveFace.rounded} hold={quotePending} />
                   </div>
                   <Lbl>Customer receives</Lbl>
-                  <Money value={shownOut ? unitText(shownOut, outCcy) : '—'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
+                  <Money value={shownOut ? unitText(shownOut, outCcy) : 'Not set'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
@@ -1303,7 +1303,7 @@
                       <SheetRateNote on={pricedRate(amtN, out.amt, payoutCcy).rounded} />
                     </div>
                     <Lbl>{benName || 'Beneficiary'} receives</Lbl>
-                    <Money value={out.amt ? unitText(out.amt, payoutCcy) : '—'} ccy={payoutCcy} readOnly accent={CD.green} big />
+                    <Money value={out.amt ? unitText(out.amt, payoutCcy) : 'Not set'} ccy={payoutCcy} readOnly accent={CD.green} big />
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                       <div><Lbl>Purpose</Lbl><input value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Family support, etc." className="w-full text-sm px-2.5 py-2 outline-none" style={inSty} /></div>
