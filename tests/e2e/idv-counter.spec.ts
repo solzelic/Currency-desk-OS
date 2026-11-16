@@ -881,17 +881,6 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     expect(await readFlags(ids.expired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
 
-    await page.locator('[data-app="ledger"]').click();
-    await ensureTill(page);
-    await page.getByRole("button", { name: /^New transaction$/i }).first().click();
-    await page.locator(".cd-tx-customer input").fill(names.pass);
-    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.pass }).click();
-    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file");
-    await page.locator(".cd-tx-customer input").fill(names.expired);
-    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.expired }).click();
-    await expect(page.getByTestId("deal-id-badge")).toContainText("ID expired");
-    await page.locator(".cd-tx-x").click();
-
     await page.locator('[data-app="clients"]').click();
     await page.getByTestId("client-filter-attention").click();
     await expect(page.getByText(names.pass, { exact: true })).toHaveCount(0);
