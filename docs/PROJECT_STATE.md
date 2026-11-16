@@ -1,3 +1,18 @@
+## Current staging and tour-recovery composition — 16 November 2026
+
+This delivery composition preserves staging `b18d4a56` (including Start on Day 1)
+and exact PR793 dependency `f188f688`. The prior fixture `08965383` and server
+`9853116e` passed their full local gates. Client `b88a9fcc` passed server, ledger,
+dedicated staging and civil checks but failed the existing signup-tour motion
+transition in the ordinary browser suite; that run remains failed under #792.
+PR793 adds playback-driven recovery when a motion notification is delayed;
+it does not establish the precise cause of the historical intermittent failure.
+All original test assertions and timeouts remain. This composition keeps both
+teams' documentation and the stricter sign-in provenance alongside the new
+Day 1 route. Fresh exact-head review, full gates, Linux CI and protected-surface
+CTO review remain pending; no hosted-returning or release approval is claimed.
+Issues #769/#771 and the full-pack activation holds remain unchanged.
+
 ## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
 
 The signup tour now reconciles the current reduced-motion preference on its own
@@ -75,6 +90,30 @@ Known limits, recorded rather than hidden:
 
 Protected surfaces (sessions, provisioning): CTO review owed. Not release, CTO or
 Compliance acceptance.
+## Deterministic local signup dependency — 16 November 2026
+
+The returning-login delivery stack includes PR791 at `63fb07a6` beneath the
+sanctions fixture, server and client layers. Its seam-only HIBP transport
+substitution preserves the production password parser, deadline and refusal
+behavior; production entrypoints and hosted configuration are unchanged.
+The previous `55912b2e` full run passed server, ledger and civil checks but
+failed the signup reload browser case when the real breach service timed out.
+That failure remains recorded under #789. Fresh exact-head gates and Linux CI
+are pending on this composition; earlier results are not promoted to it.
+The fixture failure/timeout-cleanup evidence limitation is retained: a failed
+migration may leave its own disposable database behind with a loud cleanup
+error. No shared ledger cleanup or financial assertion is weakened.
+
+## Sanctions-hold fixture isolation, 16 November 2026
+
+Issue #786 records six order-dependent PostgreSQL test failures reproduced on
+unchanged staging: the sanctions-hold suite passes alone, but a preceding
+earnings suite leaves a different holder on the shared demo till. The hold
+suite now owns a uniquely named migrated disposable database and drops it
+after closing its connections. All fourteen cases, financial assertions and
+production ownership/screening rules remain unchanged. No shared ledger rows
+are cleared to make the assertions pass. Final validation and review remain
+pending; the original failed full run remains failed.
 
 ## Signup v2.1 rate website refusal, 16 November 2026
 
