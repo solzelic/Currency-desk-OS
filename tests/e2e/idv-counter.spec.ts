@@ -1169,7 +1169,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
       await expect(page.getByTestId("client-standing")).toBeVisible();
     };
     const closeFile = async () => {
-      await page.locator(".client-file-actions button").last().click();
+      const closer = page.locator(".client-file-actions button").last();
+      if (await closer.isVisible().catch(() => false)) await closer.click({ force: true, timeout: 5_000 });
     };
 
     await openName(names.pass);
@@ -1301,12 +1302,12 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await page.locator(".cd-tx-x").click();
     await page.evaluate(() => { delete (window as unknown as { CDOS: { TxModal?: unknown } }).CDOS.TxModal; });
     await page.getByRole("button", { name: /^New transaction$/i }).first().click();
-    const ledgerSheet = page.locator("div").filter({ has: page.getByText("Teller", { exact: false }) }).last();
-    await ledgerSheet.getByPlaceholder("Type a name…").fill(typedOnlyName);
+    const ledgerSheet = page.locator("div.fixed").filter({ hasText: "Transaction type" });
+    await ledgerSheet.getByPlaceholder(/Type a name/).fill(typedOnlyName);
     await ledgerSheet.getByRole("button", { name: typedOnlyName }).click();
     await expect(page.getByTestId("ledger-id-badge")).toContainText("Missing ID");
     await expect(page.getByTestId("ledger-id-badge")).not.toContainText("ID on file");
-    await ledgerSheet.getByPlaceholder("Type a name…").fill(readFailName);
+    await ledgerSheet.getByPlaceholder(/Type a name/).fill(readFailName);
     await ledgerSheet.getByRole("button", { name: readFailName }).click();
     await expect(page.getByTestId("ledger-id-badge")).toContainText("Could not read the ID check. Try again.");
     await page.getByRole("button", { name: "Close ledger transaction" }).click();

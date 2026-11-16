@@ -30021,6 +30021,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     effectiveRate,
     RATE_NOTE
   } = window.CDOS;
+  const spokenDay = iso => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || "";
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const parts = String(iso).split("-");
+    return months[Number(parts[1]) - 1] + " " + Number(parts[2]) + ", " + parts[0];
+  };
 
   /* THE DESK'S OWN CURRENCY, ONCE.
       Sixty-five `'CAD'` literals stood in this file. Some named a Canadian
@@ -31149,7 +31155,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, "Teller ", me.name, " \xB7 ", businessDate()))), /*#__PURE__*/React.createElement("button", {
+    }, "Teller ", me.name, " \xB7 ", spokenDay(businessDate())))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "aria-label": "Close ledger transaction",
       onClick: onClose,
