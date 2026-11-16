@@ -33,6 +33,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } fro
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { compileSignup } from "./signup-aot.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
@@ -58,11 +59,12 @@ function patch(name, from, to, count = 1) {
   if (n !== count) throw new Error(`build-signup: "${name}" expected ${count} match(es), found ${n}`);
   html = html.split(from).join(to);
 }
-function patchRegion(name, startMark, endMark, from, to) {
+function patchRegion(name, startMark, endMark, from, to, count = 1) {
   const a = html.indexOf(startMark), b = html.indexOf(endMark, a);
   if (a < 0 || b < 0) throw new Error(`build-signup: region "${name}" not found`);
   const region = html.slice(a, b);
-  if (!region.includes(from)) throw new Error(`build-signup: "${name}" not found in region`);
+  const matches = region.split(from).length - 1;
+  if (html.split(startMark).length !== 2 || matches !== count) throw new Error(`build-signup: region "${name}" expected ${count} matches, found ${matches}`);
   html = html.slice(0, a) + region.split(from).join(to) + html.slice(b);
 }
 function cut(name, startMark, endMark) {
@@ -201,7 +203,7 @@ patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
 /* ---- the tour follows the pack ---------------------------------------- */
 patch("tour values", "tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',",
   "tourHome: this.jurisOf(this.state.data.country).home, tourReport: this.jurisOf(this.state.data.country).report || 'cash report', tourOfficer: (this.state.data.complianceMode === 'other' ? this.state.data.compName : this.state.data.ownerName) || 'your compliance officer', tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',");
-patchRegion("tour currency", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", " CAD", " {{ tourHome }}");
+patchRegion("tour currency", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", " CAD", " {{ tourHome }}", 5);
 patchRegion("tour officer", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", "Checked by Daniel Osei", "Checked by {{ tourOfficer }}");
 patchRegion("tour report", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", ">Large Cash Transaction Report<", ">{{ tourReport }}<");
 
@@ -216,7 +218,10 @@ for (const banned of ["demo-mode.js", "data-review=\"true\"", "coded/", "fonts.g
 }
 
 mkdirSync(path.dirname(OUT), { recursive: true });
-writeFileSync(OUT, html);
+const built = compileSignup(html);
+mkdirSync(path.join(ROOT, "web/app"), { recursive: true });
+writeFileSync(OUT, built.html);
+writeFileSync(path.join(ROOT, "web/app/signup.js"), built.js);
 writeFileSync(path.join(ROOT, "web/signup-sso.html"), readFileSync(SSO, "utf8"));
 for (const sub of ["flags", "shots"]) {
   mkdirSync(path.join(ASSETS, sub), { recursive: true });

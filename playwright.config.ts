@@ -81,6 +81,7 @@ export default defineConfig({
          Passkeys need an origin the browser trusts: localhost, over http,
          outside production only (onboarding/passkey.ts). */
       CD_TEST_MAILBOX: "1",
+      SIGNUP_TEST_SEED: "1",
       WEBAUTHN_RP_ID: "localhost",
       WEBAUTHN_ORIGINS: `http://localhost:${PORT}`,
     },
