@@ -175,7 +175,7 @@ The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, n
 
 - `GET /api/onboarding/:id/state` with an ID gives `{ valid, operatingName, state }` and nothing more. The ID identifies the reservation; it does not authenticate. The credential, the email code and the PIN do that (later PRs).
 - Which door answers: a value that compacts to `CD` + 4 letters + 4 characters from the ID alphabet is an ID, unless a setup reference with that exact text exists, which keeps the older page.
-- Misses: per ID and per connection, 10 in 15 minutes, then 15 minutes closed. In memory, so the counts reset on restart and are per instance.
+- Misses: per ID and per connection, 10 in 15 minutes, then 15 minutes closed. In memory, so the counts reset on restart and are per instance. Each table remembers 10,000 keys and forgets the one seen longest ago, so a flood never refuses a key it has not seen.
 - `POST /api/onboarding/resend-id`: always 202; the lookup and the send run after the reply.
 - Reissue is a platform action (`POST /api/admin/enquiries/:id/reissue-cd-id`); the old ID stops matching at once.
 - Logs: IDs as their last four characters, emails as a 16-character SHA-256 prefix.
@@ -224,7 +224,7 @@ Activation commits desk, owner, account, enquiry and audit together, refuses exi
 
 Still outside server acceptance: first-deal subscription activation, staff invitation/CD-ID lifecycle, initial vault count posting, additional shop slots, SAM opt-in evidence, expired-session resume/known-device flow and all signup UI/Day 1/tour work require completion and a final integrated review.
 
-Support reissue now serializes against signup mutation, retires the old ID's hash, and clears outstanding codes/challenges/unverified candidates. Delayed credential/code requests against the prior ID refuse; authenticated ownership is retained. Credential work is additionally limited before expensive hashing/provider calls (12 requests per ID and 30 per connection per 15 minutes); these request/ID-miss/resend brakes remain process-local, while code-send and attempt limits are database-serialized. Multi-instance durable abuse protection remains a release review consideration.
+Support reissue now serializes against signup mutation, retires the old ID's hash, and clears outstanding codes/challenges/unverified candidates. Delayed credential/code requests against the prior ID refuse; authenticated ownership is retained. Credential work is additionally limited before expensive hashing/provider calls (12 requests per ID and 30 per connection per 15 minutes). The ID counts only once it names a reservation, and an unknown ID is a miss against the connection alone; these request/ID-miss/resend brakes remain process-local, while code-send and attempt limits are database-serialized. Multi-instance durable abuse protection remains a release review consideration.
 
 The existing Places routes now accept the scoped v2.1 enrolment session and derive the country from the reservation. SAM opt-out appends the existing stop-consent record and cancels its scheduled call even when subsequent card setup fails. Selecting SAM again does not manufacture new opt-in evidence; that UI/consent integration still needs completion.
 

@@ -12,6 +12,7 @@ import { audit } from "../audit.js";
 import { TENANT_PLANS, type TenantPlan } from "../db/schema.js";
 import { configuredPrice, planForPrice, safeAppBaseUrl, stripeBillingConfig, stripeClient, type BillingCycle, type StripeBillingConfig } from "../billing/stripe.js";
 import { openFromSetupIntent } from "../onboarding/signup-open.js";
+import { errorReason } from "../error-reason.js";
 
 const checkoutBody = z.object({
   plan: z.enum(["basic", "pro", "premium"]),
@@ -307,8 +308,12 @@ export function registerBillingRoutes(app: FastifyInstance, db: Db): void {
       await db.update(schema.stripeEvents).set({ tenantId, processedAt: new Date() }).where(eq(schema.stripeEvents.stripeEventId, id));
       return { received: true };
     } catch (error) {
+      /* Never the error itself: a failed sign-up activation is a database
+         error holding the owner's email, password and PIN hashes and full
+         CD ID, and Stripe retries it for days. Logged before the claim is
+         released, so the reason survives a failed release. */
+      req.log.error({ reason: "webhook_processing_failed", ...errorReason(error), stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
       await db.delete(schema.stripeEvents).where(eq(schema.stripeEvents.stripeEventId, id));
-      req.log.error({ err: error, stripeEventId: id, stripeEventType: type }, "Stripe webhook processing failed");
       return reply.code(500).send({ error: "webhook_processing_failed" });
     }
   });
