@@ -13,7 +13,7 @@ function harness() {
   vm.runInNewContext(source, context);
   const c = { state: { termsRead: true, data: { plan: 'full', term: 'monthly', addons: {}, cardName: 'Synthetic Owner' } }, forceUpdate() {}, locCount: () => 1 };
   const reply = (id = 'seti_first') => ({ status: 200, body: { clientSecret: `${id}_secret`, setupIntentId: id, termsSourceHash: 'pinned-version', publishableKey: 'pk_synthetic' } });
-  return { CD, c, requests, pending, confirms, reply, events, frame };
+  return { CD, c, requests, pending, confirms, reply, events, frame, stripe, context };
 }
 test('opening Payment prepares a card without recording assent', async () => {
   const h = harness(); h.CD.card(h.c);
@@ -48,4 +48,34 @@ test('Home readiness requires this frame, same origin and this activated tenant'
   const message = { origin: 'https://example.test', source: h.frame.contentWindow, data: { type: 'cd-signup-home-ready', tenantId: 'own' } };
   for (const bad of [{ origin: 'https://other.test' }, { source: {} }, { data: { ...message.data, tenantId: 'other' } }]) { h.events.message({ ...message, ...bad }); assert.notEqual(h.CD.homeReady, true); }
   h.events.message(message); assert.equal(h.CD.homeReady, true);
+});
+
+test('a failed preparation can be retried explicitly without changing its plan', async () => {
+ const h=harness();h.CD.card(h.c);h.pending[0]({status:503,body:{}});await drain();
+ h.CD.retryCard(h.c);assert.equal(h.requests.length,2);h.pending[1](h.reply());await drain();assert.ok(h.CD._elements);assert.equal(h.CD.payErr,'');
+});
+test('Stripe construction exceptions become a retryable failure, never an unhandled rejection', async () => {
+ const h=harness();h.stripe.elements=()=>{throw Error('synthetic provider exception')};h.CD.card(h.c);h.pending[0](h.reply());await drain();
+ assert.equal(h.CD._cardBusy,false);assert.equal(h.CD._cardFailed,true);assert.ok(h.CD.payErr);
+});
+test('an older price response cannot replace the quote after answers changed', async () => {
+ const h=harness();h.CD.code='CD-ONEA-2222';h.CD.loadPrices(h.c);h.CD._answersRevision=1;h.CD.loadPrices(h.c);
+ assert.equal(h.requests.length,2);h.pending[1]({status:200,body:{plans:{},locations:2}});await drain();h.pending[0]({status:200,body:{plans:{},locations:1}});await drain();assert.equal(h.CD.prices.locations,2);
+});
+test('a timed-out Stripe script is removed and a later explicit retry can load it', async () => {
+ const h=harness(), scripts=[], timers=new Map();let next=0;
+ delete h.context.window.Stripe;
+ h.context.setTimeout=fn=>{timers.set(++next,fn);return next};h.context.clearTimeout=id=>timers.delete(id);
+ h.context.document.createElement=()=>({remove(){this.removed=true}});h.context.document.head={appendChild:s=>scripts.push(s)};
+ h.CD.card(h.c);h.pending[0](h.reply());await drain();assert.equal(scripts.length,1);
+ [...timers.values()][0]();await drain();assert.equal(h.CD._cardFailed,true);assert.equal(scripts[0].removed,true);
+ h.CD.retryCard(h.c);h.pending[1](h.reply());await drain();assert.equal(scripts.length,2);
+ h.context.window.Stripe=()=>h.stripe;scripts[1].onload();await drain();assert.ok(h.CD._elements);assert.equal(h.CD._cardFailed,false);
+});
+test('a synchronous provider confirmation failure leaves the owner able to try again', async () => {
+ const h=harness();h.CD.card(h.c);h.pending[0](h.reply());await drain();h.stripe.confirmSetup=()=>{throw Error('synthetic confirm failure')};
+ h.CD.pay(h.c);h.pending[1]({status:200,body:{}});await drain();assert.equal(h.CD._paying,false);assert.ok(h.CD.payErr);
+});
+test('an opening response from a previous reservation cannot launch another desk', async () => {
+ const h=harness();h.CD.code='CD-FIRS-2222';h.CD.waitOpen(h.c,0);h.CD.code='CD-NEXT-3333';h.pending[0]({status:200,body:{ok:true,tenantId:'old'}});await drain();assert.notEqual(h.CD.launched,true);
 });

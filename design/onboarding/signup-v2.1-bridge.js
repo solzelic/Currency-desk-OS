@@ -125,6 +125,7 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._paying = false;
         CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
@@ -380,6 +381,9 @@
         CD.names[CD.code] = String(c.state.data.operatingName || ""); CD.states[CD.code] = "reserved";
         return;
       }
+      var returnQuery = new URLSearchParams(location.search);
+      var paymentReturn = returnQuery.get("payment") === "return" || returnQuery.has("setup_intent") || returnQuery.has("setup_intent_client_secret");
+      if (paymentReturn) history.replaceState(null, "", "/onboarding");
       var ret = null;
       try { ret = JSON.parse(sessionStorage.getItem("cdSsoReturn") || "null"); sessionStorage.removeItem("cdSsoReturn"); } catch (e) { ret = null; }
       var back = /[?&]sso=1/.test(location.search) ? ssoParams() : null;
@@ -393,6 +397,7 @@
         CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
         CD.states[id] = r.body.state; CD.alreadyOpen = r.body.state === "active";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
+        if (paymentReturn && CD.resumePayment) { CD.resumePayment(c); return; }
         if (r.body.state === "active") { CD.alreadyOpen = true; c.setState({ i: 0 }); return; }
         if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
         if (r.body.signup) { CD.loadResume(false); return; }

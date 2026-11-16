@@ -12,7 +12,7 @@ function harness() {
   CD.comp = c;
   const tick = () => { const all = [...timers.values()]; timers.clear(); all.forEach(fn => fn()); };
   const reply = (n, status, body) => pending[n].resolve({ status, json: () => Promise.resolve(body) });
-  return { CD, c, pending, tick, reply };
+  return { CD, c, pending, tick, reply, context };
 }
 test('a stale active ID response cannot select a different reservation or redirect its owner', async () => {
   const h = harness(); h.CD.checkRef('CD-FIRS-2222', () => {}); h.tick();
@@ -72,4 +72,16 @@ test('the response-body timeout stays armed until JSON finishes', async () => {
 test('Back and return to the same screen still invalidates the old save navigation', async () => {
   const h = harness(); h.c.state.i = 2; h.CD.beforeNext(h.c); h.CD.navigation();
   h.reply(0, 200, { ok: true }); await drain(); assert.equal(h.c.state.i, 2);
+});
+
+test('provider return data is cleared before resuming; the query supplies no credential', async () => {
+ const h=harness(), clean=[], resumed=[];
+ h.context.location.search='?payment=return&setup_intent_client_secret=synthetic-secret';
+ h.context.history={replaceState:(_a,_b,url)=>clean.push(url)};
+ h.context.sessionStorage.getItem=key=>key==='cdSignupId'?'CD-TEST-2222':null;
+ h.CD.resumePayment=c=>resumed.push(c);h.CD.mount(h.c);
+ assert.deepEqual(clean,['/onboarding']);assert.equal(h.pending.length,1);
+ assert.equal(h.pending[0].args[0],'/api/onboarding/CD-TEST-2222/state');
+ h.reply(0,200,{valid:true,state:'active',operatingName:'Synthetic'});await drain();assert.equal(resumed[0],h.c);
+ const noId=harness();noId.context.location.search='?setup_intent_client_secret=synthetic-secret';noId.context.history={replaceState(){}};noId.CD.mount(noId.c);assert.equal(noId.pending.length,0);
 });

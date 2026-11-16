@@ -204,7 +204,7 @@ export async function buildApp(
           // split always returns at least one string, including for an empty URL.
           url: req.url.startsWith("/api/onboarding/")
             ? maskCdIds(req.url.split("?")[0]!.replace(/^(\/api\/onboarding\/)[^/]+/, "$1[identifier]"))
-            : maskCdIds(req.url),
+            : maskCdIds(/^\/onboarding(?:[/?]|$)/.test(req.url) ? req.url.split("?")[0]! : req.url),
           host: req.hostname,
           remoteAddress: req.ip,
           remotePort: req.socket?.remotePort,

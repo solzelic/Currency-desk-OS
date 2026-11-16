@@ -39,6 +39,13 @@ export function seedAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 export function registerSignupPages(app: FastifyInstance, db: Db, staticDir: string, have: { signup: boolean; legacy: boolean; sso: boolean }): void {
+  app.addHook("onSend", (req, reply, payload, done) => {
+    if (/^\/onboarding(?:[/?]|$)/.test(req.url)) {
+      reply.header("Referrer-Policy", "no-referrer");
+      reply.header("Cache-Control", "no-store");
+    }
+    done(null, payload);
+  });
   const seeded = (step: string): string => {
     const html = readFileSync(path.join(staticDir, SIGNUP_PAGE), "utf8");
     return html.replace("<head>", `<head><script>window.__cdSeedStep=${JSON.stringify(step)};</script>`);

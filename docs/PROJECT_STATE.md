@@ -15,6 +15,10 @@ Its prior mock chrome/station-picker underlay is removed for real launches.
 An explicit Every deal choice survives both tenant/legal-entity provisioning and
 OS hydration as zero. Draft opening counts stay in their entered currencies;
 the page no longer claims a converted vault balance from prototype rates.
+Payment-form failures now have an explicit retry, stale quotes cannot replace
+current answers, and provider return navigation resumes the session-protected
+opening handoff. Signup page queries are omitted from application request logs;
+the page forbids referrers/caching and clears return query data from history.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
