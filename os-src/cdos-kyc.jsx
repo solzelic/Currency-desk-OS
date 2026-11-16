@@ -596,8 +596,9 @@
 
     /* The Identity check panel is the record. This older card stays off
        once that record exists, so the file does not say there is no
-       verification under a check that is already on the file. */
-    if (recordState !== 'no' || idvStatus) return null;
+       verification under a check that is already on the file. A shop
+       with checks on, and no record yet, still shows this card. */
+    if (recordState === 'yes') return null;
 
     return (<div className="p-4" data-testid="client-identity" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="flex items-center gap-2.5 mb-3">

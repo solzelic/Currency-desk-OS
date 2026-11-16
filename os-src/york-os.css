@@ -3094,19 +3094,23 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-types-bar { min-width: 0; max-width: 100%; }
   .cd-tx-types {
     display: flex !important;
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
     gap: 8px;
     min-width: 0;
     max-width: 100%;
-    overflow: visible;
+    overflow-x: auto;
+    scrollbar-width: none;
     padding: 8px 16px 12px !important;
+    scroll-padding-inline: 16px;
     grid-template-columns: none !important;
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
   }
   .cd-tx-id-chip { display: none !important; }
   .cd-tx-types::-webkit-scrollbar { display: none; }
   .cd-tx-overlay .cd-tx-types button {
     position: relative;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     /* 36px stands in for --control-h-sm. The 430px dialog rule
        would stretch these pills to 44px. The 44px hit area is the
        ::before, and the pill stays 36px. */

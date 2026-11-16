@@ -444,9 +444,13 @@ test("the reporting threshold and the date on the ticket are the desk's own", as
   const newDeal = page.getByRole("button", { name: /^New transaction$/i }).first();
   await expect(newDeal).toBeEnabled({ timeout: 30_000 });
   await newDeal.click();
+  const spoken = dates.today.replace(/^(\d{4})-(\d{2})-(\d{2})$/, (_all, year, month, day) => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${months[Number(month) - 1]} ${Number(day)}, ${year}`;
+  });
   await expect
     .poll(() => bodyText(page), { timeout: 20_000 })
-    .toMatch(new RegExp(`·\\s*${dates.today}`));
+    .toMatch(new RegExp(`·\\s*${spoken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   expect(await bodyText(page)).not.toContain("2026-06-18");
 });
 

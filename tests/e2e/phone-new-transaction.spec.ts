@@ -554,7 +554,7 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(rail.width).toBeLessThan(340);
   expect(rail.x).toBeGreaterThanOrEqual(form.x + form.width - 2);
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
-  await expect(page.locator(".cd-tx-head")).toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expect(page.locator(".cd-tx-head")).toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
   await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
   await expect(page.locator(".cd-tx-cancel")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Text quote$/ })).toBeVisible();
