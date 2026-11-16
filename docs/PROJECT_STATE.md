@@ -1,3 +1,21 @@
+## Signup credential door throttle, 16 November 2026
+
+A crowd of made-up CurrencyDesk IDs can no longer lock every applicant out of
+saving a sign-in. Each in-memory throttle in `server/src/onboarding/cd-id-door.ts`
+used to refuse every key once it held 10,000. About 1,000 addresses (one IPv6
+/64), each sending ten well-shaped IDs nobody holds, turned every real passkey,
+Google/Microsoft or password save into 429 for 15 minutes. A full table also
+stopped locking connections on `/state` and dropped resends. Each throttle now
+forgets the key it saw longest ago (`THROTTLE_KEYS`, 10,000), and a key that
+keeps asking while locked stays locked. The credential routes count the
+connection before the lookup and the ID only once it names a reservation, so an
+unknown ID is a miss against its connection alone. The limits are unchanged: 12
+per ID and 30 per connection per 15 minutes, and 10 misses close for 15 minutes.
+The counters are still per process and per address. A sender rotating more than
+10,000 addresses can outlast the per-connection counts, so durable shared
+counters and /64 bucketing remain release review items. Protected surface
+(auth): CTO review required.
+
 ## Signup staging payment refusal — 16 November 2026
 
 If a synthetic staging reservation loses a fixture gate after verification,

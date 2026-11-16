@@ -86,16 +86,12 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const cdId = normalizeCdIdInput(req.params.ref);
     if (!cdId) { reply.code(404).send({ error: "no_such_id" }); return undefined; }
     if (door.closed(cdId, connection)) { reply.code(429).send({ error: "slow_down" }); return undefined; }
-    if (!door.takeCredential(cdId, connection)) {
-      door.logRefusal({ reason: "credential_rate_limit", id: idTail(cdId), connection });
-      reply.code(429).send({ error: "slow_down" }); return undefined;
-    }
-    const row = await door.findByCdId(cdId);
-    if (!row) {
-      door.fail(cdId, connection, "credential_unknown_id");
-      reply.code(404).send({ error: "no_such_id" });
+    const found = await door.findForCredential(cdId, connection);
+    if ("refused" in found) {
+      reply.code(found.refused === "slow_down" ? 429 : 404).send({ error: found.refused });
       return undefined;
     }
+    const { row } = found;
     const account = await loadAccount(db, row.id);
     if (row.status === "accepted" || account.state === "active") {
       door.logRefusal({ reason: "already_open", id: idTail(cdId), connection });
