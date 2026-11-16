@@ -137,7 +137,7 @@ async function seedTheAggregate(page: Page) {
 
 async function openCompliance(page: Page) {
   await page.getByText(/^Compliance$/).first().click();
-  await rendered(page, /Sanctions screening is not connected yet/i);
+  await rendered(page, /Not screened/i);
 }
 
 const tab = (page: Page, name: RegExp) =>

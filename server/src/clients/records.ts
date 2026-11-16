@@ -81,6 +81,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { civilDate, civilToday } from "../civil-date.js";
+import { screenSubject } from "../screening/gate.js";
 import { authorizeLedgerActor } from "../ledger/principal.js";
 import { LedgerError, type LedgerActor } from "../ledger/service.js";
 import {
@@ -107,7 +108,7 @@ const entityScope = (actor: LedgerActor) => [actor.tenantId, actor.legalEntityId
 export type ClientKind = "individual" | "business";
 export type RiskRating = "low" | "normal" | "medium" | "high";
 export type VerificationStatus = "unverified" | "identified" | "verified" | "expired";
-export type ScreeningOutcome = "clear" | "hit" | "pending";
+export type ScreeningOutcome = "clear" | "hit" | "pending" | "not_screened" | "possible" | "confirmed";
 
 export type ClientInput = {
   kind?: ClientKind;
@@ -124,7 +125,6 @@ export type ClientInput = {
   notes?: string | null;
   riskRating?: RiskRating;
   verificationStatus?: VerificationStatus;
-  screeningOutcome?: ScreeningOutcome | null;
   screeningMatched?: string | null;
   incorporationDate?: string | null;
   incorporationJurisdiction?: string | null;
@@ -164,7 +164,6 @@ const CLIENT_COLUMNS = {
   notes: "notes",
   riskRating: "risk_rating",
   verificationStatus: "verification_status",
-  screeningOutcome: "screening_outcome",
   screeningMatched: "screening_matched",
   incorporationDate: "incorporation_date",
   incorporationJurisdiction: "incorporation_jurisdiction",
@@ -307,6 +306,14 @@ export class ClientRecordService {
       const photo = new Map(photographs.rows.map((row) => [row.client_id, row]));
       const files = await this.supportingFiles(client, ids);
       const accepted = new Set((await resolveAcceptedIdTypes(client, actor.legalEntityId)).accepted);
+      const openReviews = await client.query(
+        `SELECT client_id, count(*)::int AS n FROM sanctions_reviews
+          WHERE client_id = ANY($1::text[]) AND status = 'open'
+            AND tenant_id = $2 AND legal_entity_id = $3
+          GROUP BY client_id`,
+        [ids, ...entityScope(actor)],
+      );
+      const openCount = new Map(openReviews.rows.map((row) => [row.client_id, Number(row.n)]));
       /* Same-name records, surfaced rather than merged. This is the
          entire defect being fixed, said out loud on every read: two
          David Chens come back as two clients, each told about the
@@ -329,6 +336,7 @@ export class ClientRecordService {
             ),
             files.get(row.client_id as string) ?? [],
             accepted,
+            openCount.get(row.client_id) ?? 0,
           ),
         ),
       };
@@ -381,6 +389,11 @@ export class ClientRecordService {
     );
     const files = await this.supportingFiles(client, [clientId]);
     const accepted = shop ?? (await resolveAcceptedIdTypes(client, actor.legalEntityId));
+    const openReviews = await client.query(
+      `SELECT count(*)::int AS n FROM sanctions_reviews
+        WHERE client_id = $1 AND status = 'open' AND tenant_id = $2 AND legal_entity_id = $3`,
+      [clientId, ...entityScope(actor)],
+    );
     return clientJson(
       row,
       documents.rows,
@@ -390,6 +403,7 @@ export class ClientRecordService {
       sameName.rows.map((s) => s.client_id as string),
       files.get(clientId) ?? [],
       new Set(accepted.accepted),
+      Number(openReviews.rows[0]?.n ?? 0),
     );
   }
 
@@ -452,7 +466,7 @@ export class ClientRecordService {
           blank(input.notes),
           input.riskRating ?? "normal",
           input.verificationStatus ?? "unverified",
-          blank(input.screeningOutcome),
+          null,
           blank(input.screeningMatched),
           blank(input.incorporationDate),
           blank(input.incorporationJurisdiction),
@@ -471,6 +485,14 @@ export class ClientRecordService {
         `${input.kind ?? "individual"} · ${input.legalName.trim()}`,
       );
       await this.syncCounterRecord(client, actor, clientId);
+      await screenSubject(client, {
+        tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.userId,
+      }, {
+        name: input.legalName.trim(),
+        aliases: await aliasNames(client, clientId),
+        dob: input.dateOfBirth || null,
+        clientId,
+      });
       return this.readOne(client, actor, clientId);
     });
   }
@@ -547,6 +569,21 @@ export class ClientRecordService {
       }
       const touched = entries.map(([field]) => field).join(", ");
       await this.audit(client, actor, "client.update", clientId, `changed: ${touched}`);
+      const fresh = await client.query(
+        "SELECT display_name, date_of_birth FROM desk_clients WHERE client_id=$1",
+        [clientId],
+      );
+      const row = fresh.rows[0];
+      if (row) {
+        await screenSubject(client, {
+          tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.userId,
+        }, {
+          name: String(row.display_name),
+          aliases: await aliasNames(client, clientId),
+          dob: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : null,
+          clientId,
+        });
+      }
       await this.syncCounterRecord(client, actor, clientId);
       return this.readOne(client, actor, clientId);
     });
@@ -568,6 +605,21 @@ export class ClientRecordService {
         [`als_${randomUUID()}`, clientId, ...entityScope(actor), alias.trim(), actor.userId],
       );
       await this.audit(client, actor, "client.alias.add", clientId, alias.trim());
+      const fresh = await client.query(
+        "SELECT display_name, date_of_birth FROM desk_clients WHERE client_id=$1",
+        [clientId],
+      );
+      const row = fresh.rows[0];
+      if (row) {
+        await screenSubject(client, {
+          tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.userId,
+        }, {
+          name: String(row.display_name),
+          aliases: await aliasNames(client, clientId),
+          dob: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : null,
+          clientId,
+        });
+      }
       return this.readOne(client, actor, clientId);
     });
   }
@@ -1448,6 +1500,14 @@ function verificationForRead(status: unknown, documents: Record<string, unknown>
   return "identified";
 }
 
+async function aliasNames(client: pg.PoolClient, clientId: string): Promise<string[]> {
+  const found = await client.query(
+    "SELECT alias FROM desk_client_aliases WHERE client_id = $1",
+    [clientId],
+  );
+  return found.rows.map((row) => String(row.alias));
+}
+
 function clientJson(
   row: Record<string, unknown>,
   documents: Record<string, unknown>[],
@@ -1457,6 +1517,7 @@ function clientJson(
   sameNameClientIds: string[],
   files: Record<string, unknown>[],
   accepted: ReadonlySet<string>,
+  screeningOpenReviews = 0,
 ) {
   return {
     clientId: row.client_id,
@@ -1482,6 +1543,7 @@ function clientJson(
     verificationStatus: verificationForRead(row.verification_status, documents),
     verifiedAt: row.verified_at ? new Date(row.verified_at as string | Date).toISOString() : null,
     screeningOutcome: row.screening_outcome ?? null,
+    screeningOpenReviews,
     screeningMatched: row.screening_matched ?? null,
     screenedAt: row.screened_at ? new Date(row.screened_at as string | Date).toISOString() : null,
     incorporationDate: isoDate(row.incorporation_date),

@@ -67,6 +67,7 @@ export default defineConfig({
          log — which is also where these tests read a confirmation code
          from, exactly as a person would read it off the server output. */
       RATES_SYNC: "off",
+      SCREENING_FETCH: "off",
       /* The reset route allows only NODE_ENV test or development, and
          only on the seam entry. Production boots src/index.ts and does
          not set this. */

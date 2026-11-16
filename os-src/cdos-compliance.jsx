@@ -393,13 +393,13 @@
      (pack-hk-v1). `pack` is read so a later feed can return true for
      one id without each screen growing its own pack check. */
   const WATCHLISTS = [];
-  const NOT_CONNECTED = "Sanctions screening is not connected yet. Check clients against your government's official lists yourself.";
+  const NOT_CONNECTED = "Not screened.";
   /* The duty those three packs already state, after the sentence above.
-     The sentence does not name a sanctions list. */
+     The sentence does not name a sanctions list. Filing stays outside the desk. */
   const PACK_DUTY = {
-    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties, including against the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. The owner does this outside the desk for now.',
-    'pack-sg-v1': 'Singapore law requires the owner to screen every customer against the MAS lists outside this desk for now. PSN01 paragraphs 7.51 to 7.53. This screen does not match names.',
-    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the local sanctions ordinances (Cap. 537 and Cap. 575). The owner does this outside the desk. This screen does not match names.',
+    'pack-ph-v1': 'Philippine law requires the owner to screen clients and counterparties, including against the ATC list. On a match, freeze without delay, tell the AMLC the same day, and file an STR. Filing stays outside the desk.',
+    'pack-sg-v1': 'Singapore law requires the owner to screen every customer against the MAS lists. PSN01 paragraphs 7.51 to 7.53. Filing stays outside the desk.',
+    'pack-hk-v1': 'Hong Kong law requires the owner to screen against designated persons under the local sanctions ordinances (Cap. 537 and Cap. 575). Filing stays outside the desk.',
   };
   function sanctionsListShips(pack) {
     const id = pack && (pack.packId || pack.id);

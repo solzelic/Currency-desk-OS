@@ -1,0 +1,162 @@
+import type pg from "pg";
+import type { ListEntry } from "./match.js";
+import type { ListSource } from "./sources.js";
+import { LIST_SOURCES } from "./sources.js";
+import { rescreenAll } from "./gate.js";
+import { latestGood, markUnchanged, sha256, storeFailed, storeGood, type SqlDb } from "./store.js";
+
+export type FetchBody = (url: string) => Promise<{ ok: boolean; status: number; body: string }>;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Official HTTPS hosts, plus the Security Council file host on one path. */
+export const OFFICIAL_HTTPS_HOSTS = new Set([
+  "www.international.gc.ca",
+  "scsanctions.un.org",
+  "www.publicsafety.gc.ca",
+]);
+
+/** Live redirect on 15 Nov 2026: scsanctions.un.org 302s here, on this path only. */
+export const UN_BLOB_HOST = "unsolprodfiles.blob.core.windows.net";
+export const UN_BLOB_PATH_PREFIX = "/publiclegacyxmlfiles/EN/";
+
+/** A list larger than this is refused. The live files on 15 Nov 2026 were under 3 MB. */
+export const LIST_BYTE_CAP = 12_000_000;
+
+const REDIRECT = new Set([301, 302, 303, 307, 308]);
+
+export function pinnedRedirect(currentUrl: string, location: string | null): string {
+  if (!location) throw new Error("redirect had no location");
+  const next = new URL(location, currentUrl);
+  if (next.protocol !== "https:") throw new Error("redirect was not https");
+  if (next.username || next.password) throw new Error("redirect left the official host");
+  if (next.port && next.port !== "443") throw new Error("redirect left the official host");
+  if (OFFICIAL_HTTPS_HOSTS.has(next.hostname)) return next.toString();
+  if (next.hostname === UN_BLOB_HOST && next.pathname.startsWith(UN_BLOB_PATH_PREFIX)) {
+    return next.toString();
+  }
+  throw new Error("redirect left the official host");
+}
+
+export async function fetchOfficial(
+  url: string,
+  doFetch: typeof fetch = fetch,
+): Promise<{ ok: boolean; status: number; body: string }> {
+  let current = url;
+  for (let hop = 0; hop < 4; hop += 1) {
+    const response = await doFetch(current, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(45_000),
+      headers: { "user-agent": "CurrencyDesk-list-fetch" },
+    });
+    if (REDIRECT.has(response.status)) {
+      current = pinnedRedirect(current, response.headers.get("location"));
+      continue;
+    }
+    const body = await response.text();
+    if (body.length > LIST_BYTE_CAP) throw new Error("list exceeded the byte cap");
+    return { ok: response.ok, status: response.status, body };
+  }
+  throw new Error("too many redirects");
+}
+
+/** More than 10 percent fewer rows than the last good snapshot. */
+export function listShrank(previousCount: number, nextCount: number): boolean {
+  if (previousCount <= 0) return false;
+  return nextCount * 10 < previousCount * 9;
+}
+
+export async function fetchOne(
+  db: SqlDb,
+  source: ListSource,
+  get: FetchBody,
+  pool?: pg.Pool | null,
+): Promise<"good" | "unchanged" | "failed"> {
+  const previous = await latestGood(db, source.key);
+  let downloaded: { ok: boolean; status: number; body: string };
+  try {
+    downloaded = await get(source.url);
+  } catch (err) {
+    await storeFailed(db, source, err instanceof Error ? err.message : "fetch failed", previous);
+    return "failed";
+  }
+  if (!downloaded.ok) {
+    await storeFailed(db, source, `HTTP ${downloaded.status}`, previous);
+    return "failed";
+  }
+  if (downloaded.body.length > LIST_BYTE_CAP) {
+    await storeFailed(db, source, "list exceeded the byte cap", previous);
+    return "failed";
+  }
+  let entries: ListEntry[];
+  try {
+    entries = source.parse(downloaded.body);
+  } catch (err) {
+    await storeFailed(db, source, err instanceof Error ? err.message : "parse failed", previous);
+    return "failed";
+  }
+  if (!entries.length) {
+    await storeFailed(db, source, "parsed list was empty", previous);
+    return "failed";
+  }
+  if (previous && listShrank(previous.keys.length, entries.length)) {
+    await storeFailed(db, source, "list shrank by more than 10 percent", previous);
+    return "failed";
+  }
+  const hash = sha256(downloaded.body);
+  if (previous && previous.hash === hash) {
+    await markUnchanged(db, previous.snapshotId, source.key);
+    return "unchanged";
+  }
+  let stored: { added: number; removed: number };
+  try {
+    stored = await storeGood(db, source, downloaded.body, entries, previous);
+  } catch (err) {
+    await storeFailed(db, source, err instanceof Error ? err.message : "store failed", previous);
+    return "failed";
+  }
+  if ((stored.added > 0 || stored.removed > 0) && pool) {
+    try { await rescreenAll(pool); }
+    catch (err) { console.error(`[sanctions] rescreen failed: ${err instanceof Error ? err.name : "Error"}`); }
+  }
+  return "good";
+}
+
+export async function fetchAll(
+  db: SqlDb,
+  get: FetchBody = fetchOfficial,
+  sources: readonly ListSource[] = LIST_SOURCES,
+  pool?: pg.Pool | null,
+): Promise<void> {
+  for (const source of sources) {
+    try {
+      await fetchOne(db, source, get, pool);
+    } catch (err) {
+      console.error(`[sanctions] ${source.key} store failed: ${err instanceof Error ? err.name : "Error"}`);
+    }
+  }
+}
+
+export function startSanctionsFetch(
+  db: SqlDb,
+  pool: pg.Pool | null,
+  get: FetchBody = fetchOfficial,
+): { stop: () => void; ready: Promise<void> } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const run = (): Promise<void> => {
+    const ready = fetchAll(db, get, LIST_SOURCES, pool).finally(() => {
+      if (stopped) return;
+      timer = setTimeout(run, DAY_MS);
+    });
+    return ready;
+  };
+  const ready = run();
+  return {
+    ready,
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}

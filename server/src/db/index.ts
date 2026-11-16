@@ -18,6 +18,8 @@ export type Db = PgliteDatabase<typeof schema> | NodePgDatabase<typeof schema>;
 
 export interface DbHandle {
   db: Db;
+  /** The Postgres pool when DATABASE_URL is set. Null on the embedded database. */
+  pool: pg.Pool | null;
   close(): Promise<void>;
 }
 
@@ -740,7 +742,7 @@ export async function createDb(): Promise<DbHandle> {
   if (url) {
     const pool = await provisionPostgres(url);
     const db = drizzlePg(pool, { schema });
-    return { db, close: () => pool.end() };
+    return { db, pool, close: () => pool.end() };
   }
   // embedded Postgres — file-backed in dev so data survives restarts,
   // pure in-memory when PGLITE_MEMORY=1 (tests)
@@ -776,8 +778,18 @@ export async function createDb(): Promise<DbHandle> {
   await client.exec(
     await readFile(new URL("./migrations/068_rate_page_domain_request.sql", import.meta.url), "utf8"),
   );
+  /* Official-list snapshots. PGlite does not run the SQL migrations. */
+  await client.exec(
+    await readFile(new URL("./migrations/075_sanctions_lists.sql", import.meta.url), "utf8"),
+  );
+  await client.exec(
+    await readFile(new URL("./migrations/076_sanctions_reviews.sql", import.meta.url), "utf8"),
+  );
+  await client.exec(
+    await readFile(new URL("./migrations/077_sanctions_review_rules.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
-  return { db, close: () => client.close() };
+  return { db, pool: null, close: () => client.close() };
 }
 
 export { schema };

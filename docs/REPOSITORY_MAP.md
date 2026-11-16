@@ -112,6 +112,22 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `075_sanctions_lists` adds `sanctions_list_snapshots`,
+  `sanctions_list_entries`, `sanctions_ops_flags`, and
+  `sanctions_score_settings`. 074 is the Persona inquiry client on PR 722,
+  so this file is 075.
+  The list addresses and the placeholder threshold are
+  `docs/SANCTIONS_LISTS.md`. The daily fetch starts in `listenServer`
+  unless `SCREENING_FETCH` is `off`.
+- Migration `076_sanctions_reviews` adds the screen result, the review
+  queue, the decision log, and the client's PEP answer. Migration
+  `077_sanctions_review_rules` names the shop's compliance officer, keeps
+  decisions for 5 years, and refuses clearing a confirmed match.
+  A quote, a cheque, a remittance, a bill, and a money order all pass
+  one hold. `POST /api/quotes/:id/post` holds a possible or confirmed match.
+  `GET /api/screening/reviews` is the named compliance officer. A teller
+  gets 403. `POST /api/screening/id-check` runs on every tier. Tiers 1 and
+  2 store the client's PEP answer. No vendor is called.
 - Migration `072_enquiry_v2_1` adds `enquiries.cd_id` (unique), `waitlist_reason`
   (checked: `outside-canada` or `not-fintrac-registered`), `invite_code`
   (unique) and `place_in_line` for Early Access v2.1 (CD-179 to CD-183). The

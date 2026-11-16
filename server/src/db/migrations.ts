@@ -105,6 +105,15 @@ export const migrations: readonly Migration[] = [
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
   /* 074 ties an identity check to the client file. 073 is on staging. */
   ["074_idv_inquiry_client", "src/db/migrations/074_idv_inquiry_client.sql"],
+  /* 075 stores official-list snapshots, entries, the ops alert flag, and
+     the placeholder score threshold. 074 is the Persona inquiry client
+     on PR 722, so this file follows it. */
+  ["075_sanctions_lists", "src/db/migrations/075_sanctions_lists.sql"],
+  /* 076 is the screen result, the review queue, and the PEP answer. */
+  ["076_sanctions_reviews", "src/db/migrations/076_sanctions_reviews.sql"],
+  /* 077 names the shop's compliance officer, keeps review decisions for
+     5 years, and refuses clearing a confirmed match. */
+  ["077_sanctions_review_rules", "src/db/migrations/077_sanctions_review_rules.sql"],
 ] as const;
 
 type MigrationReader = {

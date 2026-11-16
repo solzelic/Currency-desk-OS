@@ -58,7 +58,6 @@ const clientBody = z.object({
   verificationStatus: z
     .enum(["unverified", "identified", "verified", "expired"])
     .default("unverified"),
-  screeningOutcome: z.enum(["clear", "hit", "pending"]).nullable().optional(),
   screeningMatched: text(600),
   incorporationDate: nullableDay,
   incorporationJurisdiction: text(200),

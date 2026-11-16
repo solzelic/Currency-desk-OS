@@ -8,4 +8,4 @@ const started = await bootServer();
 const databaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 const pool = ledgerPoolFor(started.app);
 if (pool) registerTestDeskReset(started.app, pool, databaseUrl);
-await listenServer(started.app, started.db);
+await listenServer(started.app, started.db, started.pool);
