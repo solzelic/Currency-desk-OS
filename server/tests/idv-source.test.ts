@@ -25,6 +25,15 @@ describe("idv source locks", () => {
     expect(hits).toEqual([]);
   });
 
+  it("does not say Approved on the identity check", () => {
+    const text = readFileSync(join(import.meta.dirname, "../../os-src/cdos-clients.jsx"), "utf8");
+    const block = text.slice(text.indexOf("function IdentityCheck"), text.indexOf("function ProcessStanding"));
+    expect(block).not.toContain("Approved");
+    expect(block).toContain("Check passed (test)");
+    expect(block).toContain("ID details from this check are not saved on the desk. Enter the ID with Fix ID.");
+    expect(block).toContain("Check passed");
+  });
+
   it("compares the webhook signature with timingSafeEqual", () => {
     const text = readFileSync(join(root, "idv/providers/persona/index.ts"), "utf8");
     const body = text.slice(text.indexOf("function setOk"), text.indexOf("function verify"));

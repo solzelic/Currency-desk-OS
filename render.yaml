@@ -37,9 +37,8 @@ services:
     # Live deploys only from release. Promote moves release to a staging-verified commit.
     branch: release
     runtime: node
-    # free tier: $0, sleeps after ~15 idle minutes (~30s wake on next visit).
-    # switch to "starter" ($7/mo) for always-on once customers rely on it.
-    plan: free
+    # Paid plan, set by the owner. Do not set this back to free.
+    plan: 1c-2g
     # The onboarding page is compiled from the design bundle in design/onboarding/.
     # It is committed too, but building it here means a deploy can never serve
     # a page older than the design sitting next to it. No dependencies — it is

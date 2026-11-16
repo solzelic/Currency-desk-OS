@@ -57,9 +57,9 @@
   //   • verify — does not authenticate an ID.
   //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This does not screen the name against a sanctions list.', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This does not authenticate an ID or screen a sanctions list.', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This does not run a biometric or a database inquiry.', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };
@@ -520,11 +520,46 @@
   /* ====================================================================
      SUBJECT PANEL — embedded at the bottom of a contact profile
      ==================================================================== */
-  function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
+  function clientScreenLine(rec) {
+    const outcome = rec && rec.screeningOutcome;
+    const word = outcome === "possible" ? "Possible match"
+      : outcome === "confirmed" ? "Confirmed match"
+      : outcome === "clear" ? "Clear"
+      : "Not screened";
+    const open = rec && Number(rec.screeningOpenReviews) > 0 ? Number(rec.screeningOpenReviews) : 0;
+    return open ? word + " · " + open + " to review" : word;
+  }
+  function SubjectPanel({ name, kind, rec, by, setClients, settings, clientId }) {
     useStore();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
+    const [idvStatus, setIdvStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
+    useEffect(() => {
+      if (!clientId) return undefined;
+      let live = true;
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (!api || !api.idvStatus) return undefined;
+      api.idvStatus(clientId).then(body => {
+        if (!live || !body) return;
+        setIdvStatus(typeof body.status === 'string' ? body.status : '');
+        setChecksOn(!!body.checksEnabled);
+      }).catch(() => {});
+      return () => { live = false; };
+    }, [clientId]);
+    const idvWords = {
+      starting: 'Starting',
+      'in progress': 'In progress',
+      'needs review': 'Needs review',
+      approved: 'Check passed',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
+      declined: 'Declined',
+      failed: 'Failed',
+      expired: 'Expired',
+    }[idvStatus] || '';
+    const configured = checksOn || !!idvStatus;
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -543,8 +578,9 @@
       <div className="flex items-center gap-2.5 mb-3">
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself." /></div>
-          <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."} /></div>
+          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (checks.length ? (idvWords || 'Identity checks are on for this shop.') : 'Identity checks are on for this shop.') : 'Persona is not connected yet.'}</div>
+          <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>{clientScreenLine(rec)}</div>
         </div>
       </div>
 
@@ -559,7 +595,7 @@
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications on file. Persona is not connected yet.</div>}
+        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>{configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'}</div>}
     </div>);
   }
 
@@ -666,7 +702,39 @@
        an invented address and ID number onto the contact as "Pulled from
        the ID". Persona is not connected, so the contact is saved and that
        is all. */
-    const startCheck = () => { saveManual(); };
+    const tierNo = tplId === 'plus' ? '4' : tplId === 'quick' ? '2' : '3';
+    const needsPep = tierNo === '2' || tierNo === '3';
+    const [pepAnswer, setPepAnswer] = useState(null);
+    const [checkNote, setCheckNote] = useState('');
+    const startCheck = async () => {
+      const nm = name.trim();
+      if (!nm || saving) return;
+      if (needsPep && pepAnswer === null) return;
+      writeContact(nm);
+      setSaving(true);
+      try {
+        const created = await publishContact(nm);
+        const clientId = created && created.clientId;
+        if (clientId && window.CDOS.Backend && window.CDOS.Backend.screenIdCheck) {
+          const answer = await window.CDOS.Backend.screenIdCheck({
+            clientId: clientId,
+            tier: tierNo,
+            pepAnswer: needsPep ? pepAnswer : undefined,
+          });
+          if (answer && answer.state === 'needs_review') {
+            setCheckNote('This needs review. Your compliance officer will review this.');
+            return;
+          }
+        }
+      } catch (err) {
+        setCheckNote('This needs review. Your compliance officer will review this.');
+        return;
+      } finally {
+        setSaving(false);
+      }
+      if (onDone) onDone(nm);
+      onClose();
+    };
 
     // when the verification finishes, fold the extracted identity into the contact
     const check = checkId ? store[checkId] : null;
@@ -727,7 +795,18 @@
             <div className="text-[11px] mt-3 flex items-center gap-1.5" style={{ color: CD.faint }}><Ic n="send" s={11} c={CD.faint} /> Persona is not connected yet. Saving the contact does not send a check.</div>
           </div>)}
 
-          {step === 'choose' && <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />}
+          {step === 'choose' && <>
+            <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />
+            {needsPep && <div className="mt-3 text-[12.5px]" data-testid="pep-client-answer" style={{ color: CD.ink }}>
+              <div>The client's own answer.</div>
+              <div className="mt-1">Ask the client: are they a politically exposed person?</div>
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => setPepAnswer(true)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === true ? CD.ink : 'transparent', color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink }}>Yes</button>
+                <button type="button" onClick={() => setPepAnswer(false)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === false ? CD.ink : 'transparent', color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink }}>No</button>
+              </div>
+            </div>}
+            {checkNote && <div className="mt-3 text-[13px]" data-testid="kyc-needs-review" style={{ color: CD.ink }}>{checkNote}</div>}
+          </>}
 
           {step === 'verifying' && (<div className="text-center py-8">
             <span className="grid place-items-center mx-auto mb-4" style={{ width: 56, height: 56, borderRadius: '50%', background: CD.brassSoft }}><span className="kyc-spin" style={{ width: 24, height: 24, border: `3px solid ${CD.brass}`, borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} /></span>
@@ -767,7 +846,7 @@
           {step === 'choose' && (() => { const del = deliveryFor({ tplId, mode, via, email, phone, hasId: !!photo, subject: name.trim() }); return (<>
             <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
             <button onClick={() => setStep('details')} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Back</button>
-            <button onClick={startCheck} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer' }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {del.label}</button>
+            <button onClick={startCheck} disabled={del.missing || (needsPep && pepAnswer === null)} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: (del.missing || (needsPep && pepAnswer === null)) ? 'var(--cd-disabled)' : CD.ink, borderRadius: 9, cursor: (del.missing || (needsPep && pepAnswer === null)) ? 'not-allowed' : 'pointer' }}><Ic n="send" s={14} c="var(--cd-on-ink)" /> {del.label}</button>
           </>); })()}
           {step === 'done' && (<><div className="flex-1" /><button onClick={() => { if (onDone) onDone(name.trim()); onClose(); }} className="px-5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}>Done</button></>)}
         </div>

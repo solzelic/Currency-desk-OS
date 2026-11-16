@@ -117,15 +117,26 @@ describe("PIN writers", () => {
       return [...text.matchAll(/pinHash:\s*([^,}]+)/g)].map((m) => [p.slice(root.length + 1), m[1]!.trim()] as const);
     }).filter(([, value]) => !value.startsWith("text(\"pin_hash\")"));
     expect(writes).toEqual([
+      /* Sign-up v2.1's owner PIN: its own rule (four of a kind and 1234
+         refused, the rest labelled), SIGNUP-LOGIC §3.3, asserted below. */
+      /* the desk opening copies that same checked hash to the owner's staff row */
+      ["onboarding/signup-open.ts", "account.pinHash"],
+      ["onboarding/signup-pin.ts", "pinHash"],
       ["routes/admin.ts", "await hashPin(pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/pin.ts", "await hashPin(parsed.data.pin)"],
       ["routes/staff.ts", "await hashPin(pin)"],
     ]);
+    expect(readFileSync(join(root, "onboarding/signup-pin.ts"), "utf8")).toContain("const pinHash = await hashSignupSecret(pin);");
     const pin = readFileSync(join(root, "routes/pin.ts"), "utf8");
     expect(pin.match(/weakPinDetail\(parsed\.data\.pin\)/g)).toHaveLength(3);
     for (const f of ["routes/admin.ts", "routes/staff.ts"]) expect(readFileSync(join(root, f), "utf8")).toMatch(/const pin = generatePin\(\);/);
+    /* the sign-up writer is reached only after checkPin has passed */
+    const desk = readFileSync(join(root, "routes/signup-desk.ts"), "utf8");
+    expect(desk.indexOf("checkPin(parsed.data.pin, parsed.data.confirm)")).toBeGreaterThan(-1);
+    expect(desk.indexOf("checkPin(parsed.data.pin")).toBeLessThan(desk.indexOf("savePin(db"));
+    expect(files(root).filter((p) => readFileSync(p, "utf8").includes("savePin(")).map((p) => p.slice(root.length + 1)).sort()).toEqual(["onboarding/signup-pin.ts", "routes/signup-desk.ts"]);
     expect(files(root).some((p) => p.endsWith("staging-default-pin.ts"))).toBe(false);
   });
 
@@ -150,7 +161,7 @@ describe("PIN writers", () => {
     expect(named(/seeded_by\s*=/i)).toEqual(["staging/pin-reset.ts"]);
     /* is_test_shop: provisioning from the two staging fresh-shop doors, and the reset marking the seed shop. */
     expect(named(/isTestShop\s*:(?!\s*schema\.tenants\.isTestShop)|isTestShop\s*=(?!=)|is_test_shop\s*=\s*true/)).toEqual(
-      ["db/schema.ts", "onboarding/provision.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
+      ["db/schema.ts", "onboarding/provision.ts", "onboarding/signup-open.ts", "routes/onboarding-public.ts", "routes/signup.ts", "staging/pin-reset.ts"]);
   });
 });
 

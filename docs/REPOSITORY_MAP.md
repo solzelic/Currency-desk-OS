@@ -29,10 +29,11 @@ say.
 | `design/emails/` | email design reference | ✅ |
 | `design/kyc-handoff/` | KYC design handoff: brand tokens, motion spec, verification-states reference | ✅ |
 | `design/onboarding/` | onboarding design bundle (build input, `currencydesk-onboarding.html`) | replaced by design exports |
+| `design/onboarding/signup-v2.1/` | Sol's frozen sign-up v2.1 prototype, unchanged (`PROVENANCE.md`), plus `../signup-v2.1-{bridge,chapters,open,consent}.js` (hand-written: the page ⇄ real server) and `../signup-sso.html` | design file replaced only by a new export; the bridge is source |
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
 | `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. Customer HTML does not load unpkg, Babel, or React dev builds. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
-| `scripts/` | build + design-import tools + governance checks | ✅ |
+| `scripts/` | build + design-import tools + governance checks; `capture-signup.cjs` / `signup-capture-measure.cjs` capture visible signup states, and `compare-signup-capture.mjs` retains every comparison difference | ✅ |
 | `tests/e2e/` | Playwright seam suite (drives the browser, then asks the ledger) | ✅ |
 | `docs/` | durable engineering docs; `PROJECT_STATE.md` is the living one. Product-demo sit-down: `docs/DEMO_DESK.md` | ✅ |
 | `render.yaml` | the deployment: build command, env contract, routes | ✅ carefully |
@@ -43,6 +44,7 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
+| `design/onboarding/signup-v2.1/*` + `signup-v2.1-{bridge,chapters,open,consent,audio,tour}.js` + `signup-recordings/` + `signup-sso.html` | `npm run build:signup` (asserted patches, agreement hash checked, `scripts/signup-aot.mjs` compiles the template to React calls with pinned parse5) | `web/signup.html`, `web/app/signup.js`, `web/signup-sso.html`, `web/signup/{flags,shots,recordings}` |
 | `CurrencyDesk OS.html` + `os-src/` + `shared/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
@@ -70,7 +72,8 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | Staging way back to sign-in | `scripts/staging-back-link.mjs`, injected into every site page and the setup page: on a staging hostname only, it asks `GET /api/staging/signin` and, when the door is open, draws a fixed "Staging · Back to sign in" link to `/login` (Sol, 14 Nov). Live never asks. |
 | `/login`, `/app` | the OS — compiled `web/app/index.html` + `/web/app/os.js`. `STATIC_INDEX` names the uncompiled root shell as a fallback only; compiled output wins when present |
 | `/admin` | the admin panel — compiled `web/app/admin.html` |
-| `/onboarding/*` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`; `asCode` reads anything else typed as a code, `fmtRef` recognises their own ID typed compact or with a typographic dash) |
+| `/onboarding`, `/onboarding/sso`, `/onboarding/<CD-ID>` | sign-up v2.1 (`web/signup.html`; `server/src/routes/signup-page.ts`). The ID is typed on the page, never carried in a link. `/onboarding/sso` is the Google/Microsoft return page. `?step=` opens a state only on a test server (`SIGNUP_TEST_SEED=1`, never production or staging) |
+| `/onboarding/<reference>` | invite-code onboarding (`web/onboarding.html`; code read from the path). The code in the path (the application's reference) is the only key. A v2.1 application's CurrencyDesk ID comes from `GET /api/onboarding/:ref/state` (`application.cdId`) and is shown as theirs, never looked up as a code (`scripts/build-onboarding.mjs`, the bridge's `ID`; `asCode` reads anything else typed as a code, `fmtRef` recognises their own ID typed compact or with a typographic dash) |
 | `/legal` `/faq` `/compliance` `/contact` | generated standalone pages |
 | `/sites/yorkfx/*` | the customer storefront (`YorkFX/`); customer domains rewrite here via Host header |
 | `/YorkFX/*` | storefront files on the root allow-list (the OS embeds the Rate Board in an iframe from here) |
@@ -81,6 +84,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 | `GET /api/workspaces/:slug` (`server/src/routes/workspaces.ts`) | Early Access v2.1 address check, public, no sign-in. Answers `{ slug, available, suggestions[] }`: taken when a desk uses the address (`tenants.site_slug`), a sign-up in progress holds it (`pending_signups.slug`), or an application that was not declined asked for it (`enquiries.details.workspace`); a reserved word is never free. Up to three free alternatives in the design's order. Never cached; 60 checks a minute per client address (`clientIp`). The reserved words and the address shape are one module, `server/src/onboarding/reserved-slugs.ts`, shared with sign-up and desk creation. |
 | `POST /api/enquiries/:reference/sam` (`server/src/routes/enquiry-sam.ts`) | Early Access v2.1 "Call later", public, no sign-in. `{ at }` (or null for as soon as allowed) is moved into calling hours in the applicant's zone (`server/src/enquiries/sam.ts`: weekdays 9:00 to 21:30, weekends 10:00 to 18:00, last start five minutes before the end; the browser's zone, else the province's), kept on `enquiries.sam_call_at` in UTC with `sam_call_zone`, and returned. Only an accepted v2.1 application (Invited, with a CurrencyDesk ID) with consent on record for the number it gave and no stop after it; otherwise 404 or 409. Thirty bookings an hour per client address. Consent is `enquiry_call_consents` (migration 073): number, exact sentence, address, Cloudflare country, browser; only ever inserted, and a stop is another row that `growth/calls.ts` honours. |
 | `npm run staging -- mark-db`, `npm run staging -- reset-pins` (CLI, `server/src/staging/cli.ts`) | No HTTP route. `mark-db` inserts the one `staging` row into the insert-only `db_environment` table (migration 060; a trigger refuses UPDATE, DELETE and TRUNCATE) with an audit row, only when `isStagingRuntime` is true; a second run is a no-op, and no row means live. `reset-pins` runs the staging PIN reset (`server/src/staging/pin-reset.ts`), which also runs at boot after the demo seed: with that row, a staging runtime and `is_test_shop`, it stores 0000 as everyone's PIN in test shops and never touches a shop with a Persona key or inquiry, a live Stripe event, a filed report or a real FINTRAC number. Both use `DATABASE_URL`; there is one database role. |
+| `npm run persona -- register-webhook` (CLI, `server/src/idv/cli.ts`) | No HTTP route. Registers the Persona webhook for the inquiry events the adapter handles. Sanctions stay in house, so watchlist events are not subscribed. Default URL `https://currencydesk-staging.onrender.com/api/webhooks/idv/persona`, or `--url`. Refuses unless `isStagingRuntime` is true. `--production` is refused until go-live (CD-219), and a live Persona key is refused regardless of flags. Live Persona is blocked in code until a later change with Sol's yes. The secret-file write stays in the command and is not reached. Lists webhooks first and does not create a duplicate URL. Run it only in an interactive shell, never as a job or a deploy step. If the output may have been kept, rotate the secret. On staging the signing secret is printed on stdout once and is not logged, written, or sent on. |
 | `GET /api/public/rate-pages/:slug`, `GET /api/public/screens/:token` (`server/src/routes/rate-pages.ts`) | Rates v2.5 public reads, no sign-in. The shop's rate page once the owner turns it on, and one window screen by its random token. Both answer the latest published board from `rate_boards` through `server/src/rates/public-board.ts` (code, buy, sell only) and are 404 for a suspended shop. Desk side: `GET`/`PUT /api/rate-page` (owner) and `/api/window-screens` (`rates:change`), stored in `shop_rate_pages` and `window_screens` (migration 062). The editor: `PATCH /api/rate-page/content` (what the page says, migration 063; contact and hours by day go to `tenants.site_config`), `GET /api/rate-page/preview` (staff, live or not), `POST /api/window-screens/:id/reset`, and the logo (`PUT`/`DELETE`/`GET /api/rate-page/logo`, public at `/api/public/rate-pages/:slug/logo` and `/api/public/screens/:token/logo`; checked in `server/src/rates/logo.ts`, migration 064). A screen's last sighting: `window_screens.last_seen_at` (migration 066), written by the public screen answer at most once a minute (`screenSighted`). Take it further: `POST`/`DELETE /api/rate-page/domain-request` (owner; `shop_rate_pages.domain_request`, migration 068; the request is also an enquiry of kind `contact` in the admin console's messages). Framing: every HTML answer carries `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN` except `/r/` pages (`frame-ancestors *`, for the embed code), set in `server/src/app.ts`. Position (`GET /api/ledger/position`) also gives each currency's `avgCostHome` and the branch's `unrealizedPnlHome`, the figures the Rates screens show. Guardrails at post: `POST /api/quotes/:id/post` refuses a deal under its margin floor (422 `MARGIN_BELOW_FLOOR`) unless `marginOverrideReason` or a manager's rate override gives a reason; the rule is `server/src/rates/guardrails.ts`, the settings are the desk document's `cdos_settings`, each such deal is audited as `deal.margin_below_floor`. Lock rates: `PUT /api/rates/lock` (`branches.rates_locked_at`, `rates_locked_by`, migration 067); while set, `POST /api/rates/publish` answers 409 `rates_locked` and `publishFromMarket` leaves the board alone. Auto-publish: `PUT /api/rates/auto-publish` (`branches.auto_publish_rates`, migration 065); `server/src/rates/market.ts` publishes every branch with it on from each pull, in its home currency (`midsInHome`), never moving a pinned row. `server/src/rates/rate-page.ts` makes each shop's page (also at provisioning), validates and resolves its content, and makes the storefront's hours lines from the week (`hoursFromWeek`, used by `PATCH /api/rate-page/content` and `PATCH /api/tenant`). |
 | `/r/:slug`, `/s/:token` (`rates-public/rate-page.html`, `rates-public/window-screen.html`) | Rates v2.5 public pages, one file each for every shop. The rate page and a window screen read `/api/public/rate-pages/:slug` and `/api/public/screens/:token`; no sign-in, no shop data in the file, shop text written as text. Both load `/shared/currency-face.js` for flags and names; the rate page's fonts come from `/web/fonts`. Served from the repository root through the static allow-list (exact file names). |
 | `/api/*` | the API. Ledger, quotes and client-records routes register **only when a database URL is configured** |
@@ -105,7 +109,10 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Shop domains: the Host map is memory (`server/src/sites.ts`). Boot loads
   it once. Saving or clearing a domain, and deleting a desk that had one,
   reload it on this process. That instant reload assumes one server
-  instance. Staging and live each run as a single instance on Render free.
+  instance. Staging and live each run as a single instance. Live's compute
+  plan in render.yaml is the paid plan 1c-2g (1 CPU, 2 GB), set by the
+  owner, and must not be set back to free. Staging is a separate service
+  and is not in that file.
   With more instances, a domain saved on one can lag on the others until
   the safety reload, up to 30 minutes. The safety reload runs every 30
   minutes, or longer when `SITE_DOMAIN_REFRESH_MINUTES` is set, and never
@@ -118,6 +125,22 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `075_sanctions_lists` adds `sanctions_list_snapshots`,
+  `sanctions_list_entries`, `sanctions_ops_flags`, and
+  `sanctions_score_settings`. 074 is the Persona inquiry client on PR 722,
+  so this file is 075.
+  The list addresses and the placeholder threshold are
+  `docs/SANCTIONS_LISTS.md`. The daily fetch starts in `listenServer`
+  unless `SCREENING_FETCH` is `off`.
+- Migration `076_sanctions_reviews` adds the screen result, the review
+  queue, the decision log, and the client's PEP answer. Migration
+  `077_sanctions_review_rules` names the shop's compliance officer, keeps
+  decisions for 5 years, and refuses clearing a confirmed match.
+  A quote, a cheque, a remittance, a bill, and a money order all pass
+  one hold. `POST /api/quotes/:id/post` holds a possible or confirmed match.
+  `GET /api/screening/reviews` is the named compliance officer. A teller
+  gets 403. `POST /api/screening/id-check` runs on every tier. Returning client (tier 2, and the old word quick) and ID and selfie (tier 3, and the old word verify) store the client's PEP answer. In person is tier 1. ID, selfie and database is tier 4 (the old word plus) and does not store a PEP answer on this route. No vendor is called.
+- Migration `081_idv_check_records` adds the ID check record, consent, deal link, supersession, number reveal, and face-crop view. 078 to 080 are claimed by open sign-up PRs, so this file is 081. Updates and truncates stay blocked. A row delete is allowed only after `retain_until` (5 years after the check). Clearing the face crop columns is allowed only after `face_crop_retained_until`. The document number and the face crop are AES-256-GCM ciphertext from HKDF subkeys of `ID_NUMBER_KEY` (`key_version` 1). A shop with the face crop off, or a check with no crop, shows "No photo on file". Persona full images and selfies are not stored. `branches.province` is the Quebec gate: unknown or Quebec is counter only, including a start with no tier. The staging demo branch `br-yorkville` is set to ON. PGlite runs this file from `createDb` because it does not run the SQL migration list.
 - Migration `072_enquiry_v2_1` adds `enquiries.cd_id` (unique), `waitlist_reason`
   (checked: `outside-canada` or `not-fintrac-registered`), `invite_code`
   (unique) and `place_in_line` for Early Access v2.1 (CD-179 to CD-183). The
@@ -188,6 +211,7 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   `PUT /api/settings/idv` are the owner's. Provider-specific field
   rules live under `server/src/idv/providers/`.
 - Migration `051_idv_inquiry_status` adds `idv_inquiries.status` (default `starting`). 049 is the inquiry map, already on main. 050 is the shop config on the stack parent, so this file is 051. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` reads `idv_shop_config`, takes the provider from the registry, and starts a sandbox check for the caller's shop, branch, and teller. The Persona adapter resolves the key from the row's name, or `PERSONA_API_KEY` when the name is empty, and uses the row's template id. A per-shop advisory lock covers the cap count and the insert.
+- Migration `074_idv_inquiry_client` adds `idv_inquiries.client_id` (nullable, no foreign key: client files live on the ledger database). 073 is the previous file. The column is also in the boot DDL because PGlite does not run SQL migrations. `POST /api/idv/start-check` stores it when the body names a client on the caller's shop. `GET /api/idv/clients/:clientId` returns that client's latest status. `GET /api/idv/clients/:clientId/checks` uses that same client lookup, including when the file lives on the ledger connection. A client with no check returns an empty list. The client file shows the status. `POST /api/idv/checks/in-person` records a counter check with no Persona call and no photo. `POST /api/idv/checks/returning` re-screens sanctions and the PEP answer for this shop only, and still runs when there is no photo ("No photo on file"). `POST /api/idv/consents` stores consent before `POST /api/idv/inquiries/:inquiryId/one-time-link`. The link is refused with no consent, in Quebec, or when the branch province is unknown. A terminal webhook fetches the inquiry with `include=verifications`, drops photo fields, and may keep one encrypted 96 by 96 crop from the ID front photo. `POST /api/idv/checks/:recordId/reveal` and `POST /api/idv/checks/:recordId/face` audit the view in the same transaction. Persona 30-day redaction policy (images, selfies, facial geometry, including Accounts) must be on before any real customer check. CD-219, addendum 4.4.
 - Migration `052_idv_credit_ledger` adds the append-only identity-check
   credit ledger `idv_credit_ledger`. The balance is the sum of the rows.
   A grant has no inquiry. The service accepts a whole number from 1 to 1000.
@@ -295,3 +319,34 @@ These four look out of place and are deliberately still there:
 Everything under `web/` (including `web/app/`) — generated or extracted, and
 CI-diffed against a fresh build. Migration files after merge. That is the
 whole list; everything else is source.
+
+### Local signup test facilities
+
+`server/src/local-test-runtime.ts` gates signup screenshot seeding and the
+seam-only code mailbox. Both require explicit test/development mode, loopback
+bind and database hosts, no deployment/staging marker, and loopback request
+IP/Host. Database host overrides are parsed with the PostgreSQL driver parser.
+The mailbox is memory-only and cleared when its server closes. It is not a
+staging code-delivery mechanism.
+
+`design/onboarding/signup-v2.1-audio.js` owns signup click sound scheduling and
+the account-menu mute preference. Pointer/key press only wakes the context;
+action or fallback sound runs on a frame within 180ms, once per click. It drops
+late async/timer tones and suppresses generic taps within 80ms. The frozen
+waveforms remain the source; no sound plays on page load.
+
+### Signup Day 1 inside the OS
+
+`os-src/cdos-signup-home.js` reads the signed-in administrator's own `/api/tenant`
+record for embedded `/app?onboarding=welcome`, and requires its signup v2.1 marker.
+The existing OS shell renders an inert Home with actual identity/setup status,
+locked apps and no till selection or automatic first-run tour. Missing proof,
+other roles, mismatched tenants and ordinary `/app` use normal routing. This
+welcome stage never enters the desktop effects that claim/open a till. Its
+readiness message is accepted only from that iframe, origin and activated tenant.
+`signup-v2.1-open.js` renders the iframe declaratively after `/open` succeeds;
+prototype chrome remains only for local review seeds. Build my desk hands off to
+the normal `/app` entry. The subsequent walkthrough remains separate work.
+
+The signup `signup-v2.1-setup.js` view adapter labels opening counts as draft
+amounts by currency; it never supplies a converted cash valuation.

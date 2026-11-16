@@ -172,6 +172,13 @@
        be trading in. */
     const winDays = (RANGES.find(r => r[0] === range) || RANGES[1])[2];
     const [book, setBook] = useState({ loading: true, summary: null, prior: null, position: null, error: '' });
+    const [screenTile, setScreenTile] = useState('Not screened');
+    useEffect(() => {
+      if (!window.CDOS.Backend || !window.CDOS.Backend.screeningDesk) return;
+      window.CDOS.Backend.screeningDesk()
+        .then((desk) => setScreenTile(desk && desk.openReviews > 0 ? String(desk.openReviews) : 'Not screened'))
+        .catch(() => setScreenTile('Not screened'));
+    }, []);
     useEffect(() => {
       const backend = window.CDOS.Backend;
       if (!backend) { setBook({ loading: false, summary: null, prior: null, position: null, error: 'This desk is not signed in to the ledger.' }); return; }
@@ -496,7 +503,7 @@
             </div>
             <div className="mt-2.5" style={{ fontSize: 10.5, color: (dueN + D.kyc) > 0 ? T.oxblood : T.green, display: 'flex', alignItems: 'center', gap: 6 }}><Ic n={(dueN + D.kyc) > 0 ? 'alert' : 'checkcircle'} s={12} /> {(dueN + D.kyc) > 0 ? `${dueN + D.kyc} item(s) need attention` : 'Reports and KYC have nothing open'}</div>
             <div className="cd-tile-frame"><div className="cd-honest-tiles mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${T.hair}` }}>
-              {[['Sanctions', 'Not connected', T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
+              {[['Sanctions', screenTile, T.steel], [`${X.regime.windowKind === 'banking_day' ? 'Banking day' : X.regime.windowKind === 'calendar_month' ? 'Month' : ((X.regime.aggHours || 24) + 'h')} aggregates`, X.agg, X.agg > 0 ? T.bronze : T.green], [`${X.regime.wireCode} to file`, X.eftr == null ? '—' : X.eftr, X.eftr ? T.oxblood : T.green]].map(([l, v, col]) => (
                 <button key={l} data-testid={l === 'Sanctions' ? 'dashboard-sanctions-tile' : undefined} onClick={() => onOpenApp && onOpenApp('compliance')} className="text-left" style={{ background: T.vignette, border: `1px solid ${T.hair}`, borderRadius: 8, padding: '7px 10px' }}>
                   <div style={{ fontSize: typeof v === 'number' ? 18 : 13, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{v}</div>
                   <div style={{ fontSize: 9.5, color: T.steel }}>{l}</div>

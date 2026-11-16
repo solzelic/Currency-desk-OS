@@ -26,6 +26,8 @@ import { clearPinAttempts, generatePin, hashPin, pinLockedUntil } from "./pin.js
 import { forgetClaimedCount, isStagingDoorEnquiry } from "./early-access.js";
 import { makeReference } from "./enquiries.js";
 import { audit } from "../audit.js";
+import { reissueSignupId } from "../onboarding/reissue-id.js";
+import { idTail } from "../onboarding/cd-id-door.js";
 import { ensureDefaultChequeSchedule } from "../state/default-cheque-schedule.js";
 import { sendEmail, inviteEmail, tempPasswordEmail, cdIdEmail, replyEmail, replyToAddress, makeCode, verificationEmail, type EmailStatus } from "../email.js";
 import { hasHostedSite, refreshSiteDomains, warnSiteDomainRefreshFailure } from "../sites.js";
@@ -745,6 +747,35 @@ export function registerAdminRoutes(app: FastifyInstance, db: Db) {
       email = m.ok ? m.email : null;
     }
     return { ok: true, reference, was, email };
+  });
+
+  /* ---- reissue a CurrencyDesk ID (SIGNUP-LOGIC §2.1) ---------------------
+     Support's answer to "I think someone else has my ID": a new ID, and the
+     old one stops working at once (it no longer matches any application,
+     so the sign-up door answers 404). Both are logged as their last four
+     characters. The new ID goes to the email on file, never on screen
+     here, and never to an address typed by the caller. Before the desk
+     opens only: an open desk's IDs belong to its staff accounts. */
+  app.post<{ Params: { id: string } }>("/api/admin/enquiries/:id/reissue-cd-id", async (req, reply) => {
+    const who = await gate(req, reply, "applications:write");
+    if (!who) return;
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, req.params.id)).limit(1))[0];
+    if (!row) return reply.code(404).send({ error: "not_found" });
+    if (!row.cdId) return reply.code(409).send({ error: "no_cd_id", detail: "This application was never issued a CurrencyDesk ID." });
+    if (row.status === "accepted") {
+      return reply.code(409).send({ error: "already_open", detail: "Their desk is open. Reissue the ID from the staff record." });
+    }
+    const changed = await reissueSignupId(db, row.id, who.id);
+    if (!changed) return reply.code(409).send({ error: "already_open" });
+    const { cdId, was } = changed;
+    const d = changed.row.details ?? {};
+    const message = cdIdEmail({ name: String(d.firstName ?? row.name ?? "Hello").replace(/[<>&"']/g, ""), cdId, replaced: true });
+    const email = await sendEmail(row.email, message.subject, { text: message.text, html: message.html, sensitive: true });
+    await audit(db, {
+      tenantId: row.tenantId ?? PLATFORM_TENANT, legalEntityId: "-", branchId: "-", actorId: who.id,
+      action: "cd_id.reissue_delivery", detail: { enquiryId: row.id, delivery: email },
+    });
+    return { ok: true, id: idTail(cdId), was: idTail(was), email };
   });
 
   /* ---- who runs CurrencyDesk --------------------------------------------

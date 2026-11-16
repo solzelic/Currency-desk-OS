@@ -67,6 +67,7 @@ export default defineConfig({
          log — which is also where these tests read a confirmation code
          from, exactly as a person would read it off the server output. */
       RATES_SYNC: "off",
+      SCREENING_FETCH: "off",
       /* The reset route allows only NODE_ENV test or development, and
          only on the seam entry. Production boots src/index.ts and does
          not set this. */
@@ -76,6 +77,14 @@ export default defineConfig({
          server allows twenty an hour from one address unless this says
          otherwise (routes/enquiries.ts); Render leaves it unset. */
       ENQUIRY_IP_MAX: "1000",
+      /* Sign-up v2.1: the codes it emails are never logged, so the seam
+         entry keeps them in memory for the suite (email-test-mailbox.ts).
+         Passkeys need an origin the browser trusts: localhost, over http,
+         outside production only (onboarding/passkey.ts). */
+      CD_TEST_MAILBOX: "1",
+      SIGNUP_TEST_SEED: "1",
+      WEBAUTHN_RP_ID: "localhost",
+      WEBAUTHN_ORIGINS: `http://localhost:${PORT}`,
     },
   },
 

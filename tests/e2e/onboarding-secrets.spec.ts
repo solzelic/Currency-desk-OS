@@ -40,12 +40,29 @@ const stored = (page: Page) =>
 
 const rawStored = (page: Page) => page.evaluate((key) => localStorage.getItem(key), KEY);
 
+/* A screen puts the cursor in its first field one frame after it appears
+   (focusStage in the design). Text typed into another field before that
+   frame goes into the first field. That frame can come after Playwright
+   has focused a field and before it types. The password then went into
+   "Your name" and its own box stayed empty. Continue stayed disabled, and
+   a disabled Continue has no --cd-cta, so a walk waited 15 s for a button
+   it could not find. The test that reads the saved copy saw the password
+   saved under ownerName. A person never sees this: the frame runs before
+   the screen is painted. So nothing is typed on a screen until it has
+   placed its cursor. */
+const arrived = (page: Page) => expect(page.locator('[data-focus="true"]').first()).toBeFocused();
+
 /* Opens the page on screen `i` with `data` already saved, the way a
    person who reloads mid sign-up arrives. */
 async function openAt(page: Page, i: number, data: Record<string, unknown>) {
-  await page.goto("/onboarding");
+  /* The bare /onboarding is sign-up v2.1 now (it keeps nothing in the browser;
+     tests/e2e/signup-v21.spec.ts). The older page is still what an invitation
+     with a setup reference opens, so its #431 guarantees are checked on it,
+     through a path that is neither a reference nor a CurrencyDesk ID. */
+  await page.goto("/onboarding/older-setup");
   await page.evaluate(([key, value]) => localStorage.setItem(key, value), [KEY, JSON.stringify({ i, data })] as const);
   await page.reload();
+  if (i === 5) await arrived(page);
 }
 
 const SECRET_FIELDS = ["ownerPass", "code", "cardNum", "cardExp", "cardCvc", "cardName", "backup"];
@@ -113,6 +130,9 @@ test("after launch the saved copy is gone", async ({ page }) => {
   await openAt(page, 5, ANSWERS);
   await page.getByPlaceholder("At least 6 characters").fill("harbour-pass-2026");
 
+  await expect(page.getByPlaceholder("At least 6 characters")).toHaveValue("harbour-pass-2026");
+  expect((await stored(page))?.data.ownerName).toBe(ANSWERS.ownerName);
+
   /* Walk forward with the primary button until the verify screen. */
   const next = page.locator('button[style*="--cd-cta"]').first();
   const codeBox = page.getByPlaceholder("000000");
@@ -120,11 +140,13 @@ test("after launch the saved copy is gone", async ({ page }) => {
     await expect(next).toBeEnabled();
     await next.click();
   }
+  await arrived(page);
   await codeBox.fill("424242");
   expectNoSecrets(await stored(page));
 
   const card = page.getByPlaceholder("Card number");
   await expect(card).toBeVisible();
+  await arrived(page);
   await card.fill(TEST_CARD);
   await page.getByPlaceholder("MM / YY").fill("1229");
   await page.getByPlaceholder("CVC").fill("123");
@@ -172,10 +194,12 @@ async function onNetwork(page: Page, seen: { put: SaveBody[]; launch: SaveBody[]
   );
   await page.goto(`/onboarding/${REF}`);
   await expect(page.getByPlaceholder("At least 6 characters")).toBeVisible();
+  await arrived(page);
   expect(await page.evaluate(() => (window as unknown as { __cdOnb?: { code?: string } }).__cdOnb?.code)).toBe(REF);
 }
 
 async function typePasswordAndCard(page: Page) {
+  await expect(page.locator('[data-focus="true"]').first()).toBeFocused();
   await page.getByPlaceholder("At least 6 characters").fill(PASS);
   const next = page.locator('button[style*="--cd-cta"]').first();
   const codeBox = page.getByPlaceholder("000000");
@@ -183,9 +207,11 @@ async function typePasswordAndCard(page: Page) {
     await expect(next).toBeEnabled();
     await next.click();
   }
+  await arrived(page);
   await codeBox.fill("424242");
   const card = page.getByPlaceholder("Card number");
   await expect(card).toBeVisible();
+  await arrived(page);
   await card.fill(TEST_CARD);
   await page.getByPlaceholder("MM / YY").fill("1229");
   await page.getByPlaceholder("CVC").fill("123");
@@ -250,6 +276,7 @@ test("after launch a reload does not restore the saved copy or PUT state", async
   );
   await page.reload();
   await expect(page.getByPlaceholder("At least 6 characters")).toBeVisible();
+  await arrived(page);
   await typePasswordAndCard(page);
   await page.getByRole("button", { name: /tick here to accept it/ }).click();
   await page.getByRole("button", { name: `Open ${ANSWERS.operatingName}` }).click();

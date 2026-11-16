@@ -1617,6 +1617,7 @@
        branch, no till → till pick. Multiple → filtered picker. None → stop. */
     useEffect(() => { stageRef.current = stage; }, [stage]);
     useEffect(() => { settingsRef.current = settings; }, [settings]);
+    const signupHomeRef = useRef(null);
     const meRef = useRef(me);
     useEffect(() => { meRef.current = me; }, [me]);
 
@@ -1751,6 +1752,8 @@
             srvUserRef.current = u; setSrvUser(u);
             setUser(rec.code || rec.name); setAuthRec(rec);
             await hydrateTenant();
+            const welcome = window.CDOS.signupHomeFromSession && await window.CDOS.signupHomeFromSession(u);
+            if (welcome) { signupHomeRef.current = welcome; applyRole(rec); setWins([]); setStage('signup-welcome'); return; }
             routeAfterAuth(rec);
           })
           .catch(() => {});
@@ -2248,9 +2251,9 @@
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
-      const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold > 0) ? setup.idThreshold : null;
+      const typedId = (typeof setup.idThreshold === 'number' && setup.idThreshold >= 0) ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || foreignRules || typedId == null ? null
+      const idOver = typedId === 0 ? 0 : legacyPause || foreignRules || typedId == null ? null
         : reportOver == null ? typedId
         : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;
@@ -2525,7 +2528,7 @@
       </div>
     );
 
-    return (<div id="os">
+    return (<div id="os" inert={stage === 'signup-welcome' ? '' : undefined} data-signup-welcome={stage === 'signup-welcome' ? 'true' : undefined}>
       {/* B · desk lock — session stays live behind a PIN. Portalled to body
           so the fixed overlay escapes the desktop's stacking context. */}
       {deskLocked && ReactDOM.createPortal(<LockDesk operator={me} onUnlock={() => setDeskLocked(false)}
@@ -2549,7 +2552,7 @@
           </span>
         </div>
         <span className="mb-sep"></span>
-        <span className="mb-active">{topWin ? metaFor(topWin).title : 'Desktop'}</span>
+        <span className="mb-active">{topWin ? metaFor(topWin).title : stage === 'signup-welcome' ? 'Home' : 'Desktop'}</span>
         <div className="mb-right" style={{ marginLeft: 'auto' }}>
           <div className="mb-ops">
             <div className="mb-bell-wrap" ref={bellRef}>
@@ -2681,11 +2684,11 @@
           </div>
           <div className="tenant-meta">
             <span className="tenant-name">{settings.operatingName || settings.bizName || 'Exchange house'}</span>
-            <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />
+            {stage === 'signup-welcome' ? <span>Open · setting up</span> : <StationSwitcher branches={branches} station={station} setStation={setStation} log={log} me={me} gate={tillGate} lockTill={(ROLE_SCOPE[me.role] || 'till') === 'till' && me.role !== 'Owner'} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />}
           </div>
         </div>
         <div className="tenant-right">
-          <Ticker locked={locked} cfg={tickerCfg} book={lockedBook} />
+          {stage !== 'signup-welcome' && <Ticker locked={locked} cfg={tickerCfg} book={lockedBook} />}
         </div>
       </div>
 
@@ -2696,7 +2699,7 @@
         <div className="phone-shop"><i className="phone-appdot" aria-hidden="true" /><span className="phone-shop-name">{shopName}</span></div>
         <div className={'phone-till' + (day.closed ? ' is-closed' : '')}>
           <i className="phone-till-dot" />
-          <span>{day.closed ? 'Till closed' : 'Till open'}</span>
+          <span>{stage === 'signup-welcome' ? 'Open · setting up' : day.closed ? 'Till closed' : 'Till open'}</span>
         </div>
         {profileButton('phone')}
       </header>
@@ -2713,7 +2716,7 @@
             style={{ '--c': APP_ACCENT[id] || CD.ink, ...(editApps ? { animationDelay: (APP_ORDER.indexOf(id) % 5) * -0.11 + 's' } : {}) }}
             onClick={() => { if (!editApps) openApp(id); }}>
             {editApps && <button className="app-badge remove" title="Remove from dock — moves to the Store" onClick={(e) => { e.stopPropagation(); animateRemove(id); }}><Ic n="minus" s={13} c="var(--cd-on-ink)" /></button>}
-            <span className="ai"><Ic n={APPMETA[id].icon} s={22} c={APP_ACCENT[id] || CD.ink} />{id === 'ledger' && alertN > 0 ? <span className="dock-badge" title={`${alertN} flagged — click to view`} onClick={(e) => { if (!editApps) { e.stopPropagation(); jumpAlerts(); } }}>{alertN}</span> : null}</span>
+            <span className="ai" style={stage === 'signup-welcome' ? { opacity: .35 } : undefined}><Ic n={stage === 'signup-welcome' ? 'lock' : APPMETA[id].icon} s={22} c={APP_ACCENT[id] || CD.ink} />{id === 'ledger' && alertN > 0 ? <span className="dock-badge" title={`${alertN} flagged — click to view`} onClick={(e) => { if (!editApps) { e.stopPropagation(); jumpAlerts(); } }}>{alertN}</span> : null}</span>
             <span className="al">{APPMETA[id].title}</span>
             {editApps && <span className="app-grip" title="Drag to reorder" onPointerDown={(e) => startAppDrag(e, id)}><Ic n="grip" s={16} c={CD.mute} /></span>}
           </div>);
@@ -2735,7 +2738,7 @@
 
       {/* DESKTOP */}
       <div id="desktop">
-        <div className="desk-watermark"><div className="big">CD·OS</div>the operating system for exchange houses</div>
+        {stage === 'signup-welcome' && signupHomeRef.current ? <window.CDOS.SignupHome tenant={signupHomeRef.current} owner={me.name} /> : <div className="desk-watermark"><div className="big">CD·OS</div>the operating system for exchange houses</div>}
         {wins.map(w => w.min ? null : (
           <Win key={w.id} win={w} meta={metaFor(w)} active={w.id === activeId} nav={winNav[w.id]}
             onFocus={focusWin} onClose={closeWin} onMin={minWin} onZoom={zoomWin} onDrag={moveWin} onResize={sizeWin} onSnap={snapWin} onAdd={duplicateWin}>
@@ -2759,7 +2762,7 @@
         <nav id="phonebar" aria-label="Desk">
           {PHONE_TABS.map(t => (
             <button key={t.id} type="button" className={'phone-tab' + (phoneOn === t.id ? ' is-on' : '')} data-phone-app={t.id} aria-current={phoneOn === t.id ? 'page' : undefined} style={{ '--c': phoneTabColour(t.id), '--brand-primary': phoneTabColour(t.id) }} onClick={() => openApp(t.id)}>
-              <Ic n={t.icon || APPMETA[t.id].icon} s={22} />
+              <Ic n={stage === 'signup-welcome' ? 'lock' : t.icon || APPMETA[t.id].icon} s={22} />
               <span className="lbl">{t.label}</span>
             </button>
           ))}
@@ -2781,7 +2784,7 @@
           a handover without forgetting the step they were on. A switch
           or a handover passes arrival so the tour stays shut and is not
           marked done. */}
-      {window.CDOS.FirstRun && <window.CDOS.FirstRun
+      {stage !== 'signup-welcome' && window.CDOS.FirstRun && <window.CDOS.FirstRun
         role={me.role}
         staffId={(srvUser && srvUser.id) || user || (me && me.name)}
         apps={visibleApps}

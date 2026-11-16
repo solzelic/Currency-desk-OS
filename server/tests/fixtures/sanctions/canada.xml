@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<data-set xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<record>
+		<Country-Pays>Belarus / Bélarus</Country-Pays>
+		<LastName-NomDeFamille>Yepikhov</LastName-NomDeFamille>
+		<GivenName-Prenom>Sergei</GivenName-Prenom>
+		<Aliases-Alias>Siarhei Yepikhau</Aliases-Alias>
+		<DateOfBirthOrShipBuildDate-DateDeNaissanceOuDateDeConstructionDuNavire>1966-05-16</DateOfBirthOrShipBuildDate-DateDeNaissanceOuDateDeConstructionDuNavire>
+		<Schedule-Annexe>1, Part 1</Schedule-Annexe>
+		<Item-NumeroDarticle>73</Item-NumeroDarticle>
+		<DateOfListing-DateDinscription>2021-12-02</DateOfListing-DateDinscription>
+	</record>
+	<record>
+		<Country-Pays>Belarus / Bélarus</Country-Pays>
+		<EntityOrShip-EntiteOuNavire>Belaeronavigatsia Republican Unitary Air Navigation Services Enterprise</EntityOrShip-EntiteOuNavire>
+		<Schedule-Annexe>1, Part 2</Schedule-Annexe>
+		<Item-NumeroDarticle>1</Item-NumeroDarticle>
+		<DateOfListing-DateDinscription>2021-06-17</DateOfListing-DateDinscription>
+	</record>
+</data-set>

@@ -13,6 +13,8 @@ export type IdvResult = {
   outcome: IdvOutcome;
   /* Set by the adapter for created, started, and needs review. */
   inquiryStatus?: "in progress" | "needs review";
+  /* A watchlist event is acknowledged and not stored. */
+  ignore?: boolean;
 };
 
 export type IdvStart = {
@@ -23,6 +25,11 @@ export type IdvStart = {
   apiKeyRef?: string | null;
   templateId?: string | null;
   shopCode?: string;
+};
+
+/* The ledger connection, when client files live there rather than on the app database. */
+export type ClientLookup = {
+  query(text: string, values: readonly unknown[]): Promise<{ rowCount?: number | null }>;
 };
 
 export type IdvWebhookInput = {

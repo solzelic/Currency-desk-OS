@@ -228,7 +228,9 @@ test.describe("Early Access v2.1", () => {
     });
     expect(faces).toEqual({ front: "visible", back: "hidden" });
     const open = page.getByRole("link", { name: /Start building your desk/ });
-    await expect(open).toHaveAttribute("href", `/onboarding/${body.reference}`);
+    /* Sign-up v2.1: a plain door, no token; the ID is typed (SIGNUP-LOGIC §2.1). The older
+       setup page, opened by reference, refuses a v2.1 reservation, so the link never goes there. */
+    await expect(open).toHaveAttribute("href", "/onboarding");
 
     /* Copy says copied only when the copy happened (superseded PR #682's rule) */
     await page.getByRole("button", { name: "Copy" }).click();
@@ -251,64 +253,57 @@ test.describe("Early Access v2.1", () => {
        is pressed the way a person presses it. */
     await expect(open).toHaveCSS("pointer-events", "auto", { timeout: 30_000 });
     await open.click({ force: true });
-    await expect(page).toHaveURL(new RegExp(`/onboarding/${body.reference}$`));
+    await expect(page).toHaveURL(/\/onboarding$/);
 
-    /* Setup shows the same CurrencyDesk ID, recognised, not the reference in the link (Sol, 14 Nov). */
-    const idField = page.getByPlaceholder("CD-XXXXXX");
-    await expect(idField).toHaveValue(body.cdId);
-    await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
-    /* Somebody else's ID is not a key, so it is not even looked up. */
+    /* The sign-up opens at its welcome, and the ID is typed in: nothing is carried in the link.
+       The shop's name is all a typed ID shows before the email code. */
+    await expect(page.getByText("Welcome. Let’s open your desk.")).toBeVisible();
+    await page.getByRole("button", { name: /^Start/ }).click();
+    const idField = page.getByPlaceholder("CD-YORK-7K42");
+    await expect(idField).toHaveValue("");
+    /* The older setup door stays shut for this reservation: privacy, not a second way in. */
+    expect((await page.request.get(`/api/onboarding/${body.reference}/state`)).status()).toBe(404);
+    const shown = await page.request.get(`/api/onboarding/${body.cdId}/state`);
+    expect(Object.keys((await shown.json()) as object).sort()).toEqual(["operatingName", "state", "valid"]);
+
+    /* Part of their own ID, while they type it, is never sent anywhere. */
     const lookups: string[] = [];
-    page.on("request", (r) => { if (r.url().includes("/api/onboarding/CD-ABCD-")) lookups.push(r.url()); });
-    await idField.fill("CD-ABCD-2345");
-    await expect(page.getByText("To open your setup, use the button in the email we sent you.")).toBeVisible();
+    page.on("request", (r) => { if (/\/api\/onboarding\/CD-[^/]+\/state/.test(r.url())) lookups.push(r.url()); });
+    const compact = body.cdId.replace(/-/g, "").toLowerCase();
+    await idField.pressSequentially(compact.slice(0, 7));
     await page.waitForTimeout(800);
     expect(lookups).toHaveLength(0);
-    await idField.fill(body.cdId);
-    await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
-    /* It is theirs to keep and quote. It is not a sign-in yet, so the hint does not say it is. */
-    await expect(page.getByText("It stays yours. Quote it whenever you write to us.")).toBeVisible();
-    await expect(page.getByText(/sign in from now on/)).toHaveCount(0);
-    /* Their own ID typed the way it is read out (no second hyphen), key by key as a person types
-       or pasted, or pasted with a typographic dash, is still theirs, and is never looked up. */
-    const own: string[] = [];
-    page.on("request", (r) => { if (r.url().includes("/api/onboarding/") && !r.url().includes(body.reference)) own.push(r.url()); });
-    const compact = body.cdId.replace(/-/g, "").toLowerCase();
-    await idField.fill("");
-    await idField.pressSequentially(compact);
+    /* Typed the way it is read out, it formats itself and is theirs. Under v2.1 it is the sign-in
+       identifier, and the hint now says so (Sol, 14 Nov). */
+    await idField.pressSequentially(compact.slice(7));
     await expect(idField).toHaveValue(body.cdId);
     await expect(page.getByText("Recognised", { exact: true })).toBeVisible();
-    await idField.fill(compact);
-    await expect(idField).toHaveValue(body.cdId);
+    await expect(page.getByText("That’s your ID. It’s unique to you, and it’s how you sign in from now on.")).toBeVisible();
+    expect(lookups.filter((u) => u.includes(body.cdId))).toHaveLength(1);
+    /* Pasted with typographic dashes, it is still theirs, and is not asked about again. */
     await idField.fill(body.cdId.replace(/-/g, "\u2013"));
     await expect(idField).toHaveValue(body.cdId);
-    /* a stranger's ID pasted with typographic dashes is an ID too, so it is not looked up either */
+    await page.waitForTimeout(800);
+    expect(lookups.filter((u) => u.includes(body.cdId))).toHaveLength(1);
+    /* A stranger's well-formed ID is asked about once, and the screen does not say whose it is. */
     await idField.fill("CD\u2013ABCD\u20132345");
     await expect(idField).toHaveValue("CD-ABCD-2345");
-    await page.waitForTimeout(800);
-    expect(own).toHaveLength(0);
-    /* Part of their own ID, while they correct it, is not sent anywhere. */
-    const partial = await page.evaluate(async () => {
-      const b = (window as unknown as { __cdOnb: { known: Record<string, boolean>; refState(v: string): string; checkRef(v: string, done: () => void): void } }).__cdOnb;
-      b.known["CD-HARB-7K42"] = true;
-      const states = ["CD-HARB-7K4", "CD-HARB-7K"].map((v) => b.refState(v));
-      b.checkRef("CD-HARB-7K", () => {});
-      await new Promise((r) => setTimeout(r, 700));
-      return states;
-    });
-    expect(partial).not.toContain("no");
-    expect(own.filter((u) => u.includes("CD-HARB"))).toHaveLength(0);
-    /* A six-character code typed with a space after four letters is looked up as that code. */
+    await expect(page.getByText("We don’t have that ID. Check the email we sent you, or have it sent again.")).toBeVisible();
+    await expect(page.getByText(/Open it/).first()).toBeVisible();
+
+    /* The older setup page is unchanged for invitations that carry a setup reference: its own
+       code reading still holds there (the walkthrough's reference opens it). */
+    await page.goto("/onboarding/CD-WALKTHRU");
+    const codeField = page.getByPlaceholder("CD-XXXXXX");
     const zaqr: string[] = [];
     await page.route("**/api/onboarding/CD-ZAQRBJ/state", (r) => { zaqr.push(r.request().url()); return r.fulfill({ status: 404, contentType: "application/json", body: "{}" }); });
-    await idField.fill("CD ZAQR BJ");
+    await codeField.fill("CD ZAQR BJ");
     await expect.poll(() => zaqr.length).toBe(1);
     await expect(page.getByText("Not recognised", { exact: true })).toBeVisible();
-    /* The walkthrough's code, typed key by key, is still that code (answered here, so the page stays). */
     await page.route("**/api/onboarding/CD-WALK*/state", (r) => r.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
-    await idField.fill("");
-    await idField.pressSequentially("cd-walkthru");
-    await expect(idField).toHaveValue("CD-WALKTHRU");
+    await codeField.fill("");
+    await codeField.pressSequentially("cd-walkthru");
+    await expect(codeField).toHaveValue("CD-WALKTHRU");
   });
 
   test("a Canadian shop not yet registered is told its address is held", async ({ page }) => {

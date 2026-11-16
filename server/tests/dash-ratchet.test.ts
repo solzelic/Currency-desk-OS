@@ -25,6 +25,9 @@ const BASELINE: Record<string, number> = {
   "design/emails/CurrencyDesk Emails.dc.html": 47,
   "design/kyc-handoff/kyc-verification-states.html": 26,
   "design/onboarding/currencydesk-onboarding.html": 18,
+  /* Sol's frozen sign-up v2.1 prototype, copied unchanged (PROVENANCE.md): the
+     prototype wins on copy, so its dashes are recorded rather than edited. */
+  "design/onboarding/signup-v2.1/CurrencyDesk Sign-up v2.1.dc.html": 37,
   "design/site/CurrencyDesk Compliance.dc.html": 0,
   "design/site/CurrencyDesk Contact.dc.html": 0,
   "design/site/CurrencyDesk Early Access.dc.html": 0,
@@ -38,7 +41,7 @@ const BASELINE: Record<string, number> = {
   "os-src/cdos-branches.jsx": 31,
   "os-src/cdos-cheques-app.jsx": 2,
   "os-src/cdos-cheques.jsx": 10,
-  "os-src/cdos-clients.jsx": 24,
+  "os-src/cdos-clients.jsx": 23,
   "os-src/cdos-compliance-app.jsx": 13,
   "os-src/cdos-compliance.jsx": 5,
   "os-src/cdos-dashboard.jsx": 10,
@@ -94,7 +97,7 @@ const BASELINE: Record<string, number> = {
   "server/src/routes/tenantState.ts": 2,
   "server/src/state/contract.ts": 1,
   "server/src/state/shape.ts": 10,
-  "web/app/os.js": 749,
+  "web/app/os.js": 748,
 };
 const FIXED: Array<[string, string]> = [
   ["os-src/cdos-branches.jsx", "Drag someone onto a branch to assign them, or onto a till to post them to that drawer"],
