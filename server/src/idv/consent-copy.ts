@@ -1,7 +1,7 @@
-/* CD-219 wording v0.3.7, still a draft for counsel. One module so it can be swapped.
+/* CD-219 wording v0.3.8, still a draft for counsel. One module so it can be swapped.
    The small-photo sentence is included only while this shop keeps the face crop. */
 
-export const CONSENT_VERSION = "consent-v0.3.7-draft";
+export const CONSENT_VERSION = "consent-v0.3.8-draft";
 
 export const ID_DETAILS_LINE = "Your ID details are kept for at least 5 years because the law requires it.";
 

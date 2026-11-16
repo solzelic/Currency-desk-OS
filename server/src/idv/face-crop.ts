@@ -37,9 +37,9 @@ function decode(bytes: Buffer): Rgba | null {
 
 function windowFor(width: number, height: number): { x: number; y: number; side: number } {
   if (width > height * 1.2) {
-    const side = Math.max(1, Math.min(width, height, Math.round(height * 0.78)));
-    const x = Math.min(Math.round(width * 0.06), Math.max(0, width - side));
-    const y = Math.max(0, Math.round((height - side) / 2));
+    const side = Math.max(1, Math.min(width, height, Math.round(height * 0.55)));
+    const x = Math.min(Math.max(0, Math.round(width * 0.05)), Math.max(0, width - side));
+    const y = Math.min(Math.max(0, Math.round(height * 0.25)), Math.max(0, height - side));
     return { x, y, side };
   }
   const side = Math.max(1, Math.round(Math.min(width, height) * 0.8));

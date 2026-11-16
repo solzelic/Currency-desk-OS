@@ -21,7 +21,7 @@ export const PEP_TIERS = new Set<TierNumber>(["2", "3"]);
 
 export type CheckMethod = "in_person" | "returning_client" | "id_and_selfie" | "id_selfie_database";
 
-export type CheckResult = "pass" | "declined" | "needs_review" | "method_not_completed";
+export type CheckResult = "pass" | "declined" | "needs_review" | "method_not_completed" | "returning_confirmed" | "expired";
 
 export const METHOD_LABEL: Record<CheckMethod, string> = {
   in_person: "photo ID, in person",
@@ -89,9 +89,28 @@ export function idCheckedLine(date: string, methodLabel: string, test: boolean):
   return test ? `${line} (test)` : line;
 }
 
-export function returningLine(originalDate: string, methodLabel: string, today: string, test: boolean): string {
-  const line = `ID checked ${originalDate}, ${methodLabel}. Returning client ${today}`;
-  return test ? `${line} (test)` : line;
+export function returningLine(originalDate: string, methodLabel: string): string {
+  return `Returning client, ID checked ${originalDate}, ${methodLabel}`;
+}
+
+export function expiredLine(isoDate: string): string {
+  const [year, month, day] = isoDate.slice(0, 10).split("-");
+  const name = MONTHS[Number(month) - 1] ?? month;
+  return `Expired ${Number(day)} ${name} ${year}`;
+}
+
+export function civilToday(timeZone: string, now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone.trim() || "America/Toronto",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
+export function isPastExpiry(isoDate: string | null, timeZone: string, now = new Date()): boolean {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}/.test(isoDate)) return false;
+  return isoDate.slice(0, 10) < civilToday(timeZone, now);
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
