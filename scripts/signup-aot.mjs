@@ -6,7 +6,7 @@ const quote = JSON.stringify;
 const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 const names = { class: 'className', for: 'htmlFor', tabindex: 'tabIndex', inputmode: 'inputMode', autocomplete: 'autoComplete', autocapitalize: 'autoCapitalize', maxlength: 'maxLength', spellcheck: 'spellCheck', autoplay: 'autoPlay', playsinline: 'playsInline', viewbox: 'viewBox', preserveaspectratio: 'preserveAspectRatio' };
 const events = { onclick: 'onClick', onchange: 'onChange', oninput: 'onInput', onfocus: 'onFocus', onblur: 'onBlur', onkeydown: 'onKeyDown', onmousedown: 'onMouseDown', onscroll: 'onScroll' };
-const tags = new Set('a b button circle div h1 h2 i iframe img input label p path rect span strong svg video'.split(' '));
+const tags = new Set('a b button circle details div h1 h2 i iframe img input label p path rect span strong summary svg video'.split(' '));
 const boolean = new Set(['disabled', 'muted', 'loop', 'autoplay', 'playsinline', 'inert']);
 function expression(raw) {
   const s = raw.trim();

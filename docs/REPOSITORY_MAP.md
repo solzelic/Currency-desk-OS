@@ -297,3 +297,9 @@ bind and database hosts, no deployment/staging marker, and loopback request
 IP/Host. Database host overrides are parsed with the PostgreSQL driver parser.
 The mailbox is memory-only and cleared when its server closes. It is not a
 staging code-delivery mechanism.
+
+`design/onboarding/signup-v2.1-audio.js` owns signup click sound scheduling and
+the account-menu mute preference. Pointer/key press only wakes the context;
+action or fallback sound runs on a frame within 180ms, once per click. It drops
+late async/timer tones and suppresses generic taps within 80ms. The frozen
+waveforms remain the source; no sound plays on page load.

@@ -7,7 +7,9 @@ guard stale client replies and exact count inputs. SAM opt-in/stop/reconsent now
 uses attributable append-only evidence; payment cannot revive a later opt-out.
 Test seed and in-memory code mailbox now require a local runtime, loopback
 database/bind configuration and loopback request; deployment markers fail closed.
-Full integrated acceptance, Day 1 Home, staff/cash/billing handoffs, telephony and
+Signup has an account-menu sound switch and one frame-aligned response per click;
+late sounds drop after 180ms. Physical Safari/Chrome speaker and AirPods acceptance
+remains unrun. Full integrated acceptance, Day 1 Home, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
