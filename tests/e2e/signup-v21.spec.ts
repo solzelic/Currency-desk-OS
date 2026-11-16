@@ -94,6 +94,30 @@ export async function choosePin(page: Page) {
 }
 
 test.describe("sign-up v2.1, the visitor's path", () => {
+  test("the local breach-range seam preserves breached and unavailable password refusals", async ({ page, request }) => {
+    const email = `owner-${unique()}@synthetic.example`;
+    const { cdId } = await apply(request, email, `Harbour Exchange ${unique()}`);
+    await page.goto("/onboarding");
+    await toSignIn(page, cdId);
+    await press(page, /email and password/);
+    for (const [password, error, status] of [
+      // Synthetic range fixtures from the local seam entry, never a live bypass.
+      ["seam leaked lantern phrase", "That password has appeared in a leak. Pick another.", 422],
+      ["seam unavailable lantern phrase", "We couldn't check that password just now. Try again in a minute, or choose another way to sign in.", 503],
+    ] as const) {
+      await page.getByPlaceholder("At least 12 characters").fill(password);
+      await page.getByPlaceholder("Same again").fill(password);
+      const response = page.waitForResponse(r => r.url().endsWith(`/api/onboarding/${cdId}/password`) && r.request().method() === "POST");
+      await page.locator("[data-foot] button").last().click();
+      expect((await response).status()).toBe(status);
+      await expect(page.getByText(error, { exact: true })).toBeVisible();
+      await expect(page.getByText("How will you sign in?")).toBeVisible();
+    }
+    await withPassword(page);
+    await proveInbox(page, request, email);
+    await expect(page.getByText("Now, your PIN.", { exact: false })).toBeVisible();
+  });
+
   test("Early Access hands over to sign-up with the ID typed, and the shop's name is all it shows", async ({ page, request }) => {
     const email = `owner-${unique()}@synthetic.example`;
     const { cdId, reference } = await apply(request, email, `Harbour Exchange ${unique()}`);

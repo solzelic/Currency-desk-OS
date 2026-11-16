@@ -1,6 +1,7 @@
-/* Start a fresh shop opens the existing desk setup.
-   Live renders no button. Staging renders the button and no
-   one-time card. Continuing is the real /onboarding/CD-... page. */
+/* Start a fresh shop opens the existing desk setup, and Start on Day 1
+   opens a new test shop on its first day. Live renders neither button.
+   Staging renders both and no one-time card. Continuing is the real
+   /onboarding page. */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -17,8 +18,10 @@ const { transform } = require("@babel/standalone") as {
   transform: (src: string, opts: object) => { code: string | null };
 };
 
+type Win = { sessionStorage: { setItem(k: string, v: string): void }; location: { assign(path: string): void } };
 const api = require("../../os-src/staging-fresh-shop.js") as {
-  freshShopButton: (enabled: unknown) => { label: string }[];
+  freshShopButton: (enabled: unknown) => { key: string; mark: string; label: string; dayOne?: boolean }[];
+  startDayOne: (win: Win) => void;
   freshShopMessage: (status: unknown) => string;
   freshShopEntry: (body: unknown) => string | null;
 };
@@ -73,8 +76,13 @@ describe("fresh shop button", () => {
     for (const off of [false, undefined, null, 0, "1", { enabled: false }]) {
       expect(api.freshShopButton(off), JSON.stringify(off)).toEqual([]);
     }
+    expect(api.freshShopButton(true)).toEqual([
+      { key: "fresh-shop", mark: "1", label: "Start a fresh shop" },
+      { key: "day-one", mark: "day1", label: "Start on Day 1", dayOne: true },
+    ]);
     const live = draw({ employees: [] });
     expect(live).not.toContain("Start a fresh shop");
+    expect(live).not.toContain("Start on Day 1");
     expect(live).not.toContain("data-fresh-shop");
     const staging = draw({ employees: [], stagingOpen: true });
     expect(staging).toContain("Start a fresh shop");
@@ -83,6 +91,14 @@ describe("fresh shop button", () => {
     expect(fresh).toContain("Staging");
     expect(fresh).toContain("1px solid var(--si-mute)");
     expect(fresh).not.toContain("var(--si-primary)");
+    /* Start on Day 1 sits beside it, in the same outline style, with the same tag */
+    expect(staging).toContain('data-fresh-shop="day1"');
+    const day = staging.slice(staging.indexOf('data-fresh-shop="day1"'), staging.indexOf('data-fresh-shop="day1"') + 700);
+    expect(day).toContain("Start on Day 1");
+    expect(day).toContain("Staging");
+    expect(day).toContain("1px solid var(--si-mute)");
+    expect(day).not.toContain("var(--si-primary)");
+    expect(staging.indexOf('data-fresh-shop="1"')).toBeLessThan(staging.indexOf('data-fresh-shop="day1"'));
     for (const label of ROLES) expect(staging).toContain(label);
     expect(staging).not.toMatch(/\u2014|\u2013/);
     expect(staging).not.toContain("ONE-TIME PASSWORD");
@@ -124,11 +140,35 @@ describe("fresh shop button", () => {
     const early = readFileSync(join(root, "web/early-access-v2.html"), "utf8");
     expect(early).toContain("q.get('door')");
     expect(early).toContain("stagingDoor: this._door");
-    expect(helper).not.toMatch(/localStorage|sessionStorage|location\.|console\./);
+    /* the helper keeps nothing: no localStorage, no console, and its one
+       sessionStorage write is Start on Day 1's bare timestamp (below) */
+    expect(helper).not.toMatch(/localStorage|console\./);
+    expect(helper.match(/sessionStorage\.setItem\(/g)).toHaveLength(1);
+    expect(page).toContain("window.CDOS.startDayOne(window)");
     expect(writes.join("\n")).toBe("");
     expect(locationStub.href).not.toContain("password");
     const os = readFileSync(join(root, "os-src/cdos-os.jsx"), "utf8");
     expect(os).not.toContain("shownCode");
     expect(os).not.toContain("afterFreshVerify");
+  });
+});
+
+describe("Start on Day 1", () => {
+  it("marks this tab with a bare timestamp, then opens the sign-up page at #day1", () => {
+    const stored: [string, string][] = [];
+    const opened: string[] = [];
+    const before = Date.now();
+    api.startDayOne({ sessionStorage: { setItem: (k, v) => { stored.push([k, v]); } }, location: { assign: (p) => { opened.push(p); } } });
+    expect(opened).toEqual(["/onboarding#day1"]);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]![0]).toBe("cdDayOne");
+    expect(stored[0]![1]).toMatch(/^[0-9]{13}$/);
+    expect(Number(stored[0]![1])).toBeGreaterThanOrEqual(before);
+    expect(Number(stored[0]![1])).toBeLessThanOrEqual(Date.now());
+    /* blocked storage still opens the page, which then mounts as usual */
+    const blocked: string[] = [];
+    api.startDayOne({ sessionStorage: { setItem: () => { throw new Error("blocked"); } }, location: { assign: (p) => { blocked.push(p); } } });
+    expect(blocked).toEqual(["/onboarding#day1"]);
+    expect(writes.join("\n")).toBe("");
   });
 });

@@ -4,7 +4,10 @@ import { bootServer, listenServer } from "./index.js";
 import { ledgerPoolFor } from "./ledger/routes.js";
 import { registerTestDeskReset } from "./ledger/test-desk-reset.js";
 import { openTestMailbox } from "./email-test-mailbox.js";
+import { seamBreachFetch } from "./seam-breach-range.js";
 
+/* Keep the real password rule, but never depend on HIBP uptime in local e2e. */
+globalThis.fetch = seamBreachFetch(globalThis.fetch);
 const started = await bootServer();
 /* Sign-up codes are never logged; the browser suite reads them here instead. */
 openTestMailbox(started.app);

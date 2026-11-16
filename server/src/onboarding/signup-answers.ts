@@ -13,6 +13,10 @@
    so `last_step` is a screen the page knows how to reopen.
    ============================================================ */
 import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { schema, type Db } from "../db/index.js";
+import { withSignupAccount } from "./signup-account.js";
+import { loadOrCreateOnboarding } from "./verify.js";
 
 const text = (max = 200) => z.string().trim().max(max);
 const flag = z.boolean();
@@ -88,6 +92,22 @@ export function parseAnswers(step: ResumableStep, answers: Record<string, unknow
     return { ok: false, detail: `${issue?.path.join(".") || "answer"}: ${issue?.message ?? "not valid"}` };
   }
   return { ok: true, step, values: parsed.data };
+}
+
+/** Save one screen's parsed answers for a verified account whose desk is not
+    open yet (PUT …/answers). Any answer clears the signature and the plan,
+    so the desk that opens is the desk that was signed. False when the
+    account is not verified or the desk already exists. */
+export async function saveSignupAnswers(db: Db, enquiryId: string, parsed: Extract<ParsedAnswers, { ok: true }>): Promise<boolean> {
+  return withSignupAccount(db, enquiryId, async (db, account) => {
+    if (account.state !== "verified") return false;
+    const row = await loadOrCreateOnboarding(db, enquiryId);
+    if (row.tenantId) return false;
+    const answers = { ...(row.answers ?? {}), ...parsed.values };
+    await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, enquiryId));
+    await db.update(schema.signupAccounts).set({ lastStep: parsed.step, confirmedAt: null, answersHash: null, setupIntentId: null, planChoice: null, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, enquiryId));
+    return true;
+  });
 }
 
 /** The answers a resume may show. The keys are this file's lists, so nothing else leaks back. */

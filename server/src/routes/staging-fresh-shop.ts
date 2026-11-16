@@ -8,9 +8,15 @@
    step. The code and the one-time password are returned in this
    response only. Only their hashes are stored. Nothing is emailed
    and nothing is logged. The body is ignored, so a caller cannot
-   name tnt-yorkfx. */
+   name tnt-yorkfx.
+
+   Also shared with Start on Day 1 (routes/staging-day-one.ts): the
+   staging identity (freshStagingIdentity) and the per-address count
+   (8 an hour, an IPv6 /64 as one address), plus Day 1's own
+   process-wide ceiling (allowDayOne). */
 import type { FastifyInstance } from "fastify";
 import { randomBytes, randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { eq } from "drizzle-orm";
 import { clientIp } from "../auth/client-ip.js";
 import { hashPassword, temporaryPassword } from "../auth/password.js";
@@ -23,9 +29,13 @@ import { slugTaken } from "../onboarding/provision.js";
 const CODE_TTL_MS = 10 * 60 * 1000;
 const WINDOW_MS = 60 * 60 * 1000;
 export const FRESH_SHOP_IP_MAX = 8;
+/* Start on Day 1 provisions a whole desk per press, so on top of the
+   per-address count the whole process takes at most this many an hour. */
+export const DAY_ONE_HOURLY_MAX = 30;
 export const STAGING_OWNER_DOMAIN = "@staging.invalid";
 
 const recent = new Map<string, number[]>();
+const dayOnePresses: number[] = [];
 
 /* The Early Access v2.1 start (U5b). The button hands out a one-time
    ticket bound to a staging identity and opens the website with it; the
@@ -63,7 +73,11 @@ export function restoreStagingTicket(ticket: string, held: Held): void {
 export function resetFreshShopThrottle(): void {
   recent.clear();
   tickets.clear();
+  dayOnePresses.length = 0;
 }
+
+/** How many address buckets the throttle holds now. For tests. */
+export const freshShopTracked = (): number => recent.size;
 
 export function isStagingFreshShop(
   email: string,
@@ -92,12 +106,51 @@ export async function stagingTestOwnerOnScreen(
   return row[0]?.isTestShop === true;
 }
 
-function allow(ip: string): boolean {
+/* The groups of an IPv6 address before its interface id, e.g. 2001:db8:1:2.
+   An embedded IPv4 tail counts as two groups. */
+function v6Prefix(ip: string): string {
+  const lower = ip.toLowerCase();
+  const width = (parts: string[]) => parts.reduce((n, p) => n + (p.includes(".") ? 2 : 1), 0);
+  const [head = "", tail] = lower.includes("::") ? lower.split("::") : [lower, undefined];
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array<string>(Math.max(0, 8 - width(left) - width(right))).fill("0"), ...right];
+  return groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":");
+}
+
+/** The address a press is counted against: an IPv4 address as it is, and
+    an IPv6 address by its /64, since one host's /64 is cheap to rotate. */
+export function freshShopBucket(ip: string): string {
+  return isIP(ip) === 6 ? `${v6Prefix(ip)}::/64` : ip;
+}
+
+/* Presses from this bucket inside the hour. Expired buckets are dropped,
+   so the map holds only addresses seen this hour. */
+function recentHits(key: string, now: number): number[] {
+  for (const [k, times] of recent) if (!times.some((t) => now - t < WINDOW_MS)) recent.delete(k);
+  return (recent.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
+}
+
+/** One more staging press from this address, if it has room this hour. */
+export function allowFreshShop(ip: string): boolean {
   const now = Date.now();
-  const hits = (recent.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
+  const key = freshShopBucket(ip);
+  const hits = recentHits(key, now);
   if (hits.length >= FRESH_SHOP_IP_MAX) return false;
-  hits.push(now);
-  recent.set(ip, hits);
+  recent.set(key, [...hits, now]);
+  return true;
+}
+
+/** Start on Day 1: the same per-address count as Start a fresh shop, and
+    the process-wide hourly ceiling. Both are checked before either counts. */
+export function allowDayOne(ip: string): boolean {
+  const now = Date.now();
+  const key = freshShopBucket(ip);
+  const hits = recentHits(key, now);
+  while (dayOnePresses.length && now - dayOnePresses[0]! >= WINDOW_MS) dayOnePresses.shift();
+  if (hits.length >= FRESH_SHOP_IP_MAX || dayOnePresses.length >= DAY_ONE_HOURLY_MAX) return false;
+  recent.set(key, [...hits, now]);
+  dayOnePresses.push(now);
   return true;
 }
 
@@ -113,9 +166,36 @@ export function stagingOnboardingMark(
   return slug;
 }
 
-function freshIdentity(): { slug: string; email: string } {
+export type StagingIdentity = { slug: string; email: string; hex: string };
+
+function freshIdentity(): StagingIdentity {
   const id = randomBytes(4).toString("hex");
-  return { slug: `stg-${id}`, email: `owner+${id}${STAGING_OWNER_DOMAIN}` };
+  return { slug: `stg-${id}`, email: `owner+${id}${STAGING_OWNER_DOMAIN}`, hex: id };
+}
+
+/** A staging identity nobody holds: no tenant or pending signup on the slug,
+    no staff sign-in, application or live ticket on the email. Null after
+    five tries. Writes nothing. */
+export async function freshStagingIdentity(db: Db): Promise<StagingIdentity | null> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const next = freshIdentity();
+    if (await slugTaken(db, next.slug, next.email)) continue;
+    const used = await db
+      .select({ id: schema.staffUsers.id })
+      .from(schema.staffUsers)
+      .where(eq(schema.staffUsers.staffId, next.email))
+      .limit(1);
+    if (used.length > 0) continue;
+    const applied = await db
+      .select({ id: schema.enquiries.id })
+      .from(schema.enquiries)
+      .where(eq(schema.enquiries.email, next.email))
+      .limit(1);
+    if (applied.length > 0) continue;
+    if ([...tickets.values()].some((held) => held.email === next.email)) continue;
+    return next;
+  }
+  return null;
 }
 
 export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): void {
@@ -123,24 +203,11 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
     if (!stagingDoorOpen(req.headers as StagingDoorHeaders)) {
       return reply.code(404).send({ error: "not_found" });
     }
-    if (!allow(clientIp(req))) return reply.code(429).send({ error: "slow_down" });
+    if (!allowFreshShop(clientIp(req))) return reply.code(429).send({ error: "slow_down" });
 
-    let slug = "";
-    let email = "";
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const next = freshIdentity();
-      if (await slugTaken(db, next.slug, next.email)) continue;
-      const used = await db
-        .select({ id: schema.staffUsers.id })
-        .from(schema.staffUsers)
-        .where(eq(schema.staffUsers.staffId, next.email))
-        .limit(1);
-      if (used.length > 0) continue;
-      slug = next.slug;
-      email = next.email;
-      break;
-    }
-    if (!slug || !email) return reply.code(503).send({ error: "unavailable" });
+    const identity = await freshStagingIdentity(db);
+    if (!identity) return reply.code(503).send({ error: "unavailable" });
+    const { slug, email } = identity;
 
     const password = temporaryPassword();
     const code = makeCode();
@@ -170,24 +237,11 @@ export function registerStagingFreshShopRoutes(app: FastifyInstance, db: Db): vo
     if (!stagingDoorOpen(req.headers as StagingDoorHeaders)) {
       return reply.code(404).send({ error: "not_found" });
     }
-    if (!allow(clientIp(req))) return reply.code(429).send({ error: "slow_down" });
+    if (!allowFreshShop(clientIp(req))) return reply.code(429).send({ error: "slow_down" });
 
-    let slug = "";
-    let email = "";
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const next = freshIdentity();
-      if (await slugTaken(db, next.slug, next.email)) continue;
-      const used = await db
-        .select({ id: schema.staffUsers.id })
-        .from(schema.staffUsers)
-        .where(eq(schema.staffUsers.staffId, next.email))
-        .limit(1);
-      if (used.length > 0) continue;
-      slug = next.slug;
-      email = next.email;
-      break;
-    }
-    if (!slug || !email) return reply.code(503).send({ error: "unavailable" });
+    const identity = await freshStagingIdentity(db);
+    if (!identity) return reply.code(503).send({ error: "unavailable" });
+    const { slug, email } = identity;
 
     const ticket = randomBytes(16).toString("hex");
     const now = Date.now();
