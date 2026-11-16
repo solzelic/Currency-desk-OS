@@ -124,3 +124,28 @@ test('the built page draws the refusal beside the website add-on, as an alert', 
   assert.match(page, /"data-web-refused":"true","role":"alert"/);
   assert.match(page, /v\?\.\["xWebRefused"\] \?/);
 });
+test('a ticked website has no price and is left out of the order', () => {
+  const h = websiteTicked();
+  const R = h.CD.priced(h.c, {
+    addonRows: [{ name: 'Your own rate website', priceStr: '$99 CAD/mo' }, { name: 'A setup week, on site', priceStr: '$5,000 once' }],
+  });
+  assert.equal(R.xWebPrice, '');
+  assert.equal(R.hasWeb, false);
+  assert.equal(R.xWebOpen, false);
+  assert.equal(R.addonRows[0].priceStr, '');
+  assert.equal(R.addonRows[1].priceStr, '$5,000 once');
+  assert.doesNotMatch(String(R.orderRecur), /99/);
+});
+test('the built page does not price, reserve, or bill the rate website', () => {
+  const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../web/signup.html', import.meta.url), 'utf8');
+  for (const file of [page, html]) {
+    assert.doesNotMatch(file, /Your rates, online\. Free/);
+    assert.doesNotMatch(file, /Both free/);
+    assert.doesNotMatch(file, /Reserve it now/);
+    assert.doesNotMatch(file, /billed from launch/);
+    assert.doesNotMatch(file, /\$99/);
+  }
+  assert.match(page, /Your rates, online\./);
+  assert.match(page, /data-web-soon/);
+});
