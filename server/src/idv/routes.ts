@@ -107,7 +107,8 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const shop = await loadShopIdv(db, who.legalEntityId);
     const province = await db.execute(sql`SELECT province FROM branches WHERE id = ${who.branchId} AND legal_entity_id = ${who.legalEntityId} LIMIT 1`);
     const gate = counterOnly((province.rows[0] as { province?: string | null } | undefined)?.province ?? null);
-    if (gate.quebec || (faceMatchTier(tier) && gate.counter)) {
+    const gateTier = tier ?? "3";
+    if (gate.quebec || (faceMatchTier(gateTier) && gate.counter)) {
       return reply.code(409).send({ code: "COUNTER_ONLY", message: gate.line });
     }
     const found = await db.execute(sql`

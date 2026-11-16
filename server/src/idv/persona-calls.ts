@@ -62,6 +62,43 @@ export async function generateOneTimeLink(input: {
   return link.trim();
 }
 
+async function readBounded(res: Response, cap: number): Promise<Buffer | null> {
+  const declared = res.headers.get("content-length");
+  if (declared !== null && declared !== "") {
+    const length = Number(declared);
+    if (!Number.isFinite(length) || length < 0 || length > cap) {
+      await res.body?.cancel();
+      return null;
+    }
+  }
+  const body = res.body;
+  if (!body) {
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > cap) return null;
+    return bytes;
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const step = await reader.read();
+      if (step.done) break;
+      total += step.value.byteLength;
+      if (total > cap) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(step.value);
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    return null;
+  }
+  if (total === 0) return null;
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
 function obj(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -83,8 +120,8 @@ export async function cropFromFrontPhoto(input: {
     await res.body?.cancel();
     return null;
   }
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > PHOTO_CAP) return null;
+  const bytes = await readBounded(res, PHOTO_CAP);
+  if (!bytes) return null;
   const crop = cropIdPortrait(bytes);
   if (!crop || !isSmallCrop(crop) || crop.equals(bytes)) return null;
   return crop;

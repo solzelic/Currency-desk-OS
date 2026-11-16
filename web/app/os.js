@@ -51953,8 +51953,8 @@ ${(filing.map || []).map(blockHTML).join('')}
        an invented address and ID number onto the contact as "Pulled from
        the ID". Persona is not connected, so the contact is saved and that
        is all. */
-    const tierNo = tplId === 'plus' ? '3' : tplId === 'quick' ? '1' : '2';
-    const needsPep = tierNo === '1' || tierNo === '2';
+    const tierNo = tplId === 'plus' ? '4' : tplId === 'quick' ? '2' : '3';
+    const needsPep = tierNo === '2' || tierNo === '3';
     const [pepAnswer, setPepAnswer] = useState(null);
     const [checkNote, setCheckNote] = useState('');
     const startCheck = async () => {

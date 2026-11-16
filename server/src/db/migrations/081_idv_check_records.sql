@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS idv_check_records (
   issuing_jurisdiction text,
   issuing_country text,
   expiry_date date,
-  result text NOT NULL CHECK (result IN ('pass', 'declined', 'needs_review', 'method_not_completed')),
+  result text NOT NULL CHECK (result IN ('pass', 'declined', 'needs_review', 'method_not_completed', 'returning_confirmed', 'expired')),
   provider_checks text,
   persona_inquiry_id text,
   government_id_verification_id text,
@@ -89,6 +89,9 @@ CREATE TABLE IF NOT EXISTS idv_check_records (
   database_step text NOT NULL DEFAULT 'not_applicable' CHECK (database_step IN ('off', 'not_applicable')),
   face_crop_ciphertext text,
   face_crop_retained_until timestamptz,
+  key_version integer NOT NULL DEFAULT 1 CHECK (key_version >= 1),
+  retain_until timestamptz NOT NULL DEFAULT (now() + interval '5 years'),
+  number_unavailable boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT idv_check_records_number_cipher CHECK (
     document_number_ciphertext IS NULL OR document_number_ciphertext LIKE 'aes-256-gcm$%'
@@ -175,11 +178,39 @@ BEGIN
 END;
 $$;
 
+/* A check row can be deleted only after retain_until. The face crop
+   columns can be cleared only after face_crop_retained_until. Every
+   other update, and every truncate, stays blocked. */
+CREATE OR REPLACE FUNCTION idv_check_records_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.retain_until <= now() THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'id check rows are append-only and kept for 5 years';
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.face_crop_retained_until IS NOT NULL
+       AND OLD.face_crop_retained_until <= now()
+       AND NEW.face_crop_ciphertext IS NULL
+       AND NEW.face_crop_retained_until IS NULL
+       AND (to_jsonb(OLD) - 'face_crop_ciphertext' - 'face_crop_retained_until')
+           = (to_jsonb(NEW) - 'face_crop_ciphertext' - 'face_crop_retained_until')
+    THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'id check rows are append-only and kept for 5 years';
+  END IF;
+  RAISE EXCEPTION 'id check rows are append-only and kept for 5 years';
+END;
+$$;
+
 DO $$
 DECLARE tbl text;
 BEGIN
   FOREACH tbl IN ARRAY ARRAY[
-    'idv_consents', 'idv_check_records', 'idv_check_deals', 'idv_record_supersessions',
+    'idv_consents', 'idv_check_deals', 'idv_record_supersessions',
     'idv_number_reveals', 'idv_crop_views', 'idv_returning_blocks'
   ]
   LOOP
@@ -195,3 +226,13 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+DROP TRIGGER IF EXISTS idv_check_records_append_only ON idv_check_records;
+CREATE TRIGGER idv_check_records_append_only
+  BEFORE UPDATE OR DELETE ON idv_check_records
+  FOR EACH ROW EXECUTE FUNCTION idv_check_records_guard();
+
+DROP TRIGGER IF EXISTS idv_check_records_no_truncate ON idv_check_records;
+CREATE TRIGGER idv_check_records_no_truncate
+  BEFORE TRUNCATE ON idv_check_records
+  FOR EACH STATEMENT EXECUTE FUNCTION idv_records_append_only();

@@ -64,6 +64,7 @@ export function personaFileHost(value: string): boolean {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:") return false;
+    if (url.port !== "" && url.port !== "443") return false;
     const host = url.hostname.toLowerCase();
     return host === "files.withpersona.com" || host === "withpersona.com" || host.endsWith(".withpersona.com");
   } catch {

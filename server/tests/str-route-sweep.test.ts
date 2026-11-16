@@ -44,6 +44,7 @@ const EXPECTED: Record<string, { status: number; reason: string }> = {
   "/api/public/rate-pages/:slug/logo": { status: 404, reason: "No shop has a live rate page at the sweep slug." },
   "/api/public/screens/:token/logo": { status: 404, reason: "No window screen holds the sweep token." },
   "/api/rate-page/logo": { status: 404, reason: "The sweep shop has not uploaded a logo." },
+  "/api/idv/clients/:clientId/checks": { status: 404, reason: "The sweep client is not on this shop, so the ID check read stays closed." },
 };
 type Hit = { route: string; field: string; sample: string };
 

@@ -11,7 +11,7 @@ import { generateOneTimeLink } from "./persona-calls.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
-  agreedConsent, consentFill, dbQuery, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
+  agreedConsent, consentFill, dbQuery, inquiryClientId, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
   recordReturning, revealNumber, storeConsent, supersedeRecord, viewFaceCrop, type DeskActor,
 } from "./records.js";
 import { shopEnvCodeFor } from "./shop-config.js";
@@ -136,6 +136,9 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     );
     const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
     if (gate.counter) return reply.code(409).send({ code: "COUNTER_ONLY", message: gate.line });
+    if (!await inquiryClientId(db, actor, inquiryId)) {
+      return reply.code(404).send({ error: "not_found", message: "That ID check is not on this client." });
+    }
     if (!await agreedConsent(db, actor, inquiryId)) {
       return reply.code(409).send({ error: "consent_required", message: "Record consent before the ID check link opens." });
     }

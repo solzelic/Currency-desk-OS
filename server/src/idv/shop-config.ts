@@ -139,6 +139,14 @@ export function parseIdvShopConfig(body: unknown, shopCode: string): Parsed {
     const refused = optionalText(key, max);
     if (refused) return refused;
   }
+  if (patch.privacyPolicyUrl) {
+    try {
+      const url = new URL(patch.privacyPolicyUrl);
+      if (url.protocol !== "https:") return reject(400, BAD_BODY);
+    } catch {
+      return reject(400, BAD_BODY);
+    }
+  }
   if ("faceCropEnabled" in raw) {
     if (typeof raw.faceCropEnabled !== "boolean") return reject(400, ENABLED);
     patch.faceCropEnabled = raw.faceCropEnabled;

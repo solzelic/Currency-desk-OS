@@ -10,8 +10,8 @@ import { DEMO, seed } from "../src/seed.js";
 import { eq } from "drizzle-orm";
 import { CONSENT_VERSION, ID_DETAILS_LINE, CROP_LINE, noticeCopy, selfieConsentCopy } from "../src/idv/consent-copy.js";
 import { cropIdPortrait, isSmallCrop } from "../src/idv/face-crop.js";
-import { decryptSecret, encryptSecret, idNumberKey, maskDocumentNumber } from "../src/idv/id-number.js";
-import { readInquiryText, storedInquiryFields } from "../src/idv/inquiry-text.js";
+import { decryptSecret, encryptSecret, idNumberKey, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER } from "../src/idv/id-number.js";
+import { personaFileHost, readInquiryText, storedInquiryFields } from "../src/idv/inquiry-text.js";
 import { cropFromFrontPhoto, fetchPersonaInquiry } from "../src/idv/persona-calls.js";
 import { assertPersonaKey, PersonaKeyRefused } from "../src/idv/persona-guard.js";
 import { classifyCheck, resolveTier, tierMethod, TIER_NUMBER } from "../src/idv/tiers.js";
@@ -62,21 +62,35 @@ describe("tier numbers", () => {
 });
 
 describe("document number key", () => {
+  const bind = { purpose: PURPOSE_NUMBER, tenantId: "tnt-a", recordId: "idc_unit" } as const;
+
   it("round trips, masks the last 4, and fails closed when the ciphertext is changed", async () => {
-    const stored = await encryptSecret(NUMBER);
+    const env = { NODE_ENV: "test" };
+    const stored = await encryptSecret(NUMBER, bind, env);
+    const again = await encryptSecret(NUMBER, bind, env);
     expect(stored.startsWith("aes-256-gcm$")).toBe(true);
     expect(stored).not.toContain(NUMBER);
-    expect(await decryptSecret(stored)).toBe(NUMBER);
+    expect(stored.split("$")[1]).not.toBe(again.split("$")[1]);
+    expect(Buffer.from(stored.split("$")[1] ?? "", "base64")).toHaveLength(12);
+    expect(await decryptSecret(stored, bind, env)).toBe(NUMBER);
     expect(maskDocumentNumber(NUMBER)).toBe("•••• 8991");
     expect(maskDocumentNumber(NUMBER)).not.toContain("QWERT");
     const flipped = `${stored.slice(0, -1)}${stored.endsWith("a") ? "b" : "a"}`;
-    await expect(decryptSecret(flipped)).rejects.toThrow("id_number_unreadable");
+    await expect(decryptSecret(flipped, bind, env)).rejects.toThrow("id_number_unreadable");
+    await expect(decryptSecret(stored, { ...bind, recordId: "idc_other" }, env)).rejects.toThrow("id_number_unreadable");
+    await expect(decryptSecret(stored, { ...bind, tenantId: "tnt-b" }, env)).rejects.toThrow("id_number_unreadable");
+    await expect(decryptSecret(stored, { ...bind, purpose: PURPOSE_CROP }, env)).rejects.toThrow("id_number_unreadable");
+    const previous = { NODE_ENV: "test", ID_NUMBER_KEY: "next-root", ID_NUMBER_KEY_PREVIOUS: "currencydesk-dev-id-number" };
+    expect(await decryptSecret(stored, bind, previous)).toBe(NUMBER);
+    await expect(decryptSecret(stored, bind, { NODE_ENV: "test", ID_NUMBER_KEY: "next-root" })).rejects.toThrow("id_number_unreadable");
   });
 
   it("fails closed on staging and live when the key is unset", () => {
     expect(() => idNumberKey({ STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com" })).toThrow("id_number_key_unavailable");
     expect(() => idNumberKey({ RENDER_EXTERNAL_HOSTNAME: "currencydeskos.com" })).toThrow("id_number_key_unavailable");
     expect(() => idNumberKey({ NODE_ENV: "production" })).toThrow("id_number_key_unavailable");
+    expect(() => idNumberKey({ NODE_ENV: "development", RENDER_EXTERNAL_HOSTNAME: "unknown.example" })).toThrow("id_number_key_unavailable");
+    expect(() => idNumberKey({ NODE_ENV: "test", RENDER_EXTERNAL_HOSTNAME: "localhost" })).toThrow("id_number_key_unavailable");
     expect(idNumberKey({ NODE_ENV: "test" })).toBe("currencydesk-dev-id-number");
   });
 });
@@ -171,6 +185,75 @@ describe("inquiry text and face crop", () => {
     expect(evil).toBeNull();
   });
 
+  it("keeps the wide-card crop inside the left half", () => {
+    const width = 400;
+    const height = 250;
+    const png = new PNG({ width, height });
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const i = (y * width + x) * 4;
+        const right = x >= width / 2;
+        png.data[i] = right ? 0 : 240;
+        png.data[i + 1] = 0;
+        png.data[i + 2] = right ? 240 : 0;
+        png.data[i + 3] = 255;
+      }
+    }
+    const crop = cropIdPortrait(PNG.sync.write(png));
+    const pixels = PNG.sync.read(crop!);
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      expect(pixels.data[i]).toBeGreaterThan(200);
+      expect(pixels.data[i + 2]).toBeLessThan(30);
+    }
+  });
+
+  it("accepts only port 443 and stops a download over 6 MB", async () => {
+    expect(personaFileHost("https://files.withpersona.com/a.png")).toBe(true);
+    expect(personaFileHost("https://files.withpersona.com:443/a.png")).toBe(true);
+    expect(personaFileHost("https://files.withpersona.com:8443/a.png")).toBe(false);
+    let pulled = false;
+    const declared = await cropFromFrontPhoto({
+      url: "https://files.withpersona.com/front.png",
+      key: "fixture-api-key",
+      env: { NODE_ENV: "test" },
+      fetchImpl: async () => ({
+        status: 200,
+        headers: { get: (name: string) => (name.toLowerCase() === "content-length" ? "6000001" : null) },
+        body: {
+          getReader() {
+            pulled = true;
+            throw new Error("body read");
+          },
+          cancel: async () => {},
+        },
+        arrayBuffer: async () => { pulled = true; return new ArrayBuffer(0); },
+      }) as unknown as Response,
+    });
+    expect(declared).toBeNull();
+    expect(pulled).toBe(false);
+    let cancelled = false;
+    const chunk = new Uint8Array(256 * 1024);
+    const streamed = await cropFromFrontPhoto({
+      url: "https://files.withpersona.com/front.png",
+      key: "fixture-api-key",
+      env: { NODE_ENV: "test" },
+      fetchImpl: async () => ({
+        status: 200,
+        headers: { get: () => null },
+        body: {
+          getReader: () => ({
+            async read() {
+              return { done: false, value: chunk };
+            },
+            async cancel() { cancelled = true; },
+          }),
+        },
+      }) as unknown as Response,
+    });
+    expect(streamed).toBeNull();
+    expect(cancelled).toBe(true);
+  });
+
   it("keeps the US region line and the 5 year line, and the crop sentence only when the crop is on", () => {
     const fill = {
       legalName: "York Currency Exchange Inc.", privacyContact: "Privacy", privacyEmail: "p@example.com",
@@ -186,7 +269,7 @@ describe("inquiry text and face crop", () => {
     expect(off).not.toContain(CROP_LINE);
     expect(on.toLowerCase()).not.toContain("stays in canada");
     expect(on.toLowerCase()).not.toContain("stored in canada");
-    expect(CONSENT_VERSION).toBe("consent-v0.3.7-draft");
+    expect(CONSENT_VERSION).toBe("consent-v0.3.8-draft");
     for (const word of ["verified", "approved", "cleared"]) {
       expect(on.toLowerCase()).not.toMatch(new RegExp(`\\b${word}\\b`));
     }
@@ -201,6 +284,7 @@ describe("id check records", () => {
   const source = wideId();
   const seen: string[] = [];
   let inquiries = 0;
+  let inquiryExpiry = "2030-01-02";
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -227,7 +311,7 @@ describe("id check records", () => {
             attributes: {
               status: "passed", "name-first": "Ada", "name-last": "Client",
               "identification-number": NUMBER, "id-class": "dl",
-              "issuing-subdivision": "ON", "issuing-country": "CA", "expiration-date": "2030-01-02",
+              "issuing-subdivision": "ON", "issuing-country": "CA", "expiration-date": inquiryExpiry,
               "front-photo-url": `https://files.withpersona.com/${FRONT}.png`,
               "back-photo-url": "https://files.withpersona.com/back.png",
             },
@@ -314,7 +398,9 @@ describe("id check records", () => {
     const dumped = JSON.stringify(row.rows[0]);
     expect(dumped).not.toContain(NUMBER);
     expect(String(row.rows[0]?.document_number_ciphertext)).toMatch(/^aes-256-gcm\$/);
-    expect(await decryptSecret(String(row.rows[0]?.document_number_ciphertext))).toBe(NUMBER);
+    expect(await decryptSecret(String(row.rows[0]?.document_number_ciphertext), {
+      purpose: PURPOSE_NUMBER, tenantId: DEMO.tenantId, recordId: created.json().recordId,
+    }, { NODE_ENV: "test" })).toBe(NUMBER);
     expect(row.rows[0]?.face_crop_ciphertext).toBeNull();
     expect(row.rows[0]?.deal_id).toBe("deal-1");
     const read = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.owner });
@@ -487,6 +573,11 @@ describe("id check records", () => {
     expect(link.json().url).toContain("https://inquiry.withpersona.com/");
     expect(seen.length).toBeGreaterThan(before);
     await dbQuery(handle.db).query("UPDATE branches SET province = 'QC' WHERE id = $1", [DEMO.branchId]);
+    const quebecBare = await app.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { clientId },
+    });
+    expect(quebecBare.statusCode).toBe(409);
+    expect(quebecBare.json().message).toBe("Face match is off for this branch. Inspect the original ID.");
     const quebec = await app.inject({
       method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { clientId, tier: "3" },
     });
@@ -505,6 +596,11 @@ describe("id check records", () => {
     });
     expect(counter.statusCode, counter.body).toBe(200);
     await dbQuery(handle.db).query("UPDATE branches SET province = NULL WHERE id = $1", [DEMO.branchId]);
+    const unknownBare = await app.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { clientId },
+    });
+    expect(unknownBare.statusCode).toBe(409);
+    expect(unknownBare.json().message).toContain("province");
     const unknown = await app.inject({
       method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { clientId, tier: "verify" },
     });
@@ -535,6 +631,11 @@ describe("id check records", () => {
     expect(started.statusCode, started.body).toBe(200);
     const inquiryId = started.json().providerRef as string;
     const referenceId = started.json().referenceId as string;
+    const agreed = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", inquiryId },
+    });
+    expect(agreed.statusCode, agreed.body).toBe(200);
     const raw = JSON.stringify({
       data: { id: "evt_crop", attributes: { name: "inquiry.approved", payload: { data: { id: inquiryId, attributes: { status: "approved", "reference-id": referenceId } } } } },
     });
@@ -567,7 +668,9 @@ describe("id check records", () => {
     expect(dumped).not.toContain(FRONT);
     expect(dumped).not.toContain(NUMBER);
     expect(dumped).not.toContain("https://");
-    const crop = Buffer.from(await decryptSecret(String(row.rows[0]?.face_crop_ciphertext)), "base64");
+    const crop = Buffer.from(await decryptSecret(String(row.rows[0]?.face_crop_ciphertext), {
+      purpose: PURPOSE_CROP, tenantId: DEMO.tenantId, recordId: String(row.rows[0]?.record_id),
+    }, { NODE_ENV: "test" }), "base64");
     expect(isSmallCrop(crop)).toBe(true);
     expect(crop.equals(source)).toBe(false);
     expect(row.rows[0]?.database_step).toBe("off");
@@ -622,5 +725,335 @@ describe("id check records", () => {
     const name = await dbQuery(handle.db).query("SELECT name_on_id FROM idv_check_records WHERE record_id = $1", [row.rows[0]?.record_id]);
     expect(name.rows[0]?.name_on_id).toBe("Ada Client");
     await expect(dbQuery(handle.db).query("DELETE FROM idv_check_records WHERE record_id = $1", [row.rows[0]?.record_id])).rejects.toThrow(/append-only/);
+  });
+
+  async function postPersona(name: string, inquiryId: string, referenceId: string, eventId: string, env: NodeJS.ProcessEnv) {
+    const raw = JSON.stringify({
+      data: { id: eventId, attributes: { name, payload: { data: { id: inquiryId, attributes: { status: "approved", "reference-id": referenceId } } } } },
+    });
+    const { createHmac } = await import("node:crypto");
+    const secret = "fixture-webhook-secret";
+    const t = Math.floor(Date.now() / 1000);
+    const mac = createHmac("sha256", secret).update(Buffer.concat([Buffer.from(`${t}.`), Buffer.from(raw)])).digest("hex");
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: { PERSONA_API_KEY: "fixture-api-key", PERSONA_WEBHOOK_SECRET: secret, ...env },
+      fetch: fetchImpl, sleep: async () => {},
+      persona: (await import("../src/idv/providers/persona/index.js")).createPersonaProvider({ PERSONA_WEBHOOK_SECRET: secret }),
+    });
+    try {
+      return await local.inject({
+        method: "POST", url: "/api/webhooks/idv/persona", payload: raw,
+        headers: { "content-type": "application/json", "persona-signature": `t=${t},v1=${mac}` },
+      });
+    } finally {
+      await local.close();
+    }
+  }
+
+  async function startedInquiry(clientId: string) {
+    const started = await app.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { clientId, tier: "3" },
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    return { inquiryId: started.json().providerRef as string, referenceId: started.json().referenceId as string };
+  }
+
+  it("drops the crop when the switch and the consent disagree, and when the check did not pass", async () => {
+    const clientId = await client("Switch");
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
+    const on = await startedInquiry(clientId);
+    expect((await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", inquiryId: on.inquiryId },
+    })).statusCode).toBe(200);
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: false } });
+    expect((await postPersona("inquiry.approved", on.inquiryId, on.referenceId, "evt_on_off", { NODE_ENV: "test" })).statusCode).toBe(200);
+    const dropped = await dbQuery(handle.db).query("SELECT face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [on.inquiryId]);
+    expect(dropped.rows[0]?.face_crop_ciphertext).toBeNull();
+
+    const off = await startedInquiry(clientId);
+    expect((await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", inquiryId: off.inquiryId },
+    })).statusCode).toBe(200);
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
+    expect((await postPersona("inquiry.approved", off.inquiryId, off.referenceId, "evt_off_on", { NODE_ENV: "test" })).statusCode).toBe(200);
+    const later = await dbQuery(handle.db).query("SELECT face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [off.inquiryId]);
+    expect(later.rows[0]?.face_crop_ciphertext).toBeNull();
+
+    const declined = await startedInquiry(clientId);
+    expect((await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", inquiryId: declined.inquiryId },
+    })).statusCode).toBe(200);
+    expect((await postPersona("inquiry.declined", declined.inquiryId, declined.referenceId, "evt_declined", { NODE_ENV: "test" })).statusCode).toBe(200);
+    const refused = await dbQuery(handle.db).query("SELECT result, face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [declined.inquiryId]);
+    expect(refused.rows[0]?.result).toBe("declined");
+    expect(refused.rows[0]?.face_crop_ciphertext).toBeNull();
+  });
+
+  it("never passes an expired ID, on the counter or from the webhook", async () => {
+    const clientId = await client("Expired");
+    const counter = await app.inject({
+      method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
+      payload: {
+        clientId, nameOnId: "Expired", documentType: "Passport", documentNumber: NUMBER,
+        issuingJurisdiction: "ON", issuingCountry: "CA", expiryDate: "2000-01-02", attested: true,
+      },
+    });
+    expect(counter.statusCode, counter.body).toBe(200);
+    const stored = await dbQuery(handle.db).query("SELECT result, attestation, expiry_date FROM idv_check_records WHERE record_id = $1", [counter.json().recordId]);
+    expect(stored.rows[0]?.result).toBe("expired");
+    expect(String(stored.rows[0]?.attestation ?? "")).not.toContain("not expired");
+    const read = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    expect(read.json().records[0].line).toBe("Expired 2 Jan 2000");
+    expect(read.json().records[0].statusLine).toBe("Expired 2 Jan 2000");
+    inquiryExpiry = "2000-01-02";
+    const remote = await startedInquiry(clientId);
+    expect((await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", inquiryId: remote.inquiryId },
+    })).statusCode).toBe(200);
+    expect((await postPersona("inquiry.approved", remote.inquiryId, remote.referenceId, "evt_expired", { NODE_ENV: "test" })).statusCode).toBe(200);
+    inquiryExpiry = "2030-01-02";
+    const row = await dbQuery(handle.db).query("SELECT result, face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [remote.inquiryId]);
+    expect(row.rows[0]?.result).toBe("expired");
+    expect(row.rows[0]?.face_crop_ciphertext).toBeNull();
+    const again = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    expect(again.json().records[0].statusLine).toBe("Expired 2 Jan 2000");
+  });
+
+  it("hides a crop after face_crop_retained_until", async () => {
+    const clientId = await client("Oldcrop");
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         face_crop_ciphertext, face_crop_retained_until)
+       VALUES ('idc_old_crop',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','aes-256-gcm$old', now() - interval '1 day')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    const read = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    expect(read.json().records[0].photoOnFile).toBe(false);
+    const view = await app.inject({
+      method: "POST", url: "/api/idv/checks/idc_old_crop/face", cookies: cookies.teller,
+      payload: { reason: "eye_comparison" },
+    });
+    expect(view.statusCode).toBe(404);
+    expect(view.json().message).toBe("No photo on file");
+    const back = await app.inject({
+      method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+    });
+    expect(back.statusCode, back.body).toBe(200);
+    expect(back.json().photoLine).toBe("No photo on file");
+  });
+
+  it("reads a returning client from the original check, not as a new one", async () => {
+    const clientId = await client("Confirmed");
+    for (const [id, key] of [["snp_sema", "ca-sema"], ["snp_un", "un-sc"], ["snp_cc", "ca-cc"]] as const) {
+      await dbQuery(handle.db).query(
+        `INSERT INTO sanctions_list_snapshots
+          (snapshot_id, source_key, source_url, fetched_at, last_checked_at, content_sha256, entry_count, status)
+         VALUES ($1,$2,'https://example.test/list', now(), now(), $1, 1, 'good')
+         ON CONFLICT (snapshot_id) DO NOTHING`,
+        [id, key],
+      );
+    }
+    await dbQuery(handle.db).query(
+      `INSERT INTO sanctions_list_entries (snapshot_id, entry_key, names, dobs)
+       VALUES ('snp_sema','zz','["Xyzzy Plugh"]','[]') ON CONFLICT DO NOTHING`,
+    );
+    await dbQuery(handle.db).query(
+      `INSERT INTO sanctions_score_settings (legal_entity_id, score_threshold, signed_off)
+       VALUES ($1, 0.92, true)
+       ON CONFLICT (legal_entity_id) DO UPDATE SET signed_off = true`,
+      [DEMO.legalEntityId],
+    );
+    const made = await app.inject({
+      method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
+      payload: {
+        clientId, nameOnId: "Confirmed", documentType: "Passport", documentNumber: "CONF123456",
+        issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
+      },
+    });
+    expect(made.statusCode, made.body).toBe(200);
+    const used = await app.inject({
+      method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+    });
+    expect(used.statusCode, used.body).toBe(200);
+    expect(used.json().result).toBe("returning_confirmed");
+    const read = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    const original = read.json().records.find((row: { method: string }) => row.method === "in_person");
+    const again = read.json().records.find((row: { method: string }) => row.method === "returning_client");
+    expect(again.line).toBe(`Returning client, ID checked ${original.verifiedDate}, photo ID, in person`);
+    expect(again.statusLine).toBe(again.line);
+    expect(again.line.startsWith("ID checked")).toBe(false);
+  });
+
+  it("refuses a consent or a link for an inquiry that is not this client's", async () => {
+    const ownerClient = await client("Ownerinq");
+    const otherClient = await client("Otherinq");
+    const owned = await startedInquiry(ownerClient);
+    const crossed = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId: otherClient, choice: "agreed", language: "en", inquiryId: owned.inquiryId },
+    });
+    expect(crossed.statusCode).toBe(404);
+    await dbQuery(handle.db).query(
+      "INSERT INTO branches (id, tenant_id, legal_entity_id, name, province) VALUES ('br-other','tnt-other','le-other','Other','ON') ON CONFLICT DO NOTHING",
+    );
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id)
+       VALUES ('ref_other_shop','le-other','br-other','o.owner','persona','inq_other_shop','cli_other')
+       ON CONFLICT DO NOTHING`,
+    );
+    const foreign = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId: ownerClient, choice: "agreed", language: "en", inquiryId: "inq_other_shop" },
+    });
+    expect(foreign.statusCode).toBe(404);
+    const link = await app.inject({
+      method: "POST", url: "/api/idv/inquiries/inq_other_shop/one-time-link", cookies: cookies.teller, payload: {},
+    });
+    expect(link.statusCode).toBe(404);
+  });
+
+  it("stores a sandbox result with no number when the key is missing, and does not fetch a duplicate", async () => {
+    const clientId = await client("Nokey");
+    const started = await startedInquiry(clientId);
+    const before = seen.length;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const env = { NODE_ENV: "development", PERSONA_API_BASE: "http://127.0.0.1:9" };
+      const hook = await postPersona("inquiry.approved", started.inquiryId, started.referenceId, "evt_nokey", env);
+      expect(hook.statusCode, hook.body).toBe(200);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(NUMBER);
+    } finally {
+      warn.mockRestore();
+    }
+    const row = await dbQuery(handle.db).query(
+      "SELECT document_number_ciphertext, face_crop_ciphertext, number_unavailable, document_number_last4 FROM idv_check_records WHERE persona_inquiry_id = $1",
+      [started.inquiryId],
+    );
+    expect(row.rows[0]?.document_number_ciphertext).toBeNull();
+    expect(row.rows[0]?.face_crop_ciphertext).toBeNull();
+    expect(row.rows[0]?.document_number_last4).toBeNull();
+    expect(row.rows[0]?.number_unavailable).toBe(true);
+    expect(JSON.stringify(row.rows[0])).not.toContain(NUMBER);
+    const status = await dbQuery(handle.db).query("SELECT status FROM idv_inquiries WHERE provider_ref = $1", [started.inquiryId]);
+    expect(status.rows[0]?.status).not.toBe("in progress");
+    expect(status.rows[0]?.status).not.toBe("starting");
+    const after = seen.length;
+    const again = await postPersona("inquiry.approved", started.inquiryId, started.referenceId, "evt_nokey", {
+      NODE_ENV: "development", PERSONA_API_BASE: "http://127.0.0.1:9",
+    });
+    expect(again.json().duplicate).toBe(true);
+    expect(seen.length).toBe(after);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("refuses an early delete, allows one after retain_until, and clears only an expired crop", async () => {
+    const clientId = await client("Retain");
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id, retain_until)
+       VALUES ('idc_keep',$1,$2,$3,$4,'1','in_person','pass','m.costa', now() + interval '5 years')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    await expect(dbQuery(handle.db).query("DELETE FROM idv_check_records WHERE record_id = 'idc_keep'")).rejects.toThrow(/append-only/);
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id, retain_until)
+       VALUES ('idc_drop',$1,$2,$3,$4,'1','in_person','pass','m.costa', now() - interval '1 day')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    await dbQuery(handle.db).query("DELETE FROM idv_check_records WHERE record_id = 'idc_drop'");
+    const gone = await dbQuery(handle.db).query("SELECT 1 FROM idv_check_records WHERE record_id = 'idc_drop'");
+    expect(gone.rows.length).toBe(0);
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         face_crop_ciphertext, face_crop_retained_until)
+       VALUES ('idc_crop_old',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','aes-256-gcm$old', now() - interval '1 day')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    await dbQuery(handle.db).query(
+      "UPDATE idv_check_records SET face_crop_ciphertext = NULL, face_crop_retained_until = NULL WHERE record_id = 'idc_crop_old'",
+    );
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         face_crop_ciphertext, face_crop_retained_until)
+       VALUES ('idc_crop_new',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','aes-256-gcm$new', now() + interval '5 years')`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    await expect(dbQuery(handle.db).query(
+      "UPDATE idv_check_records SET face_crop_ciphertext = NULL, face_crop_retained_until = NULL WHERE record_id = 'idc_crop_new'",
+    )).rejects.toThrow(/append-only/);
+    await expect(dbQuery(handle.db).query("TRUNCATE idv_check_records")).rejects.toThrow(/append-only/);
+  });
+
+  it("requires a session, keeps another shop out, and only supersedes for someone else", async () => {
+    const clientId = await client("Guard");
+    const open = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks` });
+    expect(open.statusCode).toBe(401);
+    const made = await app.inject({
+      method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
+      payload: {
+        clientId, nameOnId: "Guard", documentType: "Passport", documentNumber: "GUARD12345",
+        issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
+      },
+    });
+    const second = await app.inject({
+      method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
+      payload: {
+        clientId, nameOnId: "Guard Two", documentType: "Passport", documentNumber: "GUARD54321",
+        issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
+      },
+    });
+    const own = await app.inject({
+      method: "POST", url: `/api/idv/checks/${made.json().recordId}/supersede`, cookies: cookies.teller,
+      payload: { replacedByRecordId: second.json().recordId },
+    });
+    expect(own.statusCode).toBe(403);
+    await dbQuery(handle.db).query(
+      `INSERT INTO staff_users (id, tenant_id, legal_entity_id, branch_id, staff_id, name, role, password_hash)
+       SELECT 'tnt-other:o.owner', 'tnt-other', 'le-other', 'br-other', 'o.owner', 'Other', 'administrator', password_hash
+         FROM staff_users WHERE staff_id = 'j.masri' LIMIT 1
+       ON CONFLICT DO NOTHING`,
+    );
+    const otherLogin = await app.inject({
+      method: "POST", url: "/api/auth/login",
+      payload: { staffId: "o.owner", password: DEMO.password, tenantId: "tnt-other" },
+    });
+    expect(otherLogin.statusCode, otherLogin.body).toBe(200);
+    const otherCookie = { cdos_session: otherLogin.cookies.find((item) => item.name === "cdos_session")!.value };
+    const reveal = await app.inject({
+      method: "POST", url: `/api/idv/checks/${made.json().recordId}/reveal`, cookies: otherCookie,
+      payload: { reason: "id_mismatch" },
+    });
+    expect(reveal.statusCode).toBe(404);
+    const foreign = await app.inject({
+      method: "POST", url: `/api/idv/checks/${made.json().recordId}/supersede`, cookies: otherCookie,
+      payload: { replacedByRecordId: second.json().recordId },
+    });
+    expect(foreign.statusCode).toBe(404);
+    const allowed = await app.inject({
+      method: "POST", url: `/api/idv/checks/${made.json().recordId}/supersede`, cookies: cookies.owner,
+      payload: { replacedByRecordId: second.json().recordId },
+    });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    const deal = await app.inject({
+      method: "POST", url: `/api/idv/checks/${second.json().recordId}/deal`, cookies: cookies.teller,
+      payload: { dealId: "deal-missing" },
+    });
+    expect(deal.statusCode).toBe(404);
+    const policy = await app.inject({
+      method: "PUT", url: "/api/settings/idv", cookies: cookies.owner,
+      payload: { privacyPolicyUrl: "http://example.com/privacy" },
+    });
+    expect(policy.statusCode).toBe(400);
   });
 });

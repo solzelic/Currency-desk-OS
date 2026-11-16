@@ -301,6 +301,43 @@ postgres("sanctions hold and review", () => {
     expect(readFileSync(new URL("../src/screening/provider.ts", import.meta.url), "utf8")).not.toMatch(/fetch\(/);
   });
 
+  it("posts the desk payloads for quick, verify, and plus", async () => {
+    const source = readFileSync(new URL("../../os-src/cdos-kyc.jsx", import.meta.url), "utf8");
+    const tierExpr = source.match(/const tierNo = ([^;]+);/)?.[1];
+    const pepExpr = source.match(/const needsPep = ([^;]+);/)?.[1];
+    expect(tierExpr).toBeTruthy();
+    expect(pepExpr).toBeTruthy();
+    const payloadFor = new Function("tplId", "pepAnswer", `
+      const tierNo = ${tierExpr};
+      const needsPep = ${pepExpr};
+      return { tier: tierNo, pepAnswer: needsPep ? pepAnswer : undefined };
+    `) as (tplId: string, pepAnswer: boolean) => { tier: string; pepAnswer?: boolean };
+    const teller = await cookie("m.costa");
+    const created = await app.inject({
+      method: "POST", url: "/api/clients", cookies: teller,
+      payload: { legalName: "Desk Tier Person", dateOfBirth: "1991-02-03" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const clientId = created.json().clientId as string;
+    const expected = { quick: "2", verify: "3", plus: "4" } as const;
+    for (const tplId of ["quick", "verify", "plus"] as const) {
+      const made = payloadFor(tplId, false);
+      expect(made.tier).toBe(expected[tplId]);
+      if (tplId === "plus") expect(made.pepAnswer).toBeUndefined();
+      else expect(made.pepAnswer).toBe(false);
+      const body: Record<string, unknown> = { clientId, tier: made.tier };
+      if (made.pepAnswer !== undefined) body.pepAnswer = made.pepAnswer;
+      const screened = await app.inject({
+        method: "POST", url: "/api/screening/id-check", cookies: teller, payload: body,
+      });
+      expect(screened.statusCode, screened.body).toBe(200);
+      expect(screened.json().tier).toBe(expected[tplId]);
+    }
+    const saved = await pool.query("SELECT tier, is_pep FROM client_pep_answers WHERE client_id=$1", [clientId]);
+    expect(saved.rows[0].tier).toBe("3");
+    expect(saved.rows[0].is_pep).toBe(false);
+  });
+
   it("refuses the owner until the shop names them, and a teller always", async () => {
     await pool.query("UPDATE legal_entities SET compliance_officer_staff_id = NULL WHERE id = $1", [DEMO.legalEntityId]);
     const owner = await cookie("j.masri");

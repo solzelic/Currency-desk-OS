@@ -32,24 +32,11 @@
     if (status === "failed" || status === "expired") return "Method not completed. Check the ID at the counter.";
     return "";
   }
-  function returningLine(record, records) {
-    const original = (records || []).find((item) => item.recordId === record.originalRecordId);
-    if (!original) return record.line || record.statusLine || "";
-    const test = /\(test\)/.test(record.line || "") || /\(test\)/.test(original.line || "");
-    const base = `ID checked ${original.verifiedDate}, ${original.methodLabel}. Returning client ${record.verifiedDate}`;
-    return test ? `${base} (test)` : base;
-  }
-  function badgeOf(record, records) {
+  function badgeOf(record) {
     if (!record) return { primary: "", secondary: "" };
-    if (record.result === "needs_review" || record.result === "declined" || record.result === "method_not_completed") {
-      return { primary: record.statusLine || "", secondary: record.line && record.line !== record.statusLine ? record.line : "" };
-    }
-    if (record.method === "returning_client") {
-      const primary = returningLine(record, records);
-      return { primary, secondary: record.statusLine && record.statusLine !== primary ? record.statusLine : "" };
-    }
-    if (record.statusLine && record.line && record.statusLine !== record.line) return { primary: record.statusLine, secondary: record.line };
-    return { primary: record.statusLine || record.line || "", secondary: "" };
+    const primary = record.statusLine || record.line || "";
+    const secondary = record.line && record.line !== primary ? record.line : "";
+    return { primary, secondary };
   }
   function idChoices() {
     try {
@@ -321,7 +308,7 @@
       <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}><input type="checkbox" checked={form.attested} onChange={(e) => setField("attested", e.target.checked)} /><span>I inspected the original ID. It looked authentic, valid, and not expired, and the face matched.</span></label>
       <button type="button" disabled={busy || !form.attested} onClick={savePerson} style={btnStyle(busy || !form.attested)}>{busy ? "Saving" : "Save the ID record"}</button>
     </div>));
-    const shown = record ? badgeOf(record, (pack && pack.records) || []) : { primary: "", secondary: "" };
+    const shown = record ? badgeOf(record) : { primary: "", secondary: "" };
     return shell("id-check-done", "ID check", (<div className="space-y-1.5">
       <div className="text-[13px]" style={{ color: CD.ink }}>{shown.primary}</div>
       {shown.secondary && <div className="text-[12.5px]" style={{ color: CD.ink }}>{shown.secondary}</div>}
@@ -418,13 +405,13 @@
     }, [clientId, tick]);
     const records = (pack && pack.records) || [];
     const latest = records[0] || null;
-    const badge = latest ? badgeOf(latest, records) : { primary: "", secondary: "" };
+    const badge = latest ? badgeOf(latest) : { primary: "", secondary: "" };
     const fromInquiry = inquiryLine(status);
     let primary = badge.primary || fromInquiry || (loaded ? "No ID check on file" : "Reading the identity check.");
     let secondary = badge.secondary;
     /* A sandbox key says "Check passed (test)". Any other pass says "Check passed".
        The record line stays underneath either way. */
-    if ((fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0) {
+    if (latest && latest.result === "pass" && (fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0) {
       secondary = badge.secondary || badge.primary;
       primary = fromInquiry;
     }
@@ -476,7 +463,7 @@
       return () => { live = false; };
     }, [clientId, tick, dealId]);
     const hit = ((pack && pack.records) || []).find((item) => (dealId && ((item.deals || []).indexOf(dealId) >= 0 || item.dealId === dealId))) || null;
-    const badge = hit ? badgeOf(hit, (pack && pack.records) || []) : null;
+    const badge = hit ? badgeOf(hit) : null;
     return (<div data-testid="deal-id-check" className="p-3.5" style={card}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: "Space Mono, monospace" }}>ID check</div>
       {badge ? <div data-testid="deal-id-link" className="text-[12.5px]" style={{ color: CD.ink }}>{badge.primary}{badge.secondary ? `. ${badge.secondary}` : ""}</div> : <div className="text-[12.5px]" style={{ color: CD.mute }}>No ID check linked to this deal.</div>}

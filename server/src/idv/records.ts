@@ -6,14 +6,14 @@ import type { Db } from "../db/index.js";
 import { normaliseForWrite } from "../clients/id-document-types.js";
 import { screenSubject } from "../screening/gate.js";
 import { CONSENT_VERSION, type ConsentFill } from "./consent-copy.js";
-import { decryptSecret, encryptSecret, last4, maskDocumentNumber } from "./id-number.js";
+import { decryptSecret, encryptSecret, KEY_VERSION, last4, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER, type SecretBind } from "./id-number.js";
 import { isSmallCrop } from "./face-crop.js";
 import { personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, idCheckedLine, returningLine,
-  tierMethod, type CheckMethod, type CheckResult, type TierNumber,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine,
+  isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
 } from "./tiers.js";
 
 type Row = Record<string, unknown>;
@@ -48,8 +48,44 @@ function str(row: Row, key: string): string | null {
 }
 
 function day(value: unknown): string | null {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  return value;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const date = String(value.getUTCDate()).padStart(2, "0");
+    return `${value.getUTCFullYear()}-${month}-${date}`;
+  }
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(value)) return null;
+  return value.slice(0, 10);
+}
+
+async function inquiryForClient(q: Q, actor: DeskActor, inquiryId: string, clientId: string): Promise<boolean> {
+  const found = await q.query(
+    `SELECT 1
+       FROM idv_inquiries i
+       JOIN legal_entities e ON e.id = i.shop_id
+      WHERE (i.provider_ref = $1 OR i.reference_id = $1)
+        AND i.client_id = $2
+        AND i.shop_id = $3
+        AND e.tenant_id = $4
+      LIMIT 1`,
+    [inquiryId, clientId, actor.legalEntityId, actor.tenantId],
+  );
+  return found.rows.length > 0;
+}
+
+export async function inquiryClientId(db: Db, actor: DeskActor, inquiryId: string): Promise<string | null> {
+  const found = await dbQuery(db).query(
+    `SELECT i.client_id
+       FROM idv_inquiries i
+       JOIN legal_entities e ON e.id = i.shop_id
+      WHERE (i.provider_ref = $1 OR i.reference_id = $1)
+        AND i.shop_id = $2
+        AND e.tenant_id = $3
+        AND i.client_id IS NOT NULL
+      LIMIT 1`,
+    [inquiryId, actor.legalEntityId, actor.tenantId],
+  );
+  const id = found.rows[0]?.client_id;
+  return typeof id === "string" && id.length > 0 ? id : null;
 }
 
 async function clientOwned(q: Q, actor: DeskActor, clientId: string): Promise<boolean> {
@@ -174,10 +210,12 @@ type InsertRecord = {
   databaseStep?: "off" | "not_applicable";
   cropCipher?: string | null;
   verifiedAt?: string | null;
+  recordId?: string;
+  numberUnavailable?: boolean;
 };
 
 async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: InsertRecord): Promise<string> {
-  const id = `idc_${randomUUID()}`;
+  const id = row.recordId ?? `idc_${randomUUID()}`;
   const plan = tierMethod(row.tier);
   await q.query(
     `INSERT INTO idv_check_records (
@@ -187,11 +225,15 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       persona_inquiry_id, government_id_verification_id, selfie_verification_id,
       template_id, template_version, staff_id, inspector_staff_id, attestation,
       confirmed_by_staff_id, original_record_id, consent_id, counter_check_chosen, deal_id,
-      address_line, date_of_birth, database_step, face_crop_ciphertext, face_crop_retained_until, verified_at
+      address_line, date_of_birth, database_step, face_crop_ciphertext, face_crop_retained_until, verified_at,
+      key_version, retain_until, number_unavailable
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
       CASE WHEN $34::text IS NULL THEN NULL ELSE now() + interval '5 years' END,
-      COALESCE($35::timestamptz, now())
+      COALESCE($35::timestamptz, now()),
+      1,
+      COALESCE($35::timestamptz, now()) + interval '5 years',
+      $36
     )`,
     [
       id, actor.tenantId, actor.legalEntityId, actor.branchId, clientId, row.tier, row.method,
@@ -203,6 +245,7 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       row.confirmedBy ?? null, row.originalRecordId ?? null, row.consentId ?? null, row.counterCheck === true,
       row.dealId ?? null, row.addressLine ?? null, row.dateOfBirth ?? null,
       row.databaseStep ?? plan.databaseStep, row.cropCipher ?? null, row.verifiedAt ?? null,
+      row.numberUnavailable === true,
     ],
   );
   await linkDeal(q, actor, id, clientId, row.dealId ?? null);
@@ -214,6 +257,9 @@ export async function storeConsent(db: Db, actor: DeskActor, input: {
 }): Promise<Step<{ consentId: string; choice: string; tellerLine: string | null; persona: boolean }>> {
   const q = dbQuery(db);
   if (!await clientOwned(q, actor, input.clientId)) return fail(404, "not_found", "That client is not on this shop.");
+  if (input.inquiryId && !await inquiryForClient(q, actor, input.inquiryId, input.clientId)) {
+    return fail(404, "not_found", "That ID check is not on this client.");
+  }
   const language = input.language.trim().toLowerCase();
   if (!/^[a-z]{2}(-[a-z]{2})?$/.test(language)) return fail(400, "invalid_request", "The consent language is not valid.");
   const shop = await loadShopIdv(db, actor.legalEntityId);
@@ -241,8 +287,14 @@ export async function storeConsent(db: Db, actor: DeskActor, input: {
 
 export async function agreedConsent(db: Db, actor: DeskActor, inquiryId: string): Promise<boolean> {
   const found = await dbQuery(db).query(
-    `SELECT 1 FROM idv_consents
-      WHERE tenant_id = $1 AND legal_entity_id = $2 AND inquiry_id = $3 AND choice = 'agreed'
+    `SELECT 1
+       FROM idv_consents c
+       JOIN idv_inquiries i
+         ON (i.provider_ref = c.inquiry_id OR i.reference_id = c.inquiry_id)
+        AND i.client_id = c.client_id
+        AND i.shop_id = c.legal_entity_id
+       JOIN legal_entities e ON e.id = i.shop_id AND e.tenant_id = c.tenant_id
+      WHERE c.tenant_id = $1 AND c.legal_entity_id = $2 AND c.inquiry_id = $3 AND c.choice = 'agreed'
       LIMIT 1`,
     [actor.tenantId, actor.legalEntityId, inquiryId],
   );
@@ -270,14 +322,35 @@ export async function recordInPerson(db: Db, actor: DeskActor, input: {
   if (input.expiryDate && !expiry) return fail(400, "invalid_request", "The expiry date is not valid.");
   const birth = input.dateOfBirth ? day(input.dateOfBirth) : null;
   if (input.dateOfBirth && !birth) return fail(400, "invalid_request", "The date of birth is not valid.");
-  const cipher = await encryptSecret(number, env);
+  let counterFromConsent = false;
+  if (input.consentId) {
+    const consent = await q.query(
+      `SELECT inquiry_id, choice FROM idv_consents
+        WHERE consent_id = $1 AND tenant_id = $2 AND legal_entity_id = $3 AND client_id = $4`,
+      [input.consentId, actor.tenantId, actor.legalEntityId, input.clientId],
+    );
+    const consentRow = consent.rows[0];
+    const inquiryOnConsent = consentRow ? str(consentRow, "inquiry_id") : null;
+    if (!consentRow || consentRow.choice !== "counter_check") {
+      return fail(404, "not_found", "That consent is not on this client.");
+    }
+    if (inquiryOnConsent && !await inquiryForClient(q, actor, inquiryOnConsent, input.clientId)) {
+      return fail(404, "not_found", "That ID check is not on this client.");
+    }
+    counterFromConsent = true;
+  }
+  const facts = await branchFacts(q, actor);
+  const expired = expiry ? isPastExpiry(expiry, facts.timeZone) : false;
+  const recordId = `idc_${randomUUID()}`;
+  const cipher = await encryptSecret(number, { purpose: PURPOSE_NUMBER, tenantId: actor.tenantId, recordId, keyVersion: KEY_VERSION }, env);
   const id = await insertRecord(q, actor, input.clientId, {
-    tier: "1", method: "in_person", result: "pass", nameOnId: name, documentType: typed.label,
+    recordId,
+    tier: "1", method: "in_person", result: expired ? "expired" : "pass", nameOnId: name, documentType: typed.label,
     numberCipher: cipher, numberLast4: last4(number), issuingJurisdiction: jurisdiction, issuingCountry: country,
     expiryDate: expiry, inspectorStaffId: actor.staffId,
-    attestation: "Inspected the original ID. It looked authentic, valid, and not expired, and the face matched.",
+    attestation: expired ? null : "Inspected the original ID. It looked authentic, valid, and not expired, and the face matched.",
     dealId: input.dealId ?? null, addressLine: input.address?.trim() || null, dateOfBirth: birth,
-    consentId: input.consentId ?? null, counterCheck: Boolean(input.consentId),
+    consentId: counterFromConsent ? input.consentId ?? null : null, counterCheck: counterFromConsent,
     databaseStep: "not_applicable",
   });
   return { ok: true, body: { recordId: id, maskedNumber: maskDocumentNumber(number), photoLine: NO_PHOTO_LINE } };
@@ -290,7 +363,8 @@ type FullCheck = {
 
 async function latestFullCheck(q: Q, actor: DeskActor, clientId: string): Promise<FullCheck | null> {
   const found = await q.query(
-    `SELECT record_id, verified_at, method, face_crop_ciphertext,
+    `SELECT record_id, verified_at, method,
+            CASE WHEN face_crop_retained_until > now() THEN face_crop_ciphertext ELSE NULL END AS face_crop_ciphertext,
             verified_at <= now() - interval '5 years' AS due,
             verified_at <= now() - interval '3 years' AS advise
        FROM idv_check_records r
@@ -368,7 +442,7 @@ export async function recordReturning(db: Db, actor: DeskActor, input: {
       dob: client.date_of_birth ? String(client.date_of_birth).slice(0, 10) : null,
       clientId: input.clientId,
     });
-    const result: CheckResult = plan.hold || plan.outcome !== "clear" ? "needs_review" : "pass";
+    const result: CheckResult = plan.hold || plan.outcome !== "clear" ? "needs_review" : "returning_confirmed";
     const photoOnFile = shop.faceCrop && Boolean(earlier.face_crop_ciphertext);
     const id = await insertRecord(q, actor, input.clientId, {
       tier: "2", method: "returning_client", result, confirmedBy: actor.staffId,
@@ -397,6 +471,7 @@ export async function recordReturning(db: Db, actor: DeskActor, input: {
 }
 
 export async function writePersonaRecord(db: Db, input: {
+  recordId: string;
   tenantId: string; legalEntityId: string; branchId: string; staffId: string; clientId: string;
   tier: TierNumber; inquiryId: string; textName: string | null; documentType: string | null;
   idClass: string | null; number: string | null; numberCipher: string | null; cropCipher: string | null;
@@ -404,6 +479,7 @@ export async function writePersonaRecord(db: Db, input: {
   expiry: string | null; birth: string | null; address: string | null; result: CheckResult;
   providerChecks: string | null; governmentId: string | null; selfieId: string | null;
   templateId: string | null; templateVersion: string | null;
+  numberUnavailable?: boolean;
 }): Promise<void> {
   const plan = tierMethod(input.tier === "4" ? "4" : "3");
   const actor: DeskActor = {
@@ -411,6 +487,7 @@ export async function writePersonaRecord(db: Db, input: {
     staffId: input.staffId, role: "teller", userId: input.staffId,
   };
   await insertRecord(dbQuery(db), actor, input.clientId, {
+    recordId: input.recordId,
     tier: input.tier === "4" ? "4" : "3",
     method: "id_and_selfie",
     result: input.result,
@@ -432,6 +509,7 @@ export async function writePersonaRecord(db: Db, input: {
     templateVersion: input.templateVersion,
     databaseStep: input.tier === "4" ? "off" : plan.databaseStep,
     cropCipher: input.cropCipher,
+    numberUnavailable: input.numberUnavailable === true,
   });
 }
 
@@ -448,14 +526,19 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
   const facts = await branchFacts(q, actor);
   const test = await testLabel(db, actor, env);
   const found = await q.query(
-    `SELECT record_id, tier, method, name_on_id, verified_at, document_type, persona_id_class,
-            document_number_last4, issuing_jurisdiction, issuing_country, expiry_date, result,
-            provider_checks, persona_inquiry_id, staff_id, original_record_id, consent_id,
-            counter_check_chosen, deal_id, database_step, face_crop_ciphertext IS NOT NULL AS has_crop,
-            date_of_birth, address_line
-       FROM idv_check_records
-      WHERE tenant_id = $1 AND legal_entity_id = $2 AND client_id = $3
-      ORDER BY verified_at DESC, record_id DESC`,
+    `SELECT r.record_id, r.tier, r.method, r.name_on_id, r.verified_at, r.document_type, r.persona_id_class,
+            r.document_number_last4, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
+            r.provider_checks, r.persona_inquiry_id, r.staff_id, r.original_record_id, r.consent_id,
+            r.counter_check_chosen, r.deal_id, r.database_step,
+            (r.face_crop_ciphertext IS NOT NULL AND r.face_crop_retained_until > now()) AS has_crop,
+            o.verified_at AS original_verified_at, o.method AS original_method
+       FROM idv_check_records r
+       LEFT JOIN idv_check_records o
+         ON o.record_id = r.original_record_id
+        AND o.tenant_id = r.tenant_id
+        AND o.legal_entity_id = r.legal_entity_id
+      WHERE r.tenant_id = $1 AND r.legal_entity_id = $2 AND r.client_id = $3
+      ORDER BY r.verified_at DESC, r.record_id DESC`,
     [actor.tenantId, actor.legalEntityId, clientId],
   );
   const earlier = await latestFullCheck(q, actor, clientId);
@@ -478,7 +561,14 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const method = String(row.method) as CheckMethod;
     const hasCrop = row.has_crop === true && shop.faceCrop;
     const last = str(row, "document_number_last4");
-    const line = idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie");
+    const expiryIso = day(row.expiry_date);
+    const expiredStamp = expiryIso && isPastExpiry(expiryIso, facts.timeZone) ? expiredLine(expiryIso) : null;
+    const originalWhen = row.original_verified_at ? new Date(String(row.original_verified_at)) : when;
+    const originalMethod = (str(row, "original_method") ?? method) as CheckMethod;
+    const returningStamp = method === "returning_client"
+      ? returningLine(branchStamp(originalWhen, facts.timeZone).date, METHOD_LABEL[originalMethod] ?? METHOD_LABEL.in_person)
+      : null;
+    const line = expiredStamp ?? returningStamp ?? idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie");
     const deals = dealsByRecord.get(String(row.record_id)) ?? [];
     const columnDeal = str(row, "deal_id");
     if (columnDeal && !deals.includes(columnDeal)) deals.unshift(columnDeal);
@@ -497,7 +587,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       maskedNumber: last ? `•••• ${last}` : null,
       issuingJurisdiction: str(row, "issuing_jurisdiction"),
       issuingCountry: str(row, "issuing_country"),
-      expiryDate: row.expiry_date ? String(row.expiry_date).slice(0, 10) : null,
+      expiryDate: day(row.expiry_date),
       databaseStep: row.database_step,
       databaseMessage: row.database_step === "off" ? "The database step is not on yet. This check runs ID and selfie." : null,
       photoOnFile: hasCrop,
@@ -506,7 +596,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       originalRecordId: str(row, "original_record_id"),
       dealId: str(row, "deal_id"),
       deals,
-      statusLine: statusLine(String(row.result), method, stamp.date, test),
+      statusLine: statusLine(String(row.result), method, stamp.date, test, { expiredStamp, returningStamp }),
     };
   });
   return {
@@ -522,16 +612,29 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
   };
 }
 
-function statusLine(result: string, method: CheckMethod, date: string, test: boolean): string {
+function statusLine(
+  result: string, method: CheckMethod, date: string, test: boolean,
+  extra: { expiredStamp: string | null; returningStamp: string | null },
+): string {
+  if (extra.expiredStamp) return extra.expiredStamp;
   if (result === "needs_review") return REVIEW_LINE;
   if (result === "declined") return DECLINED_LINE;
   if (result === "method_not_completed") return INCOMPLETE_LINE;
+  if (result === "expired") return extra.expiredStamp ?? "Expired";
+  if (result === "returning_confirmed" || method === "returning_client") return extra.returningStamp ?? "Returning client";
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
   if (result === "pass" && method === "id_and_selfie") {
     return test ? `Check passed (test)` : idCheckedLine(date, METHOD_LABEL.id_and_selfie, false);
   }
-  if (method === "returning_client") return `Returning client ${date}`;
   return PROGRESS_LINE;
+}
+
+function bindFor(actor: DeskActor, recordId: string, purpose: SecretBind["purpose"], version: unknown): SecretBind {
+  const keyVersion = Number(version);
+  return {
+    purpose, tenantId: actor.tenantId, recordId,
+    keyVersion: Number.isInteger(keyVersion) && keyVersion >= 1 ? keyVersion : KEY_VERSION,
+  };
 }
 
 function badNote(note: string | undefined, secret: string): Step<never> | null {
@@ -549,14 +652,14 @@ export async function revealNumber(db: Db, actor: DeskActor, recordId: string, r
     return await db.transaction(async (tx) => {
       const q = dbQuery(tx);
       const found = await q.query(
-        `SELECT client_id, deal_id, document_number_ciphertext
+        `SELECT client_id, deal_id, document_number_ciphertext, key_version
            FROM idv_check_records
           WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
         [recordId, actor.tenantId, actor.legalEntityId],
       );
       const row = found.rows[0];
       if (!row || !str(row, "document_number_ciphertext")) return fail(404, "not_found", "That ID check is not on this shop.");
-      const number = await decryptSecret(String(row.document_number_ciphertext), env);
+      const number = await decryptSecret(String(row.document_number_ciphertext), bindFor(actor, recordId, PURPOSE_NUMBER, row.key_version), env);
       const refused = badNote(note, number);
       if (refused) return refused;
       await q.query(
@@ -619,7 +722,8 @@ export async function viewFaceCrop(db: Db, actor: DeskActor, recordId: string, r
     return await db.transaction(async (tx) => {
       const q = dbQuery(tx);
       const found = await q.query(
-        `SELECT client_id, deal_id, face_crop_ciphertext
+        `SELECT client_id, deal_id, key_version,
+                CASE WHEN face_crop_retained_until > now() THEN face_crop_ciphertext ELSE NULL END AS face_crop_ciphertext
            FROM idv_check_records
           WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
         [recordId, actor.tenantId, actor.legalEntityId],
@@ -627,7 +731,7 @@ export async function viewFaceCrop(db: Db, actor: DeskActor, recordId: string, r
       const row = found.rows[0];
       if (!row) return fail(404, "not_found", "That ID check is not on this shop.");
       if (!str(row, "face_crop_ciphertext")) return fail(404, "no_photo", NO_PHOTO_LINE);
-      const plain = await decryptSecret(String(row.face_crop_ciphertext), env);
+      const plain = await decryptSecret(String(row.face_crop_ciphertext), bindFor(actor, recordId, PURPOSE_CROP, row.key_version), env);
       const bytes = Buffer.from(plain, "base64");
       if (!isSmallCrop(bytes)) return fail(500, "crop_unreadable", "The photo could not be shown.");
       const refused = badNote(note, "");
@@ -651,14 +755,18 @@ export async function viewFaceCrop(db: Db, actor: DeskActor, recordId: string, r
 export async function supersedeRecord(db: Db, actor: DeskActor, recordId: string, replacedBy: string): Promise<Step<{ ok: true }>> {
   const q = dbQuery(db);
   const owned = await q.query(
-    `SELECT 1 FROM idv_check_records WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
+    `SELECT client_id, staff_id FROM idv_check_records WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
     [recordId, actor.tenantId, actor.legalEntityId],
   );
   const next = await q.query(
-    `SELECT 1 FROM idv_check_records WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
+    `SELECT client_id FROM idv_check_records WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
     [replacedBy, actor.tenantId, actor.legalEntityId],
   );
-  if (!owned.rows.length || !next.rows.length) return fail(404, "not_found", "That ID check is not on this shop.");
+  const prior = owned.rows[0];
+  const later = next.rows[0];
+  if (!prior || !later) return fail(404, "not_found", "That ID check is not on this shop.");
+  if (String(prior.client_id) !== String(later.client_id)) return fail(404, "not_found", "That ID check is not on this client.");
+  if (String(prior.staff_id) === actor.staffId) return fail(403, "forbidden", "Someone else has to supersede this ID check.");
   await q.query(
     `INSERT INTO idv_record_supersessions
       (supersession_id, record_id, superseded_by_record_id, tenant_id, legal_entity_id, staff_id)
@@ -666,6 +774,23 @@ export async function supersedeRecord(db: Db, actor: DeskActor, recordId: string
     [`sup_${randomUUID()}`, recordId, replacedBy, actor.tenantId, actor.legalEntityId, actor.staffId],
   );
   return { ok: true, body: { ok: true } };
+}
+
+async function dealOnShop(q: Q, actor: DeskActor, dealId: string): Promise<boolean> {
+  const lookups = [
+    "SELECT 1 FROM quotes WHERE quote_id = $1 AND tenant_id = $2 AND legal_entity_id = $3 LIMIT 1",
+    "SELECT 1 FROM ledger_transactions WHERE transaction_id = $1 AND tenant_id = $2 AND legal_entity_id = $3 LIMIT 1",
+  ];
+  for (const text of lookups) {
+    try {
+      const found = await q.query(text, [dealId, actor.tenantId, actor.legalEntityId]);
+      if (found.rows.length) return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (!/does not exist|no such table/i.test(message)) throw err;
+    }
+  }
+  return false;
 }
 
 export async function linkRecordDeal(db: Db, actor: DeskActor, recordId: string, dealId: string): Promise<Step<{ ok: true }>> {
@@ -676,6 +801,7 @@ export async function linkRecordDeal(db: Db, actor: DeskActor, recordId: string,
   );
   const row = owned.rows[0];
   if (!row) return fail(404, "not_found", "That ID check is not on this shop.");
+  if (!await dealOnShop(q, actor, dealId)) return fail(404, "not_found", "That deal is not on this shop.");
   await linkDeal(q, actor, recordId, String(row.client_id), dealId);
   return { ok: true, body: { ok: true } };
 }
