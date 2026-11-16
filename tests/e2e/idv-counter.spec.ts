@@ -183,6 +183,64 @@ async function ensureTill(page: Page) {
   expect(open, "till open").toBe("open");
 }
 
+/* The staged deal opens the shared till as the teller. A teller cannot
+   close it, and a supervisor does not see that drawer's figures. Read
+   the count while the teller still holds it, then close as the supervisor. */
+async function readTillClose(page: Page): Promise<{ status: string; sessionId: string; balanceGeneration: string; balances: Record<string, string> }> {
+  return page.evaluate(async () => {
+    const heldResponse = await fetch("/api/ledger/till-balances");
+    if (!heldResponse.ok) return { status: `balances ${heldResponse.status}`, sessionId: "", balanceGeneration: "0", balances: {} };
+    const held = await heldResponse.json();
+    const currentResponse = await fetch("/api/ledger/till-session");
+    if (!currentResponse.ok) return { status: `session ${currentResponse.status}`, sessionId: "", balanceGeneration: "0", balances: {} };
+    const current = await currentResponse.json();
+    return {
+      status: current.session?.status ?? "none",
+      sessionId: current.session?.sessionId ?? "",
+      balanceGeneration: String(held.balanceGeneration ?? "0"),
+      balances: held.balances ?? {},
+    };
+  });
+}
+
+async function closeHeldTill(page: Page, snapshot: { status: string; sessionId: string; balanceGeneration: string; balances: Record<string, string> }): Promise<string> {
+  return page.evaluate(async (shot) => {
+    if (shot.status !== "open" || !shot.sessionId) return "closed";
+    let counts: Record<string, string> = {};
+    let generation = shot.balanceGeneration;
+    const known = Object.entries(shot.balances);
+    if (known.length) {
+      for (const [currency, amount] of known) counts[currency] = String(amount);
+    } else {
+      /* A teller cannot put an opening count on the drawer, so the
+         session can be open with no figures. The supervisor states
+         them, then closes against that count. */
+      const opened = await fetch("/api/ledger/opening-balances", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ balances: { CAD: "20000.00", USD: "8000.00" } }),
+      });
+      if (!opened.ok) return `opening ${opened.status} ${await opened.text()}`;
+      const stated = await opened.json();
+      generation = String(stated.balanceGeneration ?? "0");
+      counts = { CAD: "20000.00", USD: "8000.00" };
+    }
+    const closed = await fetch(`/api/ledger/till-sessions/${shot.sessionId}/close`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: `idv-close-${Date.now()}`,
+        counts,
+        balanceGeneration: generation,
+        note: "ID check seam close",
+      }),
+    });
+    if (!closed.ok) return `close ${closed.status} ${await closed.text()}`;
+    const body = await closed.json();
+    return body.session?.status === "closed" ? "closed" : `still ${body.session?.status ?? "none"}`;
+  }, snapshot);
+}
+
 async function openDeal(page: Page, name: string) {
   await page.locator('[data-app="clients"]').click();
   await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
@@ -307,7 +365,9 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "badge-passed");
     await themeShot(page, "masked-teller");
 
+    const tillClose = await readTillClose(page);
     await signInAtDesk(page, "a.singh");
+    expect(await closeHeldTill(page, tillClose)).toBe("closed");
     await page.locator('[data-app="clients"]').click();
     await page.getByText(legalName, { exact: true }).click();
     await page.getByTestId("id-check-reveal-open").click();
