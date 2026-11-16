@@ -26,6 +26,7 @@
       delete next.idStanding;
       delete next.pepReview;
       delete next.idCheckError;
+      delete next.idCheckTries;
       out[name] = next;
     });
     return out;
@@ -870,9 +871,10 @@
                 const rec = next[name];
                 if (!rec || rec.clientId !== id) return;
                 if (failed) {
-                  retry = true;
-                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.') return;
-                  const cleared = { ...rec };
+                  const tries = rec.idCheckTries || 0;
+                  if (tries < 3) retry = true;
+                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.' && tries >= 3) return;
+                  const cleared = { ...rec, idCheckTries: tries + 1 };
                   delete cleared.idStanding;
                   delete cleared.pepReview;
                   cleared.idCheckError = 'Could not read the ID check. Try again.';

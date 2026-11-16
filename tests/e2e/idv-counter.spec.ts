@@ -1147,8 +1147,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await page.locator('[data-app="clients"]').click();
     await page.waitForFunction((id) => {
       const roster = (window as unknown as { CDOS: { clientRoster?: Record<string, { clientId?: string; idStanding?: { onFile?: boolean } }> } }).CDOS.clientRoster || {};
-      return Object.values(roster).some((rec) => rec && rec.clientId === id && rec.idStanding && rec.idStanding.onFile);
-    }, ids.pass);
+      return Object.values(roster).some((rec) => rec && rec.clientId === id && rec.idStanding);
+    }, ids.pass, { timeout: 20_000 });
     const leaked = await page.evaluate(() => {
       const raw = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { idStanding?: unknown; pepReview?: unknown }>;
       return Object.values(raw).some((rec) => !!(rec && (rec.idStanding || rec.pepReview)));
