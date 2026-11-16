@@ -4,7 +4,7 @@ import measureSignup from '../../scripts/signup-capture-measure.cjs';
 
 for (const width of [1280, 390, 360]) test(`all signup states keep controls pointer-reachable at ${width}`, async ({ page }, info) => {
   test.setTimeout(360_000);
-  await page.setViewportSize({ width, height: width === 1280 ? 760 : 844 });
+  await page.setViewportSize({ width, height: width === 1280 ? 760 : width === 360 ? 740 : 844 });
   const evidence: { state: string; targets: number }[] = [];
   for (const [state, , step, act] of SIGNUP_STATES) {
     await page.goto('/onboarding?step=' + step);
@@ -39,8 +39,9 @@ for (const [width, height] of [[1280, 760], [1440, 860], [1440, 900]]) test(`all
     await page.waitForTimeout(2500);
     if (act) await act(actions(page));
     const measured = await page.evaluate(measureSignup);
-    evidence.push({ state, documentScrolls: measured.documentScrolls, productScrolls: measured.productScrolls, scrollers: measured.scrollers });
+    const cardScrolls = await page.locator('[data-stage]').evaluateAll(es => es.some(e => e.scrollHeight > e.clientHeight + 1));
+    evidence.push({ state, documentScrolls: measured.documentScrolls, productScrolls: measured.productScrolls, cardScrolls, scrollers: measured.scrollers });
   }
   await info.attach('scroll-evidence', { body: JSON.stringify({ width, height, evidence }), contentType: 'application/json' });
-  expect(evidence.filter(e => e.documentScrolls || e.productScrolls), 'No state scrolls the document or product viewport').toEqual([]);
+  expect(evidence.filter(e => e.documentScrolls || e.productScrolls || e.cardScrolls), 'No state scrolls the document, product viewport or card body').toEqual([]);
 });

@@ -48,6 +48,9 @@ across all 38 states at laptop and both phone widths. Capture now measures the
 fixed product container as well as the document: the previous document-only
 zero-scroll result was insufficient. Complete chapter introductions fit shorter desktop
 viewports through column/padding changes, retaining their copy and actions.
+Desktop Account uses a 26px target (above the 24px requirement), preserving the
+card header height; phones retain 44px. All-state desktop checks also reject
+card-body overflow, independently of the allowed payment-body scrolling.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
