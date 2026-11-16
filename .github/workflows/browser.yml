@@ -46,6 +46,9 @@ jobs:
       - name: Signup browser boundary regressions
         run: node --test tests/signup-*.test.mjs
 
+      - name: Desk sign-out ends the server session
+        run: node --test tests/desk-signout.test.mjs
+
       # The served pages are generated from the designs and committed. If a
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a
