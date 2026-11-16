@@ -198,6 +198,20 @@ JWT stays valid until it expires no matter what happened in between, and at a
 cash desk the interesting event is somebody being let go at 4pm. Every
 credential change revokes every other session.
 
+**Sign out ends the session. Lock desk keeps it.** The desk's Sign out (the
+Session menu, the phone's profile menu, and the desk lock's own Sign out)
+saves the desk, then calls `POST /api/auth/logout`, which revokes the
+session, writes `auth.logout` and clears the cookies
+(`os-src/desk-signout.js`). The page cannot do this alone: the cookie is
+httpOnly. A revoke that does not land (offline, or refused) leaves the
+sign-out owed. The browser keeps the time it was asked for, and nothing
+else. While it is owed the desk does not reopen on that cookie, and the
+revoke is sent again on load, when the network returns and when the tab is
+looked at. The mark lapses after three days, the longest desk session.
+Lock desk is the quick way back for the same person at a shared counter:
+the session stays live behind the PIN. That PIN is not yet checked by the
+server (#771).
+
 **Taking the desk is a new session.** `POST /api/auth/switch` proves the next
 person's PIN, revokes the live cookie, and issues one for them. Only one of
 two switches from that cookie succeeds. The avatar menu used to change only

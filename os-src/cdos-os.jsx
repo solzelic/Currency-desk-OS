@@ -83,6 +83,13 @@
   // the storefront opens as a window
   APPMETA.store = { title: 'Store', icon: 'storefront', w: 860, h: 640 };
   const AUTH_KEY = 'yorkfx_staff_auth';
+  /* The sign-in page's line after a Sign out the server did not confirm.
+     'owed': this browser remembers and will not reopen the desk on that
+     cookie. 'unsaved': storage refused, so only this open page does. */
+  const SIGNOUT_NOTE = {
+    owed: "You're signed out on this screen. CurrencyDesk couldn't confirm it with the server yet and will keep trying. This desk won't reopen here without a sign-in.",
+    unsaved: "You're signed out on this screen. CurrencyDesk couldn't confirm it with the server yet and will keep trying while this page stays open.",
+  };
 
   /* ====================== WINDOW ====================== */
   function Win({ win, meta, active, nav, onFocus, onClose, onMin, onZoom, onDrag, onResize, onSnap, onAdd, children }) {
@@ -802,6 +809,15 @@
     const bannerStore = () => { try { return window.localStorage; } catch (e) { return null; } };   // no storage: the bar shows
     const bannerHiddenNow = () => window.CDOS.stagingBanner.hiddenNow(bannerStore(), Date.now());
     const [bannerHidden, setBannerHidden] = useState(bannerHiddenNow);
+    /* Sign out ends the server session (os-src/desk-signout.js). One the
+       server has not confirmed is owed: the sign-in page says so, the desk
+       does not reopen on that cookie, and the revoke is sent again.
+       'owed' is kept in storage as a time; 'unsaved' lives on this page
+       only, because storage refused it. */
+    const signoutStore = () => { try { return window.localStorage; } catch (e) { return null; } };
+    const signoutOwedNow = () => window.CDOS.deskSignout.pending(signoutStore(), Date.now());
+    const [signoutNote, setSignoutNote] = useState(() => (signoutOwedNow() ? 'owed' : null));
+    const signingOutRef = useRef(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null);                // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -1689,6 +1705,7 @@
       };
       const check = () => {
         if (typeof fetch !== 'function') return;
+        if (signoutOwedNow()) return;   // signed out here: nothing on this cookie to adopt
         fetch('/api/auth/me', { credentials: 'same-origin' })
           .then(r => {
             if (r.status === 401) { relock(); return null; }
@@ -1731,6 +1748,15 @@
          before, and a desk left open does not resume itself. */
       const resume = () => {
         if (typeof fetch !== 'function') return;
+        /* A Sign out on this browser that the server never confirmed.
+           The cookie may still be live, and picking it up is exactly the
+           desk-with-no-PIN this exists to stop. Send the revoke again and
+           stay on the sign-in page whatever it answers. */
+        if (signoutOwedNow()) {
+          window.CDOS.deskSignout.retry({ fetch: window.fetch.bind(window), storage: signoutStore() })
+            .then(ok => { if (alive && ok) setSignoutNote(null); });
+          return;
+        }
         fetch('/api/auth/me', { credentials: 'same-origin' })
           .then(r => (r.ok ? r.json() : null))
           .then(async (d) => {
@@ -1773,6 +1799,29 @@
         window.removeEventListener('message', onMessage);
       };
     }, []);
+
+    /* While a sign-out is owed, send it again when the network is back or
+       the tab is looked at again. Only from the sign-in page: once someone
+       signs in, the cookie is theirs and nothing is owed. */
+    useEffect(() => {
+      if (!signoutNote) return;
+      let alive = true;
+      const again = () => {
+        if (stageRef.current !== 'lock' || document.visibilityState === 'hidden') return;
+        window.CDOS.deskSignout.retry({ fetch: window.fetch.bind(window), storage: signoutStore(), owed: signoutNote === 'unsaved' })
+          .then(ok => { if (alive && ok) setSignoutNote(null); });
+      };
+      window.addEventListener('online', again);
+      document.addEventListener('visibilitychange', again);
+      return () => {
+        alive = false;
+        window.removeEventListener('online', again);
+        document.removeEventListener('visibilitychange', again);
+      };
+    }, [signoutNote]);
+    /* Someone signed in: the browser holds their cookie now, not the one
+       that was owed a revoke. */
+    const signedInAfresh = () => { window.CDOS.deskSignout.forget(signoutStore()); setSignoutNote(null); };
 
     // react to the staff Rate Board republishing (storage events fire from the
     // embedded board iframe) and to an external lock toggle
@@ -2335,14 +2384,33 @@
          60ms after sign-in and covered it. */
       openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
-    function logout() {
+    /* Sign out is a full sign-out: the server session ends and the next
+       person signs in from the start. Lock desk is the other thing: it
+       keeps the session behind the PIN for the same person at a shared
+       counter, and its own Sign out lands here.
+
+       The desk leaves the screen at once ('signout'), so nothing more is
+       typed into it while the last save goes. Then the save, then the
+       revoke (os-src/desk-signout.js). A revoke that does not land still
+       ends on the sign-in page, with a line that says the server has not
+       confirmed it. One at a time: a second press sends nothing more. */
+    async function logout() {
+      if (signingOutRef.current) return;
+      signingOutRef.current = true;
+      setOpMenu(false); setAcctMenu(false);
+      setStage('signout');
+      let out = { revoked: false, remembered: false };
+      try {
+        out = await window.CDOS.deskSignout.signOut({ fetch: window.fetch.bind(window), persist: window.CDOS_PERSIST, storage: signoutStore() });
+      } catch (e) {}
       setStagingOn(false);
-      try { sessionStorage.removeItem(AUTH_KEY); } catch (e) {}
-      try { window.CDOS_PERSIST.end(); } catch (e) {}
+      try { sessionStorage.removeItem(AUTH_KEY); sessionStorage.removeItem('yorkfx_staff_user'); } catch (e) {}
       hydratedRef.current = false; srvUserRef.current = null; setSrvUser(null);
       // sign-out frees the till — the operator session ends with the person
       setBranches(list => list.map(b => ({ ...b, tills: (b.tills || []).map(t => t.operator === me.name ? { ...t, operator: '' } : t) })));
+      setSignoutNote(out.revoked ? null : (out.remembered ? 'owed' : 'unsaved'));
       setWins([]); setStage('lock');
+      signingOutRef.current = false;
     }
 
     // plan gating: which apps the active subscription unlocks. Defined BEFORE the
@@ -2357,10 +2425,18 @@
       return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
 
-    if (stage === 'lock') return <SignIn
+    if (stage === 'signout') return (<div id="lock"><div className="lock-card" role="status" aria-live="polite" style={{ textAlign: 'center' }}>
+      <div className="lock-mark"><span className="yk">CurrencyDesk</span><span className="sub">Sign out</span></div>
+      <h1 style={{ textAlign: 'center' }}>Signing out…</h1>
+      <div className="station" style={{ textAlign: 'center' }}>Saving the desk, then ending this session.</div>
+    </div></div>);
+    if (stage === 'lock') return (<React.Fragment>
+      {signoutNote && <div className="cdos-signout-note" role="status">{SIGNOUT_NOTE[signoutNote]}</div>}
+      <SignIn
       employees={settings.employees || []}
       onSignup={() => setStage('signup')}
       onMustChange={(rec, temp, srvPlan, srvUser) => {
+        signedInAfresh();
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
         markPersistRole(rec.role);
@@ -2368,6 +2444,7 @@
         setUser(rec.code || rec.name); setAuthRec(rec); setPwTemp(temp || null); setStage('setpass');
       }}
       onComplete={async (rec, srvPlan, srvUser) => {
+        signedInAfresh();
         setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({ ...s, employees: [...(s.employees || []), { ...rec, _adopted: undefined }] }));
         if (srvPlan && rec.role === 'Owner') setSettings(s => ({ ...s, billingPlan: srvPlan }));
@@ -2376,13 +2453,14 @@
         setUser(rec.code || rec.name); setAuthRec(rec);
         await hydrateTenant(); routeAfterAuth(rec);
       }}
-    />;
+    /></React.Fragment>);
     if (stage === 'signup') return <OnboardWizard plan={ENTRY.plan} onBack={() => setStage('lock')} onSent={(email) => { setSignup({ email }); setStage('verify'); }} />;
     if (stage === 'verify') return <VerifySignup email={signup && signup.email} onBack={() => setStage('signup')} onVerified={(d) => { setNewDesk(d); setStage('created'); }} />;
     if (stage === 'created') return <DeskCreated desk={newDesk} onEnter={async () => {
       // adopt the new owner locally, then hydrate their brand-new (clean) desk
       // from the server before routing in — so the OS opens as THEIR instance.
       const u = (newDesk && newDesk.user) || {};
+      signedInAfresh();
       const rec = { id: 'e_owner_' + Date.now(), code: u.id, name: u.name || 'Owner', role: 'Owner', active: true, branches: '*', home: null };
       setSettings(s => ({ ...s, employees: [...(s.employees || []).filter(e => e.code !== rec.code), rec] }));
       markPersistRole('Owner');
@@ -2514,6 +2592,9 @@
             </div>
             <button className="mb-menu-row" onClick={() => { openSettingsTab('account'); setAcctMenu(false); }}><Ic n="id" s={16} /> <span className="mb-menu-lbl">View profile</span></button>
             {canSettings && <button className="mb-menu-row" onClick={() => { openApp('settings'); setAcctMenu(false); }}><Ic n="gear" s={16} /> <span className="mb-menu-lbl">Account settings</span></button>}
+            {/* A phone hides the menu bar, and the Session menu with it.
+                Above the people list, which can run past the screen. */}
+            {slot === 'phone' && <button className="mb-menu-row danger" onClick={() => { setAcctMenu(false); logout(); }}><Ic n="logout" s={16} /> <span className="mb-menu-lbl">Sign out</span></button>}
             <div className="mb-menu-div"></div>
             <div className="mb-menu-cap">Switch account</div>
             {(settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => (

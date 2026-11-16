@@ -366,6 +366,130 @@
 });
 
 
+/* ---- os-src/desk-signout.js ---- */
+/* Sign out ends the server session (issue #794).
+
+   The desk session is an httpOnly cookie, so the page cannot delete it.
+   Only POST /api/auth/logout ends it: the server revokes the session,
+   writes auth.logout and clears the cookies. Resetting the page alone
+   left that cookie valid, and a reload went straight back to the desk.
+
+   Order: save the desk first (CDOS_PERSIST.end flushes while the cookie
+   can still save), then revoke. Neither wait is unbounded: a save or a
+   revoke that never answers is given up after WAIT_MS, so a bad network
+   cannot hold the person at the counter.
+
+   A revoke that does not land (offline, or the server refuses) leaves a
+   sign-out owed. That is kept in storage as the time it was asked for,
+   and nothing else: no staff id, no name, no shop. While one is owed the
+   desk does not reopen on this browser's cookie, and the revoke is sent
+   again. The mark lapses after MAX_AGE_MS, the longest desk session
+   (three days, staging quick sign-in; an ordinary session is 12 hours),
+   because by then the session it names has ended on its own.
+
+   Lock desk is not this. The lock keeps the session for the same person
+   at a shared counter; Sign out ends it. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (root) root.CDOS = Object.assign(root.CDOS || {}, { deskSignout: api });
+})(typeof window !== "undefined" ? window : globalThis, function () {
+  var KEY = "cdos.signout.pending";
+  var MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+  var WAIT_MS = 10000;
+  var inflight = null;
+
+  /* Settles with the work's answer (or `failed` if it throws), or with
+     `failed` once ms have passed, whichever is first. */
+  function within(work, ms, failed) {
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () { resolve(failed); }, ms);
+      Promise.resolve(work).then(function (value) { clearTimeout(timer); resolve(value); },
+        function () { clearTimeout(timer); resolve(failed); });
+    });
+  }
+
+  function owedAt(stored) {
+    return typeof stored === "string" && /^[0-9]+$/.test(stored) ? Number(stored) : NaN;
+  }
+  function pending(storage, now) {
+    try {
+      if (!storage) return false;
+      var at = owedAt(storage.getItem(KEY));
+      return isFinite(at) && isFinite(now) && at <= now && now - at < MAX_AGE_MS;
+    } catch (e) { return false; }   // storage is off: nothing can be owed in it
+  }
+  function remember(storage, now) {
+    try {
+      if (!storage) return false;
+      storage.setItem(KEY, String(now));
+      return storage.getItem(KEY) === String(now);
+    } catch (e) { return false; }
+  }
+  function forget(storage) {
+    try { if (storage) storage.removeItem(KEY); } catch (e) { /* storage is off */ }
+  }
+
+  /* True only when the server answered 2xx. A refusal is not a revoke. */
+  function revoke(fetchFn, waitMs) {
+    var ctl = typeof AbortController === "function" ? new AbortController() : null;
+    var asked;
+    try {
+      asked = fetchFn("/api/auth/logout", {
+        method: "POST", credentials: "same-origin", signal: ctl ? ctl.signal : undefined,
+      });
+    } catch (e) { asked = Promise.reject(e); }
+    var answer = Promise.resolve(asked).then(function (r) { return !!(r && r.ok); });
+    return within(answer, waitMs, false).then(function (ok) {
+      if (!ok && ctl) ctl.abort();   // a request still out is stopped, not left to land later
+      return ok;
+    });
+  }
+
+  function endDesk(persist) {
+    try { return persist && typeof persist.end === "function" ? persist.end() : null; }
+    catch (e) { return null; }
+  }
+
+  /* deps: { fetch, persist, storage, now, waitMs }. A second call while
+     one is running gets the same answer and sends nothing more. */
+  function signOut(deps) {
+    if (inflight) return inflight;
+    var d = deps || {};
+    var waitMs = typeof d.waitMs === "number" ? d.waitMs : WAIT_MS;
+    var now = typeof d.now === "function" ? d.now : Date.now;
+    inflight = (async function () {
+      /* Owed from the moment it is asked: a reload mid-way must not
+         reopen the desk. */
+      var remembered = remember(d.storage, now());
+      await within(endDesk(d.persist), waitMs, null);
+      var ok = await revoke(d.fetch, waitMs);
+      if (ok) { forget(d.storage); return { revoked: true, remembered: false }; }
+      return { revoked: false, remembered: remembered };
+    })();
+    return inflight.then(function (result) { inflight = null; return result; },
+      function (error) { inflight = null; throw error; });
+  }
+
+  /* Send an owed revoke. True when nothing is owed afterwards. `owed`
+     sends it even when storage holds no mark (storage refused it, and
+     only the open page remembers). */
+  async function retry(deps) {
+    var d = deps || {};
+    var now = typeof d.now === "function" ? d.now : Date.now;
+    if (!d.owed && !pending(d.storage, now())) { forget(d.storage); return true; }
+    var ok = await revoke(d.fetch, typeof d.waitMs === "number" ? d.waitMs : WAIT_MS);
+    if (ok) forget(d.storage);
+    return ok;
+  }
+
+  return {
+    KEY: KEY, MAX_AGE_MS: MAX_AGE_MS, WAIT_MS: WAIT_MS,
+    signOut: signOut, retry: retry, pending: pending, forget: forget,
+  };
+});
+
+
 /* ---- os-src/rates-board.js ---- */
 /* The Rates app's board, as the desk builds it before Publish.
 
@@ -72588,6 +72712,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     h: 640
   };
   const AUTH_KEY = 'yorkfx_staff_auth';
+  /* The sign-in page's line after a Sign out the server did not confirm.
+     'owed': this browser remembers and will not reopen the desk on that
+     cookie. 'unsaved': storage refused, so only this open page does. */
+  const SIGNOUT_NOTE = {
+    owed: "You're signed out on this screen. CurrencyDesk couldn't confirm it with the server yet and will keep trying. This desk won't reopen here without a sign-in.",
+    unsaved: "You're signed out on this screen. CurrencyDesk couldn't confirm it with the server yet and will keep trying while this page stays open."
+  };
 
   /* ====================== WINDOW ====================== */
   function Win({
@@ -74544,6 +74675,21 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }; // no storage: the bar shows
     const bannerHiddenNow = () => window.CDOS.stagingBanner.hiddenNow(bannerStore(), Date.now());
     const [bannerHidden, setBannerHidden] = useState(bannerHiddenNow);
+    /* Sign out ends the server session (os-src/desk-signout.js). One the
+       server has not confirmed is owed: the sign-in page says so, the desk
+       does not reopen on that cookie, and the revoke is sent again.
+       'owed' is kept in storage as a time; 'unsaved' lives on this page
+       only, because storage refused it. */
+    const signoutStore = () => {
+      try {
+        return window.localStorage;
+      } catch (e) {
+        return null;
+      }
+    };
+    const signoutOwedNow = () => window.CDOS.deskSignout.pending(signoutStore(), Date.now());
+    const [signoutNote, setSignoutNote] = useState(() => signoutOwedNow() ? 'owed' : null);
+    const signingOutRef = useRef(false);
     const [tourArrival, setTourArrival] = useState('signin');
     const srvUserRef = useRef(null); // synchronous mirror so hydrate reads it before state settles
     /* Same trick, for the two things the session-resume below has to read
@@ -76078,6 +76224,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       };
       const check = () => {
         if (typeof fetch !== 'function') return;
+        if (signoutOwedNow()) return; // signed out here: nothing on this cookie to adopt
         fetch('/api/auth/me', {
           credentials: 'same-origin'
         }).then(r => {
@@ -76124,6 +76271,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          before, and a desk left open does not resume itself. */
       const resume = () => {
         if (typeof fetch !== 'function') return;
+        /* A Sign out on this browser that the server never confirmed.
+           The cookie may still be live, and picking it up is exactly the
+           desk-with-no-PIN this exists to stop. Send the revoke again and
+           stay on the sign-in page whatever it answers. */
+        if (signoutOwedNow()) {
+          window.CDOS.deskSignout.retry({
+            fetch: window.fetch.bind(window),
+            storage: signoutStore()
+          }).then(ok => {
+            if (alive && ok) setSignoutNote(null);
+          });
+          return;
+        }
         fetch('/api/auth/me', {
           credentials: 'same-origin'
         }).then(r => r.ok ? r.json() : null).then(async d => {
@@ -76193,6 +76353,37 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         window.removeEventListener('message', onMessage);
       };
     }, []);
+
+    /* While a sign-out is owed, send it again when the network is back or
+       the tab is looked at again. Only from the sign-in page: once someone
+       signs in, the cookie is theirs and nothing is owed. */
+    useEffect(() => {
+      if (!signoutNote) return;
+      let alive = true;
+      const again = () => {
+        if (stageRef.current !== 'lock' || document.visibilityState === 'hidden') return;
+        window.CDOS.deskSignout.retry({
+          fetch: window.fetch.bind(window),
+          storage: signoutStore(),
+          owed: signoutNote === 'unsaved'
+        }).then(ok => {
+          if (alive && ok) setSignoutNote(null);
+        });
+      };
+      window.addEventListener('online', again);
+      document.addEventListener('visibilitychange', again);
+      return () => {
+        alive = false;
+        window.removeEventListener('online', again);
+        document.removeEventListener('visibilitychange', again);
+      };
+    }, [signoutNote]);
+    /* Someone signed in: the browser holds their cookie now, not the one
+       that was owed a revoke. */
+    const signedInAfresh = () => {
+      window.CDOS.deskSignout.forget(signoutStore());
+      setSignoutNote(null);
+    };
 
     // react to the staff Rate Board republishing (storage events fire from the
     // embedded board iframe) and to an external lock toggle
@@ -77256,13 +77447,36 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          60ms after sign-in and covered it. */
       openApp(planAllows('ledger') ? 'ledger' : 'rates');
     }
-    function logout() {
+    /* Sign out is a full sign-out: the server session ends and the next
+       person signs in from the start. Lock desk is the other thing: it
+       keeps the session behind the PIN for the same person at a shared
+       counter, and its own Sign out lands here.
+        The desk leaves the screen at once ('signout'), so nothing more is
+       typed into it while the last save goes. Then the save, then the
+       revoke (os-src/desk-signout.js). A revoke that does not land still
+       ends on the sign-in page, with a line that says the server has not
+       confirmed it. One at a time: a second press sends nothing more. */
+    async function logout() {
+      if (signingOutRef.current) return;
+      signingOutRef.current = true;
+      setOpMenu(false);
+      setAcctMenu(false);
+      setStage('signout');
+      let out = {
+        revoked: false,
+        remembered: false
+      };
+      try {
+        out = await window.CDOS.deskSignout.signOut({
+          fetch: window.fetch.bind(window),
+          persist: window.CDOS_PERSIST,
+          storage: signoutStore()
+        });
+      } catch (e) {}
       setStagingOn(false);
       try {
         sessionStorage.removeItem(AUTH_KEY);
-      } catch (e) {}
-      try {
-        window.CDOS_PERSIST.end();
+        sessionStorage.removeItem('yorkfx_staff_user');
       } catch (e) {}
       hydratedRef.current = false;
       srvUserRef.current = null;
@@ -77275,8 +77489,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           operator: ''
         } : t)
       })));
+      setSignoutNote(out.revoked ? null : out.remembered ? 'owed' : 'unsaved');
       setWins([]);
       setStage('lock');
+      signingOutRef.current = false;
     }
 
     // plan gating: which apps the active subscription unlocks. Defined BEFORE the
@@ -77290,10 +77506,39 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (activePlan === 'pro') return id !== 'assistant';
       return id === 'rates' || id === 'telegraph'; // basic — rate board + Texts
     };
-    if (stage === 'lock') return /*#__PURE__*/React.createElement(SignIn, {
+    if (stage === 'signout') return /*#__PURE__*/React.createElement("div", {
+      id: "lock"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "lock-card",
+      role: "status",
+      "aria-live": "polite",
+      style: {
+        textAlign: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "lock-mark"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "yk"
+    }, "CurrencyDesk"), /*#__PURE__*/React.createElement("span", {
+      className: "sub"
+    }, "Sign out")), /*#__PURE__*/React.createElement("h1", {
+      style: {
+        textAlign: 'center'
+      }
+    }, "Signing out\u2026"), /*#__PURE__*/React.createElement("div", {
+      className: "station",
+      style: {
+        textAlign: 'center'
+      }
+    }, "Saving the desk, then ending this session.")));
+    if (stage === 'lock') return /*#__PURE__*/React.createElement(React.Fragment, null, signoutNote && /*#__PURE__*/React.createElement("div", {
+      className: "cdos-signout-note",
+      role: "status"
+    }, SIGNOUT_NOTE[signoutNote]), /*#__PURE__*/React.createElement(SignIn, {
       employees: settings.employees || [],
       onSignup: () => setStage('signup'),
       onMustChange: (rec, temp, srvPlan, srvUser) => {
+        signedInAfresh();
         if (rec._adopted) setSettings(s => ({
           ...s,
           employees: [...(s.employees || []), {
@@ -77314,6 +77559,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         setStage('setpass');
       },
       onComplete: async (rec, srvPlan, srvUser) => {
+        signedInAfresh();
         setStagingOn(!!(srvUser && srvUser.staging === true));
         if (rec._adopted) setSettings(s => ({
           ...s,
@@ -77334,7 +77580,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         await hydrateTenant();
         routeAfterAuth(rec);
       }
-    });
+    }));
     if (stage === 'signup') return /*#__PURE__*/React.createElement(OnboardWizard, {
       plan: ENTRY.plan,
       onBack: () => setStage('lock'),
@@ -77359,6 +77605,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         // adopt the new owner locally, then hydrate their brand-new (clean) desk
         // from the server before routing in — so the OS opens as THEIR instance.
         const u = newDesk && newDesk.user || {};
+        signedInAfresh();
         const rec = {
           id: 'e_owner_' + Date.now(),
           code: u.id,
@@ -77896,7 +78143,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       s: 16
     }), " ", /*#__PURE__*/React.createElement("span", {
       className: "mb-menu-lbl"
-    }, "Account settings")), /*#__PURE__*/React.createElement("div", {
+    }, "Account settings")), slot === 'phone' && /*#__PURE__*/React.createElement("button", {
+      className: "mb-menu-row danger",
+      onClick: () => {
+        setAcctMenu(false);
+        logout();
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "logout",
+      s: 16
+    }), " ", /*#__PURE__*/React.createElement("span", {
+      className: "mb-menu-lbl"
+    }, "Sign out")), /*#__PURE__*/React.createElement("div", {
       className: "mb-menu-div"
     }), /*#__PURE__*/React.createElement("div", {
       className: "mb-menu-cap"

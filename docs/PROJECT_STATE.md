@@ -1,3 +1,51 @@
+## Desk Sign out ends the server session, 16 November 2026
+
+Found walking hosted staging on 16 Nov (issue #794): the desk's Sign out only reset
+the page. It never called `POST /api/auth/logout`, so the httpOnly `cdos_session`
+cookie stayed valid, a reload or a new visit to /app went straight back to the station
+chooser and the desk with no PIN, and `/api/auth/me` still answered 200. A phone had
+no Sign out at all, because the Session menu lives in the menu bar a phone hides.
+`release` has the same `logout()`; this change is on staging only.
+
+Now Sign out (the Session menu, the desk lock's Sign out, and a new row in the phone's
+profile menu, above the people list) takes the desk off the screen at once ("Signing
+out…"), saves it (`CDOS_PERSIST.end()`), then revokes the session through the
+existing route, which writes `auth.logout` and clears `cdos_session` and
+`cdos_staging`. Each wait gives up after 10 seconds. A second press sends nothing
+more. The sign-out also clears the `yorkfx_staff_auth` and `yorkfx_staff_user` tab
+keys. The logic is `os-src/desk-signout.js` (unit tests `tests/desk-signout.test.mjs`,
+run in the browser workflow); the seam spec is `tests/e2e/desk-signout.spec.ts`, at
+1440 and 390, replaying the old cookie to prove the server forgot it.
+
+If the revoke does not land (offline, or a refusal such as 503), the person still
+lands on the sign-in page, with a line saying the server has not confirmed it. The
+browser keeps `cdos.signout.pending` in localStorage: the time it was asked for and
+nothing else. While it is set, the boot does not pick up the session (it does not ask
+`/api/auth/me`); it sends the revoke again, as it does when the network returns and
+when the tab is looked at. A sign-in clears it. It lapses after three days, the
+longest desk session (staging quick sign-in). If storage refuses the mark, only the
+open page remembers, and the line says so.
+
+Lock desk is unchanged and is not a sign-out: it keeps the session for the same
+person at a shared counter. Its PIN is still not checked by the server (#771, CD-221).
+Signing out does not close, hand over or release the till on the ledger; the seam
+spec reads the till session before and after.
+
+Known limits, recorded rather than hidden:
+- The station chooser's Back, the no-branch screen's "Back to sign-in" and the
+  set-password screen's Back still return to the sign-in page with the session live.
+- Another tab of the same desk stays open while a revoke is owed. It drops to the
+  sign-in page the next time it asks the server after the revoke lands.
+- A revoke still owed when a new session is made outside /app (Start on Day 1 goes
+  through the sign-up page) would end that new session on the next /app load. It
+  needs the revoke to keep failing while the rest of the server answers.
+- Phone Sign out in the More sheet's Account group (#468 spec) is not built; the
+  profile menu carries it for now.
+
+Sessions are a protected surface: CTO review owed. CD-221 owns the sign-in files and
+#794; this change does not touch `os-src/cdos-signin.jsx`. Not release, CTO or
+Compliance acceptance.
+
 ## Staging Start on Day 1, 16 November 2026
 
 Staging's sign-in page has a second staging-only button beside "Start a fresh shop":
