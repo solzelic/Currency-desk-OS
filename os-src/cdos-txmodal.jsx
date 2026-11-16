@@ -1179,6 +1179,8 @@
                 </div>
               )}
               {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
+              {customer && clients[customer] && clients[customer].clientId && window.CDOS.IdCheck &&
+                <window.CDOS.IdCheck.DealBar clientId={clients[customer].clientId} dealId={serverQuote && serverQuote.quoteId} />}
               {/* The customer's ID, where the teller actually is when the
                   question comes up. Covered until it is clicked, and the
                   click writes a server audit row — same component, same

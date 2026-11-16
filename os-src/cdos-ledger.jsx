@@ -1147,6 +1147,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
 
             {/* hero flow — what this transaction actually is, at a glance */}
             <TxFlow row={row} />
+            {window.CDOS.IdCheck && (row.clientId || (clients[row.customer] && clients[row.customer].clientId)) &&
+              <window.CDOS.IdCheck.DealBar clientId={row.clientId || clients[row.customer].clientId} dealId={row.serverTransactionId || row.quoteRef || null} />}
 
             {/* compliance */}
             <div>

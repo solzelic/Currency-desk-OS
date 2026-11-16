@@ -1091,75 +1091,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      status the server stored. The ID image and the name Persona read
      are not on this desk. */
   function IdentityCheck({ clientId, canEdit }) {
-    const [status, setStatus] = useState('');
-    const [checksOn, setChecksOn] = useState(false);
-    const [note, setNote] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [loaded, setLoaded] = useState(false);
-    const [tick, setTick] = useState(0);
-    const labels = {
-      starting: 'Starting',
-      'in progress': 'In progress',
-      'needs review': 'Needs review',
-      'Check passed': 'Check passed',
-      'Check passed (test)': 'Check passed (test)',
-      declined: 'Declined',
-      failed: 'Failed',
-      expired: 'Expired',
-    };
-    useEffect(() => {
-      if (!clientId) return undefined;
-      let live = true;
-      setLoaded(false);
-      setStatus('');
-      let timer = 0;
-      const open = (value) => value === 'starting' || value === 'in progress' || value === 'needs review';
-      const pull = () => {
-        const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-        if (!api || !api.idvStatus) return;
-        api.idvStatus(clientId).then(body => {
-          if (!live) return;
-          const next = body && typeof body.status === 'string' ? body.status : '';
-          setStatus(next);
-          setChecksOn(!!(body && body.checksEnabled));
-          setLoaded(true);
-          if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
-        }).catch(() => { if (live) { setLoaded(true); setNote('The identity check status could not be read.'); } });
-      };
-      pull();
-      return () => { live = false; window.clearTimeout(timer); };
-    }, [clientId, tick]);
-    const start = () => {
-      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.startIdv || busy) return;
-      setBusy(true);
-      setNote('');
-      api.startIdv(clientId).then(body => {
-        if (body && body.connected === false) {
-          setNote(body.message || 'Identity checks are not connected.');
-          setBusy(false);
-          return;
-        }
-        setStatus('starting');
-        setTick(n => n + 1);
-        setBusy(false);
-      }).catch(err => {
-        setNote((err && err.message) || 'The identity check could not be started.');
-        setBusy(false);
-      });
-    };
-    const label = status === 'approved' ? 'Check passed' : (labels[status] || (status ? 'Recorded' : ''));
-    const passed = label === 'Check passed' || label === 'Check passed (test)';
-    return (<div data-testid="identity-check" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identity check</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span data-testid="identity-check-status" className="text-[12.5px]" style={{ color: CD.ink }}>{loaded ? (label || 'No check has been started for this client.') : 'Reading the identity check.'}</span>
-        {canEdit && checksOn && !passed && <button type="button" onClick={start} disabled={busy} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'transparent' }}>{busy ? 'Starting' : 'Start identity check'}</button>}
-      </div>
-      {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from this check are not saved on the desk. Enter the ID with Fix ID.</div>
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's ID photo and selfie are not copied to this desk.</div>
-    </div>);
+    if (window.CDOS.IdCheck) return <window.CDOS.IdCheck.Panel clientId={clientId} canEdit={canEdit} />;
+    return null;
   }
 
   function ProcessStanding({ rec, settings }) {

@@ -1728,6 +1728,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
         {tab === 'clients' && (<div>
           <SectionTitle icon="users" title="Clients · KYC" sub="Defaults and identity checks for the Clients app — these drive the KYC status badges on every contact." />
+          {window.CDOS.IdCheck ? <window.CDOS.IdCheck.Settings /> : null}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>New contacts</div>
           <Row title="Default risk for new contacts" desc="Pre-set on contacts created at the desk or through a KYC flow."><select value={(window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(settings.defaultClientRisk) : (settings.defaultClientRisk || 'Normal'))} onChange={e => set('defaultClientRisk', e.target.value, `default risk ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 150 }}>{(window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High']).map(r => <option key={r}>{r}</option>)}</select></Row>
           <Row title="Warn when ID expires within" desc="Contacts get an amber 'ID expiring' badge inside this window."><select value={settings.idExpiryWarnDays ?? 30} onChange={e => set('idExpiryWarnDays', +e.target.value, `id expiry warn ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 150 }}>{[[0, 'Off'], [30, '30 days'], [60, '60 days'], [90, '90 days']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Row>

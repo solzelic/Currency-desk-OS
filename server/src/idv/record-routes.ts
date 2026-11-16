@@ -11,7 +11,7 @@ import { generateOneTimeLink } from "./persona-calls.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
-  agreedConsent, consentFill, dbQuery, linkRecordDeal, loadShopIdv, readClientChecks, recordInPerson,
+  agreedConsent, consentFill, dbQuery, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
   recordReturning, revealNumber, storeConsent, supersedeRecord, viewFaceCrop, type DeskActor,
 } from "./records.js";
 import { shopEnvCodeFor } from "./shop-config.js";
@@ -46,11 +46,20 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const actor = await who(req, reply);
     if (!actor) return;
     const fill = await consentFill(db, actor);
+    const branch = await dbQuery(db).query(
+      "SELECT province FROM branches WHERE id = $1 AND legal_entity_id = $2",
+      [actor.branchId, actor.legalEntityId],
+    );
+    const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
     return {
       version: CONSENT_VERSION,
       faceCrop: fill.faceCrop,
       notice: noticeCopy(fill),
       selfieConsent: selfieConsentCopy(fill),
+      counterOnly: gate.counter,
+      quebec: gate.quebec,
+      counterLine: gate.line,
+      privacyReady: privacyReady(fill),
     };
   });
 
@@ -167,6 +176,14 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const shown = await revealNumber(db, actor, req.params.recordId, body.data.reason, body.data.note, env());
     if (!shown.ok) return reply.code(shown.status).send({ error: shown.error, message: shown.message });
     return shown.body;
+  });
+
+  app.get<{ Params: { recordId: string } }>("/api/idv/checks/:recordId/reveals", async (req, reply) => {
+    const actor = await who(req, reply);
+    if (!actor) return;
+    const listed = await listReveals(db, actor, req.params.recordId);
+    if (!listed.ok) return reply.code(listed.status).send({ error: listed.error, message: listed.message });
+    return listed.body;
   });
 
   app.post<{ Params: { recordId: string } }>("/api/idv/checks/:recordId/face", async (req, reply) => {

@@ -459,6 +459,19 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     [actor.tenantId, actor.legalEntityId, clientId],
   );
   const earlier = await latestFullCheck(q, actor, clientId);
+  const links = await q.query(
+    `SELECT record_id, deal_id FROM idv_check_deals
+      WHERE tenant_id = $1 AND legal_entity_id = $2 AND client_id = $3`,
+    [actor.tenantId, actor.legalEntityId, clientId],
+  );
+  const dealsByRecord = new Map<string, string[]>();
+  for (const link of links.rows) {
+    const id = String(link.record_id);
+    const deal = String(link.deal_id);
+    const list = dealsByRecord.get(id) ?? [];
+    if (deal && !list.includes(deal)) list.push(deal);
+    dealsByRecord.set(id, list);
+  }
   const records = found.rows.map((row) => {
     const when = new Date(String(row.verified_at));
     const stamp = branchStamp(when, facts.timeZone);
@@ -466,6 +479,9 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const hasCrop = row.has_crop === true && shop.faceCrop;
     const last = str(row, "document_number_last4");
     const line = idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie");
+    const deals = dealsByRecord.get(String(row.record_id)) ?? [];
+    const columnDeal = str(row, "deal_id");
+    if (columnDeal && !deals.includes(columnDeal)) deals.unshift(columnDeal);
     return {
       recordId: row.record_id,
       tier: row.tier,
@@ -489,6 +505,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       personaInquiryId: str(row, "persona_inquiry_id"),
       originalRecordId: str(row, "original_record_id"),
       dealId: str(row, "deal_id"),
+      deals,
       statusLine: statusLine(String(row.result), method, stamp.date, test),
     };
   });
@@ -556,6 +573,41 @@ export async function revealNumber(db: Db, actor: DeskActor, recordId: string, r
   } catch {
     return fail(500, "reveal_failed", "The document number could not be shown.");
   }
+}
+
+export async function listReveals(db: Db, actor: DeskActor, recordId: string): Promise<Step<{ reveals: Array<{ revealId: string; staffId: string; role: string; reason: string; note: string | null; date: string; time: string }> }>> {
+  if (!REVEAL_ROLES.has(actor.role)) return fail(403, "forbidden", "You cannot read this reveal list.");
+  const q = dbQuery(db);
+  const owned = await q.query(
+    `SELECT 1 FROM idv_check_records WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3`,
+    [recordId, actor.tenantId, actor.legalEntityId],
+  );
+  if (!owned.rows.length) return fail(404, "not_found", "That ID check is not on this shop.");
+  const facts = await branchFacts(q, actor);
+  const found = await q.query(
+    `SELECT reveal_id, staff_id, role, reason, note, revealed_at
+       FROM idv_number_reveals
+      WHERE record_id = $1 AND tenant_id = $2 AND legal_entity_id = $3
+      ORDER BY revealed_at DESC, reveal_id DESC`,
+    [recordId, actor.tenantId, actor.legalEntityId],
+  );
+  return {
+    ok: true,
+    body: {
+      reveals: found.rows.map((row) => {
+        const stamp = branchStamp(new Date(String(row.revealed_at)), facts.timeZone);
+        return {
+          revealId: String(row.reveal_id),
+          staffId: String(row.staff_id),
+          role: String(row.role),
+          reason: String(row.reason),
+          note: str(row, "note"),
+          date: stamp.date,
+          time: stamp.time,
+        };
+      }),
+    },
+  };
 }
 
 export async function viewFaceCrop(db: Db, actor: DeskActor, recordId: string, reason: string, note: string | undefined, env: NodeJS.ProcessEnv): Promise<Step<{ contentType: string; dataBase64: string }>> {
