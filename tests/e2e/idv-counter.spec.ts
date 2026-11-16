@@ -127,7 +127,7 @@ async function dismissTour(page: Page) {
   await expect(page.locator(".cdos-tour")).toHaveCount(0);
 }
 
-async function lightShot(page: Page, stem: string, widths: readonly (1280 | 390)[] = [1280, 390]) {
+async function lightShot(page: Page, stem: string, widths: readonly (1280 | 390)[] = [1280, 390], scrollTestId = "") {
   if (process.env.PR2B_SHOTS !== "1") return;
   await dismissTour(page);
   for (const width of widths) {
@@ -136,6 +136,7 @@ async function lightShot(page: Page, stem: string, widths: readonly (1280 | 390)
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
     });
     await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute("data-cdtheme"))).toBe("light");
+    if (scrollTestId) await page.getByTestId(scrollTestId).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(ARTIFACTS, `pr2-${stem}-${width}-light.png`) });
   }
 }
@@ -1045,7 +1046,7 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await page.getByTestId("before-you-post").scrollIntoViewIfNeeded();
     await expect(page.getByTestId("before-you-post")).toContainText("ID typed by hand, not checked");
     await expect(page.getByTestId("post-id-row")).toContainText("ID typed by hand, not checked");
-    await lightShot(page, "before-post-typed");
+    await lightShot(page, "before-post-typed", [1280, 390], "before-you-post");
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(".cd-tx-customer input").fill("Maya");
     await expect(page.getByTestId("suggest-id-chip")).toContainText("ID typed by hand, not checked");
