@@ -383,7 +383,7 @@
     const [tick, setTick] = useState(0);
     useEffect(() => {
       let live = true;
-      fetch("/api/auth/me", { credentials: "same-origin" }).then((res) => res.json()).then((body) => { if (live) setRole((body && body.role) || ""); }).catch(() => {});
+      fetch("/api/auth/me", { credentials: "same-origin" }).then((res) => res.json()).then((body) => { if (live) setRole((body && body.user && body.user.role) || ""); }).catch(() => {});
       return () => { live = false; };
     }, []);
     useEffect(() => {

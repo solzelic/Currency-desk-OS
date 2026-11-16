@@ -53849,7 +53849,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       fetch("/api/auth/me", {
         credentials: "same-origin"
       }).then(res => res.json()).then(body => {
-        if (live) setRole(body && body.role || "");
+        if (live) setRole(body && body.user && body.user.role || "");
       }).catch(() => {});
       return () => {
         live = false;

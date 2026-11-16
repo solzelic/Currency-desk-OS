@@ -83,6 +83,9 @@ export default defineConfig({
       PERSONA_API_KEY: "seam-fixture-key",
       PERSONA_WEBHOOK_SECRET: "seam-webhook-secret",
       PERSONA_API_BASE: "http://127.0.0.1:4199/api/v1",
+      /* The seam is NODE_ENV development, so the fixed test key is not
+         used. This value exists only for that local server. */
+      ID_NUMBER_KEY: "seam-id-number-key",
     },
   },
 

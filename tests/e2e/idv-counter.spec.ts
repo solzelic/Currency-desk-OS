@@ -295,7 +295,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await page.getByTestId("id-check-reveal-open").click();
     await themeShot(page, "reveal");
     await page.getByTestId("id-check-reveal-reason").selectOption("fintrac_request");
-    await page.getByRole("button", { name: "Show number" }).click();
+    await page.getByTestId("id-check-reveal").getByRole("button", { name: "Show number" }).click();
     await expect(page.getByTestId("id-check-revealed")).toHaveText("AB12348991");
     await expect(page.getByTestId("id-check-audit")).toContainText("FINTRAC request");
     await expect(page.getByTestId("id-check-audit")).not.toContainText("AB12348991");
