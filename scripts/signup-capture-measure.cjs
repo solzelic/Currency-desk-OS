@@ -25,5 +25,8 @@ module.exports = function measureSignup() {
         });
         const scrollers = [...document.querySelectorAll('body *')].filter((e) => e.offsetParent && !e.closest('[data-review]') && !e.matches('[data-product]') && /(auto|scroll)/.test(getComputedStyle(e).overflowY) && e.scrollHeight > e.clientHeight + 4)
           .map((e) => ({ what: e.matches('[data-stage]') ? 'card body' : e.matches('[data-paybody]') ? 'payment body' : e.matches('[data-ccylist]') ? 'currency list' : e.tagName.toLowerCase(), extra: e.scrollHeight - e.clientHeight }));
-        return { viewport: [innerWidth, innerHeight], pageScrolls: document.documentElement.scrollHeight > innerHeight + 1, scrollers, elements: out };
+        const documentScrolls = document.documentElement.scrollHeight > innerHeight + 1;
+        const product = document.querySelector('[data-product]');
+        const productScrolls = !!product && product.scrollHeight > product.clientHeight + 1;
+        return { viewport: [innerWidth, innerHeight], pageScrolls: documentScrolls || productScrolls, documentScrolls, productScrolls, scrollers, elements: out };
 };

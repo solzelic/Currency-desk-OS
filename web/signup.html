@@ -1505,6 +1505,17 @@
     @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001s !important; } }
     @keyframes cdScanBar { 0% { transform: translateX(-100%); } 100% { transform: translateX(230%); } }
   </style>
+<style>[data-cardtop] { flex-wrap:wrap; } [data-cardtop] [data-signup-account] { align-self:flex-start; }</style>
+<style>
+@media(min-width:1100px) and (max-height:940px) {
+ [data-signup-explain="true"] { padding:12px 24px!important; }
+ [data-signup-explain="true"] [data-cardtop] { padding-top:8px!important;padding-bottom:0!important; }
+ [data-signup-explain="true"] [data-stage] { padding:12px 34px 4px!important; }
+ [data-signup-explain="true"] [data-exwrap] { grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important; }
+ [data-signup-explain="true"] [data-exgrid]>div { padding:4px 0!important; }
+ [data-signup-explain="true"] [data-foot] { padding:8px 34px 12px!important; }
+}
+</style>
 <style>@media (max-width: 720px) { [data-card] [role="tab"] { min-height: 44px !important; } }</style>
 <style>
 [data-product] button, [data-product] a[href] { min-height:24px; }

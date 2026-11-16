@@ -41,6 +41,13 @@ reviewer-owned capture tool preserves full text and fails on missing captures.
 Its real-DOM regression runs in the Playwright job; the Node-only CI job retains
 the comparison regression without requiring a browser binary.
 The final 38-state × five-size comparison and complete browser run are pending.
+Pointer review found the fixed Account switch covered Back at phone sizes. It
+now participates in the card/payment header layout; busy provider options use
+native disabled semantics. Every visible control is checked for pointer access
+across all 38 states at laptop and both phone widths. Capture now measures the
+fixed product container as well as the document: the previous document-only
+zero-scroll result was insufficient. Complete chapter introductions fit shorter desktop
+viewports through column/padding changes, retaining their copy and actions.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and

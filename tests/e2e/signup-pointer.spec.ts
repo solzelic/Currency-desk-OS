@@ -1,0 +1,46 @@
+import { test, expect } from '@playwright/test';
+import { SIGNUP_STATES, actions } from './signup-capture-states';
+import measureSignup from '../../scripts/signup-capture-measure.cjs';
+
+for (const width of [1280, 390, 360]) test(`all signup states keep controls pointer-reachable at ${width}`, async ({ page }, info) => {
+  test.setTimeout(360_000);
+  await page.setViewportSize({ width, height: width === 1280 ? 760 : 844 });
+  const evidence: { state: string; targets: number }[] = [];
+  for (const [state, , step, act] of SIGNUP_STATES) {
+    await page.goto('/onboarding?step=' + step);
+    await page.waitForTimeout(2500);
+    if (act) await act(actions(page));
+    if (step === 'signin-google') await expect(page.locator('[data-logo="microsoft"]')).toBeDisabled();
+    const controls = page.locator('[data-product] button,[data-product] a[href],[data-product] input,[data-product] summary');
+    let targets = 0;
+    for (const control of await controls.all()) {
+      const usable = await control.evaluate(e => !e.matches(':disabled') && !e.closest('[inert]') && e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }));
+      if (!usable) continue;
+      await control.scrollIntoViewIfNeeded();
+      const hit = await control.evaluate(e => {
+        const r = e.getBoundingClientRect();
+        const points = [[.5, .5], [.2, .5], [.8, .5], [.5, .2], [.5, .8]].map(([x, y]) => document.elementFromPoint(r.x + r.width * x, r.y + r.height * y));
+        return { label: e.getAttribute('aria-label') || e.textContent?.trim(), reachable: points.every(top => !!top && (top === e || e.contains(top))), blocking: points.filter(top => !top || !e.contains(top)).map(top => top?.closest('summary,button')?.textContent?.trim()) };
+      });
+      expect(hit.reachable, JSON.stringify({ state, ...hit })).toBe(true);
+      targets++;
+    }
+    evidence.push({ state, targets });
+  }
+  await info.attach('pointer-evidence', { body: JSON.stringify({ width, evidence }), contentType: 'application/json' });
+});
+
+for (const [width, height] of [[1280, 760], [1440, 860], [1440, 900]]) test(`all signup states fit the product viewport at ${width}x${height}`, async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width, height });
+  const evidence = [];
+  for (const [state, , step, act] of SIGNUP_STATES) {
+    await page.goto('/onboarding?step=' + step);
+    await page.waitForTimeout(2500);
+    if (act) await act(actions(page));
+    const measured = await page.evaluate(measureSignup);
+    evidence.push({ state, documentScrolls: measured.documentScrolls, productScrolls: measured.productScrolls, scrollers: measured.scrollers });
+  }
+  await info.attach('scroll-evidence', { body: JSON.stringify({ width, height, evidence }), contentType: 'application/json' });
+  expect(evidence.filter(e => e.documentScrolls || e.productScrolls), 'No state scrolls the document or product viewport').toEqual([]);
+});
