@@ -132,6 +132,15 @@ the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
+**2026-11-16, the every-exchange ID line is enforced at the counter.** Sign-up
+stores `id_threshold` 0.00 for "every exchange" and opens every desk on
+`pack-ca-v2`. That pack's split gate read zero as no desk line and identified at
+CAD 3,000, while Settings said 0.00. It now reads zero as a stated line: an
+unidentified customer is refused at any amount, and the foreign-exchange ticket
+is asked for on every exchange. NULL still follows the pack. A desk number still
+cannot lift the CAD 1,000 lines. Other country gates still drop a zero; nothing
+writes one for them today. Compliance and CTO review are required.
+
 **2026-11-16: failed sign-up activation logs.** When the Stripe webhook's
 `setup_intent.succeeded` fails to open a v2.1 desk, the log keeps only a
 bounded reason: the error's class, the Postgres SQLSTATE, and the Stripe event
