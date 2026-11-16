@@ -308,11 +308,12 @@ export async function buildApp(
   }
   /* One ledger pool. Client lookup is a read on that pool, not a second connection. */
   const shared = ledgerPoolFor(app);
-  registerIdvRoutes(app, db, {
+  const idvOptions = {
     ...idv,
     clients: idv?.clients ?? (shared ? readOnlyClientLookup(shared) : undefined),
-  });
-  registerIdvRecordRoutes(app, db, idv);
+  };
+  registerIdvRoutes(app, db, idvOptions);
+  registerIdvRecordRoutes(app, db, idvOptions);
 
   // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;

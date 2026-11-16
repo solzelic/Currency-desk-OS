@@ -53312,9 +53312,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: card
     }, body), error && /*#__PURE__*/React.createElement("div", {
       role: "alert",
-      className: "text-[12.5px] mt-3",
+      "data-testid": "id-check-storage",
+      className: "text-[13px] mt-3",
       style: {
-        color: CD.flag
+        color: CD.ink
       }
     }, error))));
     if (!copy) return shell("id-check-loading", "ID check", /*#__PURE__*/React.createElement("div", {

@@ -277,6 +277,20 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await page.getByRole("button", { name: "Enter the ID" }).click();
     await expect(page.getByTestId("id-check-in-person")).toBeVisible();
     await themeShot(page, "in-person");
+    await page.route("**/api/idv/checks/in-person", (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "id_number_key_unavailable", message: "ID number storage is not set up for this shop yet." }),
+    }));
+    await page.getByLabel("Name on the ID").fill("Ada Fixture");
+    await page.getByLabel("Document type").selectOption({ label: "Passport" });
+    await page.getByLabel("Document number").fill("PP12348991");
+    await page.getByLabel("Issuer").fill("ON");
+    await page.getByLabel("Country").fill("CA");
+    await page.getByRole("checkbox", { name: /inspected the original ID/i }).check();
+    await page.getByRole("button", { name: "Save the ID record" }).click();
+    await expect(page.getByTestId("id-check-storage")).toHaveText("ID number storage is not set up for this shop yet.");
+    await page.unroute("**/api/idv/checks/in-person");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
     await page.locator(".cd-tx-x").click();
 

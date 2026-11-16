@@ -10,6 +10,8 @@ import { decryptSecret, encryptSecret, KEY_VERSION, last4, maskDocumentNumber, P
 import { isSmallCrop } from "./face-crop.js";
 import { personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
+import type { ClientLookup } from "./provider.js";
+import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
   NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine,
@@ -231,7 +233,7 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
       CASE WHEN $34::text IS NULL THEN NULL ELSE now() + interval '5 years' END,
       COALESCE($35::timestamptz, now()),
-      1,
+      ${KEY_VERSION},
       COALESCE($35::timestamptz, now()) + interval '5 years',
       $36
     )`,
@@ -342,7 +344,15 @@ export async function recordInPerson(db: Db, actor: DeskActor, input: {
   const facts = await branchFacts(q, actor);
   const expired = expiry ? isPastExpiry(expiry, facts.timeZone) : false;
   const recordId = `idc_${randomUUID()}`;
-  const cipher = await encryptSecret(number, { purpose: PURPOSE_NUMBER, tenantId: actor.tenantId, recordId, keyVersion: KEY_VERSION }, env);
+  let cipher: string;
+  try {
+    cipher = await encryptSecret(number, { purpose: PURPOSE_NUMBER, tenantId: actor.tenantId, recordId, keyVersion: KEY_VERSION }, env);
+  } catch (err) {
+    if (err instanceof Error && err.message === "id_number_key_unavailable") {
+      return fail(503, "id_number_key_unavailable", "ID number storage is not set up for this shop yet.");
+    }
+    throw err;
+  }
   const id = await insertRecord(q, actor, input.clientId, {
     recordId,
     tier: "1", method: "in_person", result: expired ? "expired" : "pass", nameOnId: name, documentType: typed.label,
@@ -519,9 +529,12 @@ async function testLabel(db: Db, actor: DeskActor, env: NodeJS.ProcessEnv): Prom
   return personaPassLabel(env, shop.apiKeyRef, code) === "Check passed (test)";
 }
 
-export async function readClientChecks(db: Db, actor: DeskActor, clientId: string, env: NodeJS.ProcessEnv) {
+export async function readClientChecks(db: Db, actor: DeskActor, clientId: string, env: NodeJS.ProcessEnv, clients?: ClientLookup) {
   const q = dbQuery(db);
-  if (!await clientOwned(q, actor, clientId)) return fail(404, "not_found", "That client is not on this shop.");
+  /* Client files can live on the ledger connection. A missing check is an empty list, not a 404. */
+  if (!await clientOnShop(db, actor.legalEntityId, actor.tenantId, clientId, clients)) {
+    return fail(404, "not_found", "That client is not on this shop.");
+  }
   const shop = await loadShopIdv(db, actor.legalEntityId);
   const facts = await branchFacts(q, actor);
   const test = await testLabel(db, actor, env);

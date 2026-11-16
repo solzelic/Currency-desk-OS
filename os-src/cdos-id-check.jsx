@@ -214,7 +214,7 @@
               <button type="button" onClick={onClose} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink }}>Close</button>
             </div>
             <div data-testid={testid} className="p-3.5" style={card}>{body}</div>
-            {error && <div role="alert" className="text-[12.5px] mt-3" style={{ color: CD.flag }}>{error}</div>}
+            {error && <div role="alert" data-testid="id-check-storage" className="text-[13px] mt-3" style={{ color: CD.ink }}>{error}</div>}
           </div>
         </div>
       </Portal>

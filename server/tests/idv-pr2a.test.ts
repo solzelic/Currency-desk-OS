@@ -10,7 +10,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { eq } from "drizzle-orm";
 import { CONSENT_VERSION, ID_DETAILS_LINE, CROP_LINE, noticeCopy, selfieConsentCopy } from "../src/idv/consent-copy.js";
 import { cropIdPortrait, isSmallCrop } from "../src/idv/face-crop.js";
-import { decryptSecret, encryptSecret, idNumberKey, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER } from "../src/idv/id-number.js";
+import { decryptSecret, encryptSecret, idNumberKey, KEY_VERSION, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER } from "../src/idv/id-number.js";
 import { personaFileHost, readInquiryText, storedInquiryFields } from "../src/idv/inquiry-text.js";
 import { cropFromFrontPhoto, fetchPersonaInquiry } from "../src/idv/persona-calls.js";
 import { assertPersonaKey, PersonaKeyRefused } from "../src/idv/persona-guard.js";
@@ -83,6 +83,14 @@ describe("document number key", () => {
     const previous = { NODE_ENV: "test", ID_NUMBER_KEY: "next-root", ID_NUMBER_KEY_PREVIOUS: "currencydesk-dev-id-number" };
     expect(await decryptSecret(stored, bind, previous)).toBe(NUMBER);
     await expect(decryptSecret(stored, bind, { NODE_ENV: "test", ID_NUMBER_KEY: "next-root" })).rejects.toThrow("id_number_unreadable");
+  });
+
+  it("encrypts with the current key and never the previous one", async () => {
+    const env = { NODE_ENV: "test", ID_NUMBER_KEY: "current-root", ID_NUMBER_KEY_PREVIOUS: "old-root" };
+    const stored = await encryptSecret(NUMBER, bind, env);
+    expect(await decryptSecret(stored, bind, { NODE_ENV: "test", ID_NUMBER_KEY: "current-root" })).toBe(NUMBER);
+    await expect(decryptSecret(stored, bind, { NODE_ENV: "test", ID_NUMBER_KEY: "old-root" })).rejects.toThrow("id_number_unreadable");
+    await expect(encryptSecret(NUMBER, bind, { NODE_ENV: "development", RENDER_EXTERNAL_HOSTNAME: "unknown.example", ID_NUMBER_KEY_PREVIOUS: "old-root" })).rejects.toThrow("id_number_key_unavailable");
   });
 
   it("fails closed on staging and live when the key is unset", () => {
@@ -398,6 +406,7 @@ describe("id check records", () => {
     const dumped = JSON.stringify(row.rows[0]);
     expect(dumped).not.toContain(NUMBER);
     expect(String(row.rows[0]?.document_number_ciphertext)).toMatch(/^aes-256-gcm\$/);
+    expect(Number(row.rows[0]?.key_version)).toBe(KEY_VERSION);
     expect(await decryptSecret(String(row.rows[0]?.document_number_ciphertext), {
       purpose: PURPOSE_NUMBER, tenantId: DEMO.tenantId, recordId: created.json().recordId,
     }, { NODE_ENV: "test" })).toBe(NUMBER);
@@ -727,7 +736,7 @@ describe("id check records", () => {
     await expect(dbQuery(handle.db).query("DELETE FROM idv_check_records WHERE record_id = $1", [row.rows[0]?.record_id])).rejects.toThrow(/append-only/);
   });
 
-  async function postPersona(name: string, inquiryId: string, referenceId: string, eventId: string, env: NodeJS.ProcessEnv) {
+  async function postPersona(name: string, inquiryId: string, referenceId: string, eventId: string, env: NodeJS.ProcessEnv, fetchOverride?: typeof fetch) {
     const raw = JSON.stringify({
       data: { id: eventId, attributes: { name, payload: { data: { id: inquiryId, attributes: { status: "approved", "reference-id": referenceId } } } } },
     });
@@ -737,7 +746,7 @@ describe("id check records", () => {
     const mac = createHmac("sha256", secret).update(Buffer.concat([Buffer.from(`${t}.`), Buffer.from(raw)])).digest("hex");
     const local = await buildApp(handle.db, {}, undefined, {
       env: { PERSONA_API_KEY: "fixture-api-key", PERSONA_WEBHOOK_SECRET: secret, ...env },
-      fetch: fetchImpl, sleep: async () => {},
+      fetch: fetchOverride ?? fetchImpl, sleep: async () => {},
       persona: (await import("../src/idv/providers/persona/index.js")).createPersonaProvider({ PERSONA_WEBHOOK_SECRET: secret }),
     });
     try {
@@ -1055,5 +1064,125 @@ describe("id check records", () => {
       payload: { privacyPolicyUrl: "http://example.com/privacy" },
     });
     expect(policy.statusCode).toBe(400);
+  });
+
+  async function plantInquiry(clientId: string, ref: string) {
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_inquiries
+        (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, status, requested_tier)
+       VALUES ($1,$2,$3,'m.costa','persona',$1,$4,'starting','3')`,
+      [ref, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    return { inquiryId: ref, referenceId: ref };
+  }
+
+  it("retries a failed inquiry fetch, and two deliveries write one record", async () => {
+    const clientId = await client("Retry");
+    const started = await plantInquiry(clientId, "inq_retry_manual");
+    let failed = false;
+    const flaky: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (!failed && url.includes("/inquiries/")) {
+        failed = true;
+        return new Response("down", { status: 503 });
+      }
+      return fetchImpl(input, init);
+    };
+    const env = { NODE_ENV: "test" };
+    const first = await postPersona("inquiry.approved", started.inquiryId, started.referenceId, "evt_retry", env, flaky);
+    expect(first.statusCode).toBe(500);
+    const pending = await dbQuery(handle.db).query("SELECT 1 FROM idv_events WHERE event_id = 'evt_retry'");
+    expect(pending.rows.length).toBe(0);
+    const missing = await dbQuery(handle.db).query("SELECT 1 FROM idv_check_records WHERE persona_inquiry_id = $1", [started.inquiryId]);
+    expect(missing.rows.length).toBe(0);
+    const second = await postPersona("inquiry.approved", started.inquiryId, started.referenceId, "evt_retry", env, flaky);
+    expect(second.statusCode, second.body).toBe(200);
+    const written = await dbQuery(handle.db).query("SELECT 1 FROM idv_check_records WHERE persona_inquiry_id = $1", [started.inquiryId]);
+    expect(written.rows.length).toBe(1);
+
+    const other = await client("Race");
+    const race = await plantInquiry(other, "inq_race_manual");
+    const [left, right] = await Promise.all([
+      postPersona("inquiry.approved", race.inquiryId, race.referenceId, "evt_race", env),
+      postPersona("inquiry.approved", race.inquiryId, race.referenceId, "evt_race", env),
+    ]);
+    expect(left.statusCode).toBe(200);
+    expect(right.statusCode).toBe(200);
+    const flags = [left.json().duplicate, right.json().duplicate].sort();
+    expect(flags).toEqual([false, true]);
+    const once = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_check_records WHERE persona_inquiry_id = $1", [race.inquiryId]);
+    expect(once.rows[0]?.n).toBe(1);
+    const events = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_events WHERE event_id = 'evt_race'");
+    expect(events.rows[0]?.n).toBe(1);
+  });
+
+  it("keeps no crop when the consent was declined", async () => {
+    const clientId = await client("Declinedconsent");
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
+    const started = await plantInquiry(clientId, "inq_declined_consent");
+    const consent = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "counter_check", language: "en", inquiryId: started.inquiryId },
+    });
+    expect(consent.statusCode, consent.body).toBe(200);
+    const shown = await dbQuery(handle.db).query("SELECT face_crop_shown, choice FROM idv_consents WHERE consent_id = $1", [consent.json().consentId]);
+    expect(shown.rows[0]?.choice).toBe("counter_check");
+    expect(shown.rows[0]?.face_crop_shown).toBe(true);
+    const hook = await postPersona("inquiry.approved", started.inquiryId, started.referenceId, "evt_declined_consent", { NODE_ENV: "test" });
+    expect(hook.statusCode, hook.body).toBe(200);
+    const row = await dbQuery(handle.db).query("SELECT face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [started.inquiryId]);
+    expect(row.rows[0]?.face_crop_ciphertext).toBeNull();
+  });
+
+  it("lists checks only for a client on this shop, and an empty file has no personal data", async () => {
+    const name = "Empty File Person";
+    const clientId = await client(name);
+    const empty = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    expect(empty.statusCode, empty.body).toBe(200);
+    expect(empty.json().records).toEqual([]);
+    expect(empty.json().headline).toBe("No ID check on file");
+    expect(empty.body).not.toContain(name);
+    expect(empty.body).not.toContain(NUMBER);
+    await dbQuery(handle.db).query(
+      "INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name) VALUES ('cli_other_shop','tnt-other','le-other','Other Shop Person') ON CONFLICT DO NOTHING",
+    );
+    const off = await app.inject({ method: "GET", url: "/api/idv/clients/cli_other_shop/checks", cookies: cookies.teller });
+    expect(off.statusCode).toBe(404);
+    expect(off.json().error).toBe("not_found");
+    expect(off.body).not.toContain("Other Shop Person");
+  });
+
+  it("refuses an in-person check with 503 when the number key is not set", async () => {
+    const clientId = await client("No Key Person");
+    const local = await buildApp(handle.db, {}, undefined, {
+      env: { NODE_ENV: "development", RENDER_EXTERNAL_HOSTNAME: "unknown.example" },
+      fetch: fetchImpl, sleep: async () => {},
+    });
+    try {
+      const login = await local.inject({
+        method: "POST", url: "/api/auth/login",
+        payload: { staffId: "m.costa", password: DEMO.password, tenantId: DEMO.tenantId },
+      });
+      expect(login.statusCode, login.body).toBe(200);
+      const cookie = { cdos_session: login.cookies.find((item) => item.name === "cdos_session")!.value };
+      const before = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_check_records WHERE client_id = $1", [clientId]);
+      const saved = await local.inject({
+        method: "POST", url: "/api/idv/checks/in-person", cookies: cookie,
+        payload: {
+          clientId, nameOnId: "No Key Person", documentType: "Passport", documentNumber: NUMBER,
+          issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
+        },
+      });
+      expect(saved.statusCode, saved.body).toBe(503);
+      expect(saved.json()).toEqual({
+        error: "id_number_key_unavailable",
+        message: "ID number storage is not set up for this shop yet.",
+      });
+      expect(saved.body).not.toContain(NUMBER);
+      const after = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_check_records WHERE client_id = $1", [clientId]);
+      expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+    } finally {
+      await local.close();
+    }
   });
 });

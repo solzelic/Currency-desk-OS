@@ -124,7 +124,7 @@ beforeAll(async () => {
   const owner = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "j.masri")).limit(1);
   await handle.db.insert(schema.tenants).values({ id: B.tenantId, name: "Shop B" });
   await handle.db.insert(schema.legalEntities).values({ id: B.legalEntityId, tenantId: B.tenantId, name: "Shop B", jurisdiction: "FINTRAC" });
-  await handle.db.insert(schema.branches).values({ id: B.branchId, tenantId: B.tenantId, legalEntityId: B.legalEntityId, name: "Shop B counter" });
+  await handle.db.insert(schema.branches).values({ id: B.branchId, tenantId: B.tenantId, legalEntityId: B.legalEntityId, name: "Shop B counter", province: "ON" });
   await handle.db.insert(schema.staffUsers).values({
     id: B.userId, tenantId: B.tenantId, legalEntityId: B.legalEntityId, branchId: B.branchId,
     staffId: B.staffId, name: "B Owner", role: "administrator", authorizedBranchIds: [B.branchId], passwordHash: owner[0]!.passwordHash,
