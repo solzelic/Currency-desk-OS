@@ -165,7 +165,10 @@ const ACCOUNT_MENU = `<details data-signup-account="true" onKeyDown="{{ accountK
 /* Account belongs to the layout. A viewport overlay covered Back on phones. */
 patch("wizard account sound control", '<sc-if value="{{ hasBack }}" hint-placeholder-val="{{ true }}">', ACCOUNT_MENU + '<sc-if value="{{ hasBack }}" hint-placeholder-val="{{ true }}">');
 patch("payment account sound control", '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true">', '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true"><div data-signup-toolbar="true" style="display:flex;flex:none;justify-content:flex-end;padding:8px 12px;">' + ACCOUNT_MENU + '</div>');
-patch("day one account sound control", '  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->', '<sc-if value="{{ t_desk }}">' + ACCOUNT_MENU.replace('position:relative;', 'position:fixed;top:8px;right:12px;z-index:1000;') + '</sc-if>\n  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->');
+/* On Day 1 the real Home's header owns the top-right corner (the owner's name and
+   avatar); a viewport-fixed Account covered them. It lives in the welcome card. */
+patch("day one welcome card frame", '<div style="width: min(560px, 100%); padding: 40px 34px 34px;', '<div style="position: relative; width: min(560px, 100%); padding: 40px 34px 34px;');
+patch("day one account sound control", 'text-align: center; animation: cdPop 0.7s cubic-bezier(0.2,1.2,0.4,1) both;">', 'text-align: center; animation: cdPop 0.7s cubic-bezier(0.2,1.2,0.4,1) both;">' + ACCOUNT_MENU.replace('position:relative;', 'position:absolute;top:12px;right:12px;z-index:2;text-align:left;'));
 /* Back's padded target extends below this header; keep it above the phase bar. */
 patch("account header wrapping", "</helmet>", '<style>[data-cardtop] { flex-wrap:wrap;z-index:4!important; } [data-cardtop] [data-signup-account] { align-self:flex-start; }</style>\n</helmet>');
 /* Desktop controls need 24px; preserve the header's height and the phone's 44px. */
