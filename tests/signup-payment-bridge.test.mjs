@@ -98,7 +98,7 @@ test('the rate website refusal shows the server line beside the add-on and keeps
   assert.equal(R.xWebRefused, 'Synthetic: the website is not open.');
   assert.equal(R.goLiveSub, 'Synthetic: the website is not open.');
   assert.equal(R.retryCardVisible, false, 'trying the card again cannot help');
-  assert.deepEqual(h.folds.at(-1), { payOpen: 1 }, 'Extras opens, where the add-on is');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.folds.at(-1))), { payOpen: 1 }, 'Extras opens, where the add-on is');
   assert.equal(JSON.stringify(h.c.state.data), kept);
 });
 test('without a server line the refusal still names the website, never card payments', async () => {

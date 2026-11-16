@@ -191,7 +191,8 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!(await stillConfirmed(db, r.row.id))) return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
     const details = r.row.details ?? {};
     if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") return reply.code(409).send({ error: "billing_country_unavailable" });
-    if (body.data.extras.website) return reply.code(409).send({ error: "website_coming_soon" });
+    /* Coming soon: nothing reserves or bills it yet, so say what to do rather than let the page guess. */
+    if (body.data.extras.website) return reply.code(409).send({ error: "website_coming_soon", detail: "Your own rate website isn't open yet. Untick it to carry on. Nothing was charged." });
     const answers = (await loadOrCreateOnboarding(db, r.row.id)).answers ?? {};
     const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
     const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };

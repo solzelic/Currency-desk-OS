@@ -716,6 +716,8 @@
   var CD = window.__cdOnb, h = CD.h, call = h.call, api = h.api, why = h.why, NET = h.NET, tabSet = h.tabSet, STEP_OF = h.STEP_OF;
   /* ---- money, as the server sent it ------------------------------------ */
   var STAGING_NOTE = "Staging test shop. No card is taken, nothing on this form is sent and nothing is charged: Open finishes the desk as a test shop.";
+  /* the server's own line is preferred; this is for a server that sends none */
+  var WEBSITE_SOON = "Your own rate website isn’t open yet. Untick it to carry on. Nothing was charged.";
   var SYMBOL = { CAD: "$", USD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£" };
   function money(minor, currency) {
     if (typeof minor !== "number" || !isFinite(minor)) return "";
@@ -764,6 +766,13 @@
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
+      /* The website refusal stands while it is ticked. Unticking clears it,
+         and the card is asked for afresh the next time Payment opens. */
+      if (CD._webRefused && !(d.addons || {}).website) {
+        if (CD.payErr === CD._webRefused) CD.payErr = "";
+        CD._webRefused = ""; CD._cardKey = null; CD._cardFailed = false;
+      }
+      R.xWebRefused = CD._webRefused || "";
       /* a desk already open is only waiting for /open: no quote, no card (both 409) */
       var quoting = !CD._paying && !CD.alreadyOpen;
       if (!CD.prices && quoting) { CD.loadPrices(c); }
@@ -794,7 +803,7 @@
       R.xSetupPrice = CD.prices ? f(CD.prices.setupWeekMinor) + " once" : blank;
       R.xWebPrice = "$99" + cur + "/mo"; /* coming soon: shown by the design, never sold (the server refuses it) */
       (R.addonRows || []).forEach(function (a) { if (/setup week/i.test(a.name) && CD.prices) a.priceStr = f(CD.prices.setupWeekMinor) + cur + " once"; });
-      R.retryCardVisible = !!CD._cardFailed && !CD._paying && !CD.seeded;
+      R.retryCardVisible = !!CD._cardFailed && !CD._paying && !CD.seeded && !CD._webRefused; /* a retry cannot help: the add-on is the problem */
       R.onRetryCard = function () { CD.retryCard(c); };
       R.retryPricesVisible = !!CD._priceFailed;
       R.onRetryPrices = function () { CD._priceFailed = false; CD.loadPrices(c); c.forceUpdate(); };
@@ -820,12 +829,16 @@
       if (CD._pe) { try { CD._pe.destroy(); } catch (e) {} }
       CD._pe = null; CD._elements = null; CD._secret = null; CD._intent = null;
       if (CD._box) { CD._box.removeAttribute("data-mounted"); CD._box.textContent = ""; }
-      CD._cardKey = key; CD._cardBusy = true; CD._cardFailed = false; CD.cardComplete = false; CD._staging = false; CD.payErr = "";
+      CD._cardKey = key; CD._cardBusy = true; CD._cardFailed = false; CD.cardComplete = false; CD._staging = false; CD.payErr = ""; CD._webRefused = "";
       var sequence = CD._cardRequest = (CD._cardRequest || 0) + 1;
       var current = function () { return CD._cardKey === key && key === CD.paymentKey(c) && sequence === CD._cardRequest; };
       var fail = function (message) { if (!current()) return; CD._cardBusy = false; CD._cardFailed = true; CD._elements = null; CD.payErr = message; c.forceUpdate(); };
       api("POST", "/payment", choice, 20000).then(function (r) {
         if (!current()) return;
+        if (r.status === 409 && r.body && r.body.error === "website_coming_soon") {
+          /* the add-on, not the card: say so beside it, with Extras open where it can be unticked */
+          CD._webRefused = why(r, WEBSITE_SOON); fail(CD._webRefused); c.setState({ payOpen: 1 }); return;
+        }
         if (r.status !== 200 || (!r.body.clientSecret && r.body.staging !== true)) { fail(why(r, "Card payments aren’t available just now. Nothing was charged.")); return; }
         if (r.body.staging === true && r.body.termsSourceHash === window.__cdAgreementHash) {
           /* the staging door's synthetic shop: no card form, nothing to take */

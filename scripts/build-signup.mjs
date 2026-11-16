@@ -253,6 +253,9 @@ patch("prices and day one", "    return Object.assign(R, this._railVals(), this.
   "    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));");
 patch("setup week price", ">$5,000 once<", ">{{ xSetupPrice }}<");
 patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
+/* the server refuses the Coming soon website: its line goes beside the add-on, above the advert */
+patch("website refused", '<sc-if value="{{ xWebOpen }}" hint-placeholder-val="{{ false }}">',
+  '<sc-if value="{{ xWebRefused }}"><p data-web-refused="true" role="alert" style="margin:0;padding:0 14px 12px;font-size:12px;line-height:1.4;color:#B23A2A;">{{ xWebRefused }}</p></sc-if><sc-if value="{{ xWebOpen }}" hint-placeholder-val="{{ false }}">');
 
 /* card number, expiry and CVC: Stripe's frame instead of our inputs */
 {
