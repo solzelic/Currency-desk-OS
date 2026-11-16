@@ -9,3 +9,13 @@ test('capture measures visible labelled controls, excluding closed details and h
   const second = await page.evaluate(measureSignup);
   expect(second.elements.filter(e => e.tag === 'button').map(e => e.text)).toEqual(['Sound on', 'Continue', 'Close']);
 });
+
+test('capture detects overflow inside the fixed product viewport', async ({ page }) => {
+  await page.setContent('<style>body{margin:0}</style><main data-product style="position:fixed;inset:0;overflow:auto"><div style="height:200vh">Content</div></main>');
+  const overflow = await page.evaluate(measureSignup);
+  expect(overflow.documentScrolls).toBe(false);
+  expect(overflow.productScrolls).toBe(true);
+  expect(overflow.pageScrolls).toBe(true);
+  await page.locator('[data-product]>div').evaluate(e => e.style.height = '50vh');
+  expect((await page.evaluate(measureSignup)).pageScrolls).toBe(false);
+});

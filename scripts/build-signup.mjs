@@ -158,11 +158,29 @@ patch("sound off", "  _tone(kind) {", "  _tone(kind) { if (window.__cdOnb && win
 
 /* Context resume belongs only to the pointer/key wake handler, never a delayed tone. */
 patch("audio wake only", "    if (this._ac.state === 'suspended' || this._ac.state === 'interrupted') { try { this._ac.resume(); } catch (x) {} }", "");
-patch("account sound control", "  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->", `<details data-signup-account="true" onKeyDown="{{ accountKey }}" style="position:fixed;top:8px;right:12px;z-index:1000;font-family:var(--m);font-size:12px;color:#17140F;background:#F8F5ED;border:1px solid #DDD5C6;border-radius:12px;box-shadow:0 4px 12px #17140f0a;">
+const ACCOUNT_MENU = `<details data-signup-account="true" onKeyDown="{{ accountKey }}" style="position:relative;flex:none;margin-left:auto;font-family:var(--m);font-size:12px;color:#17140F;background:#F8F5ED;border:1px solid #DDD5C6;border-radius:12px;box-shadow:0 4px 12px #17140f0a;">
     <summary tabindex="0" style="min-height:44px;min-width:44px;box-sizing:border-box;padding:14px;cursor:pointer;">Account</summary>
     <button type="button" tabindex="0" aria-pressed="{{ soundOn }}" onClick="{{ onSound }}" style="min-height:44px;min-width:120px;margin:0 8px 8px;border:1px solid #DDD5C6;border-radius:8px;background:#F8F5ED;color:#17140F;font:inherit;cursor:pointer;">{{ soundLabel }}</button>
-  </details>
-  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->`);
+  </details>`;
+/* Account belongs to the layout. A viewport overlay covered Back on phones. */
+patch("wizard account sound control", '<sc-if value="{{ hasBack }}" hint-placeholder-val="{{ true }}">', ACCOUNT_MENU + '<sc-if value="{{ hasBack }}" hint-placeholder-val="{{ true }}">');
+patch("payment account sound control", '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true">', '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true"><div data-signup-toolbar="true" style="display:flex;flex:none;justify-content:flex-end;padding:8px 12px;">' + ACCOUNT_MENU + '</div>');
+patch("day one account sound control", '  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->', '<sc-if value="{{ t_desk }}">' + ACCOUNT_MENU.replace('position:relative;', 'position:fixed;top:8px;right:12px;z-index:1000;') + '</sc-if>\n  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->');
+patch("account header wrapping", "</helmet>", '<style>[data-cardtop] { flex-wrap:wrap; } [data-cardtop] [data-signup-account] { align-self:flex-start; }</style>\n</helmet>');
+patch("screen layout identity", '<div style="{{ stageWrap }}">', '<div data-signup-screen="{{ i }}" data-signup-explain="{{ t_explain }}" style="{{ stageWrap }}">');
+/* Keep complete chapter introductions and their actions inside desktop viewports. */
+patch("chapter desktop fit", "</helmet>", `<style>
+@media(min-width:1100px) and (max-height:940px) {
+ [data-signup-explain="true"] { padding:12px 24px!important; }
+ [data-signup-explain="true"] [data-cardtop] { padding-top:8px!important;padding-bottom:0!important; }
+ [data-signup-explain="true"] [data-stage] { padding:12px 34px 4px!important; }
+ [data-signup-explain="true"] [data-exwrap] { grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important; }
+ [data-signup-explain="true"] [data-exgrid]>div { padding:4px 0!important; }
+ [data-signup-explain="true"] [data-foot] { padding:8px 34px 12px!important; }
+}
+</style>\n</helmet>`);
+patch("credential disabled state", "        R.authNote =", "        R.authBtns = R.authBtns.map(b => Object.assign({}, b, { disabled: busy || ok(b.id) }));\n        R.authNote =");
+patch("credential disabled semantics", '<button onClick="{{ b.onTap }}" data-logo="{{ b.id }}"', '<button disabled="{{ b.disabled }}" onClick="{{ b.onTap }}" data-logo="{{ b.id }}"');
 
 /* ---- accessibility (axe, build doc §8): names, language, tap targets ---- */
 patch("language", "<html><head>", '<html lang="en"><head>');
