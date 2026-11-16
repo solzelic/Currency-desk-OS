@@ -1,3 +1,27 @@
+## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
+
+The signup tour now reconciles the current reduced-motion preference on its own
+video playback events as well as the media-query change notification. Manual Next
+stops the tour clock; previously a delayed notification could leave the clip moving
+indefinitely. A changed preference pauses the video before React replaces it with
+the poster and full captions. Normal playback does not schedule renders or another
+timer. The capture listener is removed on component unmount. Frozen design, server,
+auth, deployment configuration and sign-in ownership are unchanged.
+
+Evidence: a browser regression withholding only notification delivery (preserving
+the browser's real media-query state) failed at the unchanged 15-second visibility
+limit before the fix, then passed. Original tour assertions/timeouts are intact.
+The four tour tests pass three repetitions (12/12, no retries/skips) on the built
+page and local PGlite seam; signup client tests pass 69/69, including listener/timer
+cleanup and pause-before-render behavior. Full build, parse/public claims and
+sanctions checks pass. The original intermittent full-suite trigger was not
+reproduced in 25 instrumented isolated runs or 10 CPU-throttled runs; this closes a
+confirmed missed-notification recovery gap, not proof of the historical browser
+trigger. The failed CD206 integration, CD221 11834f2e and b88a9fcc full runs remain
+retained. New full integrated/CI and hosted/hardware checks are pending. CD-206
+remains In progress; CD-221 will consume the published additive dependency on
+staging b18d4a56 for its returning-login delivery.
+
 ## Staging Start on Day 1, 16 November 2026
 
 Staging's sign-in page has a second staging-only button beside "Start a fresh shop":
@@ -1984,7 +2008,7 @@ entry installs exact range-response fixtures while running the real password
 rules, parser and refusal path. Production and hosted staging checking is
 unchanged and remains fail-closed. Tests cover leaked/unavailable refusals,
 runtime boundaries, abort handling, and browser recovery with a clean phrase.
-The earlier CD221 55912b2e full-browser timeout and tour-motion failure remain
+The earlier CD221 55912b2e breach-provider timeout and 11834f2e tour-motion failure remain
 retained evidence; this bounded fixture does not establish full acceptance.
 
 ### CD-206 hosted walkthrough display corrections (16 Nov 2026)
