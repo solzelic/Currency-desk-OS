@@ -288,3 +288,12 @@ These four look out of place and are deliberately still there:
 Everything under `web/` (including `web/app/`) — generated or extracted, and
 CI-diffed against a fresh build. Migration files after merge. That is the
 whole list; everything else is source.
+
+### Local signup test facilities
+
+`server/src/local-test-runtime.ts` gates signup screenshot seeding and the
+seam-only code mailbox. Both require explicit test/development mode, loopback
+bind and database hosts, no deployment/staging marker, and loopback request
+IP/Host. Database host overrides are parsed with the PostgreSQL driver parser.
+The mailbox is memory-only and cleared when its server closes. It is not a
+staging code-delivery mechanism.

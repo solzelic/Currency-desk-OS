@@ -24,6 +24,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
+import { localTestRequest, localTestRuntime } from "../local-test-runtime.js";
 import { normalizeCdIdInput } from "../enquiries/cd-id.js";
 
 export const SIGNUP_PAGE = "web/signup.html";
@@ -34,11 +35,10 @@ const SEED_STEP = /^[a-z0-9-]{2,24}$/;
 
 /** True only on a disposable test server. */
 export function seedAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.SIGNUP_TEST_SEED === "1" && env.NODE_ENV !== "production" && env.STAGING !== "1";
+  return env.SIGNUP_TEST_SEED === "1" && localTestRuntime(env);
 }
 
 export function registerSignupPages(app: FastifyInstance, db: Db, staticDir: string, have: { signup: boolean; legacy: boolean; sso: boolean }): void {
-  const seeding = seedAllowed();
   const seeded = (step: string): string => {
     const html = readFileSync(path.join(staticDir, SIGNUP_PAGE), "utf8");
     return html.replace("<head>", `<head><script>window.__cdSeedStep=${JSON.stringify(step)};</script>`);
@@ -52,7 +52,7 @@ export function registerSignupPages(app: FastifyInstance, db: Db, staticDir: str
   if (have.signup) {
     app.get<{ Querystring: { step?: string } }>("/onboarding", (req, reply) => {
       const step = typeof req.query.step === "string" ? req.query.step : "";
-      if (seeding && SEED_STEP.test(step)) return reply.type("text/html; charset=utf-8").send(seeded(step));
+      if (seedAllowed() && localTestRequest(req.ip, req.headers.host) && SEED_STEP.test(step)) return reply.type("text/html; charset=utf-8").send(seeded(step));
       return reply.sendFile(SIGNUP_PAGE);
     });
   }

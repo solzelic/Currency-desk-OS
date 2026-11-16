@@ -56,9 +56,12 @@ deliberately leave ledger state behind (an append-only book is the point).
 - **PGlite**: never open `server/.pgdata` with a second process while the
   dev server holds it — it corrupts the directory. Reset with
   `rm -rf server/.pgdata` (re-seeds the demo desk).
-- **Email codes**: without `RESEND_API_KEY`, one-time codes are written to
-  the server log (the e2e fixtures read them from there). With it set,
-  codes are sent, not logged.
+- **Signup email codes**: sensitive messages are refused when the delivery
+  provider is unavailable; codes are never logged. The seam entry can open an
+  ephemeral in-memory mailbox with `CD_TEST_MAILBOX=1`. This and
+  `SIGNUP_TEST_SEED=1` require explicit `test`/`development`, loopback bind and
+  database hosts, no staging/deployment marker, and loopback request IP/Host.
+  These flags do not expose codes on staging. A mailbox is cleared on close.
 
 ## Sandboxed/CI environments
 
