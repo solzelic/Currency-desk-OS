@@ -135,6 +135,7 @@ async function lightShot(page: Page, stem: string, widths: readonly (1280 | 390)
     await page.evaluate(() => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
     });
+    await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute("data-cdtheme"))).toBe("light");
     await page.screenshot({ path: path.join(ARTIFACTS, `pr2-${stem}-${width}-light.png`) });
   }
 }
