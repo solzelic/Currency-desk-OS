@@ -91,6 +91,17 @@ Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `
 
 ## Current product milestone — Shop-Ready Core v1
 
+**CD-221 browser evidence portability dependency.** The staff-switch and till
+handover seam specs now use per-test Playwright screenshot output, with an
+explicit `CDOS_E2E_SHOTS_DIR` override. This extracts only screenshot plumbing
+from the existing CD-98 work; it does not consume the separate CD-97 financial
+fixture rewrite. Production, money assertions and timeouts are unchanged.
+PR760 (`f628484b`, into staging) records a static Opus acceptance and six green
+CI checks; its local full-suite failures (#275, #321) stay open there. The signup
+v2.1 stack carries the same patch (identical patch-id) so its full browser gate
+can run; it is not a second implementation.
+See [DEVELOPMENT.md](DEVELOPMENT.md#browser-screenshot-output).
+
 One shop, one full operating loop, provable end to end: an approved operator
 can go from Early Access → approval → onboarding → configured desk and rates
 → open till → quote and post FX transactions → acknowledge manual KYC
