@@ -25806,7 +25806,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   /* A total across currencies, or nothing. One leg this desk cannot price
      makes the whole total unknown; a sum quietly missing a currency looks
      complete and is the shape of wrong this project keeps finding. */
-  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy());
+  const fmtHome = v => v == null ? 'None yet' : fmt(v, homeCcy());
   const initials = n => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = dob => {
     if (!dob) return null;

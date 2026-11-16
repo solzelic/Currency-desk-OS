@@ -161,7 +161,8 @@ async function dropStubClients(db: { query(text: string, values?: unknown[]): Pr
     OR display_name ILIKE 'crop %'
     OR display_name ILIKE 'other file%'
     OR display_name ILIKE 'seam %'
-    OR display_name ILIKE 'agree %'`;
+    OR display_name ILIKE 'agree %'
+    OR display_name IN ('Read Fail', 'Pep Review', 'Typed Only')`;
   for (const table of ["client_pep_answers", "client_pep_reviews"]) {
     await db.query(`DELETE FROM ${table} WHERE client_id IN (SELECT client_id FROM desk_clients WHERE ${where})`, [names]);
   }
