@@ -286,6 +286,7 @@
         var data = CD.fromServer ? CD.fromServer(b.answers || {}) : {};
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
+        data.workspace = typeof b.workspace === "string" ? b.workspace : "";
         CD.callPreference = b.callPreference || null; data.call = !!(CD.callPreference && CD.callPreference.call);
         if (CD.pack) data.country = CD.pack.code;
         var modes = {};
