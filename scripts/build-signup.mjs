@@ -167,6 +167,8 @@ patch("wizard account sound control", '<sc-if value="{{ hasBack }}" hint-placeho
 patch("payment account sound control", '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true">', '<div onKeyDown="{{ onKey }}" style="{{ modalStyle }}" data-paymodal="true"><div data-signup-toolbar="true" style="display:flex;flex:none;justify-content:flex-end;padding:8px 12px;">' + ACCOUNT_MENU + '</div>');
 patch("day one account sound control", '  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->', '<sc-if value="{{ t_desk }}">' + ACCOUNT_MENU.replace('position:relative;', 'position:fixed;top:8px;right:12px;z-index:1000;') + '</sc-if>\n  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->');
 patch("account header wrapping", "</helmet>", '<style>[data-cardtop] { flex-wrap:wrap; } [data-cardtop] [data-signup-account] { align-self:flex-start; }</style>\n</helmet>');
+/* Desktop controls need 24px; preserve the header's height and the phone's 44px. */
+patch("desktop account target", "</helmet>", '<style>@media(min-width:721px) { [data-signup-account] summary { min-height:26px!important;padding:6px 14px!important;line-height:14px; } }</style>\n</helmet>');
 patch("screen layout identity", '<div style="{{ stageWrap }}">', '<div data-signup-screen="{{ i }}" data-signup-explain="{{ t_explain }}" style="{{ stageWrap }}">');
 /* Keep complete chapter introductions and their actions inside desktop viewports. */
 patch("chapter desktop fit", "</helmet>", `<style>
