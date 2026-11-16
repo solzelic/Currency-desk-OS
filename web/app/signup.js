@@ -3502,9 +3502,9 @@ function s1936(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["floatRow
 function s1948(v,k){return "\n                ";}
 function s1934(v,k){return h("div",{key:k,"style":style("margin-top: 20px; border: 1px solid var(--line); border-radius: 14px; padding: 2px 15px; background: rgba(255,255,255,0.5);")},s1935(v,0),s1936(v,1),s1948(v,2));}
 function s1949(v,k){return "\n                ";}
-function s1953(v,k){return h(React.Fragment,{key:k},"In the vault, in ",text(v?.["homeCode"],1),"");}
+function s1953(v,k){return h(React.Fragment,{key:k},"",text(v?.["countSummaryLabel"],1),"");}
 function s1952(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; color: var(--primary-deep); font-weight: 600;")},s1953(v,0));}
-function s1955(v,k){return h(React.Fragment,{key:k},"≈ ",text(v?.["drawerStr"],1),"");}
+function s1955(v,k){return h(React.Fragment,{key:k},"",text(v?.["drawerStr"],1),"");}
 function s1954(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-weight: 700; color: var(--primary-deep); font-size: 15px;")},s1955(v,0));}
 function s1951(v,k){return h("div",{key:k,"style":style("margin-top: 14px; display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-radius: 11px; background: rgba(29,107,69,0.10); border: 1px solid rgba(29,107,69,0.24);")},s1952(v,0),s1954(v,1));}
 function s1950(v,k){return (v?.["showDrawer"] ? h(React.Fragment,{key:k},s1951(v,0)) : null);}
@@ -3922,9 +3922,9 @@ function s2271(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["cntRows"
 function s2373(v,k){return "\n                ";}
 function s2269(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; gap: 8px;")},s2270(v,0),s2271(v,1),s2373(v,2));}
 function s2374(v,k){return "\n                ";}
-function s2378(v,k){return h(React.Fragment,{key:k},"In the vault, in ",text(v?.["homeCode"],1),"");}
+function s2378(v,k){return h(React.Fragment,{key:k},"",text(v?.["countSummaryLabel"],1),"");}
 function s2377(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; color: var(--primary-deep); font-weight: 600;")},s2378(v,0));}
-function s2380(v,k){return h(React.Fragment,{key:k},"≈ ",text(v?.["drawerStr"],1),"");}
+function s2380(v,k){return h(React.Fragment,{key:k},"",text(v?.["drawerStr"],1),"");}
 function s2379(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-weight: 700; color: var(--primary-deep); font-size: 15px;")},s2380(v,0));}
 function s2376(v,k){return h("div",{key:k,"data-cntdrawer":"true","style":style("margin-top: 12px; display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border-radius: 12px; background: rgba(29,107,69,0.10); border: 1px solid rgba(29,107,69,0.24);")},s2377(v,0),s2379(v,1));}
 function s2375(v,k){return (v?.["showDrawer"] ? h(React.Fragment,{key:k},s2376(v,0)) : null);}

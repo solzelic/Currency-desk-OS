@@ -76587,9 +76587,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       /* A blank identification field is not the report line. The pack's
          own identification line is what provision stored when it had one.
          A baseline desk follows the pack, so a blank box stays blank. */
-      const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold > 0 ? setup.idThreshold : null;
+      const typedId = typeof setup.idThreshold === 'number' && setup.idThreshold >= 0 ? setup.idThreshold : null;
       const legacyPause = setup.rulesUnavailable && !setup.baselineRules;
-      const idOver = legacyPause || foreignRules || typedId == null ? null : reportOver == null ? typedId : Math.min(typedId, reportOver);
+      const idOver = typedId === 0 ? 0 : legacyPause || foreignRules || typedId == null ? null : reportOver == null ? typedId : Math.min(typedId, reportOver);
       const reportLine = legacyPause ? null : reportOver;
       const owner = {
         id: 'e_owner',

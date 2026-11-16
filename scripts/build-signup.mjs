@@ -40,7 +40,7 @@ const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js", "signup-v2.1-audio.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js", "signup-v2.1-audio.js", "signup-v2.1-setup.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -120,6 +120,10 @@ patch("back cancels advance", "  back() {", "  back() { window.__cdOnb.navigatio
 patch("note input exact", "String(q).replace(/[^0-9]/g, '')", "String(q)");
 patch("coin input exact", "String(q).replace(/[^0-9.]/g, '')", "String(q)");
 patch("total input exact", "v.replace(/[^0-9.]/g, '')", "String(v)");
+
+/* Draft counts have no authoritative converted valuation or posted balance. */
+patch("draft count label", "In the vault, in {{ homeCode }}", "{{ countSummaryLabel }}", 2);
+patch("draft count status", "≈ {{ drawerStr }}", "{{ drawerStr }}", 2);
 
 /* ---- How will you sign in: the device's and the provider's own windows ---- */
 patch("passkey", "this.set('lockMode', 'passkey'); this.setState({ pkPhase: 'asking', lockErr: '' }); }",

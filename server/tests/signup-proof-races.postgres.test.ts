@@ -99,6 +99,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("signup proof under real Postgre
     const ob = (await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, row.id)))[0]!;
     expect((await handle.db.select().from(schema.legalEntities).where(eq(schema.legalEntities.tenantId, ob.tenantId!)))[0]?.idThreshold).toBe("0.00");
     expect((await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, `${row.id}-staff@example.test`)))[0]?.name).toBe("Synthetic Colleague");
+    expect((await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, ob.tenantId!)))[0]?.setup?.idThreshold).toBe(0);
     expect((await loadAccount(handle.db, row.id)).state).toBe("active");
   });
   it("the actual Canadian shop receives its approved identity, address and officer", async () => {

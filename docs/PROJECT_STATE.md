@@ -12,6 +12,9 @@ late sounds drop after 180ms. Physical Safari/Chrome speaker and AirPods accepta
 remains unrun. Day 1 now declaratively embeds a live-session Home in the existing
 /app shell: scoped tenant setup, inert apps, no till claim and no invented cash.
 Its prior mock chrome/station-picker underlay is removed for real launches.
+An explicit Every deal choice survives both tenant/legal-entity provisioning and
+OS hydration as zero. Draft opening counts stay in their entered currencies;
+the page no longer claims a converted vault balance from prototype rates.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
