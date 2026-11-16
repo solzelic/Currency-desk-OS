@@ -26,7 +26,7 @@
    stops you inventing a stage called "high-volume-reviewing" and then
    being unable to automate either half of it.
    ============================================================ */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { audit } from "../audit.js";
@@ -249,7 +249,12 @@ export async function moveTo(
     set.decidedBy = by;
   }
   if (to !== "new" && !row.handledAt) set.handledAt = new Date();
-  await db.update(schema.enquiries).set(set).where(eq(schema.enquiries.id, row.id));
+  /* Only from the stage this decision was read at. A desk that opened in
+     the meantime (onboarding/signup-open.ts) or another operator's move
+     wins, so `accepted` is never overwritten by a stale read. */
+  const saved = await db.update(schema.enquiries).set(set)
+    .where(and(eq(schema.enquiries.id, row.id), eq(schema.enquiries.status, from))).returning();
+  if (!saved.length) return { ok: false, error: "changed", detail: "This application changed since it was loaded. Reload it and decide again." };
 
   /* Best effort, always. The stage is already saved — a mail outage must
      not silently roll back a decision, and the operator can see it failed

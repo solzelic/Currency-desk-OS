@@ -160,7 +160,9 @@ async function applyEvent(db: Db, config: StripeBillingConfig, event: StripeObje
   const data = object(object(event.data).object);
   /* Sign-up v2.1: the card is saved, so the desk opens (onboarding/signup-open.ts).
      Only an intent the sign-up made carries this metadata; any other
-     SetupIntent falls through and is ignored as before. */
+     SetupIntent falls through and is ignored as before. A refusal (say the
+     application was declined meanwhile) returns, so the event is
+     acknowledged once and Stripe does not retry it. */
   const signupEnquiry = string(object(data.metadata).currencydesk_signup_enquiry);
   if (type === "setup_intent.succeeded" && signupEnquiry) {
     const intentId = string(data.id);

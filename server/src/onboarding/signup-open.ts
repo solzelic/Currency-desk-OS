@@ -16,7 +16,9 @@
    same provisionDesk the older setup uses, gives the owner the PIN and
    CurrencyDesk ID chosen here, moves verified → active, and records
    signup.completed. A failed card never reaches it: the account stays
-   verified and nothing is created.
+   verified and nothing is created. Nor does an application support has
+   since declined or held: the owner may still hold the intent's secret
+   and confirm it, so the opening itself refuses anything not invited.
 
    INSIDE. The browser that paid asks POST …/open on its enrolment session;
    once the account is active it gets a real desk session and the
@@ -231,7 +233,26 @@ export async function acceptServiceAgreement(db: Db, enquiryId: string, setupInt
 
 /* ---- opening the desk ------------------------------------------------ */
 
-export type OpenResult = { opened: true; tenantId: string } | { opened: false; reason: "unknown_intent" | "not_verified" | "not_confirmed" | "already_open" | "not_staging" };
+export type OpenResult = { opened: true; tenantId: string } | { opened: false; reason: "unknown_intent" | "not_verified" | "not_confirmed" | "already_open" | "not_staging" | "not_invited" };
+
+/* The reservation, locked for this transaction. Callers hold the account
+   lock first (the order reissue uses too), so support's decision
+   (onboarding/pipeline.ts moveTo) lands either before the check below or
+   after the opening, never in between. */
+async function lockedReservation(db: Db, enquiryId: string): Promise<Enquiry | undefined> {
+  return (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1).for("update"))[0];
+}
+
+/* Only an early access application with its ID, still at Invited, opens a
+   desk. Declined or on hold is support's answer, and a card saved or a
+   webhook retried after it must not overturn it. A refusal writes nothing
+   to the account; it is recorded for support (a card may now be saved at
+   Stripe with no desk) and answered, so the webhook acknowledges it once. */
+const invited = (row: Enquiry): boolean => row.kind === "early_access" && !!row.cdId && row.status === "invited";
+async function notInvited(db: Db, row: Enquiry): Promise<OpenResult> {
+  await audit(db, { tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-", action: "signup.open_refused", detail: { enquiryId: row.id, reason: "not_invited", status: row.status } });
+  return { opened: false, reason: "not_invited" };
+}
 
 /** The staging door's Open: the owner's assent to the plan prepared above,
     then the shared activation as a test shop. Retries are idempotent: one
@@ -243,8 +264,10 @@ export async function openStagingDesk(db: Db, enquiryId: string): Promise<OpenRe
     const choice = selectedPlan.extend({ agreement: z.string(), answersHash: z.string(), agreed: z.boolean(), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH), staging: z.literal(true) }).safeParse(account.planChoice);
     if (!choice.success || account.setupIntentId || account.stripeCustomerId || !account.pinHash || !account.confirmedName
       || choice.data.answersHash !== account.answersHash || !(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
-    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
+    const row = await lockedReservation(db, enquiryId);
     if (!row || !isStagingRuntime(undefined) || !stagingOnboardingMark(row.email, row.details)) return { opened: false, reason: "not_staging" };
+    // Before the assent below, so a held or declined shop records nothing.
+    if (!invited(row)) return notInvited(db, row);
     const selected = selectedPlan.parse(choice.data);
     const planChoice = { ...choice.data, agreed: true };
     if (!choice.data.agreed) {
@@ -281,7 +304,7 @@ async function activate(db: Db, enquiryId: string, account: Account, choice: z.i
   if (account.state === "active") return { opened: false, reason: "already_open" };
   if (account.state !== "verified") return { opened: false, reason: "not_verified" };
   if (!(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
-  const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
+  const row = await lockedReservation(db, enquiryId);
   const ob = await loadOrCreateOnboarding(db, enquiryId);
   if (ob.tenantId) {
     await advance(db, enquiryId, "active");
@@ -289,6 +312,7 @@ async function activate(db: Db, enquiryId: string, account: Account, choice: z.i
   }
 
   if (!row) throw new Error("signup_reservation_unavailable");
+  if (!invited(row)) return notInvited(db, row);
   const stored = ob.answers ?? {};
   // Parse persisted answers again before they can create staff or a desk.
   const values: Record<string, unknown> = {};
