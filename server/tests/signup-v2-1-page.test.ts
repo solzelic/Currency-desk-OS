@@ -157,6 +157,9 @@ describe("which page a visitor gets", () => {
   it("the provider's return page exists and only hands code + state back to this origin", async () => {
     const res = await title("/onboarding/sso");
     expect(res.status).toBe(200);
-    expect(res.body).toContain("postMessage({ type: \"cd-sso\", code: code, state: state }, location.origin)");
+    expect(res.body).toContain("var msg = { type: \"cd-sso\", code: code, state: state, error: error };");
+    expect(res.body).toContain("window.opener.postMessage(msg, location.origin)");
+    expect(res.body).toContain("new BroadcastChannel(\"cd-sso\")");
+    expect(res.body).not.toMatch(/postMessage\([^)]*["']\*["']\)/);
   });
 });

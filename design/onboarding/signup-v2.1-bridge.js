@@ -119,6 +119,8 @@
     launched: false,
     resume: null,
     pkAvailable: null,
+    /* what GET /api/onboarding/methods says this server can finish; null until it answers */
+    methods: null,
     prices: null,
     pack: null,
     muted: false,
@@ -226,25 +228,74 @@
         }, function () { fail(cancelled); });
       });
     },
+    /* Which of the four buttons to draw. Only what this server can finish,
+       for this page's own origin; while the server has not answered, all
+       of them (the server's answer then says why, if it cannot). */
+    offers: function (id) {
+      if (!CD.seeded) CD.loadMethods();
+      var m = CD.methods;
+      if (id === "passkey") return CD.pkAvailable !== false && (!m || (m.passkey === true && m.passkeyOrigins.indexOf(location.origin) >= 0));
+      if (id === "password" || !m) return true;
+      return m[id] === true && m.ssoOrigin === location.origin;
+    },
+    /* asked once, the first time the sign-in screen draws */
+    loadMethods: function () {
+      if (CD._methods) return;
+      CD._methods = call("GET", "/api/onboarding/methods", undefined, 8000).then(function (r) {
+        var b = r.body;
+        if (r.status === 200 && b.password === true && Array.isArray(b.passkeyOrigins)) CD.methods = b;
+        else CD._methods = null;
+        if (CD.comp) CD.comp.forceUpdate();
+      });
+    },
     sso: function (c, prov) {
       var label = prov === "google" ? "Google" : "Microsoft";
       c.setState({ ssoPhase: "busy", ssoProv: prov, lockErr: "" });
       var fail = function (msg) { c.setState({ ssoPhase: "idle", lockErr: msg }); };
       var closed = "You closed the " + label + " window. Nothing was linked. Try again, or choose another way.";
       /* The window opens on the click, before the server answers, or the
-         browser calls it a popup nobody asked for. On a phone the page
-         itself goes to the provider and comes back (sso-return below). */
+         browser calls it a popup nobody asked for. On a phone, or where
+         popups are blocked, the page itself goes to the provider and comes
+         back (ssoReturn below). */
       var phone = window.innerWidth < 720;
       var win = phone ? null : window.open("about:blank", "cd-sso", "width=480,height=640");
+      var attempt = CD._ssoAttempt = (CD._ssoAttempt || 0) + 1;
+      CD._ssoWait = null;
       api("GET", "/sso/" + prov + "/start").then(function (r) {
+        if (attempt !== CD._ssoAttempt) { if (win) win.close(); return; }
         if (r.status !== 200 || !r.body.url) { if (win) win.close(); return fail(refused(r, "That way in isn’t available yet. Choose another.")); }
+        var state = "";
+        try { state = new URL(r.body.url).searchParams.get("state") || ""; } catch (e) { state = ""; }
         try { sessionStorage.setItem("cdSsoReturn", JSON.stringify({ id: CD.code, provider: prov })); } catch (e) { /* no return trip on a phone without storage */ }
-        if (!win) { location.assign(r.body.url); return; }
+        if (!win || win.closed) { location.assign(r.body.url); return; }
         win.location = r.body.url;
-        var watch = setInterval(function () { if (win.closed) { clearInterval(watch); if (c.state.ssoPhase === "busy" && !CD._ssoGot) fail(closed); } }, 500);
-        CD._ssoGot = false;
-        CD._ssoWait = function (code, state) { CD._ssoGot = true; clearInterval(watch); CD.ssoFinish(c, prov, code, state); };
+        /* A provider page that isolates itself (Cross-Origin-Opener-Policy)
+           makes the window read as closed while it is still open, and it
+           then answers by BroadcastChannel instead. So it counts as closed
+           only once this page has had the focus back for a moment. A late
+           answer after that still finishes. */
+        var focusedClosed = 0;
+        var watch = setInterval(function () {
+          if (attempt !== CD._ssoAttempt) { clearInterval(watch); return; }
+          focusedClosed = win.closed && document.hasFocus() ? focusedClosed + 1 : 0;
+          if (focusedClosed < 3) return;
+          clearInterval(watch);
+          if (c.state.ssoPhase === "busy") fail(closed);
+        }, 500);
+        CD._ssoState = state;
+        CD._ssoWait = function (back) {
+          clearInterval(watch);
+          if (attempt !== CD._ssoAttempt) return;
+          if (back.error || !back.code) return fail(CD.ssoRefusal(label, back.error));
+          CD.ssoFinish(c, prov, back.code, back.state);
+        };
       });
+    },
+    /* The provider sent an error instead of a code (OAuth's error parameter). */
+    ssoRefusal: function (label, error) {
+      return error === "access_denied"
+        ? "The " + label + " sign-in was cancelled. Nothing was linked. Try again, or choose another way."
+        : "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.";
     },
     ssoFinish: function (c, prov, code, state) {
       var label = prov === "google" ? "Google" : "Microsoft", id = CD.code;
@@ -437,9 +488,8 @@
     mount: function (c) {
       CD.comp = c;
       try { CD.muted = localStorage.getItem(SOUND_KEY) === "off"; } catch (e) { CD.muted = false; }
-      if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
-        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (ok) { CD.pkAvailable = !!ok; c.forceUpdate(); }, function () { CD.pkAvailable = false; c.forceUpdate(); });
-      } else CD.pkAvailable = false;
+      /* where this browser can make a passkey; offers() adds the server's side */
+      passkeyCapable().then(function (ok) { CD.pkAvailable = ok; c.forceUpdate(); });
       var seedStep = window.__cdSeedStep;
       if (seedStep && SEED[seedStep]) {
         /* TEST ONLY: the server writes __cdSeedStep into the page only when
@@ -456,6 +506,8 @@
       var ret = null;
       try { ret = JSON.parse(sessionStorage.getItem("cdSsoReturn") || "null"); sessionStorage.removeItem("cdSsoReturn"); } catch (e) { ret = null; }
       var back = /[?&]sso=1/.test(location.search) ? ssoParams() : null;
+      /* the provider's code leaves the address bar at once */
+      if (/[?&]sso=1/.test(location.search)) history.replaceState(null, "", "/onboarding");
       /* Start on Day 1: the address is tidied first, so a reload never asks twice */
       var dayOne = dayOneMarked();
       if (location.hash === "#day1") {
@@ -479,7 +531,11 @@
            closed while it was opening: this browser's enrolment is the hand-off */
         if (active && held && CD.resumePayment) { CD.resumePayment(c, true); return; }
         if (active) { c.setState({ i: 0 }); return; }
-        if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
+        if (back && ret) {
+          c.set("lockMode", ret.provider); c.setState({ i: 5 });
+          if (back.error || !back.code) { c.setState({ ssoPhase: "idle", lockErr: CD.ssoRefusal(ret.provider === "google" ? "Google" : "Microsoft", back.error) }); return; }
+          CD.ssoFinish(c, ret.provider, back.code, back.state); return;
+        }
         if (held) { CD.loadResume(false); return; }
         /* /state answers only reserved or active, so a code still pending is
            this tab's own flag: back to Check your inbox, nothing resent */
@@ -497,16 +553,47 @@
   /* What the other bridge files (chapters, open) share. */
   CD.h = { call: call, api: api, why: why, NET: NET, tabSet: tabSet, STEP_OF: STEP_OF, ID: ID };
 
-  /* The popup comes back here (web/signup-sso.html posts it). */
-  window.addEventListener("message", function (e) {
-    if (e.origin !== location.origin || !e.data || e.data.type !== "cd-sso" || typeof CD._ssoWait !== "function") return;
-    var f = CD._ssoWait; CD._ssoWait = null;
-    f(String(e.data.code || ""), String(e.data.state || ""));
-  });
+  /* The popup comes back here (web/signup-sso.html): to its opener, or by
+     BroadcastChannel when the provider's page cut the opener off. Only the
+     round trip this tab started (its state) is taken, once; the channel
+     answer is acknowledged so the popup knows it was heard. */
+  function ssoArrived(data) {
+    if (!data || data.type !== "cd-sso" || typeof CD._ssoWait !== "function" || !CD._ssoState || data.state !== CD._ssoState) return false;
+    var f = CD._ssoWait; CD._ssoWait = null; CD._ssoState = "";
+    f({ code: String(data.code || ""), state: String(data.state || ""), error: String(data.error || "") });
+    return true;
+  }
+  window.addEventListener("message", function (e) { if (e.origin === location.origin) ssoArrived(e.data); });
+  if (typeof BroadcastChannel === "function") {
+    var ssoChannel = new BroadcastChannel("cd-sso");
+    ssoChannel.onmessage = function (e) { if (ssoArrived(e.data)) ssoChannel.postMessage({ type: "cd-sso-ack", state: e.data.state }); };
+  }
 
   function ssoParams() {
     var q = new URLSearchParams(location.search);
-    return q.get("code") && q.get("state") ? { code: q.get("code"), state: q.get("state") } : null;
+    var error = /^[a-z_]{1,40}$/.test(q.get("error") || "") ? q.get("error") : "";
+    if (q.get("code") && q.get("state")) return { code: q.get("code"), state: q.get("state"), error: "" };
+    return { code: "", state: q.get("state") || "", error: error || "no_code" };
+  }
+
+  /* A browser that can make a passkey: on this device (a platform
+     authenticator), or on a phone by QR (hybrid), as getClientCapabilities
+     says where it exists. A security key alone is not detectable, so it is
+     not offered on its own (SIGNUP-LOGIC §3.1 A.1); the options leave the
+     authenticator open, so the browser's sheet still lists one. */
+  function passkeyCapable() {
+    var P = window.PublicKeyCredential;
+    if (!P || !navigator.credentials || typeof navigator.credentials.create !== "function") return Promise.resolve(false);
+    var uvpaa = function () {
+      return typeof P.isUserVerifyingPlatformAuthenticatorAvailable === "function"
+        ? P.isUserVerifyingPlatformAuthenticatorAvailable().then(function (ok) { return !!ok; }, function () { return false; })
+        : Promise.resolve(false);
+    };
+    if (typeof P.getClientCapabilities !== "function") return uvpaa();
+    return P.getClientCapabilities().then(function (caps) {
+      if (caps && (caps.passkeyPlatformAuthenticator || caps.userVerifyingPlatformAuthenticator || caps.hybridTransport)) return true;
+      return uvpaa();
+    }, uvpaa);
   }
 
   function b64e(buf) {
