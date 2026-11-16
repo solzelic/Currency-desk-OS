@@ -1304,11 +1304,11 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await page.getByRole("button", { name: /^New transaction$/i }).first().click();
     const ledgerSheet = page.locator("div.fixed").filter({ hasText: "Transaction type" });
     await ledgerSheet.getByPlaceholder(/Type a name/).fill(typedOnlyName);
-    await ledgerSheet.getByRole("button", { name: typedOnlyName }).click();
+    await ledgerSheet.locator(".absolute").getByRole("button", { name: typedOnlyName }).click();
     await expect(page.getByTestId("ledger-id-badge")).toContainText("Missing ID");
     await expect(page.getByTestId("ledger-id-badge")).not.toContainText("ID on file");
     await ledgerSheet.getByPlaceholder(/Type a name/).fill(readFailName);
-    await ledgerSheet.getByRole("button", { name: readFailName }).click();
+    await ledgerSheet.locator(".absolute").getByRole("button", { name: readFailName }).click();
     await expect(page.getByTestId("ledger-id-badge")).toContainText("Could not read the ID check. Try again.");
     await page.getByRole("button", { name: "Close ledger transaction" }).click();
     const held = tillClose;
@@ -1330,6 +1330,7 @@ test("a compliance officer sees an open PEP review at 44px", async ({ page }) =>
   await db.connect();
   const name = "Pep Review";
   try {
+    await db.query("DELETE FROM signin_failures");
     await db.query("DELETE FROM client_pep_reviews WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = $1)", [name]);
     await db.query("DELETE FROM client_pep_answers WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = $1)", [name]);
     await db.query("DELETE FROM desk_clients WHERE display_name = $1", [name]);
