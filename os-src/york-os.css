@@ -3094,18 +3094,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .cd-tx-types-bar { min-width: 0; max-width: 100%; }
   .cd-tx-types {
     display: flex !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     gap: 8px;
     min-width: 0;
     max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
+    overflow: visible;
     padding: 8px 16px 12px !important;
-    scroll-snap-type: x proximity;
-    scroll-padding-inline: 16px;
     grid-template-columns: none !important;
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
+    -webkit-mask-image: none;
+    mask-image: none;
   }
   .cd-tx-id-chip { display: none !important; }
   .cd-tx-types::-webkit-scrollbar { display: none; }

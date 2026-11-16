@@ -173,29 +173,29 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
          what must not be cut off. */
       return { top: r.top, width: r.width, text: (el.textContent || "").trim(), clipped: label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1 };
     }));
-    expect(Math.max(...typeBoxes.map((b) => b.top)) - Math.min(...typeBoxes.map((b) => b.top)), `type chips on one row at ${width}`).toBeLessThanOrEqual(4);
     expect(Math.min(...typeBoxes.map((b) => b.width)), `type chip width at ${width}`).toBeGreaterThanOrEqual(40);
     expect(typeBoxes.filter((b) => b.clipped).map((b) => b.text), `type names clipped at ${width}`).toEqual([]);
     const chipRow = await page.locator(".cd-tx-types").evaluate((el) => {
       const style = getComputedStyle(el);
-      const selected = el.querySelector(".is-on");
       const row = el.getBoundingClientRect();
-      const chip = selected instanceof HTMLElement ? selected.getBoundingClientRect() : null;
+      const partial = [...el.querySelectorAll("button")].filter((node) => {
+        const box = node.getBoundingClientRect();
+        return box.left < row.left - 1 || box.right > row.right + 1;
+      }).map((node) => (node.textContent || "").trim());
+      const tops = [...el.querySelectorAll("button")].map((node) => Math.round(node.getBoundingClientRect().top));
       return {
-        overflowX: style.overflowX,
-        snap: style.scrollSnapType,
         wrap: style.flexWrap,
-        scrolls: el.scrollWidth > el.clientWidth + 1,
-        selectedInView: !!chip && chip.left >= row.left - 1 && chip.right <= row.right + 1,
+        overflowX: style.overflowX,
+        mask: style.maskImage,
+        partial,
+        lines: new Set(tops).size,
       };
     });
-    expect(chipRow.overflowX, `chip row scrolls at ${width}`).toBe("auto");
-    /* Chrome serializes the proximity default as "x". "x mandatory"
-       would be a different snap. */
-    expect(chipRow.snap === "x" || chipRow.snap === "x proximity", `chip snap at ${width}: ${chipRow.snap}`).toBe(true);
-    expect(chipRow.wrap, `chip row nowrap at ${width}`).toBe("nowrap");
-    expect(chipRow.scrolls, `chip row overflows at ${width}`).toBe(true);
-    expect(chipRow.selectedInView, `selected chip in view at ${width}`).toBe(true);
+    expect(chipRow.wrap, `chip row wraps at ${width}`).toBe("wrap");
+    expect(chipRow.overflowX === "visible" || chipRow.overflowX === "hidden", `chip row does not scroll at ${width}: ${chipRow.overflowX}`).toBe(true);
+    expect(chipRow.mask, `chip row has no fade at ${width}`).toBe("none");
+    expect(chipRow.partial, `partial chips at ${width}`).toEqual([]);
+    expect(chipRow.lines, `two lines at ${width}`).toBe(2);
     const chipInset = await page.locator(".cd-tx-types").evaluate((el) => {
       const first = el.querySelector("button");
       if (!(first instanceof HTMLElement)) return -1;

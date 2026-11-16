@@ -29081,15 +29081,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         c: col,
         bg: bg
       })), /*#__PURE__*/React.createElement("div", {
-        className: "grid grid-cols-3",
+        className: "grid",
         style: {
-          borderTop: `1px solid ${CD.lineSoft}`
+          borderTop: `1px solid ${CD.lineSoft}`,
+          gridTemplateColumns: 'auto minmax(7.6rem, 1.7fr) minmax(0, 1fr)'
         }
       }, [['TXNS', String(c.st.n)], ['VOLUME', c.st.vol == null ? 'None yet' : fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || 'Not set']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
         key: l,
-        className: "px-3 py-2.5",
+        className: "px-2.5 py-2.5",
         style: {
-          borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none'
+          borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none',
+          minWidth: 0
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[8.5px] uppercase tracking-widest",
@@ -29098,11 +29100,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           fontFamily: 'Space Mono, monospace'
         }
       }, l), /*#__PURE__*/React.createElement("div", {
-        className: "text-[12.5px] font-bold truncate",
+        className: "text-[12.5px] font-bold",
         style: {
           color: CD.ink,
           fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums'
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap'
         }
       }, v)))));
     })), /*#__PURE__*/React.createElement("p", {

@@ -162,7 +162,7 @@ async function dropStubClients(db: { query(text: string, values?: unknown[]): Pr
     OR display_name ILIKE 'other file%'
     OR display_name ILIKE 'seam %'
     OR display_name ILIKE 'agree %'
-    OR display_name IN ('Read Fail', 'Pep Review', 'Typed Only')`;
+    OR display_name IN ('Read Fail', 'Pep Review', 'Typed Only', 'No Check', 'In Progress', 'In Review', 'Not Passed', 'Incomplete', 'Advised', 'Too Old', 'Returning', 'Ada Other')`;
   for (const table of ["client_pep_answers", "client_pep_reviews"]) {
     await db.query(`DELETE FROM ${table} WHERE client_id IN (SELECT client_id FROM desk_clients WHERE ${where})`, [names]);
   }
@@ -552,8 +552,8 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "masked-teller");
     await themeShot(page, "file-teller");
 
-    const otherName = "Ada Other";
-    await dropStubClients(db, ["Ada Other"]);
+    const otherName = "Ada Morales";
+    await dropStubClients(db, ["Ada Morales"]);
     const other = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -629,14 +629,14 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     expect(created.status).toBe(201);
     return created.body.clientId as string;
   };
-  const noneName = "No Check";
-  const progressName = "In Progress";
-  const reviewName = "In Review";
-  const declinedName = "Not Passed";
-  const incompleteName = "Incomplete";
-  const adviceName = "Advised";
-  const dueName = "Too Old";
-  const returningName = "Returning";
+  const noneName = "Nora Quinn";
+  const progressName = "Priya Shah";
+  const reviewName = "Ivan Reyes";
+  const declinedName = "Nadia Petrova";
+  const incompleteName = "Ingrid Cho";
+  const adviceName = "Adele Marin";
+  const dueName = "Tomas Oliveira";
+  const returningName = "Renata Vogel";
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
   await dropStubClients(db, [noneName, progressName, reviewName, declinedName, incompleteName, adviceName, dueName, returningName]);
@@ -681,7 +681,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          clientId, nameOnId: "Returning Fixture", documentType: "Passport", documentNumber: "PP99818991",
+          clientId, nameOnId: "Renata Vogel", documentType: "Passport", documentNumber: "PP99818991",
           issuingJurisdiction: "ON", issuingCountry: "CA", expiryDate: "2030-01-15", attested: true,
         }),
       });
