@@ -20,7 +20,7 @@ import { dbQuery } from "../src/idv/records.js";
 const require = createRequire(import.meta.url);
 const { PNG } = require("pngjs") as { PNG: { new (opts: { width: number; height: number }): { data: Buffer; width: number; height: number }; sync: { write(png: { data: Buffer; width: number; height: number }): Buffer; read(buf: Buffer): { width: number; height: number; data: Buffer } } } };
 
-const NUMBER = "QWERT7788991";
+const NUMBER = "TEST000000001";
 const SELFIE = "SELFIE-TOKEN-XYZ";
 const FRONT = "FRONT-URL-TOKEN";
 
@@ -73,9 +73,13 @@ describe("document number key", () => {
     expect(stored.split("$")[1]).not.toBe(again.split("$")[1]);
     expect(Buffer.from(stored.split("$")[1] ?? "", "base64")).toHaveLength(12);
     expect(await decryptSecret(stored, bind, env)).toBe(NUMBER);
-    expect(maskDocumentNumber(NUMBER)).toBe("•••• 8991");
-    expect(maskDocumentNumber(NUMBER)).not.toContain("QWERT");
-    const flipped = `${stored.slice(0, -1)}${stored.endsWith("a") ? "b" : "a"}`;
+    expect(maskDocumentNumber(NUMBER)).toBe("•••• 0001");
+    expect(maskDocumentNumber(NUMBER)).not.toContain("TEST");
+    const parts = stored.split("$");
+    const body = parts[3] ?? "";
+    const at = body.search(/[A-Za-z0-9]/);
+    parts[3] = `${body.slice(0, at)}${body[at] === "A" ? "B" : "A"}${body.slice(at + 1)}`;
+    const flipped = parts.join("$");
     await expect(decryptSecret(flipped, bind, env)).rejects.toThrow("id_number_unreadable");
     await expect(decryptSecret(stored, { ...bind, recordId: "idc_other" }, env)).rejects.toThrow("id_number_unreadable");
     await expect(decryptSecret(stored, { ...bind, tenantId: "tnt-b" }, env)).rejects.toThrow("id_number_unreadable");
@@ -133,8 +137,8 @@ describe("inquiry text and face crop", () => {
           status: "passed", "name-first": "Ada", "name-last": "Client",
           "identification-number": NUMBER, "id-class": "dl",
           "issuing-subdivision": "ON", "issuing-country": "CA",
-          "expiration-date": "2030-01-02", birthdate: "1990-04-05",
-          "address-street-1": "1 King St",
+          "expiration-date": "2030-01-02", birthdate: "2000-01-01",
+          "address-street-1": "TEST Street 0",
           "front-photo-url": `https://files.withpersona.com/${FRONT}.png`,
           "back-photo-url": "https://files.withpersona.com/back.png",
           "selfie-photo-url": `https://files.withpersona.com/${SELFIE}.jpg`,
@@ -399,11 +403,11 @@ describe("id check records", () => {
       payload: {
         clientId, nameOnId: "In Person", documentType: "Passport", documentNumber: NUMBER,
         issuingJurisdiction: "ON", issuingCountry: "CA", expiryDate: "2030-01-02",
-        attested: true, dealId: "deal-1", address: "1 King St", dateOfBirth: "1990-04-05",
+        attested: true, dealId: "deal-1", address: "TEST Street 0", dateOfBirth: "2000-01-01",
       },
     });
     expect(created.statusCode, created.body).toBe(200);
-    expect(created.json().maskedNumber).toBe("•••• 8991");
+    expect(created.json().maskedNumber).toBe("•••• 0001");
     expect(created.body).not.toContain(NUMBER);
     expect(created.json().photoLine).toBe("No photo on file");
     const row = await dbQuery(handle.db).query("SELECT * FROM idv_check_records WHERE record_id = $1", [created.json().recordId]);
@@ -419,12 +423,12 @@ describe("id check records", () => {
     const read = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.owner });
     expect(read.statusCode, read.body).toBe(200);
     expect(read.body).not.toContain(NUMBER);
-    expect(read.body).toContain("•••• 8991");
+    expect(read.body).toContain("•••• 0001");
     expect(read.body).toContain("photo ID, in person");
     const health = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "In Person", documentType: "Health card", documentNumber: "1234567890",
+        clientId, nameOnId: "In Person", documentType: "Health card", documentNumber: "TEST000000008",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });
@@ -494,7 +498,7 @@ describe("id check records", () => {
     const made = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Return", documentType: "Passport", documentNumber: "ABC1234567",
+        clientId, nameOnId: "Return", documentType: "Passport", documentNumber: "TEST000000009",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });
@@ -559,7 +563,7 @@ describe("id check records", () => {
       `INSERT INTO idv_check_records
         (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
          document_number_last4, expiry_date, verified_at)
-       VALUES ('idc_pep',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','8991','2030-01-02', now())`,
+       VALUES ('idc_pep',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','0001','2030-01-02', now())`,
       [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
     );
     const saved = await app.inject({
@@ -727,7 +731,7 @@ describe("id check records", () => {
     const counter = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Link", documentType: "Passport", documentNumber: "PASS998877",
+        clientId, nameOnId: "Link", documentType: "Passport", documentNumber: "TEST000000010",
         issuingJurisdiction: "QC", issuingCountry: "CA", attested: true,
       },
     });
@@ -850,7 +854,7 @@ describe("id check records", () => {
     const newer = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Crop Two", documentType: "Passport", documentNumber: "ZZ99887766",
+        clientId, nameOnId: "Crop Two", documentType: "Passport", documentNumber: "TEST000000011",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });
@@ -1009,7 +1013,7 @@ describe("id check records", () => {
     const made = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Confirmed", documentType: "Passport", documentNumber: "CONF123456",
+        clientId, nameOnId: "Confirmed", documentType: "Passport", documentNumber: "TEST000000012",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });
@@ -1139,14 +1143,14 @@ describe("id check records", () => {
     const made = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Guard", documentType: "Passport", documentNumber: "GUARD12345",
+        clientId, nameOnId: "Guard", documentType: "Passport", documentNumber: "TEST000000013",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });
     const second = await app.inject({
       method: "POST", url: "/api/idv/checks/in-person", cookies: cookies.teller,
       payload: {
-        clientId, nameOnId: "Guard Two", documentType: "Passport", documentNumber: "GUARD54321",
+        clientId, nameOnId: "Guard Two", documentType: "Passport", documentNumber: "TEST000000014",
         issuingJurisdiction: "ON", issuingCountry: "CA", attested: true,
       },
     });

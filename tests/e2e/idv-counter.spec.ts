@@ -62,14 +62,14 @@ function inquiryBody(selfie: string) {
         attributes: {
           "name-first": "Ada",
           "name-last": "Fixture",
-          "identification-number": "AB12348991",
+          "identification-number": "TEST000000001",
           "id-class": "pp",
           "issuing-subdivision": "ON",
           "issuing-country": "CA",
           "expiration-date": "2030-01-15",
-          "birthdate": "1990-04-02",
-          "address-street-1": "1 King St",
-          "address-city": "Toronto",
+          "birthdate": "2000-01-01",
+          "address-street-1": "TEST Street 0",
+          "address-city": "Testville",
           "front-photo-url": "http://127.0.0.1:4199/id-front.png",
         },
       },
@@ -125,6 +125,18 @@ async function dismissTour(page: Page) {
     if (skip instanceof HTMLButtonElement) skip.click();
   });
   await expect(page.locator(".cdos-tour")).toHaveCount(0);
+}
+
+async function lightShot(page: Page, stem: string, widths: readonly (1280 | 390)[] = [1280, 390]) {
+  if (process.env.PR2B_SHOTS !== "1") return;
+  await dismissTour(page);
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.evaluate(() => {
+      (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, `pr2-${stem}-${width}-light.png`) });
+  }
 }
 
 async function shot(page: Page, name: string) {
@@ -437,7 +449,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await postWebhook(page, providerRef, "inquiry.approved");
     await expect(page.getByTestId("id-check-done")).toContainText("ID checked", { timeout: 20_000 });
     await expect(page.getByTestId("id-check-done")).toContainText("ID and selfie, Persona");
-    await expect(page.getByTestId("id-check-done")).toContainText("•••• 8991");
+    await expect(page.getByTestId("id-check-done")).toContainText("•••• 0001");
     await page.getByRole("button", { name: "Done" }).click();
     await expect(page.getByTestId("deal-id-link")).toContainText("ID and selfie, Persona");
     await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file", { timeout: 20_000 });
@@ -448,14 +460,14 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     }, clientId);
     const record = (linked.records as Array<{ deals?: string[]; maskedNumber?: string; line?: string; photoOnFile?: boolean }>)[0];
     const linkedStanding = linked as { standing: { onFile: boolean; chip: string; line: string } };
-    expect(record.maskedNumber).toBe("•••• 8991");
+    expect(record.maskedNumber).toBe("•••• 0001");
     expect(record.photoOnFile).toBe(true);
     expect(linkedStanding.standing.onFile).toBe(true);
     expect(linkedStanding.standing.chip).toBe("ID on file");
     expect(linkedStanding.standing.line).toContain("ID and selfie");
-    expect(linkedStanding.standing.line).not.toContain("8991");
+    expect(linkedStanding.standing.line).not.toContain("0001");
     expect(record.deals && record.deals.length).toBeGreaterThan(0);
-    expect(JSON.stringify(linked)).not.toContain("AB12348991");
+    expect(JSON.stringify(linked)).not.toContain("TEST000000001");
 
     await page.getByTestId("deal-check-id").click();
     await page.getByTestId("id-check-chooser").locator("button").filter({ hasText: /^ID and selfie/ }).click();
@@ -494,7 +506,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     }));
     await page.getByLabel("Name on the ID").fill("Ada Fixture");
     await page.getByLabel("Document type").selectOption({ label: "Passport" });
-    await page.getByLabel("Document number").fill("PP12348991");
+    await page.getByLabel("Document number").fill("TEST000000002");
     await page.getByLabel("Issuer").fill("ON");
     await page.getByLabel("Country").fill("CA");
     await page.getByRole("checkbox", { name: /inspected the original ID/i }).check();
@@ -511,7 +523,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(file).toContainText("Check passed");
     await expect(file).toContainText(/ID checked /);
     await expect(file).toContainText("ID and selfie, Persona");
-    await expect(file.getByTestId("id-check-masked")).toHaveText("•••• 8991");
+    await expect(file.getByTestId("id-check-masked")).toHaveText("•••• 0001");
     await expect(file.getByTestId("id-check-reveal-open")).toHaveCount(0);
     await expect(file).not.toContainText("Approved");
     const profile = page.locator(".client-file");
@@ -519,7 +531,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("client-standing")).not.toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).toContainText("Identified");
     await expect(page.getByTestId("client-where")).toContainText("ID and selfie");
-    await expect(page.getByTestId("client-where")).not.toContainText("8991");
+    await expect(page.getByTestId("client-where")).not.toContainText("0001");
     await expect(page.getByTestId("client-where")).not.toContainText("Not identified");
     await expect(profile.getByText("KYC / ID gap")).toHaveCount(0);
     await expect(file.getByTestId("id-check-photo-line")).toHaveText("Photo from ID, for comparison by eye");
@@ -572,7 +584,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("identity-check")).toBeVisible();
     await expect(page.getByTestId("id-check-photo")).toHaveCount(0);
     await expect(page.getByTestId("id-check-revealed")).toHaveCount(0);
-    await expect(page.getByTestId("identity-check")).not.toContainText("8991");
+    await expect(page.getByTestId("identity-check")).not.toContainText("0001");
     await page.locator(".client-file-actions button").last().click();
 
     const tillClose = await readTillClose(page);
@@ -584,9 +596,9 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "reveal");
     await page.getByTestId("id-check-reveal-reason").selectOption("fintrac_request");
     await page.getByTestId("id-check-reveal").getByRole("button", { name: "Show number" }).click();
-    await expect(page.getByTestId("id-check-revealed")).toHaveText("AB12348991");
+    await expect(page.getByTestId("id-check-revealed")).toHaveText("TEST000000001");
     await expect(page.getByTestId("id-check-audit")).toContainText("FINTRAC request");
-    await expect(page.getByTestId("id-check-audit")).not.toContainText("AB12348991");
+    await expect(page.getByTestId("id-check-audit")).not.toContainText("TEST000000001");
     await themeShot(page, "audit");
     const openPassed = async () => {
       await page.locator('[data-app="clients"]').click();
@@ -657,7 +669,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
          inspector_staff_id, verified_at, document_type, document_number_ciphertext, document_number_last4,
          number_unavailable, issuing_jurisdiction, issuing_country, expiry_date, name_on_id)
        VALUES ($1, 'tnt-yorkfx', 'le-yorkfx-canada', 'br-yorkville', $2, $3, $4, $5, 'm.costa',
-         $6, now() - ($7 || ' years')::interval, $8, $9, '8991', false, $10, $11, $12, 'Fixture Person')`,
+         $6, now() - ($7 || ' years')::interval, $8, $9, '0001', false, $10, $11, $12, 'Fixture Person')`,
       [
         `idc_${clientId}_${result}`, clientId, person ? "1" : "3", method, result,
         person ? "m.costa" : null, String(yearsAgo),
@@ -682,7 +694,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          clientId, nameOnId: "Renata Vogel", documentType: "Passport", documentNumber: "PP99818991",
+          clientId, nameOnId: "Renata Vogel", documentType: "Passport", documentNumber: "TEST000000003",
           issuingJurisdiction: "ON", issuingCountry: "CA", expiryDate: "2030-01-15", attested: true,
         }),
       });
@@ -794,6 +806,64 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   } finally {
     await db.query("UPDATE branches SET province = 'ON' WHERE id = 'br-yorkville'");
     await request.put("/api/settings/idv", { data: { checksEnabled: false } }).catch(() => {});
+    await db.end();
+  }
+});
+
+test("typed-by-hand and try-again frames", async ({ page, request }) => {
+  test.skip(process.env.PR2B_SHOTS !== "1", "screenshot pass");
+  test.setTimeout(180_000);
+  await enableChecks(request);
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  const typedName = "Ida Typed";
+  const failName = "Ida Unread";
+  try {
+    await db.query("DELETE FROM desk_clients WHERE display_name = ANY($1::text[])", [[typedName, failName]]);
+    await signInAtDesk(page, "m.costa");
+    const made = async (legalName: string) => {
+      const created = await page.evaluate(async (name) => {
+        const res = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ legalName: name, kind: "individual" }),
+        });
+        return { status: res.status, body: await res.json() };
+      }, legalName);
+      expect(created.status).toBe(201);
+      return created.body.clientId as string;
+    };
+    const typedId = await made(typedName);
+    const failId = await made(failName);
+    await db.query(
+      `INSERT INTO desk_client_identity_documents
+        (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
+       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', 'TEST000000015', true)`,
+      [`doc_${typedId}`, typedId],
+    );
+    await page.route(`**/api/idv/clients/${failId}/checks`, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(typedName, { exact: true }).click();
+    await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
+    await lightShot(page, "badge-typed-file");
+    await page.locator(".client-file-actions button").last().click({ force: true });
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    const deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    await expect(deal).toBeEnabled({ timeout: 20_000 });
+    await deal.click();
+    await page.locator(".cd-tx-customer input").fill(typedName);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: typedName }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked");
+    await lightShot(page, "badge-typed-deal");
+    await page.locator(".cd-tx-x").click();
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(failName, { exact: true }).click();
+    await expect(page.getByTestId("id-check-try-again")).toBeVisible({ timeout: 20_000 });
+    await lightShot(page, "try-again", [1280]);
+  } finally {
     await db.end();
   }
 });
@@ -1080,15 +1150,23 @@ test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) 
     const sheet = page.getByRole("dialog", { name: "Record the ID" });
     await expect(sheet).toBeVisible();
     await sheet.locator("select").first().selectOption("Passport");
-    await sheet.getByLabel("ID number").fill("TEST-000000000");
+    await sheet.getByLabel("ID number").fill("TEST000000000");
     await sheet.locator('input[type="date"]').last().fill("2030-04-01");
     await sheet.getByRole("button", { name: "Save and return" }).click();
     await expect(sheet).toBeHidden({ timeout: 20_000 });
-    await expect(page.getByText("Passport on file")).toBeVisible();
+    await expect(page.getByText(/Passport typed by hand/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Record the ID" })).toHaveCount(0);
     await expect(page.getByText("Their ID is missing")).toHaveCount(0);
     await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
     await expect(page.getByTestId("deal-id-badge")).not.toContainText("Missing ID");
+    await expect(page.locator(".cd-tx-id-need-label")).toContainText("Passport typed by hand");
+    await expect(page.locator(".cd-tx-id-need-label")).not.toContainText("on file");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const nudge = page.locator(".cd-tx-nudge");
+    await expect(nudge).toBeVisible({ timeout: 20_000 });
+    await expect(nudge).toContainText("ID typed by hand, not checked");
+    await expect(nudge).not.toContainText("on file");
+    await expect(nudge).not.toContainText(/verified/i);
     const color = await page.getByTestId("deal-id-badge").evaluate((el) => getComputedStyle(el).color);
     expect(color).not.toBe("rgb(31, 138, 76)");
   } finally {
@@ -1226,9 +1304,9 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     const beforeStanding = await page.evaluate(() => {
       const read = (window as unknown as { CDOS: { idFileKyc: (rec: unknown) => string } }).CDOS.idFileKyc;
       return {
-        bare: read({ idType: "Passport", idNum: "AB1234", idExpiry: "2030-04-01" }),
+        bare: read({ idType: "Passport", idNum: "TEST000000004", idExpiry: "2030-04-01" }),
         on: read({ idStanding: { onFile: true, chip: "ID on file" } }),
-        gap: read({ idStanding: { onFile: false, chip: "Missing ID" }, idType: "Passport", idNum: "AB1234" }),
+        gap: read({ idStanding: { onFile: false, chip: "Missing ID" }, idType: "Passport", idNum: "TEST000000004" }),
       };
     });
     expect(beforeStanding.bare).toBe("Checking ID");
@@ -1276,7 +1354,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await db.query(
       `INSERT INTO desk_client_identity_documents
         (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
-       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', 'PP1000', true)`,
+       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', 'TEST000000005', true)`,
       [`doc_${ids.noDate}`, ids.noDate],
     );
     await typedRow(ids.typedExpired, `${full}, '2020-01-01', 'Typed Expired'`);
@@ -1305,8 +1383,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
         [`doc_${clientId}`, clientId, number],
       );
     };
-    await paper(typedOnly, "PP2000");
-    await paper(readFail, "PP3000");
+    await paper(typedOnly, "TEST000000006");
+    await paper(readFail, "TEST000000007");
     await page.route(`**/api/idv/clients/${readFail}/checks`, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
     await page.locator('[data-app="clients"]').click();
     await page.waitForFunction((id) => {

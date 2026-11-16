@@ -475,6 +475,7 @@
     const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !idMissing && !(standing && standing.onFile);
     const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/high|enhanced/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
     const highRisk = riskLvl === 'High';
@@ -500,8 +501,9 @@
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
     else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required. Large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`; }
+    else if (handTyped && !idExpired) { level = 'reco'; tier = 'verify'; title = 'ID typed by hand, not checked'; reason = 'ID typed by hand, not checked'; }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
-    else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no ID on file.` : `${first} has an ID on file but has never been fully verified.`; }
+    else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = `${first} has no ID on file.`; }
     else { return null; }
     // house rule: a high-risk subject escalates any identity check to the deepest tier
     // (owner-configurable in Settings → Compliance · Identity verification policy; on by default)
@@ -509,7 +511,7 @@
     const escalateRisk = highRisk || (riskLvl === 'Medium' && !!(settings && settings.escalateMediumRisk));
     if (ESCALATE_HIGH_RISK && escalateRisk && tier === 'verify') { tier = 'plus'; title = 'Enhanced ' + title.charAt(0).toLowerCase() + title.slice(1); reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`; }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force') { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
+    if (idRequired && !lastFull && level !== 'force' && !handTyped) { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
     if (dismissed && level !== 'force') return null;
     const force = level === 'force';
     const BLUE = '#2B50E2';

@@ -343,7 +343,7 @@
           {unread && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" sentence={phone} value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
+          <CCstat label={!papersMissing && !idOk ? 'Typed ID' : 'ID on file'} sentence={phone} value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (!idOk ? (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'not checked') : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file'))} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`} sentence={phone} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || 'None yet'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
@@ -1233,7 +1233,9 @@
               {idRequired && idOk && (
                 <div className="cd-tx-id-need">
                   <Ic n="checkcircle" s={14} c={CD.green} />
-                  <span className="cd-tx-id-need-label">{(rec && rec.idType) || 'ID'} on file{rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}</span>
+                  <span className="cd-tx-id-need-label">{(rec && rec.idStanding && rec.idStanding.onFile)
+                    ? `${(rec && rec.idType) || 'ID'} on file${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}`
+                    : `${(rec && rec.idType) || 'ID'} typed by hand${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}`}</span>
                 </div>
               )}
 

@@ -483,7 +483,7 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
-  await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
+  await expect(page.locator(".cd-tx-stats")).toContainText("Typed ID");
   await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
   expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");
   await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");

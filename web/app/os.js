@@ -36912,10 +36912,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         gridTemplateColumns: '1fr 1fr 1fr'
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
-      label: "ID on file",
+      label: !papersMissing && !idOk ? 'Typed ID' : 'ID on file',
       sentence: phone,
       value: papersMissing ? 'Not set' : rec.idType || 'ID',
-      sub: papersMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
+      sub: papersMissing ? 'collect below' : !idOk ? rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'not checked' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`,
@@ -38489,7 +38489,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.green
     }), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-id-need-label"
-    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
+    }, rec && rec.idStanding && rec.idStanding.onFile ? `${rec && rec.idType || 'ID'} on file${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}` : `${rec && rec.idType || 'ID'} typed by hand${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}`)), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
@@ -51831,6 +51831,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !idMissing && !(standing && standing.onFile);
     const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /high|enhanced/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
     const highRisk = riskLvl === 'High';
@@ -51873,6 +51874,11 @@ ${(filing.map || []).map(blockHTML).join('')}
       tier = asked;
       title = 'Check required. Large transaction';
       reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`;
+    } else if (handTyped && !idExpired) {
+      level = 'reco';
+      tier = 'verify';
+      title = 'ID typed by hand, not checked';
+      reason = 'ID typed by hand, not checked';
     } else if (bigDeal && !lastFull) {
       level = 'reco';
       tier = 'plus';
@@ -51882,7 +51888,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       level = 'reco';
       tier = 'verify';
       title = 'Verification recommended';
-      reason = idMissing ? `${first} has no ID on file.` : `${first} has an ID on file but has never been fully verified.`;
+      reason = `${first} has no ID on file.`;
     } else {
       return null;
     }
@@ -51896,7 +51902,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`;
     }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force') {
+    if (idRequired && !lastFull && level !== 'force' && !handTyped) {
       level = 'force';
       title = idMissing ? 'Identity verification required' : 'Verification required for this deal';
       reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`;
