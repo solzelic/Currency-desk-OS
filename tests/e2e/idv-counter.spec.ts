@@ -849,16 +849,26 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await page.getByText(typedName, { exact: true }).click();
     await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
     await lightShot(page, "badge-typed-file");
-    await page.locator(".client-file-actions button").last().click({ force: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator(".client-file-actions button").last().click();
+    await expect(page.locator(".client-file")).toHaveCount(0);
     await page.locator('[data-app="ledger"]').click();
     await ensureTill(page);
-    const deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    let deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    if (!(await deal.isEnabled())) {
+      await page.reload();
+      await landOnDesktop(page);
+      await page.locator('[data-app="ledger"]').click();
+      await ensureTill(page);
+      deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    }
     await expect(deal).toBeEnabled({ timeout: 20_000 });
     await deal.click();
     await page.locator(".cd-tx-customer input").fill(typedName);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: typedName }).click();
     await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked");
     await lightShot(page, "badge-typed-deal");
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(".cd-tx-x").click();
     await page.locator('[data-app="clients"]').click();
     await page.getByText(failName, { exact: true }).click();

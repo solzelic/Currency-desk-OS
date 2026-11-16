@@ -563,7 +563,12 @@
     const latest = records[0] || null;
     const badge = latest ? badgeOf(latest) : { primary: "", secondary: "" };
     const fromInquiry = inquiryLine(status);
-    let primary = badge.primary || fromInquiry || (loaded ? "No ID check on file" : "Reading the identity check.");
+    const roster = (window.CDOS && window.CDOS.clientRoster) || {};
+    const typedOnly = !latest && Object.keys(roster).some((key) => {
+      const rec = roster[key];
+      return rec && rec.clientId === clientId && rec.idType && rec.idNum;
+    });
+    let primary = badge.primary || fromInquiry || (loaded ? (typedOnly ? "ID typed by hand, not checked" : "No ID check on file") : "Reading the identity check.");
     let secondary = badge.secondary;
     /* A sandbox key says "Check passed (test)". Any other pass says "Check passed".
        The record line stays underneath either way. */

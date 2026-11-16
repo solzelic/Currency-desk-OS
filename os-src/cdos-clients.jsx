@@ -883,7 +883,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
     const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
-    const fromCheck = (rec && rec.idCheckError) ? rec.idCheckError : standing ? standing.gap : (idState === 'ok' ? null : idState);
+    const papers = !!(rec && rec.idType && rec.idNum);
+    const handTyped = papers && standing && !standing.onFile && standing.chip !== 'ID expired' && !(rec && rec.idCheckError);
+    const fromCheck = (rec && rec.idCheckError) ? rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.gap : (idState === 'ok' ? null : idState);
     const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = (settings && +settings.structuringDays) || 7;
