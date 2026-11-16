@@ -1,3 +1,33 @@
+## Signup credential browser lifecycle (CD-206, 16 November 2026)
+
+The page half of real Google, Microsoft and passkey sign-up
+(`design/onboarding/signup-v2.1-bridge.js`, `design/onboarding/signup-sso.html`,
+one build patch). "How will you sign in?" now draws only the ways in the server
+can finish from this page's origin. It asks `GET /api/onboarding/methods` once,
+the first time that screen draws; until it answers, all four show, as before.
+The passkey shows wherever the browser can make one: a platform authenticator,
+or a phone by QR (`getClientCapabilities`' hybrid transport), not only where a
+fingerprint or face reader exists. A security key alone is not detectable, so
+it is not offered on its own (pack §3.1 A.1); the browser's sheet still lists
+one. Google and Microsoft: the return page hands code and state to its opener.
+Where a provider page has cut the opener off (Cross-Origin-Opener-Policy;
+Google already sends it report-only), it answers on a same-origin
+`BroadcastChannel` and closes once the tab that started that exact round trip
+(its state) acknowledges. Otherwise it goes back to `/onboarding` as on a phone.
+The opener counts the popup as closed only after it has had the focus back for
+a moment, and a late answer still finishes. A provider error (`?error=`,
+e.g. cancelled) is one red line on the sign-in screen, in the popup and on the
+phone return alike, and sends nothing; before, the phone landed on the ID
+screen. The provider's code leaves the address bar as soon as the page loads.
+
+For Sol (copy, not changed): the footnote "A passkey uses your fingerprint or
+face on this device and never leaves it" is not true of a passkey made on a
+phone by QR. Browser coverage: Chromium only, with a virtual authenticator and
+a stand-in provider at `provider.invalid` that only redirects. That is not a
+real Google or Microsoft sign-in, not Safari or Firefox, and not real hardware.
+No server, session, money or CD-221 change. Not release, CTO or provider
+acceptance.
+
 ## Signup credential provider readiness, server (CD-206, 16 November 2026)
 
 The server half of making real Google, Microsoft, passkey and password sign-up
