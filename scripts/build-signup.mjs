@@ -40,7 +40,7 @@ const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js", "signup-v2.1-audio.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -150,6 +150,14 @@ patch("recommended line", "  idRec(j) { const L =", "  idRec(j) { if (j.idRecomm
 
 /* ---- sound: the viewer's own switch (kept in this browser only) -------- */
 patch("sound off", "  _tone(kind) {", "  _tone(kind) { if (window.__cdOnb && window.__cdOnb.muted) return;");
+
+/* Context resume belongs only to the pointer/key wake handler, never a delayed tone. */
+patch("audio wake only", "    if (this._ac.state === 'suspended' || this._ac.state === 'interrupted') { try { this._ac.resume(); } catch (x) {} }", "");
+patch("account sound control", "  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->", `<details data-signup-account="true" onKeyDown="{{ accountKey }}" style="position:fixed;top:8px;right:12px;z-index:1000;font-family:var(--m);font-size:12px;color:#17140F;background:#F8F5ED;border:1px solid #DDD5C6;border-radius:12px;box-shadow:0 4px 12px #17140f0a;">
+    <summary tabindex="0" style="min-height:44px;min-width:44px;box-sizing:border-box;padding:14px;cursor:pointer;">Account</summary>
+    <button type="button" tabindex="0" aria-pressed="{{ soundOn }}" onClick="{{ onSound }}" style="min-height:44px;min-width:120px;margin:0 8px 8px;border:1px solid #DDD5C6;border-radius:8px;background:#F8F5ED;color:#17140F;font:inherit;cursor:pointer;">{{ soundLabel }}</button>
+  </details>
+  <!-- ===================== THE DESK, FIRST LOOK (screen 25) ===================== -->`);
 
 /* ---- accessibility (axe, build doc §8): names, language, tap targets ---- */
 patch("language", "<html><head>", '<html lang="en"><head>');
