@@ -16,7 +16,7 @@
    wrong guess is rate-limited hard, so it cannot be walked. Only an
    application we have actually invited will open.
    ============================================================ */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
@@ -35,6 +35,14 @@ import {
 } from "../onboarding/flow.js";
 import { closeApplication, freeSlug, provisionDesk, specFromAnswers } from "../onboarding/provision.js";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
+import { clientIp } from "../auth/client-ip.js";
+import { normalizeCdIdInput } from "../enquiries/cd-id.js";
+import { createIdDoor, resendBody, type IdDoor } from "../onboarding/cd-id-door.js";
+import { registerCredentialRoutes } from "./signup-credential.js";
+import { ownerDetails, registerSignupEmailRoutes } from "./signup-email.js";
+import { registerSignupDeskRoutes, enrolledGuard } from "./signup-desk.js";
+import { enrolmentFor } from "../onboarding/email-code.js";
+import { loadAccount } from "../onboarding/signup-account.js";
 import {
   MAX_CODE_ATTEMPTS, issueCode as issueVerificationCode, loadOrCreateOnboarding,
   setVerifyState, verifyStateOf, type VerifyState,
@@ -182,7 +190,35 @@ function forgiveMisses(ip: string): void {
   misses.delete(ip);
 }
 
+/* Sign-up v2.1's front door (onboarding/cd-id-door.ts). Module-level so a
+   test can reset its counters between cases. */
+let idDoor: IdDoor | undefined;
+export const resetIdDoor = (): void => idDoor?.reset();
+
+const signUpUrl = (): string =>
+  `${(process.env.PUBLIC_ORIGIN ?? "https://www.currencydeskos.com").replace(/\/+$/, "")}/onboarding`;
+
 export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): void {
+  const door = (idDoor = createIdDoor({ db }));
+  registerCredentialRoutes(app, db, door);
+  registerSignupEmailRoutes(app, db, door);
+  registerSignupDeskRoutes(app, db, door);
+
+  const enrolledForPlaces = enrolledGuard(db, door);
+  async function placesApplicant(req: FastifyRequest<{ Params: { ref: string } }>, reply: FastifyReply) {
+    if (normalizeCdIdInput(req.params.ref) && !(await referenceExists(req.params.ref))) return (await enrolledForPlaces(req, reply))?.row;
+    return gateFor(req.params.ref, req.ip, reply);
+  }
+
+  /* "Can't find your ID? Send it again." Always 202, whatever the email,
+     before any lookup happens (SIGNUP-LOGIC §2.1). */
+  app.post("/api/onboarding/resend-id", async (req, reply) => {
+    const parsed = resendBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: "Type the email you applied with." });
+    void door.resend(parsed.data.email, clientIp(req), signUpUrl());
+    return reply.code(202).send({ ok: true });
+  });
+
   /* Only an invited application opens. An application still being read, or
      one we turned down, is not a door — and the answer is the same either
      way so the code cannot be used to find out which. */
@@ -222,10 +258,15 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
     return undefined;
   }
 
+  async function referenceExists(ref: string): Promise<boolean> {
+    const rows = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
+    return rows.length > 0;
+  }
+
   async function find(ref: string, ip?: string) {
     const rows = await db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, normalizeRef(ref))).limit(1);
     const row = rows[0];
-    if (!row || row.kind !== "early_access") return undefined;
+    if (!row || row.kind !== "early_access" || row.cdId) return undefined;
     if (row.status !== "invited" && row.status !== "accepted") return undefined;
     /* Forgiven HERE rather than at eleven call sites, so a route added
        later cannot forget it and reintroduce the lockout. */
@@ -366,6 +407,23 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
      surfaces slowly stopped agreeing about what a desk had. Rows written
      before that are still read below, once, and then written back flat. */
   app.get<{ Params: { ref: string } }>("/api/onboarding/:ref/state", async (req, reply) => {
+    /* A CurrencyDesk ID (10 characters once compacted) is sign-up v2.1:
+       the shop's name and nothing else. A setup reference (8) is the
+       older page below, unchanged. A hand-made reference can share the
+       shape (the walkthrough's CD-WALKTHRU compacts to 10), so a reference
+       that exists always means the older page. */
+    if (normalizeCdIdInput(req.params.ref) && !(await referenceExists(req.params.ref))) {
+      const answer = await door.state(req.params.ref, clientIp(req));
+      if (answer.status !== 200) return reply.code(answer.status).send(answer.body);
+      /* With this reservation's enrolment session (the email code has
+         passed), the owner's own details and where they stopped. Without
+         it, the shop's name and nothing else. */
+      const row = await door.findByCdId(normalizeCdIdInput(req.params.ref)!);
+      const enrolled = row ? await enrolmentFor(db, req, reply, row.id) : null;
+      if (!row || !enrolled) return answer.body;
+      const account = await loadAccount(db, row.id);
+      return { ...answer.body, signup: account.state, you: ownerDetails(row), lastStep: account.lastStep };
+    }
     const a = await gateFor(req.params.ref, req.ip, reply);
     if (!a) return;
     const row = await loadOrCreate(a.id);
@@ -464,7 +522,7 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
   app.get<{ Params: { ref: string }; Querystring: { q?: string; country?: string; s?: string } }>(
     "/api/onboarding/:ref/places/suggest",
     async (req, reply) => {
-      const a = await gateFor(req.params.ref, req.ip, reply);
+      const a = await placesApplicant(req, reply);
       if (!a) return;
       if (!placesEnabled()) return { enabled: false, suggestions: [] };
       /* A busy typist is one person; a script is not. Generous enough that
@@ -472,16 +530,17 @@ export function registerPublicOnboardingRoutes(app: FastifyInstance, db: Db): vo
       if (!allow("places:" + a.reference, 400)) return { enabled: true, suggestions: [] };
       const q = String(req.query.q ?? "").slice(0, 200);
       const session = String(req.query.s ?? "").slice(0, 64);
-      return { enabled: true, suggestions: await suggest(q, req.query.country, session) };
+      return { enabled: true, suggestions: await suggest(q, a.cdId ? (typeof a.details?.jurisdiction === "string" ? a.details.jurisdiction : undefined) : req.query.country, session) };
     },
   );
 
   app.get<{ Params: { ref: string }; Querystring: { id?: string; s?: string } }>(
     "/api/onboarding/:ref/places/details",
     async (req, reply) => {
-      const a = await gateFor(req.params.ref, req.ip, reply);
+      const a = await placesApplicant(req, reply);
       if (!a) return;
-      const id = String(req.query.id ?? "");
+      if (!allow("places:" + a.reference, 400)) return reply.code(429).send({ error: "slow_down" });
+      const id = String(req.query.id ?? "").slice(0, 512);
       if (!id) return reply.code(400).send({ error: "invalid_request" });
       const address = await details(id, String(req.query.s ?? "").slice(0, 64));
       if (!address) return reply.code(502).send({ error: "lookup_failed", detail: "We couldn't read that address — type it in instead." });

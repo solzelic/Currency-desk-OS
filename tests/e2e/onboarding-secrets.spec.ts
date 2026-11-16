@@ -55,10 +55,14 @@ const arrived = (page: Page) => expect(page.locator('[data-focus="true"]').first
 /* Opens the page on screen `i` with `data` already saved, the way a
    person who reloads mid sign-up arrives. */
 async function openAt(page: Page, i: number, data: Record<string, unknown>) {
-  await page.goto("/onboarding");
+  /* The bare /onboarding is sign-up v2.1 now (it keeps nothing in the browser;
+     tests/e2e/signup-v21.spec.ts). The older page is still what an invitation
+     with a setup reference opens, so its #431 guarantees are checked on it,
+     through a path that is neither a reference nor a CurrencyDesk ID. */
+  await page.goto("/onboarding/older-setup");
   await page.evaluate(([key, value]) => localStorage.setItem(key, value), [KEY, JSON.stringify({ i, data })] as const);
   await page.reload();
-  await arrived(page);
+  if (i === 5) await arrived(page);
 }
 
 const SECRET_FIELDS = ["ownerPass", "code", "cardNum", "cardExp", "cardCvc", "cardName", "backup"];
@@ -126,6 +130,9 @@ test("after launch the saved copy is gone", async ({ page }) => {
   await openAt(page, 5, ANSWERS);
   await page.getByPlaceholder("At least 6 characters").fill("harbour-pass-2026");
 
+  await expect(page.getByPlaceholder("At least 6 characters")).toHaveValue("harbour-pass-2026");
+  expect((await stored(page))?.data.ownerName).toBe(ANSWERS.ownerName);
+
   /* Walk forward with the primary button until the verify screen. */
   const next = page.locator('button[style*="--cd-cta"]').first();
   const codeBox = page.getByPlaceholder("000000");
@@ -192,6 +199,7 @@ async function onNetwork(page: Page, seen: { put: SaveBody[]; launch: SaveBody[]
 }
 
 async function typePasswordAndCard(page: Page) {
+  await expect(page.locator('[data-focus="true"]').first()).toBeFocused();
   await page.getByPlaceholder("At least 6 characters").fill(PASS);
   const next = page.locator('button[style*="--cd-cta"]').first();
   const codeBox = page.getByPlaceholder("000000");

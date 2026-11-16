@@ -260,18 +260,25 @@ export interface Provisioned {
    currency other than the book. A euro figure must not be stored as a
    dinar override: 2,500 would then mean 2,500 dinars, not 2,500 euro.
    The desk follows the pack, and a tighter dinar line is set later. */
+function missingOptionalTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && error.code === "42P01") return true;
+  return "cause" in error && error.cause !== error ? missingOptionalTable(error.cause) : false;
+}
+
 async function fxLineIsForeign(db: Db, packId: string, home: string): Promise<boolean> {
   try {
-    const found = await db.execute(
+    const found = await db.transaction((tx) => tx.execute(
       sql`SELECT currency FROM jurisdiction_id_thresholds WHERE pack_id = ${packId} AND deal_kind = 'fx'`,
-    );
+    ));
     const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     const currency = String((rows[0] as { currency?: unknown } | undefined)?.currency ?? "")
       .trim()
       .toUpperCase();
     if (!currency) return false;
     return currency !== home.trim().toUpperCase();
-  } catch {
+  } catch (error) {
+    if (!missingOptionalTable(error)) throw error;
     return false;
   }
 }
@@ -287,13 +294,14 @@ async function idThresholdFromSetup(
   if (!Number.isFinite(chosen) || chosen <= 0) return null;
   let mandate: number | null = null;
   try {
-    const found = await db.execute(
+    const found = await db.transaction((tx) => tx.execute(
       sql`SELECT id_threshold FROM jurisdiction_packs WHERE pack_id = ${packId}`,
-    );
+    ));
     const rows = (Array.isArray(found) ? found : (found as { rows?: unknown[] }).rows) ?? [];
     const value = Number((rows[0] as { id_threshold?: unknown } | undefined)?.id_threshold);
     mandate = Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
+  } catch (error) {
+    if (!missingOptionalTable(error)) throw error;
     return null;
   }
   if (mandate === null || chosen >= mandate) return null;
@@ -308,6 +316,7 @@ export async function provisionDesk(
   spec: DeskSpec,
   passwordHash: string,
   via: string,
+  options: { requireNewTenant?: boolean; requireMarketRates?: boolean } = {},
 ): Promise<Provisioned> {
   const slug = spec.slug;
   const tenantId = "tnt-" + slug;
@@ -362,7 +371,7 @@ export async function provisionDesk(
   }
   const foreignLine = pack ? await fxLineIsForeign(db, pack.packId, bookHome) : false;
   if (pack && !foreignLine && typedIdentificationLine(setup.idThreshold) == null) {
-    const line = await packIdThreshold(db, pack.packId, SETUP_ID_DEAL);
+    const line = await packIdThreshold({ execute: (query) => db.transaction((tx) => tx.execute(query)) }, pack.packId, SETUP_ID_DEAL);
     /* A positive amount fills the blank box. Zero means every deal on
        the pack's own table, and it is not written back into this field,
        because zero here means the box was left empty. */
@@ -370,10 +379,11 @@ export async function provisionDesk(
       setup.idThreshold = Number(line.amount.toDecimalPlaces(2).toFixed(2));
     }
   }
-  await db.insert(schema.tenants).values({
+  const insertedTenant = await db.insert(schema.tenants).values({
     id: tenantId, name: spec.businessName, plan: spec.plan, siteSlug: slug, setup,
     isTestShop: spec.isTestShop === true,
-  }).onConflictDoNothing();
+  }).onConflictDoNothing().returning();
+  if (options.requireNewTenant && !insertedTenant.length) throw new Error("signup_tenant_collision");
   /* Rates v2.5: every shop has a rate page from the day it opens, at its
      own address and private until the owner turns it on. */
   await ensureRatePage(db, tenantId);
@@ -438,6 +448,7 @@ export async function provisionDesk(
     homeCurrency: bookHome,
     // the margin they set, shown back to them, and previewed on screen 12
     spreadAll: setup.spreadAll,
+    requireMarketRates: options.requireMarketRates,
   });
   await seedOpeningFloat(db, {
     tenantId, legalEntityId, branchId, workspaceId, tillId: "till-01",
@@ -487,7 +498,7 @@ export async function provisionDesk(
   await audit(db, {
     tenantId, legalEntityId, branchId, actorId: ownerId,
     action: "tenant.created",
-    detail: { via, slug, email: spec.email, plan: spec.plan, team: staffCreated },
+    detail: { via, slug, ...(via === "signup-v2.1" ? {} : { email: spec.email }), plan: spec.plan, team: staffCreated },
   });
 
   return { tenantId, legalEntityId, branchId, ownerId, slug, staffCreated };

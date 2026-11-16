@@ -103,19 +103,18 @@ export const migrations: readonly Migration[] = [
      are held by open PRs on main (#673 to #675). */
   ["072_enquiry_v2_1", "src/db/migrations/072_enquiry_v2_1.sql"],
   ["073_enquiry_sam", "src/db/migrations/073_enquiry_sam.sql"],
-  /* 074 ties an identity check to the client file. 073 is on staging. */
   ["074_idv_inquiry_client", "src/db/migrations/074_idv_inquiry_client.sql"],
-  /* 075 stores official-list snapshots, entries, the ops alert flag, and
-     the placeholder score threshold. 074 is the Persona inquiry client
-     on PR 722, so this file follows it. */
+  /* Keep the published full IDs: signup and sanctions independently reserved
+     075–077. The runner keys/checksums and sorts the full ID, not its prefix. */
   ["075_sanctions_lists", "src/db/migrations/075_sanctions_lists.sql"],
-  /* 076 is the screen result, the review queue, and the PEP answer. */
+  ["075_signup_accounts", "src/db/migrations/075_signup_accounts.sql"],
   ["076_sanctions_reviews", "src/db/migrations/076_sanctions_reviews.sql"],
-  /* 077 names the shop's compliance officer, keeps review decisions for
-     5 years, and refuses clearing a confirmed match. */
+  ["076_signup_email_code", "src/db/migrations/076_signup_email_code.sql"],
   ["077_sanctions_review_rules", "src/db/migrations/077_sanctions_review_rules.sql"],
-  /* 081 is the ID check record, the consent row, and the face crop.
-     078 to 080 are claimed by open sign-up PRs, so this file is 081. */
+  ["077_signup_pin", "src/db/migrations/077_signup_pin.sql"],
+  ["078_signup_open", "src/db/migrations/078_signup_open.sql"],
+  ["079_signup_every_deal_id", "src/db/migrations/079_signup_every_deal_id.sql"],
+  ["080_signup_agreement_history", "src/db/migrations/080_signup_agreement_history.sql"],
   ["081_idv_check_records", "src/db/migrations/081_idv_check_records.sql"],
 ] as const;
 

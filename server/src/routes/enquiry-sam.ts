@@ -20,7 +20,9 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, type Db } from "../db/index.js";
 import { clientIp } from "../auth/client-ip.js";
-import { allowBooking, clampToCallingHours, zoneFor } from "../enquiries/sam.js";
+import { allowBooking, clampToCallingHours, zoneFor, SAM_CONSENT_TEXT } from "../enquiries/sam.js";
+
+import { withSignupAccount } from "../onboarding/signup-account.js";
 
 const REFERENCE = /^CD-[2-9A-HJ-NP-Z]{6}$/;
 const AHEAD_MS = 14 * 24 * 3600 * 1000;
@@ -39,26 +41,32 @@ export function registerEnquirySamRoutes(app: FastifyInstance, db: Db): void {
       return reply.code(404).send({ error: "not_found" });
     }
 
-    /* consent for the number they gave, and no stop since */
-    const details = (row.details ?? {}) as Record<string, unknown>;
-    const [latest] = await db.select().from(schema.enquiryCallConsents)
-      .where(eq(schema.enquiryCallConsents.enquiryId, row.id))
-      .orderBy(desc(schema.enquiryCallConsents.at)).limit(1);
-    if (!latest || latest.event !== "consent" || latest.phone !== String(details.phone ?? "")) {
-      return reply.code(409).send({ error: "no_consent", detail: "SAM has no permission to call this number." });
-    }
+    // Share the signup opt-out/activation lock. Re-read permission only after
+    // acquiring it so a queued booking cannot restore a cancelled schedule.
+    return withSignupAccount(db, row.id, async (db) => {
+      const [row] = await db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, reference)).limit(1);
+      if (!row || row.status !== "invited" || !row.cdId || row.waitlistReason) return reply.code(404).send({ error: "not_found" });
+      /* consent for the number they gave, and no stop since */
+      const details = (row.details ?? {}) as Record<string, unknown>;
+      const [latest] = await db.select().from(schema.enquiryCallConsents)
+        .where(eq(schema.enquiryCallConsents.enquiryId, row.id))
+        .orderBy(desc(schema.enquiryCallConsents.at)).limit(1);
+      if (row.doNotContact || !latest || latest.event !== "consent" || latest.phone !== String(details.phone ?? "") || latest.consentText !== SAM_CONSENT_TEXT) {
+        return reply.code(409).send({ error: "no_consent", detail: "SAM has no permission to call this number." });
+      }
 
-    const now = Date.now();
-    const asked = parsed.data.at ? new Date(parsed.data.at) : new Date(now);
-    if (asked.getTime() > now + AHEAD_MS) return reply.code(400).send({ error: "invalid_time", detail: "Pick a time in the next two weeks." });
-    const [browser] = await db.select({ timezone: schema.enquiryContactConsents.timezone }).from(schema.enquiryContactConsents)
-      .where(eq(schema.enquiryContactConsents.enquiryId, row.id))
-      .orderBy(desc(schema.enquiryContactConsents.consentedAt)).limit(1);
-    const zone = zoneFor(browser?.timezone, typeof details.province === "string" ? details.province : null);
-    /* never in the past: a time already gone is "now" */
-    const at = clampToCallingHours(new Date(Math.max(asked.getTime(), now)), zone);
+      const now = Date.now();
+      const asked = parsed.data.at ? new Date(parsed.data.at) : new Date(now);
+      if (asked.getTime() > now + AHEAD_MS) return reply.code(400).send({ error: "invalid_time", detail: "Pick a time in the next two weeks." });
+      const [browser] = await db.select({ timezone: schema.enquiryContactConsents.timezone }).from(schema.enquiryContactConsents)
+        .where(eq(schema.enquiryContactConsents.enquiryId, row.id))
+        .orderBy(desc(schema.enquiryContactConsents.consentedAt)).limit(1);
+      const zone = zoneFor(browser?.timezone, typeof details.province === "string" ? details.province : null);
+      /* never in the past: a time already gone is "now" */
+      const at = clampToCallingHours(new Date(Math.max(asked.getTime(), now)), zone);
 
-    await db.update(schema.enquiries).set({ samCallAt: at, samCallZone: zone }).where(eq(schema.enquiries.id, row.id));
-    return { ok: true, at: at.toISOString(), zone };
+      await db.update(schema.enquiries).set({ samCallAt: at, samCallZone: zone }).where(eq(schema.enquiries.id, row.id));
+      return { ok: true, at: at.toISOString(), zone };
+    });
   });
 }

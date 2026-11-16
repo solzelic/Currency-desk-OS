@@ -2,13 +2,11 @@
    proves the PIN refusals stay inside the dialog, and asks the ledger
    who posted the deal. */
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
-import type { Browser, Page } from "@playwright/test";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import type { Browser, Page, TestInfo } from "@playwright/test";
+import { screenshotPath } from "./screenshot-path";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL. The embedded database has no ledger");
 
-const SHOTS = "/opt/cursor/artifacts/pr163";
-const STORE = "/cursor/stores/self/pr163";
 const NO_PIN = "A. Singh has no PIN yet. They need to choose their own PIN before switching in.";
 const WEAK = "0000 is too easy to guess. Pick a different PIN.";
 const LOCKED = "Too many wrong tries. This clears on its own in 5 minutes.";
@@ -29,14 +27,8 @@ async function openSwitchList(page: Page) {
   return menu;
 }
 
-async function shot(page: Page, name: string) {
-  mkdirSync(SHOTS, { recursive: true });
-  const path = `${SHOTS}/${name}`;
-  await page.screenshot({ path });
-  if (existsSync("/cursor/stores/self")) {
-    mkdirSync(STORE, { recursive: true });
-    copyFileSync(path, `${STORE}/${name}`);
-  }
+async function shot(page: Page, name: string, testInfo: TestInfo) {
+  await page.screenshot({ path: screenshotPath(testInfo, name) });
 }
 
 async function typePin(page: Page, digits: string) {
@@ -68,8 +60,7 @@ async function openIqbalPin(page: Page) {
   await expect(page.getByText("Switch account", { exact: true })).toBeVisible();
 }
 
-test("switching from the avatar menu posts the deal as the next person", async ({ page, request, browser }) => {
-  mkdirSync(SHOTS, { recursive: true });
+test("switching from the avatar menu posts the deal as the next person", async ({ page, request, browser }, testInfo) => {
   const login = await request.post("/api/auth/login", {
     data: { staffId: "j.masri", password: "yorkville", tenantId: "tnt-yorkfx" },
   });
@@ -86,7 +77,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
   await signInAtDesk(page, "m.costa");
 
   const menu = await openSwitchList(page);
-  await shot(page, "menu-1280.png");
+  await shot(page, "menu-1280.png", testInfo);
   await menu.getByRole("button", { name: /A\. Singh/ }).click();
   await expect(page.getByText("Switch account", { exact: true })).toBeVisible();
   const cancel = page.getByRole("button", { name: "Cancel", exact: true });
@@ -105,14 +96,14 @@ test("switching from the avatar menu posts the deal as the next person", async (
   await openSinghPin(page);
   await typePin(page, "1357");
   await expect(page.getByText(NO_PIN)).toBeVisible();
-  await shot(page, "refusal-no-pin-390.png");
+  await shot(page, "refusal-no-pin-390.png", testInfo);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   await chooseOwnPin(browser, "a.singh", OWN_PIN);
   await openSinghPin(page);
   await typePin(page, "0000");
   await expect(page.getByText(WEAK)).toBeVisible();
-  await shot(page, "refusal-0000-390.png");
+  await shot(page, "refusal-0000-390.png", testInfo);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -127,7 +118,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
   await page.waitForTimeout(1000);
   await expect(page.locator(".cdos-tour")).toHaveCount(0);
   await expect(page.getByText(/First run/)).toHaveCount(0);
-  await shot(page, "desk-1280.png");
+  await shot(page, "desk-1280.png", testInfo);
 
   const booked = await page.evaluate(async (ws) => {
     const headers = { "content-type": "application/json", "x-workspace-id": ws };
@@ -187,7 +178,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
   await expect(page.getByText(LOCKED)).toBeVisible();
   await expect(page.getByRole("button", { name: "OK", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
-  await shot(page, "refusal-lockout-390.png");
+  await shot(page, "refusal-lockout-390.png", testInfo);
   await page.getByRole("button", { name: "OK", exact: true }).click();
 
   const issued = await request.post("/api/staff/s.iqbal/pin");
@@ -198,7 +189,7 @@ test("switching from the avatar menu posts the deal as the next person", async (
   const must = page.getByText(MUST_CHANGE);
   await expect(must).toBeVisible();
   expect(await must.evaluate((el) => el.textContent || "")).toContain("S.\u00A0Iqbal");
-  await shot(page, "must-change-360.png");
+  await shot(page, "must-change-360.png", testInfo);
   await page.setViewportSize({ width: 430, height: 780 });
-  await shot(page, "must-change-430.png");
+  await shot(page, "must-change-430.png", testInfo);
 });
