@@ -1,3 +1,14 @@
+## Signup staging payment refusal — 16 November 2026
+
+If a synthetic staging reservation loses a fixture gate after verification,
+`/payment` and `/plan` now return `503 staging_unavailable` before constructing
+a Stripe client. A configured processor must never be the fallback for an
+`@staging.invalid` address. The regression closes the database marker after
+real credential/code/PIN/signature steps with a configured processor spy;
+it failed before the guard and passes with no Stripe call or billing identifiers.
+The shared staging-owner helper and CD221-owned authentication files are unchanged.
+This is a staging walkthrough safeguard, not release or CTO acceptance.
+
 ## Signup v2.1 staging walkthrough — 16 November 2026
 
 A synthetic shop from the staging door can now walk the real v2.1 page end to end on

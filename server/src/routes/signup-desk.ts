@@ -29,6 +29,7 @@ import { ownerDetails } from "./signup-email.js";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { acceptServiceAgreement, SERVICE_AGREEMENT_SOURCE_HASH, confirmDesk, declarationName, openStagingDesk, prepareStagingPlan, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
 import { stagingSignupFixture } from "../onboarding/signup-staging.js";
+import { STAGING_OWNER_DOMAIN } from "./staging-fresh-shop.js";
 import { stripeBillingConfig, signupStripeClient } from "../billing/stripe.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
@@ -203,6 +204,11 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
         req.log.warn({ reason: err instanceof Error && /^signup_[a-z_]+$/.test(err.message) ? err.message : "staging_plan_invalid", id: idTail(r.cdId) }, "signup staging plan refused");
         return reply.code(409).send({ error: "not_confirmed", detail: "Confirm your desk again; something changed since you signed it." });
       }
+    }
+    // Losing a fixture gate must not turn a synthetic shop into a Stripe customer.
+    if (r.row.email.toLowerCase().endsWith(STAGING_OWNER_DOMAIN)) {
+      door.logRefusal({ reason: "staging_payment_gate_closed", id: idTail(r.cdId), connection: r.connection });
+      return reply.code(503).send({ error: "staging_unavailable", detail: "This staging test shop is not enabled here. Nothing was charged." });
     }
     const client = stripe();
     if (!client) return reply.code(503).send({ error: "payment_unavailable", detail: "Card payments aren't switched on here yet. Nothing was charged." });

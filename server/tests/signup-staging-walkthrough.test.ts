@@ -22,6 +22,7 @@ import { loadAccount } from "../src/onboarding/signup-account.js";
 import { SERVICE_AGREEMENT_SOURCE_HASH } from "../src/onboarding/signup-open.js";
 import { databaseMarkedStaging, stagingFixtureOwner, stagingFixtureRow } from "../src/onboarding/signup-staging.js";
 import { hashCode } from "../src/email.js";
+import * as billing from "../src/billing/stripe.js";
 
 const HOST = "staging.currencydeskos.com";
 const PASSWORD = "four plain words here";
@@ -299,6 +300,35 @@ describe("every gate closes the helper on its own", () => {
     expect(resend.json().stagingCode).toBeUndefined();
     expect((await call(stranger, "POST", `${r.base}/staging-open`, AGREE)).statusCode).toBe(401);
     expect((await call(stranger, "POST", `${r.base}/payment`, PLAN)).statusCode).toBe(401);
+  });
+
+  it("a closed fixture gate never falls back to a configured card processor", async () => {
+    const r = await reservation("fixture");
+    const jar: Jar = {};
+    await signed(jar, r.base);
+    const config = vi.spyOn(billing, "stripeBillingConfig").mockReturnValue({
+      secretKey: "unused-test-key", prices: {
+        basic: { monthly: undefined, annual: undefined },
+        pro: { monthly: undefined, annual: undefined },
+        premium: { monthly: undefined, annual: undefined },
+      },
+    });
+    const factory = vi.spyOn(billing, "signupStripeClient").mockImplementation(() => { throw new Error("Synthetic shop reached Stripe"); });
+    try {
+      await mark([]);
+      for (const path of ["payment", "plan"]) {
+        const res = await call(jar, "POST", `${r.base}/${path}`, path === "plan" ? { ...PLAN, agreed: true } : PLAN);
+        expect(res.statusCode, res.body).toBe(503);
+        expect(res.json().error).toBe("staging_unavailable");
+      }
+      expect(factory).not.toHaveBeenCalled();
+      const account = await loadAccount(handle.db, r.id);
+      expect(account.state).toBe("verified");
+      expect(account.stripeCustomerId).toBeNull();
+      expect(account.setupIntentId).toBeNull();
+    } finally {
+      factory.mockRestore(); config.mockRestore();
+    }
   });
 
   it("a stale signature, an invalid plan, or a gate that closes before Open creates nothing", async () => {
