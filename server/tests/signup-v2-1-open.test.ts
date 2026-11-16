@@ -24,6 +24,7 @@ import { loadAccount } from "../src/onboarding/signup-account.js";
 import { answersHash, declarationName, monthlyFor, openFromSetupIntent, type SignupStripe } from "../src/onboarding/signup-open.js";
 import { resolveSession } from "../src/auth/sessions.js";
 import { verifyPassword } from "../src/auth/password.js";
+import { moveTo } from "../src/onboarding/pipeline.js";
 
 const WEBHOOK_SECRET = "whsec_signup_test_only";
 let handle: DbHandle;
@@ -264,4 +265,80 @@ describe("activation consistency regressions", () => {
     expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
   });
 
+});
+
+/* Support's decision is the gate, not the page. A declined or held owner
+   whose browser already holds the SetupIntent's client secret can still
+   confirm it with Stripe.js; Stripe's signed yes must not open the desk. */
+describe("only an invited application opens its desk", () => {
+  const enquiry = async (id: string) => (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, id)))[0]!;
+  const succeeded = (intent: (typeof intents)[number]) => ({ id: intent.id, object: "setup_intent", customer: intent.customer, status: "succeeded", payment_method: "pm_test", metadata: intent.metadata });
+  async function paidFor() {
+    const r = await readyToPay();
+    expect((await call("POST", `${r.base}/plan`, PLAN)).statusCode).toBe(200);
+    return { ...r, intent: intents.at(-1)! };
+  }
+
+  it.each(["declined", "hold"] as const)("a card saved after the application is %s opens nothing, and Stripe is not asked to retry", async (to) => {
+    const r = await paidFor();
+    const before = await loadAccount(handle.db, r.id);
+    expect((await moveTo(handle.db, await enquiry(r.id), to, "support")).ok).toBe(true);
+    /* the first delivery and a later one are both acknowledged */
+    for (let i = 0; i < 2; i++) expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    expect((await handle.db.select().from(schema.stripeEvents).where(eq(schema.stripeEvents.objectId, r.intent.id))).map((e) => [!!e.processedAt, e.tenantId])).toEqual([[true, null], [true, null]]);
+    expect(await openFromSetupIntent(handle.db, { id: r.intent.id, metadata: r.intent.metadata, customer: r.intent.customer, status: "succeeded", paymentMethod: "pm_test" }))
+      .toEqual({ opened: false, reason: "not_invited" });
+    /* the account is as it was, the decision stands, and no desk exists */
+    expect(await loadAccount(handle.db, r.id)).toEqual(before);
+    expect(await enquiry(r.id)).toMatchObject({ status: to, tenantId: null, decidedBy: "support" });
+    expect((await handle.db.select().from(schema.onboarding).where(eq(schema.onboarding.enquiryId, r.id)))[0]!.tenantId).toBeNull();
+    expect(await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.cdId, r.cdId))).toHaveLength(0);
+    const refused = (await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.action, "signup.open_refused")))
+      .filter((e) => (e.detail as { enquiryId?: string }).enquiryId === r.id);
+    expect(refused.map((e) => e.detail)).toEqual(Array(3).fill({ enquiryId: r.id, reason: "not_invited", status: to }));
+    /* the browser that paid gets no desk session */
+    expect((await call("POST", `${r.base}/open`)).statusCode).toBe(404);
+    expect(jar.cdos_session).toBeUndefined();
+  });
+
+  it("a held application invited again opens on Stripe's next word, as the account was left untouched", async () => {
+    const r = await paidFor();
+    expect((await moveTo(handle.db, await enquiry(r.id), "hold", "support")).ok).toBe(true);
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    expect((await moveTo(handle.db, await enquiry(r.id), "invited", "support", { quiet: true })).ok).toBe(true);
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    expect(await enquiry(r.id)).toMatchObject({ status: "accepted", decidedBy: "signup-v2.1" });
+    expect((await call("POST", `${r.base}/open`)).statusCode).toBe(200);
+  });
+
+  it.each([["without its ID", { cdId: null }], ["that is not an early access application", { kind: "signup" as const }]])("an application %s opens nothing", async (_label, change) => {
+    const r = await paidFor();
+    await handle.db.update(schema.enquiries).set(change).where(eq(schema.enquiries.id, r.id));
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    expect((await loadAccount(handle.db, r.id)).state).toBe("verified");
+    expect((await enquiry(r.id)).status).toBe("invited");
+  });
+
+  it("the desk session needs the application this activation accepted", async () => {
+    const r = await paidFor();
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    const opened = await enquiry(r.id);
+    expect(opened.status).toBe("accepted");
+    /* a funnel record that does not say this desk opened gives no session */
+    await handle.db.update(schema.enquiries).set({ status: "invited" }).where(eq(schema.enquiries.id, r.id));
+    expect((await call("POST", `${r.base}/open`)).statusCode).toBe(202);
+    await handle.db.update(schema.enquiries).set({ status: "accepted", tenantId: "tnt-someone-else" }).where(eq(schema.enquiries.id, r.id));
+    expect((await call("POST", `${r.base}/open`)).statusCode).toBe(202);
+    expect(jar.cdos_session).toBeUndefined();
+    await handle.db.update(schema.enquiries).set({ tenantId: opened.tenantId }).where(eq(schema.enquiries.id, r.id));
+    expect((await call("POST", `${r.base}/open`)).statusCode).toBe(200);
+  });
+
+  it("a decision taken on a stale read cannot overwrite a desk that opened meanwhile", async () => {
+    const r = await paidFor();
+    const seen = await enquiry(r.id);
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    expect(await moveTo(handle.db, seen, "declined", "support")).toMatchObject({ ok: false, error: "changed" });
+    expect(await enquiry(r.id)).toMatchObject({ status: "accepted", decidedBy: "signup-v2.1" });
+  });
 });
