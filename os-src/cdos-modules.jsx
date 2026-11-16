@@ -26,6 +26,9 @@
      read arrives, the desk says it is still checking. Typed papers
      on the contact are not a pass. */
   function idFileKyc(rec) {
+    /* A failed read is not on file, even when an older pass is still
+       on the contact. The chip must not treat that pass as current. */
+    if (rec && rec.idCheckError) return "missing ID";
     const standing = rec && rec.idStanding;
     if (!standing) return "Checking ID";
     if (standing.onFile) return "ok";

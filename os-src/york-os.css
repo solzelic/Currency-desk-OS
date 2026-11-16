@@ -3543,6 +3543,19 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 /* While an ID check sheet is open, the deal's post bar stays off
    the screen at every width. The sheet also covers it. */
 body[data-id-check="open"] .cd-tx-actions { display: none !important; }
+/* The check sheet dims the deal. It does not restyle the type chips.
+   An unselected chip stays the panel with an ink label. */
+body[data-id-check="open"] .cd-tx-types button {
+  transition: none !important;
+}
+body[data-id-check="open"] .cd-tx-types button:not(.is-on) {
+  background: var(--cd-panel, #fff) !important;
+  background-image: none !important;
+  color: var(--cd-ink, #0a0a0a) !important;
+}
+body[data-id-check="open"] .cd-tx-types button:not(.is-on) span {
+  color: var(--cd-ink, #0a0a0a) !important;
+}
 /* Where they are names the method and the date. The line wraps at
    every width. It is not one clipped row. */
 .client-file { min-width: 0; max-width: 100%; }

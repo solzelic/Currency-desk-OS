@@ -538,7 +538,7 @@
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec) {
-    if (rec && rec.idCheckError) return [rec.idCheckError, CD.flag, CD.flagSoft];
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
     if (state === 'ok') return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', CD.green, CD.greenSoft];
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
@@ -1090,9 +1090,21 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
     const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const article = reportLine.code === 'LCTR' || /^[AEIOU]/i.test(reportLine.code || '') ? 'an' : 'a';
     const rule = stated
-      ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+      ? `This desk asks for identification at ${idLine.label} and ${article} ${reportLine.code} at ${reportLine.label}.`
       : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const fail = rec && rec.idCheckError;
+    if (fail) {
+      return (<div data-tour="identification" data-testid="client-where" className="client-where mb-3 p-3.5 min-w-0 max-w-full" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-start gap-2 min-w-0 max-w-full">
+          <Pill text="Not identified" c={CD.mute} bg={CD.lineSoft} />
+          <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{rec.idCheckError}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
     if (standing) {
       const on = !!standing.onFile;
       const tone = on ? CD.green : CD.flag;
@@ -1106,11 +1118,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
       </div>);
     }
-    const fail = rec && rec.idCheckError;
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
-    const title = fail ? 'Not identified' : state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
-    const line = fail ? rec.idCheckError : (rec && rec.idStanding && rec.idStanding.line) || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
-    const on = !fail && state === 'ok';
+    const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = (rec && rec.idStanding && rec.idStanding.line) || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = state === 'ok';
     const tone = on ? CD.green : CD.flag;
     const soft = on ? CD.greenSoft : CD.flagSoft;
     return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
@@ -1243,9 +1254,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, [rec && rec.clientId]);
     const shown = readError ? { ...rec, idCheckError: readError } : rec;
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
-    const stat = readError ? readError : (standing ? standing.chip : fallbackStat);
-    const col = readError ? CD.flag : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
-    const bg = readError ? CD.flagSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
+    const failedRead = !!(readError || (rec && rec.idCheckError));
+    const stat = failedRead ? (readError || rec.idCheckError) : (standing ? standing.chip : fallbackStat);
+    const col = failedRead ? CD.mute : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
+    const bg = failedRead ? CD.lineSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);

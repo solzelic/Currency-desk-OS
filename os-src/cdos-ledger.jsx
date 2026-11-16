@@ -195,10 +195,12 @@
     const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
     const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
-    /* The chip follows the server standing only. Typed papers do not count. */
-    const idOk = kycState === 'ok';
-    const idTone = idOk ? CD.green : (kycState === 'Checking ID' ? CD.mute : CD.flag);
-    const idLabel = (readError || (rec && rec.idCheckError)) ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    /* The chip follows the server standing only. Typed papers do not count.
+       A failed read is neutral. It is not a pass, so it is not green. */
+    const unread = !!(readError || (rec && rec.idCheckError));
+    const idOk = !unread && kycState === 'ok';
+    const idTone = unread || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -225,7 +227,7 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (unread || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
         </div>
 
         {/* facts */}
@@ -532,9 +534,9 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[n]) : (!clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : 'ok'); const st = state === 'ok' ? 'ID on file' : state; const ok = st === 'ID on file'; return (
+                    {shownNames.map(n => { const person = clients[n] || {}; const failed = !!person.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : (!person.idType || !person.idNum ? 'missing ID' : 'ok'); const st = failed ? person.idCheckError : state === 'ok' ? 'ID on file' : state; const ok = !failed && st === 'ID on file'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
-                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
+                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? CD.greenSoft : CD.flagSoft, color: failed ? CD.mute : ok ? CD.green : CD.flag }}>{st}</span>
                       </button>); })}
                     {shownNames.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
                     <button onClick={startNewClient} onMouseDown={e => e.preventDefault()} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> Create new client{custQuery ? ` "${custQuery.trim()}"` : ''}</button>

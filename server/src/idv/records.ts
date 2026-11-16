@@ -786,7 +786,7 @@ export type StandingInput = {
   numberStored?: boolean;
   issuingJurisdiction?: string | null;
   issuingCountry?: string | null;
-      staffSeen?: string | null;
+  staffSeen?: string | null;
   staffName?: string | null;
   seenOn?: string | null;
   documentType?: string | null;

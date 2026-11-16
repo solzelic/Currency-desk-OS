@@ -391,6 +391,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await page.evaluate(() => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
     });
+    await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute("data-cdtheme"))).toBe("light");
     await page.getByRole("button", { name: "More options" }).click();
     await expect(page.getByRole("button", { name: "More options" })).toHaveAttribute("aria-expanded", "true");
     if (process.env.PR2B_SHOTS === "1") {
@@ -1024,6 +1025,95 @@ test("a Persona check that times out offers the in-person check", async ({ page,
   await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.");
   await page.getByTestId("id-check-error-in-person").click();
   await expect(page.getByTestId("id-check-in-person")).toBeVisible();
+});
+
+test("a passed check that cannot be read is not ID on file", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await enableChecks(request);
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  const name = `Pass Then Fail ${Date.now()}`;
+  let tillClose: { status: string; sessionId: string; balanceGeneration: string; balances: Record<string, string> } | null = null;
+  const notGreen = async (locator: ReturnType<Page["locator"]>) => {
+    const color = await locator.evaluate((el) => getComputedStyle(el).color);
+    expect(color, "read error stays off the pass green").not.toBe("rgb(31, 138, 76)");
+  };
+  try {
+    await signInAtDesk(page, "m.costa");
+    const stale = await page.evaluate(() => {
+      const read = (window as unknown as { CDOS: { idFileKyc: (rec: unknown) => string } }).CDOS.idFileKyc;
+      return read({ idStanding: { onFile: true, chip: "ID on file" }, idCheckError: "Could not read the ID check. Try again." });
+    });
+    expect(stale).toBe("missing ID");
+    const created = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, name);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const clientId = created.body.clientId as string;
+    await db.query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         verified_at, document_number_last4, number_unavailable, expiry_date, name_on_id)
+       VALUES ($1,'tnt-yorkfx','le-yorkfx-canada','br-yorkville',$2,'3','id_and_selfie','pass','m.costa',
+         now(), '4242', false, '2030-04-01', 'Pass Then Fail')`,
+      [`idc_failread_${clientId}`, clientId],
+    );
+    await page.locator('[data-app="clients"]').click();
+    const listCard = () => page.locator("div.cursor-pointer", { hasText: name }).first();
+    await expect(listCard()).toContainText("ID on file", { timeout: 20_000 });
+    await page.route(`**/api/idv/clients/${clientId}/checks`, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await expect(listCard()).toContainText("Could not read the ID check. Try again.", { timeout: 20_000 });
+    await expect(listCard()).not.toContainText("ID on file");
+    await notGreen(listCard().getByText("Could not read the ID check. Try again."));
+    await page.getByText(name, { exact: true }).click();
+    await expect(page.getByTestId("client-standing")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("client-standing")).not.toContainText("ID on file");
+    await notGreen(page.getByTestId("client-standing"));
+    await page.locator(".client-file-actions button").last().click({ force: true, timeout: 5_000 });
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    let deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    if (!(await deal.isEnabled())) {
+      await page.reload();
+      await landOnDesktop(page);
+      await page.locator('[data-app="ledger"]').click();
+      await ensureTill(page);
+      deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    }
+    tillClose = await readTillClose(page);
+    await expect(deal).toBeEnabled({ timeout: 20_000 });
+    await deal.click();
+    await expect(page.locator(".cd-tx")).toBeVisible();
+    await page.locator(".cd-tx-customer input").fill(name);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: name }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
+    await notGreen(page.getByTestId("deal-id-badge"));
+    await page.locator(".cd-tx-x").click();
+    await page.evaluate(() => { delete (window as unknown as { CDOS: { TxModal?: unknown } }).CDOS.TxModal; });
+    await page.getByRole("button", { name: /^New transaction$/i }).first().click();
+    const ledgerSheet = page.locator("div.fixed").filter({ hasText: "Transaction type" });
+    await ledgerSheet.getByPlaceholder(/Type a name/).fill(name);
+    await ledgerSheet.locator(".absolute").getByRole("button", { name }).first().click();
+    await expect(page.getByTestId("ledger-id-badge")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("ledger-id-badge")).not.toContainText("ID on file");
+    await notGreen(page.getByTestId("ledger-id-badge"));
+    await page.getByRole("button", { name: "Close ledger transaction" }).click();
+  } finally {
+    if (tillClose && tillClose.status === "open") {
+      await signInAtDesk(page, "a.singh").catch(() => {});
+      await closeHeldTill(page, tillClose);
+    }
+    await db.end();
+  }
 });
 
 test("ID on file agrees on the chip, the file, the deal, the flags, and Needs attention", async ({ page, request }) => {

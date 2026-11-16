@@ -4765,6 +4765,9 @@ if (typeof window !== "undefined") {
      read arrives, the desk says it is still checking. Typed papers
      on the contact are not a pass. */
   function idFileKyc(rec) {
+    /* A failed read is not on file, even when an older pass is still
+       on the contact. The chip must not treat that pass as current. */
+    if (rec && rec.idCheckError) return "missing ID";
     const standing = rec && rec.idStanding;
     if (!standing) return "Checking ID";
     if (standing.onFile) return "ok";
@@ -25844,7 +25847,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec) {
-    if (rec && rec.idCheckError) return [rec.idCheckError, CD.flag, CD.flagSoft];
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
     if (state === 'ok') return [rec.idStanding && rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
@@ -27481,7 +27484,44 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
     const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
-    const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const article = reportLine.code === 'LCTR' || /^[AEIOU]/i.test(reportLine.code || '') ? 'an' : 'a';
+    const rule = stated ? `This desk asks for identification at ${idLine.label} and ${article} ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const fail = rec && rec.idCheckError;
+    if (fail) {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-tour": "identification",
+        "data-testid": "client-where",
+        className: "client-where mb-3 p-3.5 min-w-0 max-w-full",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] uppercase tracking-widest mb-1.5",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-start gap-2 min-w-0 max-w-full"
+      }, /*#__PURE__*/React.createElement(Pill, {
+        text: "Not identified",
+        c: CD.mute,
+        bg: CD.lineSoft
+      }), /*#__PURE__*/React.createElement("span", {
+        "data-testid": "client-where-line",
+        className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
+        style: {
+          color: CD.ink
+        }
+      }, rec.idCheckError)), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11.5px] mt-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, rule));
+    }
     if (standing) {
       const on = !!standing.onFile;
       const tone = on ? CD.green : CD.flag;
@@ -27520,11 +27560,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         }
       }, rule));
     }
-    const fail = rec && rec.idCheckError;
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
-    const title = fail ? 'Not identified' : state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
-    const line = fail ? rec.idCheckError : rec && rec.idStanding && rec.idStanding.line || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
-    const on = !fail && state === 'ok';
+    const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = rec && rec.idStanding && rec.idStanding.line || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = state === 'ok';
     const tone = on ? CD.green : CD.flag;
     const soft = on ? CD.greenSoft : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
@@ -27884,9 +27923,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       idCheckError: readError
     } : rec;
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
-    const stat = readError ? readError : standing ? standing.chip : fallbackStat;
-    const col = readError ? CD.flag : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
-    const bg = readError ? CD.flagSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
+    const failedRead = !!(readError || rec && rec.idCheckError);
+    const stat = failedRead ? readError || rec.idCheckError : standing ? standing.chip : fallbackStat;
+    const col = failedRead ? CD.mute : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
+    const bg = failedRead ? CD.lineSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -30466,10 +30506,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       idCheckError: undefined
     } : rec;
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
-    /* The chip follows the server standing only. Typed papers do not count. */
-    const idOk = kycState === 'ok';
-    const idTone = idOk ? CD.green : kycState === 'Checking ID' ? CD.mute : CD.flag;
-    const idLabel = readError || rec && rec.idCheckError ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    /* The chip follows the server standing only. Typed papers do not count.
+       A failed read is neutral. It is not a pass, so it is not green. */
+    const unread = !!(readError || rec && rec.idCheckError);
+    const idOk = !unread && kycState === 'ok';
+    const idTone = unread || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const idLabel = unread ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -30537,7 +30579,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       "data-testid": "ledger-id-badge",
       className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
-        background: idOk ? CD.greenSoft : kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
+        background: idOk ? CD.greenSoft : unread || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
         color: idTone,
         borderRadius: 999
       }
@@ -31232,9 +31274,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         zIndex: 20
       }
     }, shownNames.map(n => {
-      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[n]) : !clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : 'ok';
-      const st = state === 'ok' ? 'ID on file' : state;
-      const ok = st === 'ID on file';
+      const person = clients[n] || {};
+      const failed = !!person.idCheckError;
+      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : !person.idType || !person.idNum ? 'missing ID' : 'ok';
+      const st = failed ? person.idCheckError : state === 'ok' ? 'ID on file' : state;
+      const ok = !failed && st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onClick: () => pickClient(n),
@@ -31247,8 +31291,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: ok ? CD.greenSoft : CD.flagSoft,
-          color: ok ? CD.green : CD.flag
+          background: failed ? CD.lineSoft : ok ? CD.greenSoft : CD.flagSoft,
+          color: failed ? CD.mute : ok ? CD.green : CD.flag
         }
       }, st));
     }), shownNames.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -36552,10 +36596,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, shown.map(n => {
       const c = clients[n] || {};
+      const failed = !!c.idCheckError;
       const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !c.idNum ? 'missing ID' : 'ok';
-      const st = state === 'ok' ? 'ID on file' : state;
+      const st = failed ? c.idCheckError : state === 'ok' ? 'ID on file' : state;
       const ok = false;
-      const onfile = st === 'ID on file';
+      const onfile = !failed && st === 'ID on file';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onMouseDown: e => e.preventDefault(),
@@ -36571,8 +36616,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft,
-          color: ok ? CD.green : onfile ? CD.amber : CD.flag
+          background: failed ? CD.lineSoft : ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft,
+          color: failed ? CD.mute : ok ? CD.green : onfile ? CD.amber : CD.flag
         }
       }, st));
     }), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -36686,12 +36731,13 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
     /* The chip and idOk follow the server standing only. Typed papers
        do not count. PR 3 owns the posting gate. */
-    const idOk = kycState === 'ok';
+    const unread = !!(readError || rec && rec.idCheckError);
+    const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
-    const badge = readError || rec && rec.idCheckError ? {
+    const badge = unread ? {
       t: readError || rec.idCheckError,
-      c: CD.flag,
-      bg: CD.flagSoft,
+      c: CD.mute,
+      bg: CD.lineSoft,
       ic: 'alert'
     } : idOk ? {
       t: viewed.idStanding && viewed.idStanding.chip || 'ID on file',
@@ -53785,7 +53831,10 @@ ${(filing.map || []).map(blockHTML).join('')}
         note: "Reuse the check on file."
       });
       return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
-        className: "space-y-3"
+        className: "space-y-3",
+        style: {
+          paddingBottom: 16
+        }
       }, (counterLine || counter && copy.counterLine) && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-counter-line",
         className: "text-[13px]",
@@ -56461,7 +56510,7 @@ ${snap}`;
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
           const idNum = kycIdNumber(c);
           const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !idNum ? 'missing ID' : 'ok';
-          const st = state === 'ok' ? 'ID on file' : state;
+          const st = c.idCheckError ? c.idCheckError : state === 'ok' ? 'ID on file' : state;
           return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
@@ -57782,6 +57831,7 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
+          if (c.idCheckError) return [c.idCheckError, CD.mute, CD.lineSoft];
           const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !kycIdNumber(c) ? 'missing ID' : 'ok';
           if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
           if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];

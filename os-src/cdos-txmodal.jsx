@@ -261,9 +261,9 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const failed = !!c.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = failed ? c.idCheckError : state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = !failed && st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
-                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
+                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: failed ? CD.mute : ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
                 </button>); })}
               {shown.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
               <button onMouseDown={e => e.preventDefault()} onClick={() => { onAddNew(); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> {idRequired ? 'Scan ID & add new client' : 'Add new client'}{query ? ` “${query.trim()}”` : ''}</button>
@@ -309,10 +309,11 @@
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
     /* The chip and idOk follow the server standing only. Typed papers
        do not count. PR 3 owns the posting gate. */
-    const idOk = kycState === 'ok';
+    const unread = !!(readError || (rec && rec.idCheckError));
+    const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
-    const badge = (readError || (rec && rec.idCheckError))
-      ? { t: readError || rec.idCheckError, c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+    const badge = unread
+      ? { t: readError || rec.idCheckError, c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
       : idOk
       ? { t: (viewed.idStanding && viewed.idStanding.chip) || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
       : kycState === 'ID expired'
