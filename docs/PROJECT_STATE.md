@@ -9,7 +9,10 @@ Test seed and in-memory code mailbox now require a local runtime, loopback
 database/bind configuration and loopback request; deployment markers fail closed.
 Signup has an account-menu sound switch and one frame-aligned response per click;
 late sounds drop after 180ms. Physical Safari/Chrome speaker and AirPods acceptance
-remains unrun. Full integrated acceptance, Day 1 Home, staff/cash/billing handoffs, telephony and
+remains unrun. Day 1 now declaratively embeds a live-session Home in the existing
+/app shell: scoped tenant setup, inert apps, no till claim and no invented cash.
+Its prior mock chrome/station-picker underlay is removed for real launches.
+Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and

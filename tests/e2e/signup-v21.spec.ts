@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /* ============================================================
@@ -235,6 +237,44 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     expect((await (await page.request.get(`/api/onboarding/${cdId}/resume`)).json()).callPreference.call).toBe(false);
     const after = await request.get(`/api/onboarding/${cdId}/state`);
     expect(((await after.json()) as { state: string }).state).not.toBe("active");
+
+    if (process.env.SEAM_DATABASE_URL) {
+      // The provider is simulated explicitly; provisioning, agreement, cookies,
+      // tenant APIs and the /app Home below are the real owned-Postgres seam.
+      const fixture = (operation: string) => {
+        const output = execFileSync(process.execPath, ["--import", "tsx", "tests/fixtures/signup-browser-activation.ts", operation, cdId], {
+          cwd: path.resolve("server"), encoding: "utf8",
+          env: { ...process.env, NODE_ENV: "test", SIGNUP_BROWSER_FIXTURE: "1", DATABASE_URL: process.env.SEAM_DATABASE_URL },
+        });
+        const line = output.split("\n").find(l => l.startsWith("SIGNUP_FIXTURE="));
+        if (!line) throw Error("fixture did not return evidence");
+        return JSON.parse(line.slice("SIGNUP_FIXTURE=".length));
+      };
+      const prepared = fixture("prepare");
+      const displayed = await page.evaluate(() => (window as unknown as { __cdAgreementHash: string }).__cdAgreementHash);
+      expect(prepared.termsSourceHash).toBe(displayed);
+      expect((await page.request.post(`/api/onboarding/${cdId}/agreement`, { data: { ...prepared, agreed: true } })).status()).toBe(200);
+      const activated = fixture("activate"); expect(activated.opened).toBe(true);
+      expect(fixture("activate")).toEqual({ opened: false, reason: "already_open" });
+      const beforeTills = fixture("tills");
+      expect((beforeTills.rows || beforeTills)[0].n).toBe(0);
+      await page.evaluate(() => { const CD = (window as unknown as { __cdOnb: { comp: unknown; waitOpen: (c: unknown, n: number) => void } }).__cdOnb; CD.waitOpen(CD.comp, 0); });
+      const frame = page.frameLocator("iframe[data-real-home]");
+      await expect(frame.locator("[data-signup-home]")).toHaveAttribute("data-signup-home", activated.tenantId);
+      await expect(frame.locator("#os")).toHaveAttribute("inert", "");
+      await expect(page.locator("[data-real-home-status]")).toHaveCount(0);
+      await expect(frame.locator(".tenant-name")).toHaveText(shop);
+      await expect(frame.getByText("Open · setting up", { exact: true }).first()).toBeVisible();
+      await expect(frame.getByText("FIRST RUN", { exact: false })).toHaveCount(0);
+      await expect(page.locator("[data-deskcrumb]")).toHaveCount(0);
+      expect(fixture("tills")).toEqual(beforeTills);
+      const me = await page.request.get("/api/auth/me"); expect(me.status()).toBe(200);
+      expect((await me.json()).user.tenantId).toBe(activated.tenantId);
+      const own = await page.request.get("/api/tenant?tenantId=tnt-yorkfx");
+      expect((await own.json()).tenant.id).toBe(activated.tenantId);
+      expect((await page.request.get(`/api/onboarding/${cdId}/resume`)).status()).toBe(401);
+      await page.screenshot({ path: test.info().outputPath("day-one-real-home.png"), animations: "disabled" });
+    }
   });
 
   test("the code is wrong five times, then it is burnt; a 1234 PIN is refused", async ({ page, request }) => {

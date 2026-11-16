@@ -221,6 +221,15 @@ patchRegion("tour officer", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebro
 patchRegion("tour report", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", ">Large Cash Transaction Report<", ">{{ tourReport }}<");
 
 /* ---- Day 1: the real desk behind the welcome --------------------------- */
+/* The real session's Home is a React child, never an imperative insertion race. */
+patch("day one real frame", '<div data-desk="true" style="min-height:', '<div data-desk="true" data-real="{{ realHome }}" style="position:relative;min-height:');
+patch("day one prototype chrome begins", '      <div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; background: #F6F2EA;', `      <sc-if value="{{ realHome }}"><iframe data-real-home="true" src="/app?onboarding=welcome" title="Your desk Home" aria-hidden="true" tabindex="-1" inert="{{ realInert }}" style="position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;filter:saturate(0.85) brightness(0.92);"></iframe></sc-if>
+      <sc-if value="{{ prototypeHome }}"><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; background: #F6F2EA;`);
+patch("day one prototype chrome ends", '      <div style="position: relative; max-width: 780px; margin: 0 auto; padding: 38px 18px 60px;">', '      </sc-if><div style="{{ welcomeWrap }}"><sc-if value="{{ prototypeHome }}">');
+patch("day one prototype cards end", '        <sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">', '        </sc-if><sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">');
+
+
+patch("home loading status", '{{ dkCta }}</button>', '{{ dkCta }}</button><sc-if value="{{ homeStatus }}"><p data-real-home-status="true" role="status" style="font-size:12px;color:var(--mute)">{{ homeStatus }}</p></sc-if>');
 patch("build my desk", "R.onDkWalk = ", "R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : ");
 
 /* ======== END OF SECTIONS ======== */

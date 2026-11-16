@@ -5,14 +5,15 @@ import fs from 'node:fs';
 const source = fs.readFileSync(new URL('../design/onboarding/signup-v2.1-open.js', import.meta.url), 'utf8');
 const drain = () => new Promise(resolve => setImmediate(resolve));
 function harness() {
-  const requests = [], pending = [], confirms = [];
+  const requests = [], pending = [], confirms = [], events = {};
+  const frame = { contentWindow: {} };
   const stripe = { elements: () => ({ create: () => ({ on() {}, destroy() {}, mount() {} }) }), confirmSetup: args => { confirms.push(args); return Promise.resolve({ error: { message: 'Synthetic failure' } }); } };
   const CD = { h: { api: (method, path, body) => { requests.push({ method, path, body }); return new Promise(resolve => pending.push(resolve)); }, why: (r, fallback) => r.body.detail || fallback, NET: 'Offline' } };
-  const context = { window: { __cdOnb: CD, Stripe: () => stripe, __cdAgreementHash: 'pinned-version' }, document: { querySelector: () => null }, location: { origin: 'https://example.test' }, setTimeout, clearTimeout, console, Promise };
+  const context = { window: { addEventListener: (k, fn) => { events[k] = fn; }, __cdOnb: CD, Stripe: () => stripe, __cdAgreementHash: 'pinned-version' }, document: { querySelector: s => s === "iframe[data-real-home]" ? frame : null }, location: { origin: 'https://example.test' }, setTimeout, clearTimeout, console, Promise };
   vm.runInNewContext(source, context);
   const c = { state: { termsRead: true, data: { plan: 'full', term: 'monthly', addons: {}, cardName: 'Synthetic Owner' } }, forceUpdate() {}, locCount: () => 1 };
   const reply = (id = 'seti_first') => ({ status: 200, body: { clientSecret: `${id}_secret`, setupIntentId: id, termsSourceHash: 'pinned-version', publishableKey: 'pk_synthetic' } });
-  return { CD, c, requests, pending, confirms, reply };
+  return { CD, c, requests, pending, confirms, reply, events, frame };
 }
 test('opening Payment prepares a card without recording assent', async () => {
   const h = harness(); h.CD.card(h.c);
@@ -40,4 +41,11 @@ test('changing the plan after card entry cannot confirm the old card session', a
   h.c.state.data.term = 'annual'; h.CD.pay(h.c); await drain();
   assert.equal(h.confirms.length, 0);
   assert.equal(h.requests.some(r => r.path === '/agreement'), false);
+});
+
+test('Home readiness requires this frame, same origin and this activated tenant', () => {
+  const h = harness(); h.CD.tenantId = 'own';
+  const message = { origin: 'https://example.test', source: h.frame.contentWindow, data: { type: 'cd-signup-home-ready', tenantId: 'own' } };
+  for (const bad of [{ origin: 'https://other.test' }, { source: {} }, { data: { ...message.data, tenantId: 'other' } }]) { h.events.message({ ...message, ...bad }); assert.notEqual(h.CD.homeReady, true); }
+  h.events.message(message); assert.equal(h.CD.homeReady, true);
 });
