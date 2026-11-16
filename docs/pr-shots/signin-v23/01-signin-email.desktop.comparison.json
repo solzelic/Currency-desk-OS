@@ -1,0 +1,32 @@
+[
+  {
+    "text": "OS",
+    "delta": {
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 0
+    },
+    "originalFont": "IBM Plex Mono 800 9.5px/normal ls 0.95px",
+    "actualFont": "IBM Plex Mono 800 10px/normal ls 1px",
+    "originalColor": "rgb(29, 107, 69)",
+    "actualColor": "rgb(29, 107, 69)"
+  },
+  {
+    "text": "Recommended",
+    "delta": {
+      "x": -4,
+      "y": 0,
+      "w": 4,
+      "h": 0
+    },
+    "originalFont": "IBM Plex Mono 700 9.5px/normal ls 1.33px",
+    "actualFont": "IBM Plex Mono 700 10px/normal ls 1.4px",
+    "originalColor": "rgb(123, 224, 168)",
+    "actualColor": "rgb(123, 224, 168)"
+  },
+  {
+    "text": "G",
+    "difference": "missing reference content (documented exception)"
+  }
+]

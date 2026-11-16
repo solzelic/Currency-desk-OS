@@ -1,3 +1,18 @@
+## PR735 staging refresh — 16 November 2026
+
+This branch incorporates staging `e6db6089` after the signup integration.
+Both teams' product-state records are preserved below. The first-screen and
+password presentation remains opt-in and is not selected by shipped callers.
+No new returning-auth source or staging-code display is included here; that
+work proceeds on the separate staging-login integration branch.
+
+The lockfile retains signup's pinned axe-core 4.10.2 and the existing sign-in
+Playwright adapter 4.11.1 with its original nested axe-core 4.11.4. A rebuilt
+OS combines both source sets. New-head independent review and full local/CI
+gates are pending; historical evidence below belongs to its named revision.
+Existing activation and CTO/Sol gates remain open. PR760 is closed as
+superseded because staging already carries its exact screenshot-path files.
+
 ## Signup v2.1 staging integration — 16 November 2026
 
 Sol requested merging signup to staging. This integration combines the reviewed
@@ -113,6 +128,25 @@ calling) for its own sales funnel.
 Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `release`. Its compute plan is the paid plan `1c-2g` (1 CPU, 2 GB), set by the owner. Do not set it back to free.
 
 ## Current product milestone — Shop-Ready Core v1
+
+**CD-221 Sign in v2.3 — first presentation slice, activation pending.**
+`os-src/cdos-signin-v23.jsx` supplies reusable first-screen/password components
+inside the existing compiled OS. The existing `SignIn` can compose them through
+an explicit `presentation` prop; shipped callers still select the existing UI.
+Only the Playwright response fixture selects v2.3. There is no production seed
+route, URL flag, synthetic login, new auth endpoint or migration. Passwords use
+the existing server/session lifecycle; unavailable passkey/OIDC controls are
+disabled. Returning-auth/CD-ID lookup, 30-day known-device trust and the rest of
+the pack remain unfinished. CD-206's sliding 24-hour enrolment is not that trust,
+and resuming expired enrolment still needs a shared reauthentication interface.
+Review corrections preserve raw request identity even for ID-shaped legacy
+usernames, retain keystroke text and clear secrets across recovery;
+full exact-head verification and a fresh independent review remain required.
+PR735's initial Linux CI failed four visual measurement cases; the test now
+replays the SHA-locked original in the same browser for its 1px geometry check,
+retaining the supplied style/copy assertions. CI confirmation remains pending.
+The signup development contract is now frozen at ed371e8e (#727), with CI and
+release acceptance still open. See [SIGNIN_V23.md](SIGNIN_V23.md) for scope, evidence and the next-slice contract.
 
 **CD-221 browser evidence portability dependency.** The staff-switch and till
 handover seam specs now use per-test Playwright screenshot output, with an

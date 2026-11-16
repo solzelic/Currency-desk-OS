@@ -1,0 +1,46 @@
+{
+  "base": "04cd590d1c776a35bc2889409bc063b994e7340c",
+  "clock": "2026-11-13T14:00:00-05:00",
+  "timezone": "America/Toronto",
+  "locale": "en-CA",
+  "browser": "Playwright 1.61.1 Chromium 1228",
+  "states": [
+    "01-signin",
+    "01-signin-id",
+    "01-signin-email",
+    "02-password",
+    "02-password-wrong"
+  ],
+  "viewports": {
+    "desktop": [
+      1440,
+      860
+    ],
+    "laptop": [
+      1280,
+      760
+    ],
+    "phone": [
+      390,
+      844
+    ],
+    "small": [
+      360,
+      740
+    ],
+    "compact": [
+      1100,
+      700
+    ]
+  },
+  "source_sha256": {
+    "os-src/cdos-signin-v23.jsx": "a613018064b018a1d27f9e239626bd3c6795c53a1c6a5828f305f3d3eca640d0",
+    "os-src/cdos-signin.jsx": "4b91470f6750b2efc4b49e2db6a5e7f3c21e18eed677294ed08ac704d15cf485",
+    "web/app/os.js": "761b3b42ef0aaf296c0d7c9824e5760e4529ed066d0bef505f2a0e68c2b30f44",
+    "tests/e2e/signin-v23.spec.ts": "19baea81f2e19825cd59beb2a9d76e8e2dd787f53ab8f77fa906a97d318bf3fd"
+  },
+  "targeted_tests": "28 passed, zero skips (21 v2.3 + 7 existing sign-in); corrected working-tree source captured before commit",
+  "activation": "pending; test-response composition only",
+  "full_suites": "Successor exact-head full suites pending; neither e847 nor08818d95 results cover this revision",
+  "regressions": "B1/B2 five red-first cases on e847; B3 three real ID-shaped legacy usernames return401 on08818d95, then pass with raw requests. Cooldown live-region assertion red on08818d95, green after separation."
+}

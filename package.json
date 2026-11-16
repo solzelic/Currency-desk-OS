@@ -16,6 +16,7 @@
     "check": "npm run build && npm run check:parse && npm run test:e2e"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.1",
     "@babel/standalone": "7.29.0",
     "@playwright/test": "^1.61.1",
     "axe-core": "4.10.2",

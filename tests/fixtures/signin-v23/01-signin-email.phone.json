@@ -1,0 +1,216 @@
+{
+ "viewport": [
+  390,
+  844
+ ],
+ "pageScrolls": false,
+ "scrollers": [],
+ "elements": [
+  {
+   "tag": "b",
+   "text": "CURRENCYDESK",
+   "x": 82,
+   "y": 35,
+   "w": 140,
+   "h": 18,
+   "font": "Schibsted Grotesk 800 14px/normal ls 0.56px",
+   "color": "rgb(241, 236, 225)"
+  },
+  {
+   "tag": "i",
+   "text": "OS",
+   "x": 209,
+   "y": 30,
+   "w": 13,
+   "h": 13,
+   "font": "IBM Plex Mono 800 9.5px/normal ls 0.95px",
+   "color": "rgb(29, 107, 69)"
+  },
+  {
+   "tag": "button",
+   "text": "Create your desk",
+   "x": 258,
+   "y": 22,
+   "w": 110,
+   "h": 44,
+   "font": "Schibsted Grotesk 600 12px/normal",
+   "color": "rgb(241, 236, 225)"
+  },
+  {
+   "tag": "div",
+   "text": "Sign in",
+   "x": 22,
+   "y": 120,
+   "w": 346,
+   "h": 13,
+   "font": "IBM Plex Mono 400 10px/normal ls 2.2px",
+   "color": "rgba(241, 236, 225, 0.55)"
+  },
+  {
+   "tag": "h1",
+   "text": "Open  desk",
+   "x": 22,
+   "y": 149,
+   "w": 346,
+   "h": 137,
+   "font": "Instrument Serif 400 78px/68.64px ls -2.73px",
+   "color": "rgb(241, 236, 225)"
+  },
+  {
+   "tag": "em",
+   "text": "the",
+   "x": 22,
+   "y": 201,
+   "w": 77,
+   "h": 101,
+   "font": "Instrument Serif 400 78px/68.64px ls -2.73px",
+   "color": "rgb(241, 236, 225)"
+  },
+  {
+   "tag": "button",
+   "text": "Continue with a passkey",
+   "x": 20,
+   "y": 448,
+   "w": 350,
+   "h": 56,
+   "font": "Schibsted Grotesk 600 14px/normal",
+   "color": "rgb(241, 236, 225)",
+   "bg": "rgb(23, 20, 15)",
+   "radius": "13px",
+   "border": "1px rgb(23, 20, 15)"
+  },
+  {
+   "tag": "span",
+   "text": "Recommended",
+   "x": 256,
+   "y": 465,
+   "w": 95,
+   "h": 23,
+   "font": "IBM Plex Mono 700 9.5px/normal ls 1.33px",
+   "color": "rgb(123, 224, 168)",
+   "radius": "999px",
+   "border": "1px rgb(46, 163, 107)"
+  },
+  {
+   "tag": "button",
+   "text": "Google",
+   "x": 20,
+   "y": 514,
+   "w": 170,
+   "h": 52,
+   "font": "Schibsted Grotesk 600 14px/normal",
+   "color": "rgb(31, 31, 31)",
+   "bg": "rgb(255, 255, 255)",
+   "radius": "13px",
+   "border": "1px rgb(116, 119, 117)"
+  },
+  {
+   "tag": "span",
+   "text": "G",
+   "x": 62,
+   "y": 528,
+   "w": 24,
+   "h": 24,
+   "font": "IBM Plex Mono 700 20px/normal",
+   "color": "rgb(31, 31, 31)"
+  },
+  {
+   "tag": "button",
+   "text": "Microsoft",
+   "x": 200,
+   "y": 514,
+   "w": 170,
+   "h": 52,
+   "font": "Schibsted Grotesk 600 14px/normal",
+   "color": "rgb(31, 31, 31)",
+   "bg": "rgb(255, 255, 255)",
+   "radius": "13px",
+   "border": "1px rgb(116, 119, 117)"
+  },
+  {
+   "tag": "div",
+   "text": "or",
+   "x": 20,
+   "y": 584,
+   "w": 350,
+   "h": 13,
+   "font": "IBM Plex Mono 400 10px/normal ls 1.6px",
+   "color": "rgb(115, 108, 98)"
+  },
+  {
+   "tag": "label",
+   "text": "Email or CurrencyDesk ID",
+   "x": 20,
+   "y": 615,
+   "w": 350,
+   "h": 13,
+   "font": "IBM Plex Mono 400 10px/normal ls 2px",
+   "color": "rgb(110, 103, 94)"
+  },
+  {
+   "tag": "input",
+   "text": "[input] daniel@yorkcurrency.ca",
+   "x": 39,
+   "y": 653,
+   "w": 282,
+   "h": 23,
+   "font": "Schibsted Grotesk 400 17px/normal ls 0.34px",
+   "color": "rgb(23, 20, 15)"
+  },
+  {
+   "tag": "button",
+   "text": "",
+   "x": 321,
+   "y": 644,
+   "w": 40,
+   "h": 40,
+   "font": "IBM Plex Mono 700 10px/normal ls 1px",
+   "color": "rgb(255, 255, 255)",
+   "bg": "rgb(23, 20, 15)",
+   "radius": "10px",
+   "border": "1px rgb(23, 20, 15)"
+  },
+  {
+   "tag": "div",
+   "text": "Can’t get in?",
+   "x": 20,
+   "y": 704,
+   "w": 350,
+   "h": 44,
+   "font": "Schibsted Grotesk 400 13px/normal",
+   "color": "rgb(110, 103, 94)"
+  },
+  {
+   "tag": "button",
+   "text": "Recover access",
+   "x": 97,
+   "y": 704,
+   "w": 99,
+   "h": 44,
+   "font": "Schibsted Grotesk 600 13px/normal",
+   "color": "rgb(23, 20, 15)"
+  },
+  {
+   "tag": "button",
+   "text": "Back",
+   "x": 20,
+   "y": 774,
+   "w": 75,
+   "h": 44,
+   "font": "Schibsted Grotesk 600 11px/11px ls 0.22px",
+   "color": "rgb(23, 20, 15)",
+   "radius": "999px",
+   "border": "1px rgba(23, 20, 15, 0.18)"
+  },
+  {
+   "tag": "span",
+   "text": "Every exchange, on the record.",
+   "x": 230,
+   "y": 788,
+   "w": 140,
+   "h": 17,
+   "font": "Instrument Serif 400 13px/normal",
+   "color": "rgb(110, 103, 94)"
+  }
+ ]
+}

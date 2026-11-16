@@ -49,6 +49,16 @@ say.
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |
 
+The OS shell loads `cdos-signin-v23.jsx` before `cdos-signin.jsx`. The former
+exports presentation components; the latter remains the auth lifecycle owner.
+Default activation is pending. `tests/e2e/signin-v23.spec.ts` selects the explicit
+component prop through a test-only response interception of the compiled bundle.
+Its reference JSON lives in `tests/fixtures/signin-v23/`; it adds no server route.
+Provider marks are the official CD-207 assets in `assets/signin/`. Fonts reuse
+the already self-hosted `/web/fonts/fonts.css` and original matching binaries.
+The exact-pinned `@axe-core/playwright` dependency is test-only accessibility
+verification; it is not included in the OS bundle.
+
 `npm run build` runs all three build steps. After any source edit, rebuild and
 commit the generated output — CI diffs `web/` against a fresh build.
 
