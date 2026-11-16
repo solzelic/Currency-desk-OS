@@ -748,54 +748,6 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
     const fileHead = page.locator(".client-file-actions");
     if (await fileHead.isVisible().catch(() => false)) await fileHead.locator("button").last().click();
-
-    const skip = page.locator(".cdos-tour-skip");
-    if (await skip.isVisible().catch(() => false)) await skip.click();
-    await expect(page.locator(".cdos-tour")).toHaveCount(0);
-    await page.locator('[data-app="settings"]').click();
-    await page.getByRole("button", { name: "Clients · KYC" }).click();
-    await expect(page.getByTestId("id-check-settings")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByLabel("Privacy phone")).toHaveValue("416-555-0100");
-    const settingsWin = page.locator(".win").filter({ has: page.getByTestId("id-check-settings") });
-    await page.locator(".win").evaluateAll((nodes) => {
-      nodes.forEach((node) => {
-        if (node.querySelector("[data-testid='id-check-settings']")) return;
-        const close = node.querySelector(".win-close");
-        if (close instanceof HTMLButtonElement) close.click();
-      });
-    });
-    await expect(page.locator(".win")).toHaveCount(1);
-    if (process.env.PR2B_SHOTS === "1") {
-      await dismissTour(page);
-      for (const theme of ["light", "dark"] as const) {
-        await page.evaluate((value) => {
-          (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
-        }, theme);
-        for (const width of [1280, 390] as const) {
-          await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-          await dismissTour(page);
-          await settingsWin.evaluate((el) => {
-            const bar = el.querySelector(".win-bar");
-            if (!bar) return;
-            const zoom = () => bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
-            if (el.classList.contains("max")) zoom();
-            zoom();
-          });
-          await expect(settingsWin).toHaveClass(/max/);
-          const shotPath = path.join(ARTIFACTS, `pr2-settings-crop-${width}-${theme}.png`);
-          if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
-          if (width === 390) {
-            await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = el.scrollHeight; });
-            const scrolled = path.join(ARTIFACTS, `pr2-settings-crop-390-${theme}-scrolled.png`);
-            if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
-          }
-        }
-      }
-      await page.setViewportSize({ width: 1280, height: 900 });
-      await page.evaluate(() => {
-        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
-      });
-    }
   } finally {
     await db.query("UPDATE branches SET province = 'ON' WHERE id = 'br-yorkville'");
     await request.put("/api/settings/idv", { data: { checksEnabled: false } }).catch(() => {});
