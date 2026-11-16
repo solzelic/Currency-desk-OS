@@ -130,12 +130,12 @@ function landing({ hash = '#day1', flag = 'fresh', stored = {} } = {}) {
   if (flag === 'junk') store.set('cdDayOne', 'yes');
   const sessionStorage = { getItem: k => store.has(k) ? store.get(k) : null, setItem: (k, v) => { sets.push([k, String(v)]); store.set(k, String(v)); }, removeItem: k => { removed.push(k); store.delete(k); } };
   const localStorage = { getItem: () => null, setItem: (k, v) => local.push([k, v]), removeItem: k => local.push([k]) };
-  const node = { style: {} };
+  const node = { style: {} }, frame = { contentWindow: {} };
   const context = {
     window: { addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, innerWidth: 1280, __cdAgreementHash: 'pinned-version' },
     location: { origin: 'https://staging.currencydeskos.com', pathname: '/onboarding', search: '', hash, assign() {} },
     history: { replaceState: (_s, _t, url) => replaced.push(url) }, sessionStorage, localStorage,
-    document: { querySelector: s => s === '[data-staging-day-one]' ? node : null },
+    document: { querySelector: s => s === '[data-staging-day-one]' ? node : s === 'iframe[data-real-home]' ? frame : null },
     fetch: (...args) => new Promise(resolve => pending.push({ args, resolve })),
     setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {}, AbortController, URLSearchParams, console, Promise,
   };
@@ -153,11 +153,22 @@ function landing({ hash = '#day1', flag = 'fresh', stored = {} } = {}) {
   const paths = () => pending.map(p => `${p.args[1].method} ${p.args[0]}`);
   const tick = () => timers.splice(0).forEach(fn => fn());
   const fire = (type, e = {}) => (listeners[type] || []).forEach(fn => fn(e));
-  return { CD, c, pending, reply, paths, tick, replaced, sets, removed, local, store, fire, node, shown };
+  return { CD, c, pending, reply, paths, tick, replaced, sets, removed, local, store, fire, node, frame, shown };
 }
-/* What the page draws for the hold, from the bridge's own render values. */
-const holdOf = h => { const R = h.CD.priced(h.c, {}); return { on: R.dayOneHold, inert: R.holdInert, title: R.dayOneHoldTitle }; };
-const HOLD_NEUTRAL = 'Opening a staging test shop…';
+/* What Day 1's welcome draws, from the bridge's own render values over the
+   prototype's (its sentence, its button, its confetti). */
+const PROTO = { dkSub: 'Staging Shop 1A2B is open. You’re a Founding Operator.', dkCta: 'Build my desk →', dkConf: ['piece'] };
+const cardOf = h => {
+  const R = h.CD.priced(h.c, { ...PROTO });
+  return { i: h.c.state.i, waiting: R.dkWaiting === true, busy: R.dkBusy === true, sub: R.dkSub, cta: R.dkCta, confetti: R.dkConf.length, status: R.homeStatus,
+    check: R.dayOneCheckVisible === true, prototype: R.prototypeHome, real: R.realHome, inFlow: /position: relative/.test(R.dkCardBox) };
+};
+const SIGNING = 'Signing up a new staging test shop and opening its desk. This takes a few seconds.';
+/* in flight: the welcome's own sentence says so (a polite live region), Build my desk is busy */
+const WAITING = { i: 16, waiting: true, busy: true, sub: SIGNING, cta: 'Opening your desk…', confetti: 0, status: '', check: false, prototype: false, real: false, inFlow: true };
+const NAMED = { ...WAITING, sub: 'Opening Staging Shop 1A2B. This takes a few seconds.' };
+/* asking has stopped: the sentence gives the reason, nothing is busy, Check again is offered */
+const STOPPED = reason => ({ ...NAMED, busy: false, sub: reason, cta: 'Desk not open yet', check: true });
 const resumedDay = { state: 'verified', lastStep: '20-team', saved: true, pinSet: true, answers: { operatingName: 'Staging Shop 1A2B' }, you: { name: 'Staging Owner' }, pack: null, callPreference: { call: false } };
 /* A whole Day 1 landing, through /open and the one-second step to screen 16. */
 async function landed(stagingOpen = [200, { ok: true }]) {
@@ -170,21 +181,21 @@ async function landed(stagingOpen = [200, { ok: true }]) {
   return h;
 }
 
-test('Start on Day 1: the click’s own tab lands, posts once, then the page’s existing resume, staging-open and open', async () => {
+test('Start on Day 1: the click’s own tab goes straight to Day 1’s welcome, posts once, then the page’s existing resume, staging-open and open', async () => {
   const h = landing();
   assert.deepEqual(h.replaced, ['/onboarding']);
   assert.ok(h.removed.includes('cdDayOne')); assert.equal(h.store.has('cdDayOne'), false);
   assert.deepEqual(h.paths(), ['POST /api/staging/day-one']);
   assert.equal(h.pending[0].args[1].headers['content-type'], 'application/json');
   assert.equal(h.pending[0].args[1].body, '{}');
-  /* while the press answers: the welcome, under a neutral hold, never the plan screen */
-  assert.equal(h.c.state.i, 17); assert.equal(h.CD._paying, true);
-  assert.deepEqual(holdOf(h), { on: true, inert: '', title: HOLD_NEUTRAL });
+  /* the press lands on Day 1 at once: its welcome says the shop is opening and
+     Build my desk waits; no prototype desk behind it, no confetti yet */
+  assert.equal(h.CD._paying, true);
+  assert.deepEqual(cardOf(h), WAITING);
   h.reply(0, 201, dayReply()); await drain();
   assert.deepEqual(h.paths().slice(1), [`GET /api/onboarding/${DAY.cdId}/resume`]);
-  /* the server has named the shop: the hold says it, and still covers the page */
-  assert.deepEqual(holdOf(h), { on: true, inert: '', title: 'Opening Staging Shop 1A2B…' });
-  assert.equal(h.c.state.i, 17);
+  /* the server has named the shop: the welcome says which */
+  assert.deepEqual(cardOf(h), NAMED);
   /* nothing in this tab names the reservation until the desk is opening */
   assert.equal(h.store.get('cdSignupId'), undefined);
   h.reply(1, 200, resumedDay); await drain(); await drain();
@@ -193,18 +204,19 @@ test('Start on Day 1: the click’s own tab lands, posts once, then the page’s
   h.reply(2, 200, { ok: true }); await drain();
   assert.equal(h.store.get('cdSignupId'), DAY.cdId);
   assert.equal(h.paths()[3], `POST /api/onboarding/${DAY.cdId}/open`);
-  /* the plan screen, named, is under the hold only while /open answers */
-  assert.equal(h.c.state.i, 15); assert.equal(holdOf(h).on, true);
+  /* still Day 1 while /open answers: never the plan screen, its landing or its card */
+  assert.deepEqual(cardOf(h), NAMED);
   h.reply(3, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
   assert.equal(h.CD.launched, true); assert.equal(h.store.get('cdSignupId'), undefined);
-  /* open: the hold lifts on the landing, and the page can be pressed again */
-  assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' });
+  /* open: the welcome says so (the prototype's own sentence), the confetti
+     plays, Build my desk works, and the real Home is behind it */
+  assert.deepEqual(cardOf(h), { i: 16, waiting: false, busy: false, sub: PROTO.dkSub, cta: PROTO.dkCta, confetti: 1, status: 'Loading your desk…', check: false, prototype: false, real: true, inFlow: true });
   assert.equal(h.CD.holding(), false);
   h.tick();
   assert.equal(h.c.state.i, 16);
   assert.equal(h.paths().filter(p => p === 'POST /api/staging/day-one').length, 1);
-  /* no shop screen was ever shown without the server's name for it */
-  assert.deepEqual(h.shown, [{ i: 15, name: 'Staging Shop 1A2B' }, { i: 16, name: 'Staging Shop 1A2B' }]);
+  /* only ever Day 1: no screen before it and none in between */
+  assert.ok(h.shown.length >= 1 && h.shown.every(s => s.i === 16), JSON.stringify(h.shown));
   /* the one staging line, on Day 1 only */
   const line = h.CD.priced(h.c, {}).stagingDayOne;
   assert.match(line, /Counter PIN 4821/);
@@ -266,25 +278,25 @@ test('a malformed or refused Day 1 reply shows no line, never opens, and lands o
     assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '', label);
     assert.equal(h.store.get('cdSignupId'), undefined, label);
     assert.equal(h.CD.code, '', label);
-    /* the hold lifts with the reason, and the ID screen can be used */
-    assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' }, label);
-    assert.deepEqual(h.shown, [{ i: 0, name: '' }], label);
+    /* from Day 1's welcome to the ID screen with the reason, which can be used */
+    assert.equal(h.CD.holding(), false, label);
+    assert.deepEqual(h.shown, [{ i: 16, name: '' }, { i: 0, name: '' }], label);
   }
 });
 
-test('while the press answers, nothing under the hold moves the page', () => {
+test('while the press answers, nothing moves the page off Day 1', () => {
   const h = landing();
   assert.equal(h.CD.holding(), true);
   /* Continue, the skips and Back (the build patches back() to ask holding() first) */
   assert.equal(h.CD.beforeNext(h.c), false);
   assert.equal(h.CD.beforeGo(h.c, 13), false);
-  assert.deepEqual(h.shown, []);
-  assert.equal(h.c.state.i, 17);
+  assert.deepEqual(h.shown, [{ i: 16, name: '' }]);
+  assert.equal(h.c.state.i, 16);
 });
 
 test('a 201 is never dropped: whatever moved meanwhile, the new shop opens in this tab', async () => {
   const h = landing();
-  /* as a navigation that slipped past the hold would: the old page dropped the 201 here and stranded the tab */
+  /* as a navigation that slipped past holding() would: the old page dropped the 201 here and stranded the tab */
   h.CD.navigation();
   h.reply(0, 201, dayReply()); await drain();
   assert.deepEqual(h.paths().slice(1), [`GET /api/onboarding/${DAY.cdId}/resume`]);
@@ -296,21 +308,98 @@ test('a 201 is never dropped: whatever moved meanwhile, the new shop opens in th
   assert.match(h.CD.priced(h.c, {}).stagingDayOne, /4821/);
 });
 
-test('an /open that refuses after the hold lifts it onto the named plan screen with the reason; a later Open draws no hold', async () => {
+/* Day 1 up to /open, which is left unanswered (pending[3]) */
+async function toOpen() {
   const h = landing();
   h.reply(0, 201, dayReply()); await drain();
   h.reply(1, 200, resumedDay); await drain(); await drain();
   h.reply(2, 200, { ok: true }); await drain();
+  return h;
+}
+
+test('an /open that may yet open (5xx, 429) keeps Day 1’s welcome with the reason and Check again, which opens it', async () => {
+  const h = await toOpen();
   h.reply(3, 500, { error: 'server', detail: 'The desk didn’t open. Nothing was charged.' }); await drain();
-  assert.equal(h.CD.launched, false);
-  assert.deepEqual(holdOf(h), { on: false, inert: null, title: '' });
-  assert.equal(h.c.state.i, 15); assert.equal(h.c.state.data.operatingName, 'Staging Shop 1A2B');
-  assert.equal(h.CD.payErr, 'The desk didn’t open. Nothing was charged.');
-  assert.equal(h.CD.code, DAY.cdId);
+  assert.equal(h.CD.launched, false); assert.equal(h.CD.code, DAY.cdId);
+  assert.deepEqual(cardOf(h), STOPPED('The desk didn’t open. Nothing was charged.'));
+  assert.equal(h.CD.payErr || '', '');
   assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '');
-  /* the owner's own Open from here is an ordinary Open: no hold over it */
-  h.CD._paying = true;
-  assert.equal(h.CD.holding(), false); assert.equal(holdOf(h).on, false);
+  assert.ok(h.shown.every(s => s.i === 16), JSON.stringify(h.shown));
+  /* a reply without a reason gets the page's own; so does a 429 */
+  for (const [status, body] of [[500, {}], [503, { error: 'unavailable' }], [429, { error: 'slow_down' }]]) {
+    const q = await toOpen();
+    q.reply(3, status, body); await drain();
+    assert.deepEqual(cardOf(q), STOPPED('The desk didn’t open. Check again in a minute.'), String(status));
+  }
+  /* Check again: the same /open, once more, and the welcome waits again */
+  h.CD.priced(h.c, { ...PROTO }).onDayOneCheck();
+  assert.equal(h.paths()[4], `POST /api/onboarding/${DAY.cdId}/open`);
+  assert.deepEqual(cardOf(h), NAMED);
+  h.reply(4, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
+  assert.equal(h.CD.launched, true); assert.equal(cardOf(h).cta, PROTO.dkCta);
+  assert.match(h.CD.priced(h.c, {}).stagingDayOne, /4821/);
+});
+
+test('an /open that can never open (401, 404, 409) ends the wait: the ID screen with the reason, nothing held, nothing kept', async () => {
+  for (const [status, body, reason] of [
+    [401, { error: 'sign_in_again', detail: 'For your security, sign in again to carry on.' }, 'For your security, sign in again to carry on.'],
+    [401, { error: 'sign_in_again' }, 'The staging door didn’t open a shop. Try again.'],
+    [404, { error: 'no_such_id' }, 'The staging door didn’t open a shop. Try again.'],
+    [409, { error: 'no_owner' }, 'The staging door didn’t open a shop. Try again.'],
+  ]) {
+    const h = await toOpen();
+    h.reply(3, status, body); await drain();
+    const label = `${status} ${JSON.stringify(body)}`;
+    assert.equal(h.c.state.i, 0, label);
+    assert.equal(h.CD.err, reason, label);
+    assert.equal(h.CD.holding(), false, label);
+    assert.equal(h.CD.code, '', label); assert.equal(h.store.get('cdSignupId'), undefined, label);
+    assert.equal(h.CD.launched, false, label);
+    assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '', label);
+    /* the page can be used again, and nothing asks /open a second time */
+    assert.notEqual(h.CD.beforeGo(h.c, 13), false, label);
+    h.tick(); assert.equal(h.paths().filter(p => p.endsWith('/open')).length, 1, label);
+  }
+});
+
+test('an /open still pending says so on Day 1 after ten tries, never a card; after sixty it offers Check again', async () => {
+  const h = await toOpen();
+  for (let n = 0; n <= 60; n++) {
+    h.reply(3 + n, 202, { ok: false, opening: true }); await drain();
+    if (n === 9) assert.deepEqual(cardOf(h), NAMED, 'quiet for the first ten');
+    if (n === 10) assert.deepEqual(cardOf(h), { ...NAMED, sub: 'Still opening the desk. This can take a minute. Stay on this page.' });
+    if (n < 60) h.tick();
+  }
+  assert.equal(h.paths().filter(p => p.endsWith('/open')).length, 61);
+  assert.deepEqual(cardOf(h), STOPPED('The desk hasn’t opened yet. Check again in a minute.'));
+  assert.equal(h.CD.payErr || '', '');
+  assert.doesNotMatch(JSON.stringify(cardOf(h)), /card/i);
+  /* a dropped connection (status 0) is waited out the same way */
+  const z = await toOpen();
+  z.reply(3, 0, { error: 'network' }); await drain();
+  assert.equal(z.pending.length, 4); z.tick();
+  assert.equal(z.paths()[4], `POST /api/onboarding/${DAY.cdId}/open`);
+  assert.deepEqual(cardOf(z), NAMED);
+});
+
+test('the welcome card is in the page’s flow behind a real Home or while waiting, so a short phone can scroll to it; the prototype keeps its own place', async () => {
+  const plain = landing({ hash: '', flag: null }); plain.c.state.i = 16;
+  assert.match(plain.CD.priced(plain.c, {}).dkCardBox, /^position: absolute; left: 18px; right: 18px; top: 84px; $/);
+  plain.CD.launched = true;
+  assert.match(plain.CD.priced(plain.c, {}).dkCardBox, /^position: relative; margin-top: 46px; $/);
+  assert.equal(cardOf(landing()).inFlow, true);
+});
+
+test('the real Home stays hidden behind the welcome until it has drawn itself, never showing the sign-in it starts on', async () => {
+  const h = await landed();
+  assert.equal(h.CD.priced(h.c, {}).homeOpacity, '0');
+  /* another frame's or another shop's message changes nothing */
+  h.fire('message', { origin: 'https://staging.currencydeskos.com', source: {}, data: { type: 'cd-signup-home-ready', tenantId: 'tnt-synthetic' } });
+  h.fire('message', { origin: 'https://staging.currencydeskos.com', source: h.frame.contentWindow, data: { type: 'cd-signup-home-ready', tenantId: 'tnt-other' } });
+  assert.equal(h.CD.priced(h.c, {}).homeOpacity, '0');
+  h.fire('message', { origin: 'https://staging.currencydeskos.com', source: h.frame.contentWindow, data: { type: 'cd-signup-home-ready', tenantId: 'tnt-synthetic' } });
+  assert.equal(h.CD.priced(h.c, {}).homeOpacity, '1');
+  assert.equal(h.CD.priced(h.c, {}).homeStatus, '');
 });
 
 test('a refused resume or staging-open stops before /open and says why', async () => {
@@ -349,11 +438,36 @@ test('the built page draws the staging Day 1 line once, only when it is set', ()
   assert.match(page, /v\?\.\["stagingDayOne"\] \?/);
 });
 
-test('the built page draws the Day 1 hold once, over a page made inert, and Back asks the hold first', () => {
+test('the built page has no hold: Build my desk waits on dkWaiting, the welcome speaks its sentence, Check again is drawn, the real Home fades in, the card can sit in flow', () => {
   const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
-  assert.equal(page.split('"data-staging-day-one-hold":"true"').length - 1, 1);
-  assert.match(page, /\(v\?\.\["dayOneHold"\] \? h\(React\.Fragment,\{key:k\},s\d+\(v,0\)\) : null\)/);
-  assert.equal(page.split('"data-signup-root":"true","inert":v?.["holdInert"]').length - 1, 1);
+  assert.equal(page.includes('data-staging-day-one-hold'), false);
+  assert.equal(page.includes('holdInert'), false);
+  assert.equal(page.includes('Signing up a new test shop and opening its desk. This takes a few seconds.'), false);
+  assert.equal(page.split('"disabled":v?.["dkWaiting"],"aria-busy":v?.["dkBusy"],"data-build-my-desk":"true","style":style("width: 100%;').length - 1, 1);
+  /* the waiting look goes last, so the prototype's own cursor does not win */
+  assert.equal(page.split('animation: cdFadeUp 0.7s ease 0.8s both; " + (v?.["dkCtaLook"] ?? "")').length - 1, 1);
+  assert.equal(page.split('"role":"status","aria-live":"polite","style":style("font-size: 15px; color: #6B6459;').length - 1, 1);
+  assert.match(page, /v\?\.\["dayOneCheckVisible"\] \?/);
+  assert.equal(page.split('"onClick":v?.["onDayOneCheck"]').length - 1, 1);
+  assert.equal(page.split('opacity:" + (v?.["homeOpacity"] ?? "") + ";transition:opacity 0.45s ease;"').length - 1, 1);
+  assert.equal(page.split('"style":style("" + (v?.["dkCardBox"] ?? "") + "display: grid; place-items: center;")').length - 1, 1);
   assert.equal(page.split('back() { if (window.__cdOnb.holding()) return; window.__cdOnb.navigation();').length - 1, 1);
-  assert.ok(page.includes('"Signing up a new test shop and opening its desk. This takes a few seconds."'));
+  /* what tests/e2e/staging-day-one.spec.ts watches for is really in the page, so its "never shown" is not vacuous */
+  for (const needle of ['"data-paymodal":"true"', '"data-deskapps":"true"', '"data-deskcrumb":"true"', '"data-desk":"true"', '"data-signup-screen":v?.["i"]', '"Sample rates"', "'Your desk is set up, '"]) assert.ok(page.includes(needle), needle);
+});
+
+/* ---- a staging Open (no card) waits without card words -------------------- */
+test('a staging Open that is slow or stalls never says a card was saved', async () => {
+  const h = open(); h.CD.card(h.c);
+  h.pending[0]({ status: 200, body: { ok: true, staging: true, termsSourceHash: 'pinned-version', price: {} } }); await drain();
+  h.CD.pay(h.c); await drain();
+  h.pending[1]({ status: 200, body: { ok: true } }); await drain();
+  /* this harness runs every timer at once: answer each /open in turn */
+  for (let n = 0; n <= 60; n++) {
+    h.pending[2 + n]({ status: 202, body: { ok: false } }); await drain();
+    if (n === 10) assert.equal(h.CD.payErr, 'The desk is still opening; this can take a minute. Stay on this page.');
+  }
+  assert.match(h.CD.payErr, /^Nothing was charged, but the desk hasn’t opened yet\. Check again in a minute\./);
+  assert.doesNotMatch(h.CD.payErr, /card/i);
+  assert.ok(h.CD._openStalled);
 });

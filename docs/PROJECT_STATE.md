@@ -1,3 +1,55 @@
+## Start on Day 1 goes straight to Day 1, 16 November 2026
+
+Staging's Start on Day 1 no longer shows a holding screen (Sol, 16 Nov: "not the
+pop-up, not the other stuff... the second animation on the desk is the right one").
+A recording of hosted staging after the press showed four things: the hold for about
+14 seconds, a second of the plan screen's landing ("Your desk is set up, Staging." over
+the sample desk), a blank frame, then Day 1's welcome while the real Home's frame
+showed its sign-in page behind it. Now the press goes straight to Day 1 (screen 16):
+the welcome card plays its own entrance at once, its sentence says the shop is opening
+("Signing up a new staging test shop…", then "Opening {shop}."), Build my desk waits
+("Opening your desk…", disabled, aria-busy) and no confetti plays. Once `/open`
+answers, the sentence becomes the design's own ("{shop} is open. You're a Founding
+Operator…"), the confetti plays, Build my desk works and the staging line appears. No
+other screen is drawn on the way: not the welcome screen, not the plan screen, its
+landing or its sample desk, and not the prototype's desk chrome. The real Home's frame
+stays transparent until it has drawn itself (its existing ready message), so the
+sign-in page it starts on never shows, for an ordinary launch too.
+
+While `/open` is in flight, Build my desk is `aria-busy`. A slow `/open` (still 202
+after ten tries) changes the welcome's sentence to "Still opening the desk. This can take
+a minute. Stay on this page." After sixty tries, or on a refusal that may clear (5xx or
+429), the sentence gives the reason, Build my desk reads "Desk not open yet" (disabled,
+not busy) and a Check again button (the existing `checkOpen`) asks the same `/open`
+again. A refusal that can never open (401 with no live enrolment, 404, 409) ends the
+wait on the ID screen with the reason, as a failed press does, so the page is never
+left stuck. Behind a real Home, or while waiting, the welcome card now sits in the
+page's flow instead of being absolutely placed, so the page grows and a short phone
+(360x640) can scroll to all of it, including Check again; the card's position on a
+desktop is unchanged. This replaces #785's behaviour, where a pending `/open` held a
+full-page cover for about 160 seconds with card copy and then lifted onto the plan
+screen. A staging Open from the plan screen (Start a fresh shop) no longer says "Your
+card is saved" while it waits or stalls: no card is taken there.
+
+Files: `design/onboarding/signup-v2.1-open.js` (`dayOne`, `holding`, `priced`,
+`waitOpen`), `scripts/build-signup.mjs` (the hold and its inert root removed; Build my
+desk's waiting state, the sentence as a polite status, Check again, the Home frame's
+fade), built `web/signup.html` and `web/app/signup.js`. The ordinary paid flow still
+plays the plan screen's landing before Day 1, as the prototype draws it. Server, auth,
+the frozen design file, `os-src` and deployment configuration are unchanged.
+
+Evidence: the client tests in `tests/signup-staging-client.test.mjs` failed first
+against staging 8b62f503, then pass. `tests/e2e/staging-day-one.spec.ts` records every
+screen the press draws: a wizard screen by number, the plan screen by its payment panel,
+the prototype desk by its chrome, and Day 1. Only Day 1 is drawn. It also watches for
+every stand-in, landing, "Sample rates" or hold text (none appear) and for any moment the
+Home frame is visible before it has drawn itself (none). The built page is checked to
+contain each of those markers, so "never" is not vacuous. The spec walks a slow `/open`
+on a 390x844 phone and a refused one on a 360x640 phone, where Check again is reached
+with the scroll wheel and opens the desk. An independent review (four lenses, each
+finding re-checked by a skeptic) found the stuck refusal, the clipped Check again, the
+busy state after a stop, the cursor and the watcher gap; all are fixed here.
+
 ## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
 
 The signup tour now reconciles the current reduced-motion preference on its own
@@ -40,11 +92,10 @@ staging owner stands before Open and answers once with the CD ID and the owner's
 sign-in, plus the ordinary enrolment cookie. The sign-up page then asks the existing
 `/resume`, `/staging-open` and `/open`, and Day 1 shows over the real Home with one
 staging line giving the PIN and the sign-in. Every press is a new test shop. Nothing
-calls Stripe, a mailer or the network, and nothing posts to the ledger. From the press
-until the desk opens, the page holds on a neutral status ("Opening a staging test
-shop…", then the shop's name) over a page that cannot be pressed: the prototype's
-stand-in shop never shows, and nothing can drop the server's answer. If `/open` then
-refuses, the hold lifts onto the plan screen, named, with the reason.
+calls Stripe, a mailer or the network, and nothing posts to the ledger. The press goes
+straight to Day 1 (see "Start on Day 1 goes straight to Day 1" above): its welcome says
+the shop is opening until the desk has opened, and nothing can move the page off it or
+drop the server's answer.
 
 Gates: the route exists only with `STAGING` exactly 1; each request needs the staging
 raw Host (forwarded hosts ignored), the `db_environment` staging marker before any
