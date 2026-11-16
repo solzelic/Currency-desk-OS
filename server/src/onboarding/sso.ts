@@ -16,9 +16,20 @@
    A mismatch is refused (409 email_mismatch) and the message never names
    the reservation email. The link is (provider, sub), never the email.
 
-   Microsoft: a v2.0 ID token carries email_verified only when the app
-   registration asks for it (optional claim). Without it every Microsoft
-   account is refused, which is the safe failure. Noted for CTO.
+   Microsoft: its ID-token and optional-claims references list no
+   email_verified claim at all, and say `email` is mutable and never for
+   authorization (checked 16 Nov 2026; discovery's claims_supported has no
+   email_verified either). So under this rule every Microsoft account is
+   refused, honestly as email_unverified, which is the safe failure. Any
+   other rule for Microsoft is a protected spec exception for CTO, not
+   something this file assumes. preferred_username / UPN is never used.
+
+   Google: its published example sends email_verified as the string
+   "true"; the boolean and that string mean the same and nothing else does.
+
+   SSO_REDIRECT_URI must be exactly <origin>/onboarding/sso, over https
+   (http only for localhost outside production): anything else cannot hand
+   the code back to the sign-up page, so the provider is not offered.
 
    Not configured (no client ID or secret): the provider answers 503 and
    the page hides the button. Nothing here invents a fallback.
@@ -43,7 +54,7 @@ export function providerConfig(provider: Provider, env: NodeJS.ProcessEnv = proc
   const P = provider.toUpperCase();
   const clientId = env[`${P}_CLIENT_ID`]?.trim();
   const clientSecret = env[`${P}_CLIENT_SECRET`]?.trim();
-  const redirectUri = env.SSO_REDIRECT_URI?.trim();
+  const redirectUri = ssoRedirect(env)?.href;
   if (!clientId || !clientSecret || !redirectUri) return null;
   switch (provider) {
     case "google":
@@ -65,6 +76,21 @@ export function providerConfig(provider: Provider, env: NodeJS.ProcessEnv = proc
   }
 }
 
+/** The one redirect the sign-up page can take back (web/signup-sso.html), or null. */
+function ssoRedirect(env: NodeJS.ProcessEnv): URL | null {
+  const raw = env.SSO_REDIRECT_URI?.trim();
+  if (!raw) return null;
+  let url: URL;
+  try { url = new URL(raw); } catch { return null; }
+  const local = url.hostname === "localhost" && url.protocol === "http:" && env.NODE_ENV !== "production";
+  if (url.username || url.password || url.search || url.hash || raw.includes("#") || url.pathname !== "/onboarding/sso"
+    || !(url.protocol === "https:" || local)) return null;
+  return url;
+}
+
+/** The origin Google and Microsoft send people back to, when that round trip can work. */
+export const ssoOrigin = (env: NodeJS.ProcessEnv = process.env): string | null => ssoRedirect(env)?.origin ?? null;
+
 const b64url = (buf: Buffer): string => buf.toString("base64url");
 
 /** Starts the round trip: a one-use state, a PKCE verifier and a nonce, five minutes. */
@@ -85,6 +111,15 @@ export async function startSso(db: Db, cfg: ProviderConfig, o: { enquiryId: stri
   return `${cfg.authorize}?${q.toString()}`;
 }
 
+/** A provider that answered, with an HTTP error. A 4xx is a refusal (a spent or
+ * foreign code); a 5xx is the provider being unavailable. Carries no body. */
+export class ProviderHttpError extends Error {
+  constructor(host: string, readonly status: number) {
+    super(`${host} answered ${status}`);
+    this.name = "ProviderHttpError";
+  }
+}
+
 /** JSON over HTTP with a timeout. Replaced in tests; there is no live network there. */
 export type FetchJson = (url: string, init: { method: "GET" | "POST"; body?: URLSearchParams; signal: AbortSignal }) => Promise<unknown>;
 export const fetchJson: FetchJson = async (url, init) => {
@@ -92,7 +127,7 @@ export const fetchJson: FetchJson = async (url, init) => {
     method: init.method, signal: init.signal,
     ...(init.body ? { body: init.body, headers: { "content-type": "application/x-www-form-urlencoded" } } : {}),
   });
-  if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
+  if (!res.ok) throw new ProviderHttpError(new URL(url).host, res.status);
   return res.json();
 };
 
@@ -104,7 +139,7 @@ const tokenClaims = z.object({
   iss: z.string(), sub: z.string().min(1), aud: z.union([z.string(), z.array(z.string()).min(1)]),
   exp: z.number().finite(), iat: z.number().finite().optional(), nbf: z.number().finite().optional(),
   azp: z.string().optional(), nonce: z.string(), email: z.string().optional(),
-  email_verified: z.boolean().optional(), oid: z.string().min(1).optional(), tid: z.string().min(1).optional(),
+  email_verified: z.union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")]).optional(), oid: z.string().min(1).optional(), tid: z.string().min(1).optional(),
 });
 const jwksCache = new Map<string, { at: number; keys: z.infer<typeof jwkSchema>[] }>();
 const JWKS_TTL_MS = 60 * 60 * 1000;
@@ -148,7 +183,7 @@ export const sameEmail = (a: string, b: string): boolean =>
 
 export type SsoResult =
   | { ok: true; subject: string; tenant: string | null }
-  | { ok: false; status: 400 | 409 | 502; reason: "no_state" | "bad_token" | "email_unverified" | "email_mismatch" | "provider_unavailable" };
+  | { ok: false; status: 400 | 409 | 502; reason: "no_state" | "bad_token" | "code_refused" | "email_unverified" | "email_mismatch" | "provider_unavailable" };
 
 export async function finishSso(
   db: Db,
@@ -178,7 +213,11 @@ export async function finishSso(
     }));
     claims = typeof tokens?.id_token === "string" ? await verifyIdToken(cfg, tokens.id_token, http) : null;
   } catch (err) {
-    console.warn(`[signup sso] ${cfg.provider} unavailable: ${err instanceof Error ? err.name : "error"}`);
+    if (err instanceof ProviderHttpError && err.status >= 400 && err.status < 500) {
+      console.warn(`[signup sso] ${cfg.provider} refused the code: ${err.status}`);
+      return { ok: false, status: 400, reason: "code_refused" };
+    }
+    console.warn(`[signup sso] ${cfg.provider} unavailable: ${err instanceof ProviderHttpError ? err.status : err instanceof Error ? err.name : "error"}`);
     return { ok: false, status: 502, reason: "provider_unavailable" };
   }
   if (!claims) return { ok: false, status: 400, reason: "bad_token" };
