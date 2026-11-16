@@ -24,6 +24,8 @@ import { loadAccount } from "../src/onboarding/signup-account.js";
 import { answersHash, declarationName, monthlyFor, openFromSetupIntent, type SignupStripe } from "../src/onboarding/signup-open.js";
 import { resolveSession } from "../src/auth/sessions.js";
 import { verifyPassword } from "../src/auth/password.js";
+import { registerAuthRoutes } from "../src/routes/auth.js";
+import * as mailer from "../src/email.js";
 import { moveTo } from "../src/onboarding/pipeline.js";
 
 const WEBHOOK_SECRET = "whsec_signup_test_only";
@@ -54,7 +56,8 @@ async function reserve() {
   const id = `enq-${randomUUID()}`;
   const A = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
   const cdId = `CD-OPEN-${A[n % 31]}${A[(n * 3) % 31]}${A[(n * 5) % 31]}${A[(n * 7) % 31]}`;
-  const email = `open${n}@harbourfx.test`;
+  // The activated email may exceed the old staff-username limit of 120.
+  const email = n === 1 ? `open1@${"a".repeat(60)}.${"b".repeat(60)}.test` : `open${n}@harbourfx.test`;
   await handle.db.insert(schema.enquiries).values({
     id, reference: `CD-O${String(n).padStart(5, "0")}`, kind: "early_access", email, name: "Daniel Okafor", status: "invited", cdId,
     details: { firstName: "Daniel", lastName: "Okafor", shopName: `Harbour Exchange ${n}`, jurisdiction: "CA", province: "ON", workspace: `harbour-${n}.currencydeskos.com`, phone: "+1 416 555 0142" },
@@ -115,6 +118,8 @@ beforeAll(async () => {
   registerSignupEmailRoutes(app, handle.db, door, { mail });
   registerSignupDeskRoutes(app, handle.db, door, { stripe: () => fakeStripe });
   registerBillingRoutes(app, handle.db);
+  registerAuthRoutes(app, handle.db);
+  vi.spyOn(mailer, "sendEmail").mockImplementation(async (to, _subject, body) => { inbox.push({ to, text: body.text }); return "sent"; });
   await app.ready();
 });
 afterAll(async () => {
@@ -165,6 +170,19 @@ describe("from the ID to inside, on the server", () => {
     expect(done).toHaveLength(1);
     /* a replayed Stripe event does not open a second desk */
     expect((await openFromSetupIntent(handle.db, { id: intent.id, metadata: intent.metadata })).opened).toBe(false);
+    // Returning login must consume the actual activated mapping, without an
+    // enrolment/session cookie or a second hand-built staff fixture.
+    const returning = await app.inject({ method: "POST", url: "/api/auth/login/password", payload: { identifier: r.cdId, password: "four plain words here" } });
+    expect(returning.statusCode, returning.body).toBe(200);
+    expect(returning.json().next).toBe("code");
+    expect(returning.cookies.some(c => c.name === "cdos_session")).toBe(false);
+    const proof = returning.cookies.find(c => c.name === "cdos_login_proof")?.value;
+    const code = inbox.at(-1)?.text.match(/\b\d{6}\b/)?.[0];
+    if (!proof || !code) throw new Error("returning fixture requires a real proof and generated code");
+    const verified = await app.inject({ method: "POST", url: "/api/auth/login/verify", payload: { staffId: r.email, code }, cookies: { cdos_login_proof: proof } });
+    expect(verified.statusCode, verified.body).toBe(200);
+    const token = verified.cookies.find(c => c.name === "cdos_session")?.value;
+    expect((await resolveSession(handle.db, token))?.tenantId).toBe(tenantId);
   });
 
   it("a card that fails leaves the account verified and creates nothing", async () => {

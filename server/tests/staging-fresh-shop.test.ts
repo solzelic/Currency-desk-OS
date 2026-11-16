@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { verifyPassword } from "../src/auth/password.js";
 import { forget as forgetCooldown } from "../src/cooldown.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
+import * as emailTransport from "../src/email.js";
 import { codeMatches } from "../src/email.js";
 import { seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
@@ -260,6 +261,10 @@ describe("fresh-shop creation", () => {
       expect(passwordOnly.json().error).toBe("code_required");
       expect(passwordOnly.json()).not.toHaveProperty("code");
 
+      // A legacy fresh-shop row has no accepted ticket provenance. It must
+      // use ordinary delivery, never disclose its returning code on screen.
+      const delivered: string[] = [];
+      vi.spyOn(emailTransport, "sendEmail").mockImplementation(async (_to, subject) => { delivered.push(subject); return "sent"; });
       const start = await app.inject({
         method: "POST",
         url: "/api/auth/login/start",
@@ -269,7 +274,9 @@ describe("fresh-shop creation", () => {
       expect(start.statusCode).toBe(200);
       const started = start.json() as { needsCode: boolean; code: string; user: { mustChangePassword: boolean; tenantId: string } };
       expect(started.needsCode).toBe(true);
-      expect(started.code).toMatch(/^\d{6}$/);
+      expect(start.json()).not.toHaveProperty("code");
+      const deliveredCode = delivered.at(-1)?.match(/^(\d{6}) is your/)?.[1];
+      expect(deliveredCode).toMatch(/^\d{6}$/);
       expect(started.user.mustChangePassword).toBe(true);
       expect(start.json()).not.toHaveProperty("password");
       const proof = start.cookies.find((cookie) => cookie.name === "cdos_login_proof")?.value;
@@ -279,7 +286,7 @@ describe("fresh-shop creation", () => {
         url: "/api/auth/login/verify",
         headers: freshHeaders,
         cookies: { cdos_login_proof: proof! },
-        payload: { staffId: opened.email, code: started.code },
+        payload: { staffId: opened.email, code: deliveredCode },
       });
       expect(signedIn.statusCode).toBe(200);
       expect(signedIn.json().user).toMatchObject({ tenantId, mustChangePassword: true });
@@ -323,7 +330,7 @@ describe("fresh-shop creation", () => {
 
       resetFreshShopThrottle();
       const slugs = new Set<string>();
-      const secrets = [opened.code, opened.password, other.code, other.password, parked.code, parked.password, started.code];
+      const secrets = [opened.code, opened.password, other.code, other.password, parked.code, parked.password, deliveredCode!];
       for (let i = 0; i < FRESH_SHOP_IP_MAX; i++) {
         const res = await app.inject({ method: "POST", url: "/api/staging/fresh-shop", headers: freshHeaders });
         expect(res.statusCode, `call ${i}`).toBe(201);
@@ -360,7 +367,7 @@ describe("fresh-shop creation", () => {
       expect(liveStart.statusCode).toBe(200);
       expect(liveStart.json().needsCode).toBe(true);
       expect(liveStart.json()).not.toHaveProperty("code");
-      const liveCode = [...consoleLines].reverse().join("\n").match(/(\d{6}) is your CurrencyDesk sign-in code/)?.[1];
+      const liveCode = delivered.at(-1)?.match(/^(\d{6}) is your/)?.[1];
       expect(liveCode).toMatch(/^\d{6}$/);
       expect(JSON.stringify(liveStart.json())).not.toContain(liveCode!);
     } finally {

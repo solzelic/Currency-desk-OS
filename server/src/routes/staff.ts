@@ -45,7 +45,8 @@ import { resolveSession, revokeAllSessions, SESSION_COOKIE, type SessionUser } f
 import { audit } from "../audit.js";
 import { sendEmail, type EmailStatus } from "../email.js";
 import { esc } from "../emails/design.js";
-import { looksLikeCdId } from "../auth/cdid.js";
+import { looksLikeCdId, normalizeCdId } from "../auth/cdid.js";
+import { CD_ID_RE } from "../enquiries/cd-id.js";
 import { suggestUsername, usernameTaken } from "../auth/username.js";
 import { clearPinAttempts, generatePin, hashPin } from "./pin.js";
 
@@ -317,7 +318,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
       const shape = staffIdShape.safeParse(check);
       const detail = !shape.success
         ? "Letters, digits, dots, dashes and underscores only."
-        : looksLikeCdId(check)
+        : (looksLikeCdId(check) || CD_ID_RE.test(normalizeCdId(check)))
           ? "That looks like a CurrencyDesk ID. Pick a different username."
           : (await usernameTaken(db, check))
             ? isEmail(check)
@@ -349,7 +350,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     } else {
       /* Sign-in reads CD-YORK-0042 as a CurrencyDesk ID before anything
          else, so a username in that shape could never be signed in with. */
-      if (looksLikeCdId(b.staffId)) {
+      if (looksLikeCdId(b.staffId) || CD_ID_RE.test(normalizeCdId(b.staffId))) {
         return reply.code(400).send({ error: "invalid_request", detail: "That looks like a CurrencyDesk ID. Pick a different username." });
       }
       /* Free on every desk, not only this one — that is what lets sign-in

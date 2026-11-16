@@ -193,6 +193,23 @@ or password checks out, so a later refusal does not count and a burst of
 guesses cannot all pass the lock. The lock still lives in memory
 on this process.
 
+**An emailed login proof is replaced and spent transactionally.** Issuers take
+a namespaced per-user transaction advisory lock before deleting and inserting
+the proof. This also serializes an empty account; rollback keeps its prior
+proof. The shared helper covers every production issuer and sends no email
+while locks are held. Verification never takes the issuer lock: it locks its
+proof row, atomically increments wrong guesses up to five, and requires an
+exclusive guarded deletion before creating a session. Expiry is checked with
+`clock_timestamp()` at the write, including after lock waits. Proof consumption,
+session and login audit commit together; cookies follow commit. Active staff
+and tenant suspension are checked under share locks. A transaction-local five-second
+lock timeout bounds each acquisition; contention returns safe 503 after rollback.
+It is not a total transaction or delivery deadline. Confirmed rollback cannot
+leave an orphan session. Lost response/commit acknowledgement remains a delivery
+uncertainty, not permission to spend the proof twice. This bounded CD-221
+candidate does not change resend quotas, device trust or session duration; see the
+[returning sign-in contract](SIGNIN_RETURNING_PASSWORD.md).
+
 **Sessions die on command.** Opaque tokens in an httpOnly cookie, not JWTs. A
 JWT stays valid until it expires no matter what happened in between, and at a
 cash desk the interesting event is somebody being let go at 4pm. Every
@@ -225,8 +242,8 @@ and the rate limit answers identically too, because a throttle that only
 fires for real accounts is a slower way of asking the same question. The
 emailed-code step does the same: an unknown staff id and a wrong code are
 one answer, and the code is not compared unless this browser already proved
-the password. Shop sign-in counts five wrong passwords per account and
-twenty per address, in Postgres (`server/src/auth/signin-guard.ts`), and
+the password. Shop sign-in counts ten wrong passwords per account and
+ten per connection in a 15-minute window, in Postgres (`server/src/auth/signin-guard.ts`), and
 locks both the real id and the unknown one with the same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
 socket is a published Cloudflare address, or when the socket is a
 private address and the rightmost forwarded hop is Cloudflare. A
@@ -235,7 +252,9 @@ first request logs header names only. Otherwise a private socket
 counts the rightmost hop, or the socket when nothing is in front.
 IPv6 /64 rotation is accepted for now and is a follow-up. The count is the number the insert
 returned, so a correct password past that count is still refused. An
-owner or a manager can clear the account counter.
+owner or a manager can clear the account counter; the connection counter stays.
+Identifier-only start, active signup ownership, alias sharing and legacy
+compatibility are specified in [the returning password contract](SIGNIN_RETURNING_PASSWORD.md).
 
 **The record of who did what is append-only.** `audit_events` gets a row for
 every credential action and every privileged act. Issuing somebody's sign-in

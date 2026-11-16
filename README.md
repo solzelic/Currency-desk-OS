@@ -141,6 +141,7 @@ builds · [AGENTS.md](AGENTS.md) — the working rules.
 - [Road to deployment](docs/ROAD_TO_DEPLOYMENT.md) — readiness scoring
 - Financial invariants: [cash ownership](docs/CASH_OWNERSHIP_INVARIANTS.md) · [absent figures](docs/ABSENT_FIGURES.md) · [cost basis](docs/COST_BASIS.md) · [cheques](docs/CHEQUE_CASHING.md) · [obligations](docs/OBLIGATION_LINES.md) · [thresholds](docs/DESK_THRESHOLDS.md) · [currencies](docs/DESK_CURRENCIES.md) · [documents](docs/GENERATED_DOCUMENTS.md) · [client records](docs/CLIENT_RECORDS.md) · [jurisdiction packs](docs/JURISDICTION_PACK_ARCHITECTURE.md)
 - Ledger & quotes API: [posting](docs/LEDGER_POSTING_API.md) · [posting invariants](docs/LEDGER_POSTING_INVARIANTS.md) · [quotes](docs/QUOTE_SERVICE.md) · [quote invariants](docs/QUOTE_INVARIANTS.md)
+- [Returning password sign-in](docs/SIGNIN_RETURNING_PASSWORD.md) — API, ownership, persistent limits and remaining activation gates
 - [Security & compliance](docs/SECURITY_COMPLIANCE_FOUNDATION.md) · [Threat model](docs/THREAT_MODEL.md)
 - [Growth pipeline](docs/GROWTH_PIPELINE.md) · [Onboarding](docs/ONBOARDING.md) · [Stripe billing](docs/STRIPE_BILLING.md)
 - [KYC design handoff](design/kyc-handoff/README.md)
