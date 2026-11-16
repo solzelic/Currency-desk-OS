@@ -35,6 +35,10 @@ background controls are inert. Tour currency, regulator, report and ID/officer
 labels come from the reservation pack or an explicitly public Canadian example
 pack. The prototype's remaining compliance/filing captions are not approval of
 live submission capability and remain Compliance/Sol/CD156 review items.
+Visual comparison now retains every difference and excludes only capture-proven
+aria-hidden cdRise glyphs; monetary symbols are never blanket-filtered. The
+reviewer-owned capture tool preserves full text and fails on missing captures.
+The final 38-state × five-size comparison and complete browser run are pending.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
