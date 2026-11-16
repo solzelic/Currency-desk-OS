@@ -1789,6 +1789,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             await shared.record(clientId, payload);
           }
           setClients(prev => shared.project(prev));
+          if (clientId) window.dispatchEvent(new CustomEvent('cdos-id-standing', { detail: { clientId } }));
         } else {
           const today = stampToday();
           setClients(c => ({ ...c, [name]: { ...(c[name] || {}), idType: payload.idType, idNum: payload.idNum, idIssued: payload.idIssued || '', idExpiry: payload.idExpiry, photo: payload.photo, updatedAt: today } }));

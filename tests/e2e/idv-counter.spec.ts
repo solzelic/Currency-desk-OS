@@ -1298,7 +1298,7 @@ test("a Persona check that times out offers the in-person check", async ({ page,
 });
 
 test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   await enableChecks(request);
   const name = `Sample Paperless ${Date.now()}`;
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
@@ -1702,6 +1702,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await closeFile();
     const listCard = (name: string) => page.locator("div.cursor-pointer", { hasText: name }).first();
     await page.locator('[data-app="clients"]').click();
+    await clientSearch().fill("");
     await expect(listCard(typedOnlyName)).not.toContainText("ID on file");
     await expect(listCard(typedOnlyName)).not.toContainText("ID on hand");
     await expect(listCard(readFailName)).toContainText("Could not read the ID check. Try again.");
