@@ -168,3 +168,29 @@ no-referrer/no-store response hook is synchronous: do not add a second async
 onSend hook. That extra yield can double-send existing async guard refusals and
 crash a real HTTP server despite injection tests passing. The return-log suite
 also exercises two unauthenticated refusals over an actual local listening socket.
+
+### Required legacy staging sign-in seam
+
+After `npm run build`, use a fresh disposable local database:
+`SEAM_DATABASE_URL=postgres://…/cd221_stglogin_fresh npx playwright test -c playwright.staging-signin.config.ts`.
+This required additional gate runs after the ordinary browser suite in CI and
+in full local verification, on a different fresh database. Preserve the regular
+report and server log before starting it. Use `--reporter=list,json` with
+`PLAYWRIGHT_JSON_OUTPUT_NAME=test-results/staging-signin-report.json`, then run
+`node scripts/check-seam-ran.mjs test-results/staging-signin-report.json --staging-signin`.
+Run `node --test tests/staging-seam-completeness.test.mjs` for the checker contract.
+This separate config owns port 4173, maps the staging hostname to loopback in
+Chromium, and marks only that disposable database as staging. Never point it at
+a shared or hosted database. It exercises ticket-minted signup through real
+endpoints, desk/logout, then manual legacy code entry and the authoritative
+session/tenant; fault/race cases use intercepted responses. It does not replace
+the full browser/server/ledger gates or verify a hosted deployment.
+
+### Dedicated local staging breach-check transport
+
+The staging sign-in Playwright config opts into PR791's local seam fixture with
+`CD_TEST_BREACH_RANGE=local-staging`. Only the simulated `STAGING=1` and exact
+`staging.currencydeskos.com` markers are exempted by that mode; production or
+Render service markers, non-loopback bind/database hosts and other URLs still
+refuse fixture access. This config does not set hosted environment variables.
+The real password rule/parser and its timeout remain under test.

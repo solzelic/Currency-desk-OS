@@ -1,11 +1,10 @@
 # Returning password sign-in — CD-221 bounded server contract
 
-This server-first candidate adds returning-password access and atomic emailed-proof
-issuance/consumption on staging `f8e1684f` (16 November 2026). Its server logic
-comes from the independently reviewed `cd63a7d6` line, with the accepted signup
-staging helper callsite. It does not include the later remaining-attempt feedback
-or staging code display; those are a dependent delivery slice. It activates no
-v2.3 presentation and is not whole-pack or release acceptance.
+This stack adds returning-password access, atomic emailed-proof issuance/consumption,
+committed attempt feedback and the legacy staging code view on staging `f8e1684f`.
+The server-first layer excludes the attempt-feedback delta; this dependent layer
+adds it with the client and its dedicated browser gate. It does not activate the
+separate v2.3 presentation or implement the rest of the pack.
 Authoritative sources: [CD-221](https://app.notion.com/p/419572f3e39b810e915ec14ae3bd408b),
 BUILD-SIGN-IN v2.3 (15 November), SIGNUP-LOGIC through §16, and the original
 prototype. Appearance/copy follows the prototype; data/security follows BUILD
@@ -62,9 +61,19 @@ A separate successful verification uses a dedicated PostgreSQL connection, then
 checks its backend ID and lock setting after COMMIT. Replacing SET LOCAL with
 plain SET fails this test even when it runs alone.
 
-The fifth wrong guess retains the existing `401 wrong_code` response and
-records five. The next attempt receives `429 too_many_attempts` and deletes
-the terminal proof. Expiry returns `410 expired` and deletes the proof;
+After a committed wrong-attempt update for a password-proven, matching active
+identity, guesses one through four return `401 wrong_code`, `remainingAttempts`
+of 4, 3, 2 and 1, and `detail`: “That code didn’t match. N tries left.” The last
+uses “1 try left.” The count comes from the atomic UPDATE's returned row, not a
+read followed by local subtraction. It describes the allowance at that write;
+another committed request can spend more before the response arrives. It is
+not a reservation for the next request. No remaining count is sent before COMMIT.
+
+The fifth wrong guess records five and deletes the terminal proof in the same
+transaction. Its response is immediately `429 too_many_attempts` with “Too many
+tries. Sign in again.” and clears the proof cookie after commit. It exposes no
+remaining count and offers no sixth usable guess. Expiry returns `410 expired`
+and deletes the proof;
 subsequent replay is the generic `401`. Once a correct request wins, queued
 requests cannot recreate or spend that proof. If it wins before a fifth wrong
 attempt, it may complete; if the fifth wrong attempt wins first, it cannot.
@@ -76,6 +85,11 @@ A request's tenant field cannot change the session's shop. An absent cookie
 returns the same dummy-comparison refusal without a database identity lookup;
 an unknown cookie does not look up staff either. Password/provisioning identity
 resolution and the existing no-email policy remain unchanged.
+Missing/unknown proof or mismatched identity receives the existing generic
+`401 wrong_code` without `remainingAttempts`; malformed and mismatched requests
+that did not consume guesses still do not. Suspended desks retain their safe
+403. No attempted identity, code, proof token or private exception is added to
+response detail or dependency logs.
 
 **Proof deletion, session insertion and `auth.login` audit insertion commit
 in one transaction**, including the payload's plan read. No response cookie
@@ -85,6 +99,9 @@ no partial session or consumed proof survives a confirmed rollback. An
 unexpired proof may be retried after that rollback. A lost commit acknowledgement
 or lost HTTP response can leave delivery uncertain after a successful commit:
 the proof stays spent, and a later attempt cannot mint a second session.
+Immediate or deferred failure of a wrong-attempt UPDATE or fifth-attempt DELETE
+also rolls back the count and preserves the proof. It returns 503 without a
+remaining count or cookie mutation, so it never claims a rolled-back consumption.
 This is not a resolution of issue #769's session-cookie/body-timeout contract.
 
 Consumption preserves exclusive spending of each issued proof. The bounded
@@ -95,7 +112,13 @@ lifetime policy. The complete code/device pack and issue #771 remain outstanding
 `server/tests/login-proof.postgres.test.ts` uses observed native database lock
 barriers for duplicate successes, exact wrong-attempt accounting, both mixed
 request orders, terminal state changes and expiry during identity waits. It
-checks active/suspended authority, database/session/audit rollback and retry,
+also checks eight concurrent wrong requests produce only counts 4/3/2/1, exactly
+five consumed guesses and one terminal 429; a deferred commit barrier proves
+no count leaves while commit is pending. Native and embedded `login2fa` cases
+cover the sequential copy, correct-before-exhaustion, malformed/mismatched
+requests, immediate/deferred rollback, retry and sanitized dependency logs.
+The native suite checks active/suspended authority, database/session/audit
+rollback and retry,
 plus real HTTP password → generated email code → session → authoritative tenant
 and replay. Mail delivery is intercepted in that synthetic test; the code,
 proof, hashing, session, audit and API are real. Existing embedded login tests
@@ -274,7 +297,8 @@ Current audit actions remain `auth.login`, `auth.login_failed` and
 `auth.login_locked`. Their pack counterparts are `auth.signed_in`, `auth.failed`
 and `auth.locked_out`; reconcile those names and required method/reason data
 with existing audit consumers before activation. Code/device/recovery event
-coverage belongs to the corresponding later slices.
+coverage belongs to the corresponding later slices. Wrong-code feedback does
+not add code-failure audit events; that retained gap is outside this bounded fix.
 
 Pre-existing ID-shaped usernames fail closed if they collide with issued IDs.
 Before activation, an authorized read-only staging/live count must establish
@@ -305,38 +329,97 @@ gap. These are recorded findings, not completed fixes.
 
 ### Client error presentation at integration
 
-The legacy code screen on this server development base maps a detail-less
-verification 503 to its wrong-code fallback. A valid proof may still be retried
-after contention; that message is inaccurate. The separate presentation branch
-handles 5xx distinctly. Integration must drive a real verification 503 and retry
-in both presentations, without claiming the server-only checks cover that UI.
-This server head has no client request deadline; the five-second lock budget
-is not evidence of any client timeout or of a whole-request deadline.
+The integrated legacy code screen handles verification 5xx as a temporary
+service failure and keeps the displayed staging code available for retry.
+The earlier exact-source staging reviews exercised real proof-lock 503 and
+successful retry without spending an attempt; final-head gates remain required.
+The separate v2.3 presentation is not activated or covered by that legacy check.
+This client has no request deadline; the five-second server lock budget is not
+evidence of a whole-request deadline or resolution of issue #769.
 
-## Server-first staging delivery composition
+## Legacy staging code display
 
-The password-bearing `/api/auth/login/start` calls `stagingFixtureOwner` with
-resolved `user.staffId` and `user.tenantId`, keeping `!pack`. A canonical CD-ID
-resolves to the activated owner email; typed aliases are not provenance. The
-signup-owned helper requires the exact staging runtime/request Host, one database
-staging marker, matching synthetic owner/slug, test-shop tenant and one accepted
-server-marked enquiry. The older fresh-shop fixture alone no longer qualifies.
-Closed gates retain ordinary delivery, which is refused if sensitive mail cannot
-be sent. No server test uses a hosted or production database.
+The password-bearing `/api/auth/login/start` retains `!pack` and calls
+`stagingFixtureOwner` with the resolved `user.staffId` and `user.tenantId`.
+A canonical CD-ID can therefore resolve the synthetic owner; the typed alias
+is not provenance. CD206 owns that helper: exact staging runtime/raw Host,
+exactly one database staging marker, matching owner/slug, test-shop tenant and
+exactly one accepted, tenant-bound, server-marked staging enquiry are required.
+The older `/api/staging/fresh-shop` fixture alone does not qualify. The newer
+password endpoint never returns an on-screen code. Closed gates retain the
+existing ordinary delivery path; this change does not rewrite mail transport.
 
-This first stack layer deliberately retains generic wrong-code feedback. The
-later layer adds the committed remaining count and the manual, labelled staging
-code view plus its dedicated CI seam. This layer alone is not a usable synthetic
-returning-login walkthrough, because the existing client cannot display that
-code. It preserves normal email delivery and password-only legacy compatibility.
-The proof and limit fixes are reused; no schema, signup-owned production,
-financial rule, client, generated output or CI change is introduced here.
+The legacy client separately requires the successful same-origin staging-door
+response and a successful, well-formed issuance reply containing a six-digit
+string for a synthetic response identity. It keeps the code only in component
+memory, labels it "Staging test code", and says it was not emailed. Existing
+keypad touch or keyboard activation manually enters it; no code is copied into
+the entry state or automatically submitted. Resend clears the old display before
+requesting a replacement. Failed/malformed issuance, navigation/identity changes,
+terminal verification and completion/unmount invalidate it. An attempt generation
+rejects stale UI updates. Pending Back, identity edits and recovery navigation
+are disabled and guarded by the synchronous latch, which serializes issue/verify.
+A late successful verification or a parsed password-only start reply
+(`needsCode === false`) uses the existing server logout and checks `/api/auth/me`
+for 401. Code-required issuance and resend do not create sessions and never
+trigger this cleanup: boot resume may have adopted an existing session while
+they were pending. Cleanup has a ten-second total budget. Both confirmed and
+uncertain cleanup explicitly open `/app` so the existing session bootstrap
+resolves the visible state, rather than leaving a blank or stale signed-in screen. This is an engineering choice pending CTO
+review, not a guarantee against lost responses, page destruction or arbitrary
+network/commit delivery. In particular, aborting a timed-out logout does not
+prove that it stopped server-side: it can revoke after bootstrap has adopted the
+session. That unresolved ordering remains under #769; the fallback is not a
+guarantee of settled session state. Independent review of `4ea020ae` also
+reproduced Low L-C: an unreadable late password-only success can replace the
+HttpOnly cookie while the earlier identity's chooser remains on screen. The
+server still enforces the cookie's rights, with no privilege gain observed.
+This specific lost-body mismatch is retained under #769 for the reconciliation
+contract; it is not fixed or a reason to log out code-only replies. The client
+never retries the authentication write. A retryable
+verification 5xx keeps the displayed code, clears the entered digits and reports
+service trouble; a real five-second proof-lock case then retries the same code
+through the keypad. Network failure also retains the display but does not claim
+the proof remains usable; a response may have been lost after commit. This does not solve lost cookie
+acknowledgements (#769), add a request timeout, or activate the v2.3 client.
 
-Full local final-head gates, independent composition review, Linux CI and CTO
-protected-auth review remain pending on this new stack head. Earlier reviews
-apply to their stated source, not new execution on this commit. #769/#771, the
-identifier policy, no-email/device/PIN/recovery/audit and full-pack gates remain.
+`playwright.staging-signin.config.ts` runs the focused real signup/returning seam
+and client fault/race cases against a fresh disposable native PostgreSQL database.
+The real cases use the staging ticket/application and normal signup endpoints,
+then read the code off the rendered screen and prove the resulting session's
+tenant. Real-server controls cover pending navigation, late password-only/code
+success after unmount, confirmed logout, and visibly resolved sessions when
+cleanup is refused or hangs. Tests intercept transport timing, not proof/session
+creation. Boot-resume controls also preserve an existing session after a late
+code-required initial request and resend, without a React/root-unmount hook.
+The resend control seeds only the initial keypad presentation to avoid the
+two-minute gap; its held resend, proof issuance and session are real. The initial
+request control uses the real server throughout. See DEVELOPMENT for the command. CI runs this config separately after
+the ordinary suite on a new disposable database and requires its own completeness
+report. The default financial gate is unchanged. Parent owns full final-head
+checks and hosted verification.
 
-`tests/e2e/signin-lock.spec.ts` keeps the accepted test-only snapshot/restore of
-its two limiter buckets so real lock cases do not poison later desk seams. No
-production limiter or financial assertion is weakened.
+## Delivery layers and copy check — 16 November 2026
+
+The integrated `11834f2e` full server run found a duplicated resend fallback
+string that exceeded the existing dash ratchet. The client now defines that
+unchanged sentence once and reuses it; the source and bundle baselines are not
+raised. The original failing run is retained, and fresh final-head gates are
+required for both delivery layers. The server layer contains 396 changed
+handwritten production lines. Client/feedback and protected CI wiring are
+reviewed separately against that layer. No financial assertion is weakened.
+
+The stack includes the signup display-only update from staging `f8e1684f`;
+its signup sources and generated files remain identical to that staging head.
+Both layers require CTO protected-surface review and Linux CI. The hosted
+same-shop returning walkthrough remains unproved until deployment. Issues
+#769 and #771 and the broader policy, provider and v2.3 activation holds remain.
+
+### Local gate transport dependency
+
+PR791 (`63fb07a6`) precedes the fixture/server/client delivery stack. The dedicated
+staging config opts into its exact local HIBP range response fixture; ordinary
+local seams use the same dependency automatically. Auth and generated sign-in
+code remain identical to reviewed `d742ac18`. This removes an external test
+dependency, not the live breach check. New full gates and hosted returning
+verification remain required; #769 and #771 are unchanged.

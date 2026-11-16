@@ -36,7 +36,7 @@ export const DUMMY_CODE_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 export const LOGIN_PROOF_COOKIE = "cdos_login_proof";
 
-/** Same words for an unknown id and a wrong code. The screen prints `detail`. */
+/** Unproven or mismatched identity gets no challenge or attempt information. */
 export const CODE_REFUSAL = {
   error: "wrong_code" as const,
   detail: "That code isn't right. Check your email.",
@@ -324,11 +324,14 @@ const usableProof = (tokenHash: string) => and(
   sql`${schema.loginChallenges.expiresAt} > clock_timestamp()`,
 );
 
-export async function noteWrongCode(db: Db, tokenHash: string): Promise<boolean> {
+/** Transaction-only: remaining guesses at this write, or null if no usable row.
+ * The caller must commit before exposing the count, including terminal zero. */
+export async function noteWrongCode(db: Db, tokenHash: string): Promise<number | null> {
   const rows = await db.update(schema.loginChallenges)
     .set({ attempts: sql`${schema.loginChallenges.attempts} + 1` })
     .where(usableProof(tokenHash)).returning();
-  return rows.length === 1;
+  const row = rows[0];
+  return row ? CHALLENGE_MAX_ATTEMPTS - z.number().int().min(1).max(CHALLENGE_MAX_ATTEMPTS).parse(row.attempts) : null;
 }
 
 /** Only the returned deletion authorizes a session, inside the same transaction. */

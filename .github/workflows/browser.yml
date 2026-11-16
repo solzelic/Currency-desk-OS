@@ -46,6 +46,9 @@ jobs:
       - name: Signup browser boundary regressions
         run: node --test tests/signup-*.test.mjs
 
+      - name: Staging seam completeness contract
+        run: node --test tests/staging-seam-completeness.test.mjs
+
       # The served pages are generated from the designs and committed. If a
       # re-export landed without a rebuild, what we ship is not the design
       # that was approved — so say so here rather than letting it reach a
@@ -134,6 +137,24 @@ jobs:
       - name: No seam spec silently skipped
         if: always()
         run: node scripts/check-seam-ran.mjs test-results/seam-report.json
+
+      - name: Create a separate disposable staging sign-in database
+        env:
+          PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          node -e 'const {Client}=require("./server/node_modules/pg"); (async()=>{const c=new Client({connectionString:process.env.PG_URL}); await c.connect(); try { await c.query("CREATE DATABASE currencydesk_staging_signin"); } finally { await c.end(); }})().catch(e=>{console.error(e);process.exitCode=1;});'
+          cp test-results/server.log test-results/default-server.log
+
+      - name: Walk real signup and returning staging sign-in
+        env:
+          SEAM_DATABASE_URL: postgres://postgres:postgres@localhost:5432/currencydesk_staging_signin
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/staging-signin-report.json
+          SIGNUP_IP_MAX: "16"
+        run: npx playwright test -c playwright.staging-signin.config.ts --reporter=list,json
+
+      - name: No staging sign-in seam silently skipped
+        if: always()
+        run: node scripts/check-seam-ran.mjs test-results/staging-signin-report.json --staging-signin
 
       - uses: actions/upload-artifact@v4
         if: failure()

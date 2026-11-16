@@ -90,6 +90,7 @@ Known limits, recorded rather than hidden:
 
 Protected surfaces (sessions, provisioning): CTO review owed. Not release, CTO or
 Compliance acceptance.
+
 ## Deterministic local signup dependency — 16 November 2026
 
 The returning-login delivery stack includes PR791 at `63fb07a6` beneath the
@@ -115,22 +116,135 @@ production ownership/screening rules remain unchanged. No shared ledger rows
 are cleared to make the assertions pass. Final validation and review remain
 pending; the original failed full run remains failed.
 
-## CD221 server-first delivery layer — 16 November 2026
+## Returning-login delivery stack — 16 November 2026
 
-This branch composes reviewed returning-password and atomic proof behavior on
-staging `f8e1684f`, with the signup-owned provenance helper used by the legacy
-password-bearing start. Server issuance/consumption and its tests match the
-reviewed `cd63a7d6` behavior; committed remaining-attempt feedback and the client
-staging-code display are reserved for the dependent second layer. The existing
-client alone cannot complete the synthetic returning-login walkthrough.
+Delivery is split into a server-first branch and a dependent legacy client,
+committed code-feedback and dedicated browser-gate branch, based on staging
+`f8e1684f`. The server layer is 396 changed handwritten production lines; it
+keeps generic wrong-code feedback until the dependent layer. The final runtime
+matches reviewed `4ea020ae` plus current signup changes and the copy correction
+below. No v2.3 presentation is activated.
 
-Current staging's signup, logging and financial changes are retained. No client,
-generated output, CI, migration or financial assertion changes are part of this
-layer. The accepted limiter test cleanup remains to isolate full browser runs.
-This new stack head needs its own full gates, independent composition review,
-Linux CI and CTO protected-auth review. Earlier source reviews are attributed,
-not new execution. #769/#771 and all policy/Sol/full-pack gates remain open.
+The full server run at `11834f2e` had 2,356 passes, one skip and one failure:
+the existing dash ratchet caught a duplicated resend fallback. That same visible
+sentence now has one definition; no baseline or test expectation is relaxed.
+The original run continues unchanged and its remaining results are not claimed
+here. Each new stack head requires independent review and fresh full gates,
+Linux CI, CTO review and the hosted same-shop returning walkthrough. #769/#771
+and the complete sign-in pack remain open. No publication or deployment is
+claimed by this source change.
 
+## Returning-login integration on current staging — 16 November 2026
+
+The returning-login branch now composes staging `ca9fbcb4` with reviewed
+`4ea020ae`. Resolution keeps both teams' state entries and both independent
+imports in the signup opening test; no test assertions or product logic are
+changed by the resolution. Current staging's signup, logging and Canada-rule
+changes are retained. Sign-in source stays byte-identical to `4ea020ae`.
+
+Independent review of `4ea020ae` confirmed M-A/L-A closed, including real boot
+resume and automatic visible reset, and ran 26/26 focused tests on that exact
+head. It also found Low L-C: an unreadable late password-only success may change
+the browser cookie while the previous identity's chooser remains visible.
+Server permissions still follow the cookie; no privilege gain was observed.
+This specific mismatch and the late-committing logout case (L-B) are recorded
+under #769, not claimed fixed. The coordinator retains them for the session
+reconciliation contract; no new cleanup behavior is invented in this merge.
+
+Integrated final-head gates, merge review, Linux CI, CTO protected-surface review
+and hosted same-shop returning walkthrough remain pending. No deployment or
+v2.3 activation, and no whole-pack or live acceptance.
+
+## CD221 late code-only reply correction — 16 November 2026
+
+Review of `9aeb7f20` reproduced an unintended logout: boot resume adopted an
+existing session, then a late code-required reply revoked it even though that
+reply created only a proof. The client now limits cleanup to successful verify
+or a parsed password-only start (`needsCode === false`), never resend. Confirmed
+cleanup also reloads the session-aware app so revoked state is visibly cleared;
+uncertain cleanup retains the same fallback. A logout that commits after its
+client deadline can still race bootstrap; #769 remains unresolved.
+
+New controls use the real boot/resume unmount with an existing session for both
+initial issuance and resend. The resend case seeds its initial keypad view only;
+its held issuance, proof and session are real. Existing real password/code
+unmount controls now require automatic visible reset rather than a test reload.
+Four corrected red controls fail on unchanged `9aeb7f20`: two unintended
+logouts and two missing automatic visible resets. An earlier red invocation
+also stalled reading an abandoned response body; the corrected test reads the
+real proof row instead. The focused staging suite passes 26/26, with no retries
+or skips, on precommit source; build, parse, sanctions and typecheck pass.
+Independent review, full final-head gates and hosted verification remain pending.
+No server/signup change, deployment, activation or whole-pack acceptance.
+
+## Returning-login review correction — 16 November 2026
+
+Integration now contains staging `900cfaa` by ancestry, with signup fixture and
+payment guard unchanged. Review `74762d26` found a hidden-session race after
+navigation/unmount, missing required CI coverage, and a valid staging code lost
+after a retryable verification 503. The coordinator corrects these directly:
+pending navigation/identity edits are guarded; late success triggers server logout
+and a 401 check, or explicitly opens the session-aware app if cleanup cannot be
+confirmed within ten seconds. This narrow observed-response correction does not
+resolve lost responses, destroyed pages or the broader #769 delivery contract.
+The default legacy screen changes; CTO review remains required. A real contention
+503 now keeps the displayed code for manual retry and uses service-trouble copy.
+
+The dedicated staging browser config is now part of required CI, with its own
+fresh disposable database and completeness check; the ordinary financial suite
+and its required day-at-the-desk check remain unchanged. New real-server red
+controls reproduced the missing guards, hidden sessions and lost-code display.
+Two initial unmount controls failed at a test-only DNS lookup; corrected controls
+then reproduced `/me` 200 after unmount on the unchanged generated candidate.
+Correction browser run passed 24/24 with no skips/retries; the earlier green
+attempt was 23/24 because its exact-case text locator missed the legacy uppercase
+rendering. That locator is corrected without changing the product or timeout.
+The checker unit tests pass 3/3. These are precommit source results; exact-head
+review, full gates and hosted returning walkthrough remain pending. No deployment, activation or whole-pack acceptance.
+
+## Legacy staging returning-code display — 16 November 2026
+
+The existing sign-in keypad now labels a valid server-supplied synthetic code
+"Staging test code", after the same-origin staging door confirms enabled. It
+requires manual entry and the real proof verification/session. Replacement,
+malformed/failed issuance, navigation and terminal verification clear the code;
+pending requests cannot display a previous identity's reply or overlap issuance
+and verification. Ordinary email presentation stays unchanged. The auth callsite
+uses CD206's `stagingFixtureOwner` with the resolved staff identity and tenant;
+legacy fresh-shop rows without accepted ticket provenance no longer disclose.
+
+This bounded local candidate includes exact signup dependency `02e62822` (PR776),
+including its payment fallback correction. Desktop/phone focused seams exercise
+real ticket-minted signup, desk, logout and manual returning verification; this
+is not a hosted walkthrough, independent review, full-pack, CTO or release pass.
+Parent owns final composition and gates. The v2.3 client remains inactive and
+#769/#771 and the other recorded pack holds remain open.
+
+## CD221 dependency composition hold — 16 November 2026
+
+Exact signup dependency `02e62822d6f19f7b816d0d85f5e18da59fa88c4c` (PR776,
+superseding PR775/f841) is composed locally with base `8334d7e9` for bounded returning sign-in work.
+Both prior state records are preserved below. CD206 reported a closed-gate
+with configured Stripe payment fallback defect; this dependency includes its additive correction.
+This dependency is accepted for development only, not deployment. Hosted staging
+database marking is confirmed by CD206 from e6db startup logs, not rechecked here. Parent owns the final
+composition, independent review and full gates. No service or hosting changed.
+
+## Returning sign-in staging composition — 16 November 2026
+
+Local integration combines signup staging candidate `56dccfb5` (PR774) with
+independently reviewed returning-auth server candidate `fd1347ed`. Production
+files merged without conflict; both teams' state records are retained below.
+No signup, migration, hosting or legacy presentation behavior is newly changed
+by this composition. The separate v2.3 client is not activated.
+
+The combined source has not yet passed its own review or full test gates.
+Earlier source reviews and counts below apply only to their named revisions.
+The hosted synthetic journey still needs the signup-owned provenance/payment
+fixture and a returning-login display of its server-issued staging test code.
+CD221 owns that login integration; CD206 owns signup. Issues #769 and #771,
+provider/device/recovery work and CTO/Sol release gates remain open. This local
+composition is not a deployed walkthrough or whole-pack acceptance.
 ## Signup v2.1 rate website refusal, 16 November 2026
 
 On Extras, "Your own rate website" (Coming soon) can be ticked, and the server
@@ -245,6 +359,98 @@ posting, first-exchange/backup-card billing, approved versioned compliance copy,
 provider configuration, visual approval and protected-surface CTO disposition
 remain recorded on CD-206. Existing review evidence below describes its own
 source revision; the integration PR records checks on this combined candidate.
+
+**2026-11-16 — emailed-code feedback candidate (CD-221).** A committed wrong
+guess for a password-proven, matching usable challenge returns 401 with the
+server's remaining count 4/3/2/1 and the pack sentence, including “1 try left.”
+The fifth wrong guess now commits its increment and proof deletion together,
+returns terminal 429 and clears the proof cookie; later replay is generic 401.
+Counts and cookie changes wait for commit. Confirmed rollback returns safe 503
+without claiming consumption. Missing/unknown proof and mismatched identities
+remain generic and gain no attempt information. Existing five-try/ten-minute
+policy, expiry checks, authority locks, local lock budget and issuance isolation
+guard are retained. Native lock barriers and native/embedded fault cases cover
+count serialization, commit timing, rollback and real HTTP code-to-session use.
+This bounded local candidate is based on `cd63a7d6`; parent owns new independent
+review and full final-head gates. Code-failure auditing remains a gap; resend
+quota, client 503 presentation, #769/#771, signup dependency acceptance and all
+pack/CTO/release holds remain. No publication or visual acceptance is claimed.
+One focused native run had four unexplained timing/barrier failures in unchanged
+issuance/returning tests; baseline and fresh-DB rerun passed. The failures are
+retained evidence, and the rerun does not establish deterministic timing stability.
+See [code feedback contract](SIGNIN_RETURNING_PASSWORD.md#emailed-proof-consumption-bounded-follow-on).
+
+**2026-11-16 — atomic proof issuance candidate (CD-221).** Returning emailed
+proof replacement now serializes issuers per authoritative staff user with a
+transaction advisory lock, then commits deletion and insertion together.
+Confirmed rollback preserves the previous proof; committed replacement makes
+it unusable. Issuance requires the root database. A defensive isolation check
+refuses incompatible outer transactions before writing, since nested Drizzle
+transactions ignore isolation options. This is a future-reuse guard; the sole
+production caller already uses the root database. The five-second local lock budget returns safe 503 on contention.
+Mail is sent after commit with no issuance locks held. Deterministic native
+controls on `6eead56f` reproduced two usable proofs and loss of the previous
+proof on insertion/commit failure before this correction. No migration, signup
+change, quota change or delivery guarantee is introduced. Provider arrival
+order and lost commit/response acknowledgement (#769) remain separate.
+This is a bounded local candidate: parent owns fresh exact-head review/full
+gates; client 503 integration, #771 and the remaining pack are not completed.
+See [issuance contract and acceptance mapping](SIGNIN_RETURNING_PASSWORD.md#atomic-proof-issuance-bounded-follow-on).
+
+**2026-11-16 — proof review corrections (CD-221).** The coordinator adds a
+five-second transaction-local lock timeout to verification. Held proof, staff
+and tenant locks held requests beyond 6.5 seconds on `132a77a4`, with server
+timeouts set to zero; new tests require
+safe 503, rollback and successful retry. A direct exhausted-proof helper test
+also detects removal of the defensive write guard. A dedicated connection test
+checks that the lock setting resets after successful COMMIT, not only rollback.
+The inherited legacy code screen mislabels a detail-less 503 as a wrong code;
+correct 5xx presentation remains a required client-integration check.
+This bounds individual lock
+acquisitions, not request or commit delivery. Fresh independent review and full
+final-head gates remain pending; issues #769 and #771 remain unresolved.
+
+<!-- CD-221 proof consumption is a bounded local candidate, not pack acceptance. -->
+**2026-11-16 — emailed proof consumption candidate (CD-221).** Verification
+serializes each proof, accounts for five wrong attempts without lost updates,
+and rechecks expiry at its conditional write after lock waits. Successful
+proof deletion, real session and audit commit together; confirmed rollback
+leaves no partial session or spent proof. Active staff and tenant authority
+are retained through commit. Deterministic native PostgreSQL regressions
+reproduced duplicate success, lost increments, stale expiry/exhaustion and
+partial-write failures on exact parent `ed23a76` before the fix. This is only
+the first bounded part of the code/device slice, on unchanged signup source
+`ed371e8`, not release acceptance. Issuance/resend quotas, device trust,
+recovery, PIN, providers and the 12-hour session policy are unchanged.
+Issue #769's response-delivery contract and #771 remain held. Parent owns new
+independent review and full final-head gates; no publication is authorized.
+See [proof contract and failure semantics](SIGNIN_RETURNING_PASSWORD.md#emailed-proof-consumption-bounded-follow-on).
+The added embedded account-switch check has two baseline failures on `ed23a76`
+(`ledger_till_sessions` absent); this proof change does not repair that fixture
+or weaken its assertions. Native PostgreSQL is the account-switch ledger gate.
+
+<!-- CD-221 bounded server candidate; review and integration gates remain open. -->
+**2026-11-16 — returning password server candidate (CD-221).** Adds the pack's
+identifier-only start and password API while retaining existing callers. Desk
+password doors share persistent 10/account and 10/connection limits; active
+signup owners use verified provisioning and their current staff password.
+Required email codes still precede the unchanged 12-hour session. This is a
+local implementation candidate on signup development base `ed371e8`, not
+release acceptance. Independent review and full final-head gates remain with
+the coordinator. The v2.3 presentation is separate and unactivated; existing
+legacy no-email password access remains an explicit pre-activation gate.
+Identifier lookup counts misses only and refuses locked connections before
+lookup without growing ID buckets. Audit-event naming and pre-existing
+ID-shaped username/issuance checks also remain activation gates.
+Prefix-free ID ambiguity, Q19–Q21,
+trust/device, recovery, providers, PIN and step-up are not delivered here.
+See [returning password contract](SIGNIN_RETURNING_PASSWORD.md).
+Full 8c17ec6c server/ledger/civil checks passed, but the browser run failed: the
+phone lock tests left the shared connection locked for later seams. A scoped
+test-counter restoration passes the 19 focused lock/staging checks after a
+red control reproduced the subsequent cashier’s 429; full browser acceptance remains pending.
+Separate onboarding-fixture and portable screenshot-path dependencies also
+remain open. Production limits and financial assertions are unchanged.
 
 <!-- CD-206 review in progress; not whole-slice acceptance. -->
 **Integrated review in progress:** signup now builds ordinary React code into
@@ -364,6 +570,14 @@ each customer's public storefront (live rates, converter, SMS rate quotes)
 on their own domain, and runs a growth pipeline (lead research + outbound
 calling) for its own sales funnel.
 Deployed as **one Render web service** (`render.yaml`). Live auto-deploys from `release`. Its compute plan is the paid plan `1c-2g` (1 CPU, 2 GB), set by the owner. Do not set it back to free.
+
+**CD-221 review correction in progress:** full canonical-ID/username collisions
+fail closed across desks; staff creation reserves v2 ID spellings. Identifier
+lookups use persistent per-ID/connection quotas; already-over-limit password
+requests avoid expensive hashing. Known-user audit attribution is retained,
+unknown attempts log bounded reasons outside platform feeds, and successful
+zero connection rows are safely removed. Fresh exact-SHA review/full gates and
+unresolved compact-ID policy remain required; no activation or release claim.
 
 ## Current product milestone — Shop-Ready Core v1
 

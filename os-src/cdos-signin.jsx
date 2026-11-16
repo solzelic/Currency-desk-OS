@@ -103,6 +103,8 @@
     const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
     const [code, setCode] = useState('');
+    const [stagingCode, setStagingCode] = useState('');
+    const [stagingDelivery, setStagingDelivery] = useState(false);
     const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false); const [note, setNote] = useState('');
     const [resetEmail, setResetEmail] = useState(''); const [newPw, setNewPw] = useState('');
@@ -130,6 +132,8 @@
     const [quick, setQuick] = useState(stagingOpen === true);
     const [night, setNight] = useState(() => document.documentElement.getAttribute('data-cdtheme') === 'dark');
     const sending = useRef(false);
+    const attempt = useRef(0), mounted = useRef(true), doorCheck = useRef(Promise.resolve(false));
+    useEffect(() => () => { mounted.current = false; attempt.current++; authRef.current = {}; }, []);
     useEffect(() => {
       const sync = () => setNight(document.documentElement.getAttribute('data-cdtheme') === 'dark');
       window.addEventListener('cdos-theme', sync);
@@ -160,10 +164,10 @@
        staging check passed. Anything else leaves the buttons off. */
     useEffect(() => {
       let live = true;
-      fetch('/api/staging/signin', { credentials: 'same-origin' })
+      doorCheck.current = fetch('/api/staging/signin', { credentials: 'same-origin', redirect: 'error' })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (live && d && d.enabled === true) { setQuick(true); document.dispatchEvent(new Event("cdos-staging-door")); } })
-        .catch(() => {});
+        .then((d) => { const enabled = !!(live && d && d.enabled === true); if (enabled) { setQuick(true); document.dispatchEvent(new Event("cdos-staging-door")); } return enabled; })
+        .catch(() => false);
       return () => { live = false; };
     }, []);
     const startCooldown = (secs) => setCoolUntil(Date.now() + Math.max(1, Math.round(secs || 120)) * 1000);
@@ -201,7 +205,40 @@
     // captured across the login call so the code step can complete
     const authRef = useRef({ rec: null, srvPlan: null, srvUser: null });
 
-    const goPassword = () => { if (idInput.trim().length < 3) { setErr('Enter your CurrencyDesk ID.'); return; } setErr(''); setStep('password'); };
+    // Never carry a reply or displayed code across navigation or identity changes.
+    // Keep the pending latch until the request settles: overlapping issuers can
+    // replace each other's proof cookie even when a stale UI reply is ignored.
+    const invalidate = () => { attempt.current++; authRef.current = {}; setStagingCode(''); setStagingDelivery(false); setCode(''); setNote(''); setVerifying(false); };
+    const current = (epoch) => mounted.current && attempt.current === epoch;
+    // Ignoring a callback does not undo an HttpOnly session cookie. If the
+    // component has gone away, revoke a late session-creating success only.
+    // Both confirmed and uncertain cleanup reload the session-aware app, not a false
+    // signed-out screen. This is not a timeout for the original login request.
+    async function retireLateSession() {
+      const controller = new AbortController();
+      let timer;
+      try {
+        await Promise.race([
+          (async () => {
+            const opts = { credentials: 'same-origin', redirect: 'error', signal: controller.signal };
+            const logout = await fetch('/api/auth/logout', { ...opts, method: 'POST' });
+            if (!logout.ok) throw new Error('logout unavailable');
+            const me = await fetch('/api/auth/me', { ...opts, cache: 'no-store' });
+            if (me.status !== 401) throw new Error('session unresolved');
+          })(),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('cleanup deadline')), 10000); }),
+        ]);
+      } catch (_) { /* Bootstrap below resolves the uncertain session visibly. */ }
+      finally { clearTimeout(timer); controller.abort(); }
+      window.location.replace('/app');
+    }
+    const validIssue = (d) => d && d.ok === true && typeof d.needsCode === 'boolean' && d.user && typeof d.user.id === 'string';
+    const displayedCode = async (d) => {
+      if (d.code === undefined || !/^owner\+[0-9a-f]{8}@staging\.invalid$/.test(d.user.id)) return '';
+      return d.needsCode === true && typeof d.user.tenantId === 'string' && typeof d.code === 'string' && /^\d{6}$/.test(d.code) && await doorCheck.current ? d.code : null;
+    };
+
+    const goPassword = () => { if (sending.current) return; if (idInput.trim().length < 3) { setErr('Enter your CurrencyDesk ID.'); return; } setErr(''); setStep('password'); };
     async function enterAs(role) {
       if (sending.current) return;
       sending.current = true;
@@ -264,17 +301,20 @@
       // set before the first await, or a double-click gets through
       if (sending.current) return;
       sending.current = true;
+      invalidate(); const epoch = attempt.current;
       let rec = known;
       const staffId = rec ? (rec.code || rec.name) : idInput.trim().toLowerCase();
       setBusy(true); setErr('Checking… (first sign-in of the day can take ~30s while the server wakes)');
       try {
         const res = await fetch('/api/auth/login/start', {
           method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
-          body: JSON.stringify({ staffId, password: pw }),
+          body: JSON.stringify({ staffId, password: pw }), redirect: 'error',
         });
+        if (!res.ok && !current(epoch)) return;
         if (res && res.status === 401) { sending.current = false; setBusy(false); clearLock(); setErr('That password doesn\'t match this ID. Try again, or reset it below.'); return; }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
+          if (!current(epoch)) return;
           sending.current = false; setBusy(false);
           if (applyLock(d)) return;
           startCooldown(d && d.retryAfter);
@@ -284,15 +324,22 @@
         if (res && res.status === 503) { sending.current = false; setBusy(false); setErr('Sign-in is having trouble. Try again in a minute.'); return; }
         if (res && !res.ok) { sending.current = false; setBusy(false); setErr('Sign-in service error (' + res.status + '). Try again in a moment.'); return; }
         const data = await res.json().catch(() => null);
-        const u = (data && data.user) || null;
+        if (!current(epoch)) { if (res.ok && data && data.needsCode === false) await retireLateSession(); return; }
+        if (!validIssue(data)) { setErr('Sign-in returned an incomplete reply. Try again.'); return; }
+        const shown = await displayedCode(data);
+        if (!current(epoch)) { if (data.needsCode === false) await retireLateSession(); return; }
+        if (shown === null) { setErr('The staging test code is unavailable. Try again.'); return; }
+        const u = data.user;
         const srvPlan = (u && u.plan) || null;
         if (!rec && u) rec = adopt(u, null);
         sending.current = false; setBusy(false); setErr('');
         if (u && u.mustChangePassword) { onMustChange(rec, { current: pw }, srvPlan, u); return; }
         authRef.current = { rec, srvPlan, srvUser: u, staffId, tenantId: (u && u.tenantId) || undefined, maskedEmail: data && data.maskedEmail };
         if (data && data.needsCode === false) { onComplete(rec, srvPlan, u); return; } // password-only (no email on file)
+        setStagingCode(shown); setStagingDelivery(!!shown);
         setCode(''); setStep('code'); startCooldown(120);
       } catch (_) {
+        if (!current(epoch)) return;
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
         sending.current = false; setBusy(false);
@@ -303,7 +350,7 @@
         if (!rec) { setErr('No staff record for that ID — pick one from the examples.'); return; }
         authRef.current = { rec, srvPlan: null, srvUser: null, staffId, demo: true };
         setCode(''); setStep('code');
-      }
+      } finally { sending.current = false; if (mounted.current) setBusy(false); }
     }
 
     /* ---- forgot password ------------------------------------------
@@ -365,29 +412,40 @@
 
     // Step 2: the emailed code grants the session.
     async function verifyCode(codeVal) {
-      const a = authRef.current;
-      setVerifying(true); setErr('');
-      if (a.demo || !a.staffId) { setTimeout(() => onComplete(a.rec, a.srvPlan, a.srvUser), 900); return; } // offline demo
+      const a = authRef.current, epoch = attempt.current;
+      if (sending.current || !a.staffId) return;
+      sending.current = true; setVerifying(true); setErr('');
+      if (a.demo) { setTimeout(() => { sending.current = false; if (current(epoch)) onComplete(a.rec, a.srvPlan, a.srvUser); }, 900); return; }
       try {
         const res = await fetch('/api/auth/login/verify', {
-          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+          method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', redirect: 'error',
           body: JSON.stringify({ staffId: a.staffId, tenantId: a.tenantId, code: codeVal }),
         });
+        if (!current(epoch)) { if (res.ok) await retireLateSession(); return; }
         const data = await res.json().catch(() => null);
-        if (!res.ok) { setVerifying(false); setCode(''); setErr((data && data.detail) || 'That code isn\'t right. Check your email.'); return; }
+        if (!current(epoch)) { if (res.ok) await retireLateSession(); return; }
+        if (!res.ok) {
+          if (res.status >= 500) { setCode(''); setErr('Sign-in is having trouble. Try this code again in a moment.'); return; }
+          if (!(res.status === 401 && data && data.error === 'wrong_code' && data.remainingAttempts > 0)) setStagingCode('');
+          setCode(''); setErr((data && data.detail) || (stagingDelivery ? 'Sign-in could not be confirmed. Try again.' : 'That code isn\'t right. Check your email.')); return;
+        }
+        setStagingCode('');
         const u = (data && data.user) || a.srvUser;
-        onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
-      } catch (_) { setVerifying(false); setErr('Network error — try again.'); }
+        invalidate(); onComplete(a.rec, (u && u.plan) || a.srvPlan, u);
+      } catch (_) { if (current(epoch)) { setCode(''); setErr('Network error — try this code again.'); } }
+      finally { sending.current = false; if (mounted.current) setVerifying(false); }
     }
     async function resendCode() {
-      const a = authRef.current;
+      const resendFailure = 'Couldn’t resend — try again.';
+      const a = authRef.current, epoch = attempt.current;
       if (!a.staffId || a.demo) { setCode(''); return; }
       if (sending.current || cool > 0) return;   // the latch, before any await
       sending.current = true;
-      setNote('Sending a new code…');
+      setBusy(true); setStagingCode(''); setCode(''); setErr(''); setNote('Requesting a new code…');
       try {
-        const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }) });
+        const res = await fetch('/api/auth/login/start', { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ staffId: a.staffId, password: pw }), redirect: 'error' });
         const d = await res.json().catch(() => null);
+        if (!current(epoch)) return;
         if (res.status === 429) {
           if (d && d.error === 'too_many_attempts') {
             setNote(d && d.until
@@ -399,18 +457,23 @@
           setNote((d && d.detail) || 'A code went out moments ago.');
           return;
         }
-        setNote('A new code is on its way.'); setCode(''); startCooldown(120);
-      } catch (_) { setNote('Couldn’t resend — try again.'); }
-      finally { sending.current = false; }
+        if (!res.ok || !validIssue(d) || d.needsCode !== true || d.user.id !== a.srvUser.id || d.user.tenantId !== a.tenantId) { setNote(resendFailure); return; }
+        const shown = await displayedCode(d);
+        if (!current(epoch)) return;
+        if (shown === null) { setNote('The staging test code is unavailable. Try again.'); return; }
+        setStagingCode(shown); setStagingDelivery(!!shown);
+        setNote(shown ? 'Use the new staging test code above.' : 'A new code is on its way.'); startCooldown(120);
+      } catch (_) { if (current(epoch)) setNote(resendFailure); }
+      finally { sending.current = false; if (mounted.current) setBusy(false); }
     }
 
     const pushDigit = (d) => {
-      if (verifying || code.length >= 6) return;
+      if (sending.current || verifying || code.length >= 6) return;
       const next = (code + d).slice(0, 6);
       setCode(next);
       if (next.length === 6) verifyCode(next);
     };
-    const backDigit = () => { if (!verifying) setCode(code.slice(0, -1)); };
+    const backDigit = () => { if (!sending.current && !verifying) setCode(code.slice(0, -1)); };
 
     const maskedEmail = (() => {
       if (authRef.current.maskedEmail) return authRef.current.maskedEmail;
@@ -447,7 +510,7 @@
       <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 2px' }}>Sign in</h1>
       <div style={{ textAlign: 'center', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.18em', color: 'var(--si-mute)', marginBottom: 18 }}>CURRENCYDESK OS</div>
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>CURRENCYDESK ID</div>
-      <input value={idInput} onChange={e => { setIdInput(e.target.value); setErr(''); }} autoFocus placeholder="your-staff-id"
+      <input value={idInput} disabled={busy || verifying} onChange={e => { if (sending.current) return; invalidate(); setIdInput(e.target.value); setErr(''); }} autoFocus placeholder="your-staff-id"
         style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontFamily: MONO, fontSize: 18, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
           padding: '13px 12px', border: '1px solid var(--si-line)', borderRadius: 11, background: 'var(--si-panel)', outline: 'none' }}
         onFocus={e => { e.target.style.borderColor = 'var(--si-primary)'; e.target.style.boxShadow = '0 0 0 3px rgba(29,107,69,0.14)'; }}
@@ -467,7 +530,7 @@
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, flexWrap: 'wrap' }}>
           <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.14em', color: 'var(--si-faint)' }}>ON THIS DESK</span>
           {examples.map(ex => (
-            <button key={ex.code || ex.name} type="button" onClick={() => { setIdInput(ex.code || ex.name); setErr(''); }}
+            <button key={ex.code || ex.name} type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); setIdInput(ex.code || ex.name); setErr(''); }}
               style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, padding: '5px 9px', borderRadius: 8, border: '1px dashed var(--si-line)', background: 'transparent', color: 'var(--si-ink)', cursor: 'pointer' }}>
               {(ex.code || ex.name)} · {(ex.role || 'staff').toLowerCase()}
             </button>
@@ -496,12 +559,12 @@
       <button type="submit" disabled={idInput.trim().length < 3} style={{ ...primaryBtn(idInput.trim().length >= 3), marginTop: 16 }}>Continue →</button>
       <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--si-mute)', marginTop: 16, lineHeight: 1.6 }}>
         Every session is <b style={{ color: 'var(--si-ink)' }}>on the record</b>.{' '}
-        <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setStep('forgot'); }}
+        <button type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setStep('forgot'); }}
           style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 11.5 }}>
           Can't get in?</button>
       </div>
       {onSignup && <div style={{ textAlign: 'center', fontSize: 12, marginTop: 10 }}>
-        New to CurrencyDesk? <button type="button" onClick={onSignup} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button>
+        New to CurrencyDesk? <button type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); onSignup(); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>Create your desk →</button>
       </div>}
     </form>));
 
@@ -526,7 +589,7 @@
         </div>
         <h1 style={{ textAlign: 'center', fontSize: 23, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{displayName ? 'Welcome back, ' + displayName : 'Welcome back'}</h1>
         <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--si-mute)', marginBottom: 18 }}>
-          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" onClick={() => { setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px', background: 'none', border: 'none', color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
+          <span style={{ fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{idInput}</span> · <button type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); setStep('id'); setPw(''); setErr(''); clearLock(); }} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 8px', background: 'none', border: 'none', color: 'var(--si-primary)', cursor: 'pointer', fontWeight: 700 }}>not you?</button>
         </div>
         <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--si-mute)', marginBottom: 6 }}>PASSWORD</div>
         <div style={{ position: 'relative' }}>
@@ -538,7 +601,7 @@
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--si-mute)', marginTop: 8 }}>
           Forgot it?{' '}
-          <button type="button" onClick={() => { setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
+          <button type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); setResetEmail(idInput.indexOf('@') >= 0 ? idInput : ''); setErr(''); setNote(''); setStep('forgot'); }}
             style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 4px', background: 'none', border: 'none', color: 'var(--si-primary)', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>
             Send yourself a reset code</button>.
         </div>
@@ -620,8 +683,12 @@
     // ---- A3 · Email code (keypad) -------------------------------------
     return shell(card(<div style={{ textAlign: 'center' }}>
       <MailGlyph />
-      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>Check your email</h1>
-      <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 16 }}>A fresh 6-digit code just went to <b style={{ color: 'var(--si-ink)' }}>{maskedEmail}</b>.</div>
+      <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.01em', margin: '0 0 4px' }}>{stagingDelivery ? 'Enter your test code' : 'Check your email'}</h1>
+      <div style={{ fontSize: 13.5, color: 'var(--si-mute)', marginBottom: 16 }}>{stagingDelivery ? (stagingCode ? 'This staging code is shown here, not emailed. Enter it using the keypad.' : 'Request a new staging test code to continue. Codes are not emailed.') : <>A fresh 6-digit code just went to <b style={{ color: 'var(--si-ink)' }}>{maskedEmail}</b>.</>}</div>
+      {stagingCode && <div role="status" aria-label="Staging test code" style={{ border: '2px solid var(--si-primary)', borderRadius: 12, padding: '8px 12px', marginBottom: 12, color: 'var(--si-ink)' }}>
+        <b style={{ display: 'block', fontSize: 13 }}>Staging test code</b>
+        <output style={{ fontFamily: MONO, fontSize: 24, letterSpacing: '.15em' }}>{stagingCode}</output>
+      </div>}
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         {[0, 1, 2, 3, 4, 5].map(i => {
           const filled = i < code.length, active = i === code.length && !verifying;
@@ -631,9 +698,9 @@
       </div>
       <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: err ? 'var(--si-flag)' : 'var(--si-faint)', margin: '4px 0 14px' }}>{err ? err.toUpperCase() : verifying ? 'VERIFYING…' : 'TAP THE CODE IN BELOW'}</div>
       <Keypad value={code} max={6} onDigit={pushDigit} onBack={backDigit}
-        leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying} />
+        leftLabel={cool > 0 ? cool + 's' : 'Resend'} onLeft={cool > 0 ? null : resendCode} verifying={verifying || busy} />
       <div style={{ fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11, fontWeight: note && note.indexOf('Too many tries.') === 0 ? 800 : 400, color: note && note.indexOf('Too many tries.') === 0 ? 'var(--si-ink)' : 'var(--si-faint)', marginTop: 16, lineHeight: 1.35 }}>{note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'}</div>
-      <button type="button" onClick={() => { setStep('password'); setCode(''); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
+      <button type="button" disabled={busy || verifying} onClick={() => { if (sending.current) return; invalidate(); setStep('password'); }} style={{ background: 'none', border: 'none', color: 'var(--si-mute)', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>← Back</button>
     </div>));
   }
 
