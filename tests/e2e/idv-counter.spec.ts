@@ -290,6 +290,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await page.getByRole("checkbox", { name: /inspected the original ID/i }).check();
     await page.getByRole("button", { name: "Save the ID record" }).click();
     await expect(page.getByTestId("id-check-storage")).toHaveText("ID number storage is not set up for this shop yet.");
+    await themeShot(page, "storage");
     await page.unroute("**/api/idv/checks/in-person");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
     await page.locator(".cd-tx-x").click();
