@@ -1959,7 +1959,7 @@ function s365(v,k){return h("p",{key:k,"style":style("margin:18px 0 0;font-famil
 function s368(v,k){return h(React.Fragment,{key:k},"",text(v?.["dayOneHoldTitle"],1),"");}
 function s367(v,k){return h("p",{key:k,"style":style("margin:10px 0 0;font-family:'Instrument Serif',serif;font-size:34px;line-height:1.1;overflow-wrap:anywhere;")},s368(v,0));}
 function s370(v,k){return "Signing up a new test shop and opening its desk. This takes a few seconds.";}
-function s369(v,k){return h("p",{key:k,"style":style("margin:10px 0 0;font-size:14px;line-height:1.5;color:#6E675E;")},s370(v,0));}
+function s369(v,k){return h("p",{key:k,"style":style("margin:10px 0 0;font-size:14px;line-height:1.5;color:#6E675E;text-wrap:balance;")},s370(v,0));}
 function s359(v,k){return h("div",{key:k,"style":style("max-width:480px;animation:cdFadeUp 0.5s ease both;")},s360(v,0),s365(v,1),s367(v,2),s369(v,3));}
 function s358(v,k){return h("div",{key:k,"data-staging-day-one-hold":"true","role":"status","aria-live":"polite","style":style("position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:24px 16px;box-sizing:border-box;text-align:center;background:#F6F2EA;color:#17140F;font-family:'Schibsted Grotesk',system-ui,sans-serif;")},s359(v,0));}
 function s357(v,k){return (v?.["dayOneHold"] ? h(React.Fragment,{key:k},s358(v,0)) : null);}

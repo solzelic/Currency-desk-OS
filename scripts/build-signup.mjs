@@ -305,7 +305,7 @@ const DAY_ONE_HOLD = '<sc-if value="{{ dayOneHold }}"><div data-staging-day-one-
   + '<svg viewBox="0 0 200 140" width="54" height="38" aria-hidden="true"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#fff"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>'
   + '<p style="margin:18px 0 0;font-family:\'IBM Plex Mono\',monospace;font-size:10px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#6E675E;">Staging · Start on Day 1</p>'
   + '<p style="margin:10px 0 0;font-family:\'Instrument Serif\',serif;font-size:34px;line-height:1.1;overflow-wrap:anywhere;">{{ dayOneHoldTitle }}</p>'
-  + '<p style="margin:10px 0 0;font-size:14px;line-height:1.5;color:#6E675E;">Signing up a new test shop and opening its desk. This takes a few seconds.</p>'
+  + '<p style="margin:10px 0 0;font-size:14px;line-height:1.5;color:#6E675E;text-wrap:balance;">Signing up a new test shop and opening its desk. This takes a few seconds.</p>'
   + '</div></div></sc-if>';
 patch("day one hold", '<div style="display: flex; height: 100vh; width: 100%; overflow: hidden;">',
   DAY_ONE_HOLD + '<div data-signup-root="true" inert="{{ holdInert }}" style="display: flex; height: 100vh; width: 100%; overflow: hidden;">');
