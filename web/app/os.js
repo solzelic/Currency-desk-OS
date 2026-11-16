@@ -36912,7 +36912,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here')), /*#__PURE__*/React.createElement("span", {
       "data-testid": "deal-id-badge",
-      className: "cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
+      className: 'cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium' + (handTyped ? ' is-hand' : ''),
       style: {
         background: badge.bg,
         color: badge.c,
@@ -36949,7 +36949,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       sentence: phone,
       value: papersMissing ? 'Not set' : rec.idType || 'ID',
       sub: papersMissing ? 'collect below' : !idOk ? rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'not checked' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
-      tone: idOk ? CD.ink : CD.flag
+      tone: idOk || handTyped ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`,
       sentence: phone,
@@ -51912,7 +51912,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       level = 'reco';
       tier = 'verify';
       title = 'ID typed by hand, not checked';
-      reason = 'ID typed by hand, not checked';
+      reason = 'Check the ID to confirm these details.';
     } else if (bigDeal && !lastFull) {
       level = 'reco';
       tier = 'plus';

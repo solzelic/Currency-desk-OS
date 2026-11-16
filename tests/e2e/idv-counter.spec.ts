@@ -1026,6 +1026,10 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await page.locator(".cd-tx-customer input").fill(typedName);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: typedName }).click();
     await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("deal-id-badge")).toBeVisible();
+    await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await lightShot(page, "badge-typed-deal");
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator(".cd-tx-x").click();
@@ -1327,16 +1331,38 @@ test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) 
     await expect(page.getByText(/Passport typed by hand/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Record the ID" })).toHaveCount(0);
     await expect(page.getByText("Their ID is missing")).toHaveCount(0);
-    await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
-    await expect(page.getByTestId("deal-id-badge")).not.toContainText("Missing ID");
+    const typedBadge = page.getByTestId("deal-id-badge");
+    await expect(typedBadge).toBeVisible({ timeout: 20_000 });
+    await expect(typedBadge).toContainText("ID typed by hand, not checked");
+    await expect(typedBadge).not.toContainText("Missing ID");
+    await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
+    const typedDoc = page.locator(".cd-tx-stats").getByText("Passport", { exact: true });
+    const typedPaint = await typedDoc.evaluate((el) => {
+      const root = getComputedStyle(document.documentElement);
+      const swatch = (value: string) => {
+        const probe = document.createElement("span");
+        probe.style.color = value;
+        document.body.appendChild(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+      return {
+        color: getComputedStyle(el).color,
+        ink: swatch(root.getPropertyValue("--cd-ink").trim()),
+        flag: swatch(root.getPropertyValue("--cd-flag").trim()),
+      };
+    });
+    expect(typedPaint.color).toBe(typedPaint.ink);
+    expect(typedPaint.color).not.toBe(typedPaint.flag);
     await expect(page.locator(".cd-tx-id-need-label")).toContainText("Passport typed by hand");
     await expect(page.locator(".cd-tx-id-need-label")).not.toContainText("on file");
     await page.setViewportSize({ width: 1280, height: 900 });
     const nudge = page.locator(".cd-tx-nudge");
     await expect(nudge).toBeVisible({ timeout: 20_000 });
-    await expect(nudge).toContainText("ID typed by hand, not checked");
+    await expect(nudge.locator(".font-semibold").first()).toHaveText("ID typed by hand, not checked");
+    await expect(nudge.getByText("Check the ID to confirm these details.", { exact: true })).toBeVisible();
     await expect(nudge).not.toContainText("on file");
-    await expect(nudge).not.toContainText(/verified/i);
     const color = await page.getByTestId("deal-id-badge").evaluate((el) => getComputedStyle(el).color);
     expect(color).not.toBe("rgb(31, 138, 76)");
   } finally {

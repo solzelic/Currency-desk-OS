@@ -3105,6 +3105,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     mask-image: none;
   }
   .cd-tx-id-chip { display: none !important; }
+  /* The typed-by-hand chip stays on the phone deal. The other chips
+     stay hidden, and the nudge stays off this sheet. */
+  .cd-tx-id-chip.is-hand {
+    display: inline-flex !important;
+    flex: 1 1 100%;
+    max-width: 100%;
+    white-space: normal;
+  }
   .cd-tx-types::-webkit-scrollbar { display: none; }
   .cd-tx-overlay .cd-tx-types button {
     position: relative;

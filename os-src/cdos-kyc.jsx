@@ -501,7 +501,7 @@
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
     else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required. Large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`; }
-    else if (handTyped && !idExpired) { level = 'reco'; tier = 'verify'; title = 'ID typed by hand, not checked'; reason = 'ID typed by hand, not checked'; }
+    else if (handTyped && !idExpired) { level = 'reco'; tier = 'verify'; title = 'ID typed by hand, not checked'; reason = 'Check the ID to confirm these details.'; }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
     else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = `${first} has no ID on file.`; }
     else { return null; }
