@@ -343,7 +343,21 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await signInAtDesk(page, "m.costa");
     await page.setViewportSize({ width: 1280, height: 900 });
     const legalName = "Maria Santos";
-    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = 'Maria Santos'");
+    await db.query(
+      `UPDATE desk_clients
+          SET display_name = 'Old ' || substr(md5(client_id), 1, 4)
+        WHERE display_name <> 'Maria Santos'
+          AND (
+            display_name ~ '[0-9]{5,}'
+            OR display_name ILIKE '%earlier%'
+            OR display_name ILIKE '%check client%'
+            OR display_name ILIKE 'key %'
+            OR display_name ILIKE 'crop %'
+            OR display_name ILIKE 'other file%'
+            OR display_name ILIKE 'seam %'
+          )`,
+    );
+    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = 'Maria Santos'");
     const created = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -532,7 +546,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "file-teller");
 
     const otherName = "Ada Other";
-    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = 'Ada Other'");
+    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = 'Ada Other'");
     const other = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -619,7 +633,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
   for (const fixed of [noneName, progressName, reviewName, declinedName, incompleteName, adviceName, dueName, returningName]) {
-    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = $1", [fixed]);
+    await db.query("UPDATE desk_clients SET display_name = 'Old ' || substr(md5(client_id), 1, 4) WHERE display_name = $1", [fixed]);
   }
   const none = await made(noneName);
   const progress = await made(progressName);
