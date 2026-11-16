@@ -243,6 +243,8 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const result = await openStagingDesk(db, r.row.id);
     if (result.opened || result.reason === "already_open") return { ok: true };
     door.logRefusal({ reason: `staging_open_${result.reason}`, id: idTail(r.cdId), connection: r.connection });
+    // Declined or held after the guard read it: the guard's own answer.
+    if (result.reason === "not_invited") return reply.code(404).send({ error: "no_such_id" });
     return reply.code(409).send({ error: "agreement_changed", detail: "Your desk or plan changed. Review it and open the payment section again." });
   });
 
@@ -275,7 +277,11 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!token) return reply.code(401).send({ error: "sign_in_again" });
     const result = await withSignupAccount(db, row.id, async (db, account) => {
       const ob = await loadOrCreateOnboarding(db, row.id);
-      if (account.state !== "active" || !ob.tenantId) return { kind: "pending", state: account.state } as const;
+      /* The session is for the desk this application's own activation
+         opened: the account active, and the application accepted for that
+         tenant. Read again under the lock, not from the door's read above. */
+      const current = (await db.select({ status: schema.enquiries.status, tenantId: schema.enquiries.tenantId }).from(schema.enquiries).where(eq(schema.enquiries.id, row.id)).limit(1))[0];
+      if (account.state !== "active" || !ob.tenantId || current?.status !== "accepted" || current.tenantId !== ob.tenantId) return { kind: "pending", state: account.state } as const;
       const owner = (await db.select().from(schema.staffUsers).where(and(eq(schema.staffUsers.tenantId, ob.tenantId), eq(schema.staffUsers.cdId, cdId))).limit(1))[0];
       if (!owner) return { kind: "no_owner" } as const;
       const spent = await db.update(schema.enrolmentSessions).set({ revokedAt: new Date() }).where(and(
