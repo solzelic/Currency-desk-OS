@@ -51,6 +51,8 @@ viewports through column/padding changes, retaining their copy and actions.
 Desktop Account uses a 26px target (above the 24px requirement), preserving the
 card header height; phones retain 44px. All-state desktop checks also reject
 card-body overflow, independently of the allowed payment-body scrolling.
+The header stacks above the phase bar so Back's padded target stays clickable
+where it extends below the shortened header; pointer checks cover this boundary.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
