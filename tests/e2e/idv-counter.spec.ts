@@ -1386,7 +1386,7 @@ test("a passed check that cannot be read is not ID on file", async ({ page, requ
     );
     await page.locator('[data-app="clients"]').click();
     const listCard = () => page.locator("div.cursor-pointer", { hasText: name }).first();
-    await expect(listCard()).toContainText("ID on file", { timeout: 20_000 });
+    await expect(listCard()).toContainText("ID verified, scan and selfie", { timeout: 20_000 });
     await page.route(`**/api/idv/clients/${clientId}/checks`, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
     await page.reload();
     await landOnDesktop(page);
