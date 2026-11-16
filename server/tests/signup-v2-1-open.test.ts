@@ -90,8 +90,11 @@ async function readyToPay() {
 }
 const PLAN = { plan: "ai", term: "monthly", extras: { brief: true, call: true, website: false, setupWeek: false }, agreed: true };
 
-async function stripeSays(type: string, object: Record<string, unknown>) {
-  const payload = JSON.stringify({ id: `evt_${randomUUID()}`, object: "event", type, livemode: false, data: { object } });
+/* A fresh event each time unless `eventId` is given. A resend from the
+   Stripe dashboard or CLI carries the original event's id, so tests of a
+   resend must pass the same one. */
+async function stripeSays(type: string, object: Record<string, unknown>, eventId = `evt_${randomUUID()}`) {
+  const payload = JSON.stringify({ id: eventId, object: "event", type, livemode: false, data: { object } });
   const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret: WEBHOOK_SECRET });
   return app.inject({ method: "POST", url: "/api/billing/webhook", payload, headers: { "content-type": "application/json", "stripe-signature": signature } });
 }
@@ -283,9 +286,14 @@ describe("only an invited application opens its desk", () => {
     const r = await paidFor();
     const before = await loadAccount(handle.db, r.id);
     expect((await moveTo(handle.db, await enquiry(r.id), to, "support")).ok).toBe(true);
-    /* the first delivery and a later one are both acknowledged */
-    for (let i = 0; i < 2; i++) expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
-    expect((await handle.db.select().from(schema.stripeEvents).where(eq(schema.stripeEvents.objectId, r.intent.id))).map((e) => [!!e.processedAt, e.tenantId])).toEqual([[true, null], [true, null]]);
+    /* the delivery and a resend of that same event are both acknowledged
+       and both refused: a refusal keeps no claim on the event id */
+    const eventId = `evt_${randomUUID()}`;
+    for (let i = 0; i < 2; i++) {
+      const hook = await stripeSays("setup_intent.succeeded", succeeded(r.intent), eventId);
+      expect([hook.statusCode, hook.json()]).toEqual([200, { received: true }]);
+    }
+    expect(await handle.db.select().from(schema.stripeEvents).where(eq(schema.stripeEvents.objectId, r.intent.id))).toEqual([]);
     expect(await openFromSetupIntent(handle.db, { id: r.intent.id, metadata: r.intent.metadata, customer: r.intent.customer, status: "succeeded", paymentMethod: "pm_test" }))
       .toEqual({ opened: false, reason: "not_invited" });
     /* the account is as it was, the decision stands, and no desk exists */
@@ -301,13 +309,25 @@ describe("only an invited application opens its desk", () => {
     expect(jar.cdos_session).toBeUndefined();
   });
 
-  it("a held application invited again opens on Stripe's next word, as the account was left untouched", async () => {
+  /* Stripe sends one setup_intent.succeeded per intent, and POST /plan
+     hands back that same, already succeeded intent. So the only way in
+     after a refusal is support resending the very event Stripe sent. */
+  it.each(["hold", "reviewing"] as const)("an application moved to %s and invited again opens when support resends the refused event", async (to) => {
     const r = await paidFor();
-    expect((await moveTo(handle.db, await enquiry(r.id), "hold", "support")).ok).toBe(true);
-    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
+    const eventId = `evt_${randomUUID()}`;
+    expect((await moveTo(handle.db, await enquiry(r.id), to, "support", { quiet: true })).ok).toBe(true);
+    const refused = await stripeSays("setup_intent.succeeded", succeeded(r.intent), eventId);
+    expect([refused.statusCode, refused.json()]).toEqual([200, { received: true }]);
     expect((await moveTo(handle.db, await enquiry(r.id), "invited", "support", { quiet: true })).ok).toBe(true);
-    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent))).statusCode).toBe(200);
-    expect(await enquiry(r.id)).toMatchObject({ status: "accepted", decidedBy: "signup-v2.1" });
+    const resent = await stripeSays("setup_intent.succeeded", succeeded(r.intent), eventId);
+    expect([resent.statusCode, resent.json()]).toEqual([200, { received: true }]);
+    const opened = await enquiry(r.id);
+    expect(opened).toMatchObject({ status: "accepted", decidedBy: "signup-v2.1" });
+    expect((await loadAccount(handle.db, r.id)).state).toBe("active");
+    /* the opening keeps its claim, so a further resend is only a duplicate */
+    expect((await handle.db.select().from(schema.stripeEvents).where(eq(schema.stripeEvents.stripeEventId, eventId)))[0])
+      .toMatchObject({ tenantId: opened.tenantId, processedAt: expect.any(Date) });
+    expect((await stripeSays("setup_intent.succeeded", succeeded(r.intent), eventId)).json()).toEqual({ received: true, duplicate: true });
     expect((await call("POST", `${r.base}/open`)).statusCode).toBe(200);
   });
 
