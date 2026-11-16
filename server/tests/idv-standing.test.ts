@@ -1,6 +1,6 @@
 /* What counts as ID on file, and which one-time links may be opened. */
 import { describe, expect, it } from "vitest";
-import { idFileStanding } from "../src/idv/records.js";
+import { day, idFileStanding } from "../src/idv/records.js";
 import { personaOneTimeLink } from "../src/idv/persona-calls.js";
 import { personaFileHost } from "../src/idv/inquiry-text.js";
 
@@ -93,6 +93,13 @@ describe("ID on file from the check record", () => {
     expect(idFileStanding({ ...pass, result: "declined", line: "Not passed 16 Nov 2026" }).onFile).toBe(false);
     expect(idFileStanding({ ...pass, result: "needs_review", line: "Under review since 16 Nov 2026" }).onFile).toBe(false);
     expect(idFileStanding({ ...pass, result: "method_not_completed", line: "Method not completed. Check the ID at the counter." }).onFile).toBe(false);
+  });
+});
+
+describe("calendar day", () => {
+  it("keeps 1 Apr 2030 on a clock east of UTC", () => {
+    expect(day(new Date(2030, 3, 1))).toBe("2030-04-01");
+    expect(day("2030-04-01T00:00:00.000Z")).toBe("2030-04-01");
   });
 });
 

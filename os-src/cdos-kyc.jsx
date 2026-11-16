@@ -499,7 +499,7 @@
     let level = null, tier = 'quick', title = '', reason = '';
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
-    else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check — even on a verified profile.`; }
+    else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required. Large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`; }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
     else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no ID on file.` : `${first} has an ID on file but has never been fully verified.`; }
     else { return null; }
@@ -824,7 +824,7 @@
             <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />
             {needsPep && <div className="mt-3 text-[12.5px]" data-testid="pep-client-answer" style={{ color: CD.ink }}>
               <div>The client's own answer.</div>
-              <div className="mt-1">Ask the client: are they a politically exposed person?</div>
+              <div className="mt-1">Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?</div>
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={() => setPepAnswer(true)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === true ? CD.ink : 'transparent', color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink }}>Yes</button>
                 <button type="button" onClick={() => setPepAnswer(false)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === false ? CD.ink : 'transparent', color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink }}>No</button>

@@ -301,25 +301,22 @@
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const standingNow = standing || (rec && rec.idStanding) || null;
-    /* A qualifying check, or an expired document on that check, replaces the
-       typed papers. A file with no qualifying check still shows the ID the
-       teller just recorded. */
-    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
-    const idMissing = checkSpeaks ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
-    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < TODAY);
-    const idOk = checkSpeaks ? !!standingNow.onFile : (!idMissing && !idExpired);
-    // green ONLY after a real provider verification (Verified / Verified Plus).
-    // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
-    const verified = (() => { try { const ch = (window.CDOS.KYC && window.CDOS.KYC.checksFor(name)) || []; return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
-    const badge = checkSpeaks
-      ? (standingNow.onFile
-        ? { t: standingNow.chip || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
-        : { t: standingNow.chip || 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' })
-      : (idMissing ? { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-        : idExpired ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-        : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
-        : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' });
+    const standingNow = (rec && rec.idCheckError) ? null : (standing || (rec && rec.idStanding) || null);
+    const viewed = standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip and idOk follow the server standing only. Typed papers
+       do not count. PR 3 owns the posting gate. */
+    const idOk = kycState === 'ok';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const badge = (rec && rec.idCheckError)
+      ? { t: rec.idCheckError, c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+      : idOk
+      ? { t: (viewed.idStanding && viewed.idStanding.chip) || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
+      : kycState === 'ID expired'
+      ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+      : kycState === 'Checking ID'
+      ? { t: 'Checking ID', c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
+      : { t: 'Missing ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
     const over = line != null && s.windowCad != null && s.windowCad >= line;
@@ -336,7 +333,7 @@
           <span data-testid="deal-id-badge" className="cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" sentence={phone} value={idMissing ? 'Not set' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
+          <CCstat label="ID on file" sentence={phone} value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
           <CCstat label={phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`} sentence={phone} value={s.windowCad == null ? 'Rate unavailable' : fmt(s.windowCad, deskHome())} sub={s.windowCad == null ? 'cannot value' : over ? 'over the line' : near ? 'nearing line' : 'within range'} tone={over ? CD.flag : near ? CD.amber : CD.ink} divider />
           <CCstat label="Usually" value={s.top || 'None yet'} sub={s.count > 0 ? (s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime`) : 'new'} tone={CD.ink} divider />
         </div>
@@ -705,6 +702,8 @@
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : (regime.idAt == null ? null : regime.idAt);
     const rec = clients[customer];
+    /* Posting still reads the typed papers. PR 3 is the deal gate.
+       This PR does not block a deal from this line. */
     const kyc = (!rec || !rec.idType || !rec.idNum) ? 'missing' : (rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok');
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A

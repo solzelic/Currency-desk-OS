@@ -50,11 +50,13 @@ function str(row: Row, key: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function day(value: unknown): string | null {
+/* A DATE column comes back as local midnight. Reading the UTC fields
+   prints the previous calendar day anywhere east of UTC. */
+export function day(value: unknown): string | null {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const date = String(value.getUTCDate()).padStart(2, "0");
-    return `${value.getUTCFullYear()}-${month}-${date}`;
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const date = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${date}`;
   }
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(value)) return null;
   return value.slice(0, 10);

@@ -13,6 +13,24 @@
     Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Rates, Telegraph, SignIn, LockDesk, Handover
   } = window.CDOS;
 
+  /* Standing and a PEP review are read from the server on each visit.
+     They are not written into cdos_clients_v1. A cached pass would
+     outlive a failed read. */
+  function clientsForDisk(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    Object.keys(raw).forEach((name) => {
+      const rec = raw[name];
+      if (!rec || typeof rec !== 'object') { out[name] = rec; return; }
+      const next = { ...rec };
+      delete next.idStanding;
+      delete next.pepReview;
+      delete next.idCheckError;
+      out[name] = next;
+    });
+    return out;
+  }
+
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
      wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
@@ -819,9 +837,10 @@
        they can trust anything else on the screen. What is here is filled from
        the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
-    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
+    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? clientsForDisk(r) : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
-    useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
+    useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clientsForDisk(clients))); } catch (e) {} }, [clients]);
+    useEffect(() => { if (window.CDOS) window.CDOS.clientRoster = clients; });
     const [standingPulse, setStandingPulse] = useState(0);
     useEffect(() => {
       const onStanding = () => setStandingPulse((n) => n + 1);
@@ -838,30 +857,49 @@
       });
       if (!ids.length) return undefined;
       let live = true;
-      Promise.all(ids.map((id) => api.checks(id).then((body) => [id, body]).catch(() => [id, null]))).then((pairs) => {
-        if (!live) return;
-        setClients((prev) => {
-          let changed = false;
-          const next = { ...prev };
-          pairs.forEach(([id, body]) => {
-            const standing = body && body.standing;
-            if (!standing) return;
-            const pepReview = body && body.pepReview === "open" ? "open" : null;
-            Object.keys(next).forEach((name) => {
-              const rec = next[name];
-              if (!rec || rec.clientId !== id) return;
-              const cur = rec.idStanding;
-              const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
-              const samePep = (rec.pepReview || null) === pepReview;
-              if (sameStanding && samePep) return;
-              next[name] = { ...rec, pepReview, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
-              changed = true;
+      let retryTimer = 0;
+      const pull = () => {
+        Promise.all(ids.map((id) => api.checks(id).then((body) => ({ id, body, failed: false })).catch(() => ({ id, body: null, failed: true })))).then((pairs) => {
+          if (!live) return;
+          let retry = false;
+          setClients((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            pairs.forEach(({ id, body, failed }) => {
+              Object.keys(next).forEach((name) => {
+                const rec = next[name];
+                if (!rec || rec.clientId !== id) return;
+                if (failed) {
+                  retry = true;
+                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.') return;
+                  const cleared = { ...rec };
+                  delete cleared.idStanding;
+                  delete cleared.pepReview;
+                  cleared.idCheckError = 'Could not read the ID check. Try again.';
+                  next[name] = cleared;
+                  changed = true;
+                  return;
+                }
+                const standing = body && body.standing;
+                if (!standing) return;
+                const pepReview = body && body.pepReview === "open" ? "open" : null;
+                const cur = rec.idStanding;
+                const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
+                const samePep = (rec.pepReview || null) === pepReview;
+                if (sameStanding && samePep && !rec.idCheckError) return;
+                const stored = { ...rec, pepReview, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
+                delete stored.idCheckError;
+                next[name] = stored;
+                changed = true;
+              });
             });
+            return changed ? next : prev;
           });
-          return changed ? next : prev;
+          if (retry && live) retryTimer = window.setTimeout(pull, 2000);
         });
-      });
-      return () => { live = false; };
+      };
+      pull();
+      return () => { live = false; window.clearTimeout(retryTimer); };
     }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
@@ -2216,7 +2254,7 @@
         const known = new Set(fromLedger.map(r => r.serverTransactionId));
         return fromLedger.concat(saved.filter(r => !r || !known.has(r.serverTransactionId)));
       });
-      setClients(rd('cdos_clients_v1', {}));
+      setClients(clientsForDisk(rd('cdos_clients_v1', {})));
       const svS = rd('cdos_settings', null);
       if (svS) setSettings(s => ({ ...s, ...svS, billingPlan: s.billingPlan || svS.billingPlan }));
       const svP = rd('cdos_perms', null); if (svP) setPerms(svP);

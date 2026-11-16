@@ -25843,32 +25843,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // (Missing ID, ID expired, ID expiring, or ID on hand).
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
-  function kycStatus(rec, settings, name) {
-    if (rec && rec.idStanding) {
-      if (rec.idStanding.onFile) return [rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
-      if (rec.idStanding.chip === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
-      return [rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
-    }
-    const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // Returned only when an approved check of that tier is already on file.
-    if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
-    if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // An approved quick check on file. Nothing writes one now.
-    if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
-    // no provider check on file — judge by the ID the desk is holding
-    if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
-    if (expired) return ['ID expired', CD.flag, CD.flagSoft];
-    const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
-      if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
-    }
-    return ['ID on hand', CD.amber, CD.amberSoft];
+  function kycStatus(rec) {
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.flag, CD.flagSoft];
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    if (state === 'ok') return [rec.idStanding && rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
+    if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
+    if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    return [rec && rec.idStanding && rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = s => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
@@ -27140,7 +27121,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const f = flags[r.id] || {};
       return f.kyc && f.kyc !== 'ok';
     });
-    const fromCheck = standing ? standing.gap : !rec || !rec.idType || !rec.idNum ? 'missing ID' : null;
+    const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const fromCheck = rec && rec.idCheckError ? rec.idCheckError : standing ? standing.gap : idState === 'ok' ? null : idState;
     const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = settings && +settings.structuringDays || 7;
@@ -27538,17 +27520,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         }
       }, rule));
     }
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
-    const documentStanding = {
-      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
-      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
-      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
-      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.']
-    }[status];
-    if (!documentStanding) return null;
-    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
-    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
+    const fail = rec && rec.idCheckError;
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const title = fail ? 'Not identified' : state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = fail ? rec.idCheckError : rec && rec.idStanding && rec.idStanding.line || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = !fail && state === 'ok';
+    const tone = on ? CD.green : CD.flag;
+    const soft = on ? CD.greenSoft : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
       "data-tour": "identification",
       "data-testid": "client-where",
@@ -27567,7 +27545,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, "Where they are"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-start gap-2 min-w-0 max-w-full"
     }, /*#__PURE__*/React.createElement(Pill, {
-      text: documentStanding[0],
+      text: title,
       c: tone,
       bg: soft
     }), /*#__PURE__*/React.createElement("span", {
@@ -27576,7 +27554,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.ink
       }
-    }, documentStanding[1])), /*#__PURE__*/React.createElement("div", {
+    }, line)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
@@ -27893,7 +27871,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec, settings, name);
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec);
     const stat = standing ? standing.chip : fallbackStat;
     const col = standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
     const bg = standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
@@ -27973,13 +27951,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       body: "Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance.",
       lines: [{
         k: 'Verified',
-        v: 'ID on file & valid'
+        v: 'ID on file and valid'
       }, {
         k: 'Missing ID',
         v: 'no ID captured yet'
       }, {
         k: 'ID expiring',
-        v: 'expires soon — re-collect'
+        v: 'expires soon, re-collect'
       }, {
         k: 'Risk tier',
         v: 'Normal · Low · Medium · High'
@@ -30448,15 +30426,19 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const standingNow = standing || rec && rec.idStanding || null;
-    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
-    const idMissing = checkSpeaks ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
-    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < businessDate();
-    const idOk = checkSpeaks ? !!standingNow.onFile : !idMissing && !idExpired;
-    const idTone = idOk ? CD.green : CD.flag;
-    /* A qualifying check speaks for the file. A recorded ID with no check still shows. */
-    const idLabel = checkSpeaks ? standingNow.onFile ? "ID on file" : "ID expired" : idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file";
-    const maskedId = checkSpeaks ? "" : rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "";
+    const standingNow = rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = standingNow ? {
+      ...(rec || {}),
+      idStanding: standingNow,
+      idCheckError: undefined
+    } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip follows the server standing only. Typed papers do not count. */
+    const idOk = kycState === 'ok';
+    const idTone = idOk ? CD.green : kycState === 'Checking ID' ? CD.mute : CD.flag;
+    const idLabel = rec && rec.idCheckError ? rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -30519,9 +30501,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.mute
       }
     }, s.count > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, s.count, " deal", s.count !== 1 ? 's' : '', " \xB7 ", lastLabel) : 'No prior deals at this desk')), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "ledger-id-badge",
       className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
-        background: idOk ? CD.greenSoft : CD.flagSoft,
+        background: idOk ? CD.greenSoft : kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
         color: idTone,
         borderRadius: 999
       }
@@ -30536,9 +30519,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
       label: "ID on file",
-      value: idMissing ? '—' : rec.idType || 'ID',
-      sub: idMissing ? 'collect below' : maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''),
-      tone: idMissing ? CD.flag : idExpired ? CD.flag : CD.ink
+      value: papersMissing ? 'Not set' : rec.idType || 'ID',
+      sub: papersMissing ? 'collect below' : maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''),
+      tone: papersMissing ? CD.flag : idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
       value: fmtHome(s.windowCad),
@@ -30547,7 +30530,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually buys",
-      value: s.topCcy || '—',
+      value: s.topCcy || 'None yet',
       sub: s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer',
       tone: CD.ink,
       divider: true
@@ -31143,6 +31126,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: CD.mute
       }
     }, "Teller ", me.name, " \xB7 ", businessDate()))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Close ledger transaction",
       onClick: onClose,
       className: "p-1.5",
       style: {
@@ -36647,54 +36632,42 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const standingNow = standing || rec && rec.idStanding || null;
-    /* A qualifying check, or an expired document on that check, replaces the
-       typed papers. A file with no qualifying check still shows the ID the
-       teller just recorded. */
-    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
-    const idMissing = checkSpeaks ? !standingNow.onFile : !rec || !rec.idType || !rec.idNum;
-    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : rec && rec.idExpiry && rec.idExpiry < TODAY;
-    const idOk = checkSpeaks ? !!standingNow.onFile : !idMissing && !idExpired;
-    // green ONLY after a real provider verification (Verified / Verified Plus).
-    // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
-    const verified = (() => {
-      try {
-        const ch = window.CDOS.KYC && window.CDOS.KYC.checksFor(name) || [];
-        return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved');
-      } catch (e) {
-        return false;
-      }
-    })();
-    const badge = checkSpeaks ? standingNow.onFile ? {
-      t: standingNow.chip || 'ID on file',
+    const standingNow = rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = standingNow ? {
+      ...(rec || {}),
+      idStanding: standingNow,
+      idCheckError: undefined
+    } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip and idOk follow the server standing only. Typed papers
+       do not count. PR 3 owns the posting gate. */
+    const idOk = kycState === 'ok';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const badge = rec && rec.idCheckError ? {
+      t: rec.idCheckError,
+      c: CD.flag,
+      bg: CD.flagSoft,
+      ic: 'alert'
+    } : idOk ? {
+      t: viewed.idStanding && viewed.idStanding.chip || 'ID on file',
       c: CD.green,
       bg: CD.greenSoft,
       ic: 'checkcircle'
-    } : {
-      t: standingNow.chip || 'ID expired',
-      c: CD.flag,
-      bg: CD.flagSoft,
-      ic: 'alert'
-    } : idMissing ? {
-      t: 'No ID',
-      c: CD.flag,
-      bg: CD.flagSoft,
-      ic: 'alert'
-    } : idExpired ? {
+    } : kycState === 'ID expired' ? {
       t: 'ID expired',
       c: CD.flag,
       bg: CD.flagSoft,
       ic: 'alert'
-    } : verified ? {
-      t: 'ID verified',
-      c: CD.green,
-      bg: CD.greenSoft,
-      ic: 'checkcircle'
+    } : kycState === 'Checking ID' ? {
+      t: 'Checking ID',
+      c: CD.mute,
+      bg: CD.lineSoft,
+      ic: 'alert'
     } : {
-      t: 'ID on file',
-      c: CD.amber,
-      bg: CD.amberSoft,
-      ic: 'id'
+      t: 'Missing ID',
+      c: CD.flag,
+      bg: CD.flagSoft,
+      ic: 'alert'
     };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
@@ -36770,8 +36743,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, /*#__PURE__*/React.createElement(CCstat, {
       label: "ID on file",
       sentence: phone,
-      value: idMissing ? 'Not set' : rec.idType || 'ID',
-      sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
+      value: papersMissing ? 'Not set' : rec.idType || 'ID',
+      sub: papersMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
       tone: idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`,
@@ -37301,6 +37274,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : regime.idAt == null ? null : regime.idAt;
     const rec = clients[customer];
+    /* Posting still reads the typed papers. PR 3 is the deal gate.
+       This PR does not block a deal from this line. */
     const kyc = !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
@@ -50287,9 +50262,11 @@ ${(filing.map || []).map(blockHTML).join('')}
       key: name,
       type: "button",
       onClick: () => onOpenClient && onOpenClient(name),
-      className: "block text-left text-[12.5px] py-1",
+      className: "block text-left text-[13px]",
       style: {
-        color: CD.ink
+        color: CD.ink,
+        minHeight: 44,
+        padding: "10px 12px"
       }
     }, name))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
@@ -51737,8 +51714,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       const asked = policy === 'quick' ? 'verify' : policy;
       level = 'force';
       tier = asked;
-      title = 'Check required — large transaction';
-      reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check — even on a verified profile.`;
+      title = 'Check required. Large transaction';
+      reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`;
     } else if (bigDeal && !lastFull) {
       level = 'reco';
       tier = 'plus';
@@ -52575,7 +52552,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, /*#__PURE__*/React.createElement("div", null, "The client's own answer."), /*#__PURE__*/React.createElement("div", {
       className: "mt-1"
-    }, "Ask the client: are they a politically exposed person?"), /*#__PURE__*/React.createElement("div", {
+    }, "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?"), /*#__PURE__*/React.createElement("div", {
       className: "flex gap-2 mt-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -53473,9 +53450,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       let live = true;
       let timer = 0;
       const waitMs = window.CDOS && window.CDOS.idCheckWaitMs || 90000;
-      const giveUp = window.setTimeout(() => {
+      const giveUpTimer = window.setTimeout(() => {
         if (live) setStep("failed");
       }, waitMs);
+      const onGiveUp = () => {
+        if (live) setStep("failed");
+      };
+      window.addEventListener("cdos-id-check-give-up", onGiveUp);
       const pull = () => {
         const client = api();
         if (!client) return;
@@ -53501,7 +53482,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       return () => {
         live = false;
         window.clearTimeout(timer);
-        window.clearTimeout(giveUp);
+        window.clearTimeout(giveUpTimer);
+        window.removeEventListener("cdos-id-check-give-up", onGiveUp);
       };
     }, [step, inquiryId, clientId, dealId, onDone]);
     const counter = !!(copy && copy.counterOnly);
@@ -74127,6 +74109,29 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     Handover
   } = window.CDOS;
 
+  /* Standing and a PEP review are read from the server on each visit.
+     They are not written into cdos_clients_v1. A cached pass would
+     outlive a failed read. */
+  function clientsForDisk(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    Object.keys(raw).forEach(name => {
+      const rec = raw[name];
+      if (!rec || typeof rec !== 'object') {
+        out[name] = rec;
+        return;
+      }
+      const next = {
+        ...rec
+      };
+      delete next.idStanding;
+      delete next.pepReview;
+      delete next.idCheckError;
+      out[name] = next;
+    });
+    return out;
+  }
+
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
      wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
@@ -76315,7 +76320,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [clients, setClients] = useState(() => {
       try {
         const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null');
-        return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+        return r && typeof r === 'object' && !Array.isArray(r) ? clientsForDisk(r) : {};
       } catch (e) {
         return {};
       }
@@ -76327,9 +76332,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [rows]);
     useEffect(() => {
       try {
-        localStorage.setItem('cdos_clients_v1', JSON.stringify(clients));
+        localStorage.setItem('cdos_clients_v1', JSON.stringify(clientsForDisk(clients)));
       } catch (e) {}
     }, [clients]);
+    useEffect(() => {
+      if (window.CDOS) window.CDOS.clientRoster = clients;
+    });
     const [standingPulse, setStandingPulse] = useState(0);
     useEffect(() => {
       const onStanding = () => setStandingPulse(n => n + 1);
@@ -76346,43 +76354,77 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       });
       if (!ids.length) return undefined;
       let live = true;
-      Promise.all(ids.map(id => api.checks(id).then(body => [id, body]).catch(() => [id, null]))).then(pairs => {
-        if (!live) return;
-        setClients(prev => {
-          let changed = false;
-          const next = {
-            ...prev
-          };
-          pairs.forEach(([id, body]) => {
-            const standing = body && body.standing;
-            if (!standing) return;
-            const pepReview = body && body.pepReview === "open" ? "open" : null;
-            Object.keys(next).forEach(name => {
-              const rec = next[name];
-              if (!rec || rec.clientId !== id) return;
-              const cur = rec.idStanding;
-              const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
-              const samePep = (rec.pepReview || null) === pepReview;
-              if (sameStanding && samePep) return;
-              next[name] = {
-                ...rec,
-                pepReview,
-                idStanding: {
-                  onFile: !!standing.onFile,
-                  chip: standing.chip,
-                  title: standing.title,
-                  line: standing.line,
-                  gap: standing.gap
+      let retryTimer = 0;
+      const pull = () => {
+        Promise.all(ids.map(id => api.checks(id).then(body => ({
+          id,
+          body,
+          failed: false
+        })).catch(() => ({
+          id,
+          body: null,
+          failed: true
+        })))).then(pairs => {
+          if (!live) return;
+          let retry = false;
+          setClients(prev => {
+            let changed = false;
+            const next = {
+              ...prev
+            };
+            pairs.forEach(({
+              id,
+              body,
+              failed
+            }) => {
+              Object.keys(next).forEach(name => {
+                const rec = next[name];
+                if (!rec || rec.clientId !== id) return;
+                if (failed) {
+                  retry = true;
+                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.') return;
+                  const cleared = {
+                    ...rec
+                  };
+                  delete cleared.idStanding;
+                  delete cleared.pepReview;
+                  cleared.idCheckError = 'Could not read the ID check. Try again.';
+                  next[name] = cleared;
+                  changed = true;
+                  return;
                 }
-              };
-              changed = true;
+                const standing = body && body.standing;
+                if (!standing) return;
+                const pepReview = body && body.pepReview === "open" ? "open" : null;
+                const cur = rec.idStanding;
+                const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
+                const samePep = (rec.pepReview || null) === pepReview;
+                if (sameStanding && samePep && !rec.idCheckError) return;
+                const stored = {
+                  ...rec,
+                  pepReview,
+                  idStanding: {
+                    onFile: !!standing.onFile,
+                    chip: standing.chip,
+                    title: standing.title,
+                    line: standing.line,
+                    gap: standing.gap
+                  }
+                };
+                delete stored.idCheckError;
+                next[name] = stored;
+                changed = true;
+              });
             });
+            return changed ? next : prev;
           });
-          return changed ? next : prev;
+          if (retry && live) retryTimer = window.setTimeout(pull, 2000);
         });
-      });
+      };
+      pull();
       return () => {
         live = false;
+        window.clearTimeout(retryTimer);
       };
     }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
@@ -78802,7 +78844,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const known = new Set(fromLedger.map(r => r.serverTransactionId));
         return fromLedger.concat(saved.filter(r => !r || !known.has(r.serverTransactionId)));
       });
-      setClients(rd('cdos_clients_v1', {}));
+      setClients(clientsForDisk(rd('cdos_clients_v1', {})));
       const svS = rd('cdos_settings', null);
       if (svS) setSettings(s => ({
         ...s,

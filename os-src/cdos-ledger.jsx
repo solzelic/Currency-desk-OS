@@ -182,15 +182,15 @@
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const standingNow = standing || (rec && rec.idStanding) || null;
-    const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
-    const idMissing = checkSpeaks ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
-    const idExpired = checkSpeaks ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < businessDate());
-    const idOk = checkSpeaks ? !!standingNow.onFile : (!idMissing && !idExpired);
-    const idTone = idOk ? CD.green : CD.flag;
-    /* A qualifying check speaks for the file. A recorded ID with no check still shows. */
-    const idLabel = checkSpeaks ? (standingNow.onFile ? "ID on file" : "ID expired") : (idMissing ? "No ID on file" : idExpired ? "ID expired" : "ID on file");
-    const maskedId = checkSpeaks ? "" : (rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? "••••" + String(rec.idNum).slice(-3) : "");
+    const standingNow = (rec && rec.idCheckError) ? null : (standing || (rec && rec.idStanding) || null);
+    const viewed = standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip follows the server standing only. Typed papers do not count. */
+    const idOk = kycState === 'ok';
+    const idTone = idOk ? CD.green : (kycState === 'Checking ID' ? CD.mute : CD.flag);
+    const idLabel = (rec && rec.idCheckError) ? rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -215,14 +215,14 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : CD.flagSoft, color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
         </div>
 
         {/* facts */}
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''))} tone={idMissing ? CD.flag : idExpired ? CD.flag : CD.ink} />
+          <CCstat label="ID on file" value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''))} tone={papersMissing ? CD.flag : idOk ? CD.ink : CD.flag} />
           <CCstat label={`Last ${s.winDays}d`} value={fmtHome(s.windowCad)} sub={s.windowCad == null ? 'not valued in ' + (homeCcy() || 'the desk’s currency') : overThreshold ? 'over reporting line' : nearThreshold ? 'nearing the line' : 'within range'} tone={s.windowCad == null ? CD.mute : overThreshold ? CD.flag : nearThreshold ? CD.amber : CD.ink} divider />
-          <CCstat label="Usually buys" value={s.topCcy || '—'} sub={s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer'} tone={CD.ink} divider />
+          <CCstat label="Usually buys" value={s.topCcy || 'None yet'} sub={s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer'} tone={CD.ink} divider />
         </div>
 
         {(overThreshold || nearThreshold) && (
@@ -501,7 +501,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
           {/* header */}
           <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
             <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="plus" s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {businessDate()}</div></div></div>
-            <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
+            <button type="button" aria-label="Close ledger transaction" onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
           <div className="flex-1 overflow-auto px-5 py-4 space-y-4">

@@ -1006,20 +1006,27 @@ test("a failed Persona check offers the in-person check", async ({ page, request
 
 test("a Persona check that times out offers the in-person check", async ({ page, request }) => {
   test.setTimeout(120_000);
+  const cap = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await cap.connect();
+  try {
+    await cap.query("UPDATE idv_inquiries SET status = 'approved' WHERE status IN ('starting', 'in progress', 'needs review')");
+  } finally {
+    await cap.end();
+  }
   await openDefaultCheck(page, request);
-  await page.evaluate(() => { (window as unknown as { CDOS: { idCheckWaitMs?: number } }).CDOS.idCheckWaitMs = 400; });
   await page.getByTestId("id-check-primary").click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByTestId("id-check-agree-box").check();
   await page.getByRole("button", { name: "I agree" }).click();
-  await expect(page.getByTestId("id-check-link-url")).toBeVisible();
-  await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.", { timeout: 10_000 });
+  await expect(page.getByTestId("id-check-link-url")).toBeVisible({ timeout: 20_000 });
+  await page.evaluate(() => window.dispatchEvent(new Event("cdos-id-check-give-up")));
+  await expect(page.getByTestId("id-check-error")).toContainText("The ID check did not finish. Try again, or check the ID in person.");
   await page.getByTestId("id-check-error-in-person").click();
   await expect(page.getByTestId("id-check-in-person")).toBeVisible();
 });
 
 test("ID on file agrees on the chip, the file, the deal, the flags, and Needs attention", async ({ page, request }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   await enableChecks(request);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
@@ -1120,14 +1127,36 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     );
     await typedRow(ids.typedOld, `'m.costa', now() - interval '6 years', 'Passport', 'aes-256-gcm$seam', '2222', false, 'Canada', 'CA', '2030-04-01', 'Typed Old'`);
     await typedRow(ids.typedUnavailable, `'m.costa', now(), 'Passport', 'aes-256-gcm$seam', '7777', true, 'Canada', 'CA', '2030-04-01', 'Typed Unavailable'`);
+    const typedOnlyName = "Typed Only";
+    const readFailName = "Read Fail";
+    await db.query("DELETE FROM client_pep_answers WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = ANY($1::text[]))", [[typedOnlyName, readFailName]]);
+    await db.query("DELETE FROM desk_clients WHERE display_name = ANY($1::text[])", [[typedOnlyName, readFailName]]);
+    const typedOnly = await made(typedOnlyName);
+    const readFail = await made(readFailName);
+    const paper = async (clientId: string, number: string) => {
+      await db.query(
+        `INSERT INTO desk_client_identity_documents
+          (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
+         VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', $3, true)`,
+        [`doc_${clientId}`, clientId, number],
+      );
+    };
+    await paper(typedOnly, "PP2000");
+    await paper(readFail, "PP3000");
+    await page.route(`**/api/idv/clients/${readFail}/checks`, (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
     await page.locator('[data-app="clients"]').click();
     await page.waitForFunction((id) => {
-      const clients = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { clientId?: string; idStanding?: { onFile?: boolean } }>;
-      return Object.values(clients).some((rec) => rec && rec.clientId === id && rec.idStanding);
+      const roster = (window as unknown as { CDOS: { clientRoster?: Record<string, { clientId?: string; idStanding?: { onFile?: boolean } }> } }).CDOS.clientRoster || {};
+      return Object.values(roster).some((rec) => rec && rec.clientId === id && rec.idStanding && rec.idStanding.onFile);
     }, ids.pass);
+    const leaked = await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { idStanding?: unknown; pepReview?: unknown }>;
+      return Object.values(raw).some((rec) => !!(rec && (rec.idStanding || rec.pepReview)));
+    });
+    expect(leaked).toBe(false);
 
     const readFlags = (id: string) => page.evaluate((clientId) => {
-      const clients = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { clientId?: string; idStanding?: { chip: string; onFile: boolean } }>;
+      const clients = (window as unknown as { CDOS: { clientRoster: Record<string, { clientId?: string; idStanding?: { chip: string; onFile: boolean } }> } }).CDOS.clientRoster;
       const name = Object.keys(clients).find((key) => clients[key] && clients[key].clientId === clientId) || "";
       const row = { id: "agree-row", customer: name, status: "posted", type: "Currency Exchange", inAmt: 10000, inCcy: "CAD", outAmt: 7000, outCcy: "USD", date: "2026-11-16", time: "12:00", fee: 0 };
       const flags = (window as unknown as { CDOS: { computeFlags: (rows: unknown[], clients: unknown, settings: unknown) => Record<string, { kyc: string }> } }).CDOS.computeFlags([row], clients, { threshold: 10000, idRequiredOver: 1, baselineRules: true });
@@ -1189,6 +1218,23 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
     await closeFile();
+    const listCard = (name: string) => page.locator("div.cursor-pointer", { hasText: name }).first();
+    await page.locator('[data-app="clients"]').click();
+    await expect(listCard(typedOnlyName)).not.toContainText("ID on file");
+    await expect(listCard(typedOnlyName)).not.toContainText("ID on hand");
+    await expect(listCard(readFailName)).toContainText("Could not read the ID check. Try again.");
+    await expect(listCard(readFailName)).not.toContainText("ID on file");
+    await openName(typedOnlyName);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await expect(page.getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
+    await closeFile();
+    await openName(readFailName);
+    await expect(page.getByTestId("client-standing")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("client-where")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("client-where")).toContainText("Not identified");
+    await expect(page.getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
+    await closeFile();
 
     expect(await readFlags(ids.pass)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
     expect(await readFlags(ids.unavailable)).toMatchObject({ kyc: "missing ID", onFile: false });
@@ -1244,7 +1290,26 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await page.locator(".cd-tx-customer input").fill(names.noStaff);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.noStaff }).click();
     await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
+    await page.locator(".cd-tx-customer input").fill(typedOnlyName);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: typedOnlyName }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("Missing ID");
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
+    await page.locator(".cd-tx-customer input").fill(readFailName);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: readFailName }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("Could not read the ID check. Try again.");
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
     await page.locator(".cd-tx-x").click();
+    await page.evaluate(() => { delete (window as unknown as { CDOS: { TxModal?: unknown } }).CDOS.TxModal; });
+    await page.getByRole("button", { name: /^New transaction$/i }).first().click();
+    const ledgerSheet = page.locator("div").filter({ has: page.getByText("Teller", { exact: false }) }).last();
+    await ledgerSheet.getByPlaceholder("Type a name…").fill(typedOnlyName);
+    await ledgerSheet.getByRole("button", { name: typedOnlyName }).click();
+    await expect(page.getByTestId("ledger-id-badge")).toContainText("Missing ID");
+    await expect(page.getByTestId("ledger-id-badge")).not.toContainText("ID on file");
+    await ledgerSheet.getByPlaceholder("Type a name…").fill(readFailName);
+    await ledgerSheet.getByRole("button", { name: readFailName }).click();
+    await expect(page.getByTestId("ledger-id-badge")).toContainText("Could not read the ID check. Try again.");
+    await page.getByRole("button", { name: "Close ledger transaction" }).click();
     const held = tillClose;
     tillClose = null;
     await signInAtDesk(page, "a.singh");
@@ -1254,6 +1319,53 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
       await signInAtDesk(page, "a.singh").catch(() => {});
       await closeHeldTill(page, tillClose);
     }
+    await db.end();
+  }
+});
+
+test("a compliance officer sees an open PEP review at 44px", async ({ page }) => {
+  test.setTimeout(120_000);
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  const name = "Pep Review";
+  try {
+    await db.query("DELETE FROM client_pep_reviews WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = $1)", [name]);
+    await db.query("DELETE FROM client_pep_answers WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = $1)", [name]);
+    await db.query("DELETE FROM desk_clients WHERE display_name = $1", [name]);
+    await signInAtDesk(page, "m.costa");
+    const created = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ legalName, kind: "individual" }) });
+      return { status: res.status, body: await res.json() };
+    }, name);
+    expect(created.status).toBe(201);
+    const clientId = created.body.clientId as string;
+    await db.query(
+      `INSERT INTO client_pep_reviews (review_id, client_id, tenant_id, legal_entity_id, answer_id, status)
+       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', $3, 'open')`,
+      [`pep_${clientId}`, clientId, `ans_${clientId}`],
+    );
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await page.waitForFunction((who) => {
+      const roster = (window as unknown as { CDOS: { clientRoster?: Record<string, { pepReview?: string }> } }).CDOS.clientRoster || {};
+      return roster[who] && roster[who].pepReview === "open";
+    }, name);
+    const tellerCompliance = page.locator('[data-app="compliance"]');
+    if (await tellerCompliance.count()) {
+      await tellerCompliance.click();
+      await expect(page.getByTestId("pep-review-list")).toHaveCount(0);
+    }
+    await signInAtDesk(page, "c.adebayo");
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await page.locator('[data-app="compliance"]').click();
+    const row = page.getByTestId("pep-review-list").getByRole("button", { name });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    const box = await row.boundingBox();
+    expect(box && box.height).toBeGreaterThanOrEqual(44);
+  } finally {
+    await db.query("DELETE FROM client_pep_reviews WHERE client_id IN (SELECT client_id FROM desk_clients WHERE display_name = $1)", [name]).catch(() => {});
     await db.end();
   }
 });

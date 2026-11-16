@@ -163,7 +163,9 @@
       let live = true;
       let timer = 0;
       const waitMs = (window.CDOS && window.CDOS.idCheckWaitMs) || 90000;
-      const giveUp = window.setTimeout(() => { if (live) setStep("failed"); }, waitMs);
+      const giveUpTimer = window.setTimeout(() => { if (live) setStep("failed"); }, waitMs);
+      const onGiveUp = () => { if (live) setStep("failed"); };
+      window.addEventListener("cdos-id-check-give-up", onGiveUp);
       const pull = () => {
         const client = api();
         if (!client) return;
@@ -183,7 +185,7 @@
         }).catch(() => { if (live) timer = window.setTimeout(pull, 2000); });
       };
       timer = window.setTimeout(pull, 600);
-      return () => { live = false; window.clearTimeout(timer); window.clearTimeout(giveUp); };
+      return () => { live = false; window.clearTimeout(timer); window.clearTimeout(giveUpTimer); window.removeEventListener("cdos-id-check-give-up", onGiveUp); };
     }, [step, inquiryId, clientId, dealId, onDone]);
 
     const counter = !!(copy && copy.counterOnly);

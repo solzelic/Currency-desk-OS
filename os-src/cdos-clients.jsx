@@ -537,29 +537,13 @@
   // (Missing ID, ID expired, ID expiring, or ID on hand).
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
-  function kycStatus(rec, settings, name) {
-    if (rec && rec.idStanding) {
-      if (rec.idStanding.onFile) return [rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
-      if (rec.idStanding.chip === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
-      return [rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
-    }
-    const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // Returned only when an approved check of that tier is already on file.
-    if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
-    if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // An approved quick check on file. Nothing writes one now.
-    if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
-    // no provider check on file — judge by the ID the desk is holding
-    if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
-    if (expired) return ['ID expired', CD.flag, CD.flagSoft];
-    const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
-    return ['ID on hand', CD.amber, CD.amberSoft];
+  function kycStatus(rec) {
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.flag, CD.flagSoft];
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    if (state === 'ok') return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', CD.green, CD.greenSoft];
+    if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
+    if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    return [(rec && rec.idStanding && rec.idStanding.chip) || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
@@ -897,7 +881,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const rpt = live.filter(r => { const f = flags[r.id] || {}; return (f.single || f.agg24) && !r.filed; });
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
-    const fromCheck = standing ? standing.gap : ((!rec || !rec.idType || !rec.idNum) ? 'missing ID' : null);
+    const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const fromCheck = (rec && rec.idCheckError) ? rec.idCheckError : standing ? standing.gap : (idState === 'ok' ? null : idState);
     const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = (settings && +settings.structuringDays) || 7;
@@ -1121,22 +1106,18 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
       </div>);
     }
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
-    const documentStanding = {
-      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
-      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
-      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
-      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.'],
-    }[status];
-    if (!documentStanding) return null;
-    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
-    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
+    const fail = rec && rec.idCheckError;
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const title = fail ? 'Not identified' : state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = fail ? rec.idCheckError : (rec && rec.idStanding && rec.idStanding.line) || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = !fail && state === 'ok';
+    const tone = on ? CD.green : CD.flag;
+    const soft = on ? CD.greenSoft : CD.flagSoft;
     return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
       <div className="flex items-start gap-2 min-w-0 max-w-full">
-        <Pill text={documentStanding[0]} c={tone} bg={soft} />
-        <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{documentStanding[1]}</span>
+        <Pill text={title} c={tone} bg={soft} />
+        <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{line}</span>
       </div>
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
     </div>);
@@ -1253,7 +1234,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec, settings, name);
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec);
     const stat = standing ? standing.chip : fallbackStat;
     const col = standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol;
     const bg = standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg;
@@ -1270,7 +1251,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file and valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon, re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
