@@ -1,3 +1,22 @@
+## Signup v2.1 coming back carries on, 16 November 2026
+
+Coming back to sign-up v2.1 now carries on where the owner stopped. This is
+client only (`design/onboarding/signup-v2.1-{bridge,open}.js`); no server route
+changed. A reload after more shops (screen 30) or adding a person (31) opens
+registration or the team screen, where the prototype's own Continue goes, not
+the ID screen that every way forward then refused. A new tab in the same browser
+that types the ID resumes from its live enrolment instead of asking for a
+sign-in again. Another browser, or one idle past the 24-hour enrolment, is told
+its sign-in is set in the browser where it was chosen: signing in again from
+elsewhere does not exist yet (CD-221). An open desk whose hand-off this browser
+still holds asks `POST /open` before sending anyone to `/login`; after the
+opening poll gives up, Check again asks once more instead of confirming the card
+twice. A reload on Check your inbox lands back on it from a bare per-tab
+`cdSignupInbox` flag ("1", nothing personal, cleared once the code passes); the
+unreachable `enrolling` branch is gone. The Confirm record is headed with the
+reserved address instead of the prototype's yorkfx. Not release, CTO or
+Compliance acceptance.
+
 ## Signup staging payment refusal — 16 November 2026
 
 If a synthetic staging reservation loses a fixture gate after verification,

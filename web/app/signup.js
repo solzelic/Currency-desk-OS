@@ -5516,42 +5516,45 @@ function s3971(v,k){return h("button",{key:k,"onClick":v?.["onGoLive"],"disabled
 function s3975(v,k){return "\n            ";}
 function s3977(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveSub"],1),"");}
 function s3976(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 11px; color: var(--faint); text-align: center; margin-top: 9px; line-height: 1.5;")},s3977(v,0));}
-function s3978(v,k){return "\n\n            ";}
-function s3980(v,k){return "\n              ";}
-function s3983(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
-function s3984(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
-function s3982(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3983(v,0),s3984(v,1));}
-function s3981(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3982(v,0));}
-function s3985(v,k){return "\n              ";}
-function s3988(v,k){return "Cancel any time";}
-function s3987(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3988(v,0));}
-function s3990(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
-function s3989(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3990(v,0));}
-function s3986(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3987(v,0),s3989(v,1));}
-function s3991(v,k){return "\n            ";}
-function s3979(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3980(v,0),s3981(v,1),s3985(v,2),s3986(v,3),s3991(v,4));}
-function s3992(v,k){return "\n\n            ";}
-function s3995(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
-function s3996(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
-function s3994(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3995(v,0),s3996(v,1));}
-function s3997(v,k){return " Encrypted connection ";}
-function s3999(v,k){return "← Back to review";}
-function s3998(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s3999(v,0));}
-function s3993(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s3994(v,0),s3997(v,1),s3998(v,2));}
-function s3873(v,k){return h("div",{key:k,"data-paysum":"true"},s3874(v,0),s3882(v,1),s3883(v,2),s3893(v,3),s3894(v,4),s3899(v,5),s3900(v,6),s3970(v,7),s3971(v,8),s3975(v,9),s3976(v,10),s3978(v,11),s3979(v,12),s3992(v,13),s3993(v,14));}
-function s4000(v,k){return "\n          ";}
-function s3257(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3258(v,0),s3259(v,1),s3261(v,2),s3262(v,3),s3264(v,4),s3265(v,5),s3269(v,6),s3270(v,7),s3868(v,8),s3869(v,9),s3870(v,10),s3873(v,11),s4000(v,12));}
-function s4001(v,k){return "\n        ";}
-function s3228(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3229(v,0),s3238(v,1),s3239(v,2),s3256(v,3),s3257(v,4),s4001(v,5));}
-function s4002(v,k){return "\n      ";}
-function s3226(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3227(v,0),s3228(v,1),s4002(v,2));}
-function s4003(v,k){return "\n    ";}
-function s3224(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3225(v,0),s3226(v,1),s4003(v,2)) : null);}
-function s4004(v,k){return "\n  ";}
-function s2927(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2928(v,0),s2929(v,1),s3221(v,2),s3223(v,3),s3224(v,4),s4004(v,5)) : null);}
+function s3980(v,k){return "Check again";}
+function s3979(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onCheckOpen"],"style":style("display:block;margin:12px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3980(v,0));}
+function s3978(v,k){return (v?.["checkOpenVisible"] ? h(React.Fragment,{key:k},s3979(v,0)) : null);}
+function s3981(v,k){return "\n\n            ";}
+function s3983(v,k){return "\n              ";}
+function s3986(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
+function s3987(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
+function s3985(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3986(v,0),s3987(v,1));}
+function s3984(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3985(v,0));}
+function s3988(v,k){return "\n              ";}
+function s3991(v,k){return "Cancel any time";}
+function s3990(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3991(v,0));}
+function s3993(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
+function s3992(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3993(v,0));}
+function s3989(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3990(v,0),s3992(v,1));}
+function s3994(v,k){return "\n            ";}
+function s3982(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3983(v,0),s3984(v,1),s3988(v,2),s3989(v,3),s3994(v,4));}
+function s3995(v,k){return "\n\n            ";}
+function s3998(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
+function s3999(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
+function s3997(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3998(v,0),s3999(v,1));}
+function s4000(v,k){return " Encrypted connection ";}
+function s4002(v,k){return "← Back to review";}
+function s4001(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s4002(v,0));}
+function s3996(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s3997(v,0),s4000(v,1),s4001(v,2));}
+function s3873(v,k){return h("div",{key:k,"data-paysum":"true"},s3874(v,0),s3882(v,1),s3883(v,2),s3893(v,3),s3894(v,4),s3899(v,5),s3900(v,6),s3970(v,7),s3971(v,8),s3975(v,9),s3976(v,10),s3978(v,11),s3981(v,12),s3982(v,13),s3995(v,14),s3996(v,15));}
+function s4003(v,k){return "\n          ";}
+function s3257(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3258(v,0),s3259(v,1),s3261(v,2),s3262(v,3),s3264(v,4),s3265(v,5),s3269(v,6),s3270(v,7),s3868(v,8),s3869(v,9),s3870(v,10),s3873(v,11),s4003(v,12));}
+function s4004(v,k){return "\n        ";}
+function s3228(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3229(v,0),s3238(v,1),s3239(v,2),s3256(v,3),s3257(v,4),s4004(v,5));}
+function s4005(v,k){return "\n      ";}
+function s3226(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3227(v,0),s3228(v,1),s4005(v,2));}
+function s4006(v,k){return "\n    ";}
+function s3224(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3225(v,0),s3226(v,1),s4006(v,2)) : null);}
+function s4007(v,k){return "\n  ";}
+function s2927(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2928(v,0),s2929(v,1),s3221(v,2),s3223(v,3),s3224(v,4),s4007(v,5)) : null);}
 function s361(v,k){return h("div",{key:k,"style":style("--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --panel: #FFFFFF; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.07); --hair: rgba(23,20,15,0.07); --mute: #6E675E; --faint: #736C62; --primary: #1D6B45; --primary-deep: #17583A; --green-live: #1f8a4c; --green-soft: #E2EFE8; --amber: #9a6b1f; --amber-soft: #f5e8cf; --teal: #1F6F6B; --plum: #5E4B8B; --brass: #9a7406; --clay: #C2452D; --flag: #c0392b; --glass: saturate(180%) blur(30px); position: relative; min-height: 100vh; width: 100%; display: grid; place-items: center; overflow: hidden; font-family: var(--f); color: var(--ink); background-color: #e7e4dd; background-image: radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: auto, 22px 22px;")},s362(v,0),s364(v,1),s365(v,2),s511(v,3),s513(v,4),s514(v,5),s2924(v,6),s2926(v,7),s2927(v,8));}
-function s4006(v,k){return "\n  ";}
-function s359(v,k){return h("div",{key:k,"data-product":"true","inert":v?.["tourInert"],"style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s361(v,0),s4006(v,1));}
+function s4009(v,k){return "\n  ";}
+function s359(v,k){return h("div",{key:k,"data-product":"true","inert":v?.["tourInert"],"style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s361(v,0),s4009(v,1));}
 function s357(v,k){return h("div",{key:k,"style":style("display: flex; height: 100vh; width: 100%; overflow: hidden;")},s358(v,0),s359(v,1));}
 class Signup extends React.Component{constructor(p){super(p);this.state={revision:0};this.logic=new Component(p);this.logic.__host=this;}componentDidMount(){this.committed=this.logic.state;this.logic.componentDidMount?.();}componentDidUpdate(p){const previous=this.committed;this.committed=this.logic.state;this.logic.componentDidUpdate?.(p,previous);}componentWillUnmount(){this.logic.componentWillUnmount?.();}render(){const v={...this.props,...this.logic.renderVals()};return h('div',{className:'sc-host'},s3(v,0),s357(v,1));}}
 ReactDOM.createRoot(document.getElementById('dc-root')).render(h(Signup,{startStep:0,prefillDemo:false}));
