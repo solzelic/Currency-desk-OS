@@ -53019,38 +53019,16 @@ ${(filing.map || []).map(blockHTML).join('')}
     if (status === "failed" || status === "expired") return "Method not completed. Check the ID at the counter.";
     return "";
   }
-  function returningLine(record, records) {
-    const original = (records || []).find(item => item.recordId === record.originalRecordId);
-    if (!original) return record.line || record.statusLine || "";
-    const test = /\(test\)/.test(record.line || "") || /\(test\)/.test(original.line || "");
-    const base = `ID checked ${original.verifiedDate}, ${original.methodLabel}. Returning client ${record.verifiedDate}`;
-    return test ? `${base} (test)` : base;
-  }
-  function badgeOf(record, records) {
+  function badgeOf(record) {
     if (!record) return {
       primary: "",
       secondary: ""
     };
-    if (record.result === "needs_review" || record.result === "declined" || record.result === "method_not_completed") {
-      return {
-        primary: record.statusLine || "",
-        secondary: record.line && record.line !== record.statusLine ? record.line : ""
-      };
-    }
-    if (record.method === "returning_client") {
-      const primary = returningLine(record, records);
-      return {
-        primary,
-        secondary: record.statusLine && record.statusLine !== primary ? record.statusLine : ""
-      };
-    }
-    if (record.statusLine && record.line && record.statusLine !== record.line) return {
-      primary: record.statusLine,
-      secondary: record.line
-    };
+    const primary = record.statusLine || record.line || "";
+    const secondary = record.line && record.line !== primary ? record.line : "";
     return {
-      primary: record.statusLine || record.line || "",
-      secondary: ""
+      primary,
+      secondary
     };
   }
   function idChoices() {
@@ -53678,7 +53656,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       onClick: savePerson,
       style: btnStyle(busy || !form.attested)
     }, busy ? "Saving" : "Save the ID record")));
-    const shown = record ? badgeOf(record, pack && pack.records || []) : {
+    const shown = record ? badgeOf(record) : {
       primary: "",
       secondary: ""
     };
@@ -53895,7 +53873,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, [clientId, tick]);
     const records = pack && pack.records || [];
     const latest = records[0] || null;
-    const badge = latest ? badgeOf(latest, records) : {
+    const badge = latest ? badgeOf(latest) : {
       primary: "",
       secondary: ""
     };
@@ -53904,7 +53882,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     let secondary = badge.secondary;
     /* A sandbox key says "Check passed (test)". Any other pass says "Check passed".
        The record line stays underneath either way. */
-    if ((fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0) {
+    if (latest && latest.result === "pass" && (fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0) {
       secondary = badge.secondary || badge.primary;
       primary = fromInquiry;
     }
@@ -54069,7 +54047,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       };
     }, [clientId, tick, dealId]);
     const hit = (pack && pack.records || []).find(item => dealId && ((item.deals || []).indexOf(dealId) >= 0 || item.dealId === dealId)) || null;
-    const badge = hit ? badgeOf(hit, pack && pack.records || []) : null;
+    const badge = hit ? badgeOf(hit) : null;
     return /*#__PURE__*/React.createElement("div", {
       "data-testid": "deal-id-check",
       className: "p-3.5",
