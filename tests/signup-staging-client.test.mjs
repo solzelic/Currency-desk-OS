@@ -114,3 +114,170 @@ test('a refused staging Open re-prepares and says why; a changed plan sends noth
   g.c.state.data.term = 'annual'; g.CD.pay(g.c); await drain();
   assert.equal(g.requests.length, 1);
 });
+
+/* ---- Start on Day 1 (POST /api/staging/day-one) ------------------------- */
+const DAY = { cdId: 'CD-STAG-2345', email: 'owner+1a2b3c4d@staging.invalid', password: 'k7m2p-x9q4r-h3n8', pin: '4821' };
+const dayReply = (over = {}) => ({ ok: true, cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B', signIn: { email: DAY.email, password: DAY.password, pin: DAY.pin }, ...over });
+
+/* The page as it loads at /onboarding#day1: bridge, chapters and open, then mount. */
+function landing({ hash = '#day1', flag = 'fresh', stored = {} } = {}) {
+  const pending = [], timers = [], replaced = [], sets = [], removed = [], local = [], listeners = {};
+  const store = new Map(Object.entries(stored));
+  if (flag === 'fresh') store.set('cdDayOne', String(Date.now() - 2000));
+  if (flag === 'stale') store.set('cdDayOne', String(Date.now() - 61000));
+  if (flag === 'future') store.set('cdDayOne', String(Date.now() + 61000));
+  if (flag === 'junk') store.set('cdDayOne', 'yes');
+  const sessionStorage = { getItem: k => store.has(k) ? store.get(k) : null, setItem: (k, v) => { sets.push([k, String(v)]); store.set(k, String(v)); }, removeItem: k => { removed.push(k); store.delete(k); } };
+  const localStorage = { getItem: () => null, setItem: (k, v) => local.push([k, v]), removeItem: k => local.push([k]) };
+  const node = { style: {} };
+  const context = {
+    window: { addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, innerWidth: 1280, __cdAgreementHash: 'pinned-version' },
+    location: { origin: 'https://staging.currencydeskos.com', pathname: '/onboarding', search: '', hash, assign() {} },
+    history: { replaceState: (_s, _t, url) => replaced.push(url) }, sessionStorage, localStorage,
+    document: { querySelector: s => s === '[data-staging-day-one]' ? node : null },
+    fetch: (...args) => new Promise(resolve => pending.push({ args, resolve })),
+    setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {}, AbortController, URLSearchParams, console, Promise,
+  };
+  for (const f of ['bridge', 'chapters', 'open']) vm.runInNewContext(read(f), context);
+  const CD = context.window.__cdOnb;
+  const c = { state: { i: 17, data: {}, landKey: 0 }, _after: i => i, JURIS: [],
+    set(k, v) { this.state.data[k] = v; },
+    setState(v, cb) { Object.assign(this.state, typeof v === 'function' ? v(this.state) : v); cb?.(); },
+    forceUpdate() {} };
+  CD.mount(c);
+  const reply = (n, status, body) => pending[n].resolve({ status, json: () => Promise.resolve(body) });
+  const paths = () => pending.map(p => `${p.args[1].method} ${p.args[0]}`);
+  const tick = () => timers.splice(0).forEach(fn => fn());
+  const fire = (type, e = {}) => (listeners[type] || []).forEach(fn => fn(e));
+  return { CD, c, pending, reply, paths, tick, replaced, sets, removed, local, store, fire, node };
+}
+const resumedDay = { state: 'verified', lastStep: '20-team', saved: true, pinSet: true, answers: { operatingName: 'Staging Shop 1A2B' }, you: { name: 'Staging Owner' }, pack: null, callPreference: { call: false } };
+/* A whole Day 1 landing, through /open and the one-second step to screen 16. */
+async function landed(stagingOpen = [200, { ok: true }]) {
+  const h = landing();
+  h.reply(0, 201, dayReply()); await drain();
+  h.reply(1, 200, resumedDay); await drain(); await drain();
+  h.reply(2, stagingOpen[0], stagingOpen[1]); await drain();
+  h.reply(3, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
+  h.tick();
+  return h;
+}
+
+test('Start on Day 1: the click’s own tab lands, posts once, then the page’s existing resume, staging-open and open', async () => {
+  const h = landing();
+  assert.deepEqual(h.replaced, ['/onboarding']);
+  assert.ok(h.removed.includes('cdDayOne')); assert.equal(h.store.has('cdDayOne'), false);
+  assert.deepEqual(h.paths(), ['POST /api/staging/day-one']);
+  assert.equal(h.pending[0].args[1].headers['content-type'], 'application/json');
+  assert.equal(h.pending[0].args[1].body, '{}');
+  assert.equal(h.c.state.i, 15); assert.equal(h.CD._paying, true);
+  h.reply(0, 201, dayReply()); await drain();
+  assert.deepEqual(h.paths().slice(1), [`GET /api/onboarding/${DAY.cdId}/resume`]);
+  /* nothing in this tab names the reservation until the desk is opening */
+  assert.equal(h.store.get('cdSignupId'), undefined);
+  h.reply(1, 200, resumedDay); await drain(); await drain();
+  assert.equal(h.paths()[2], `POST /api/onboarding/${DAY.cdId}/staging-open`);
+  assert.deepEqual(JSON.parse(h.pending[2].args[1].body), { termsSourceHash: 'pinned-version', agreed: true });
+  h.reply(2, 200, { ok: true }); await drain();
+  assert.equal(h.store.get('cdSignupId'), DAY.cdId);
+  assert.equal(h.paths()[3], `POST /api/onboarding/${DAY.cdId}/open`);
+  h.reply(3, 200, { ok: true, tenantId: 'tnt-synthetic', cdId: DAY.cdId, operatingName: 'Staging Shop 1A2B' }); await drain();
+  assert.equal(h.CD.launched, true); assert.equal(h.store.get('cdSignupId'), undefined);
+  h.tick();
+  assert.equal(h.c.state.i, 16);
+  assert.equal(h.paths().filter(p => p === 'POST /api/staging/day-one').length, 1);
+  /* the one staging line, on Day 1 only */
+  const line = h.CD.priced(h.c, {}).stagingDayOne;
+  assert.match(line, /Counter PIN 4821/);
+  assert.match(line, /0000/);
+  assert.ok(line.includes(DAY.email)); assert.ok(line.includes(DAY.password));
+  assert.match(line, /CD-221/); assert.match(line, /12 hours/);
+  assert.match(line, /not shown again/);
+  assert.doesNotMatch(line, /[–—]/);
+  h.c.state.i = 15; assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '');
+  /* storage: only the ID in this tab, never a secret; nothing in localStorage */
+  assert.deepEqual(h.sets.map(([k]) => k), ['cdSignupId']);
+  for (const [, v] of h.sets) for (const secret of [DAY.pin, DAY.password, DAY.email]) assert.ok(!v.includes(secret));
+  assert.deepEqual(h.local, []);
+});
+
+test('#day1 without this tab’s fresh mark is inert: no POST, the address is tidied and the page mounts as usual', async () => {
+  for (const flag of [null, 'stale', 'future', 'junk']) {
+    const h = landing({ flag });
+    assert.deepEqual(h.replaced, ['/onboarding'], String(flag));
+    assert.deepEqual(h.paths(), [], String(flag));
+    assert.equal(h.store.has('cdDayOne'), false);
+    assert.equal(h.c.state.i, 17);
+  }
+  /* a mark without #day1 does nothing either, and is dropped */
+  const h = landing({ hash: '' });
+  assert.deepEqual(h.paths(), []); assert.deepEqual(h.replaced, []); assert.equal(h.store.has('cdDayOne'), false);
+  /* an ordinary returning tab still resumes its own reservation */
+  const own = landing({ hash: '', flag: null, stored: { cdSignupId: 'CD-HARB-2345' } });
+  assert.deepEqual(own.paths(), ['GET /api/onboarding/CD-HARB-2345/state']);
+});
+
+test('a malformed or refused Day 1 reply shows no line, never opens, and lands on the ID screen with the reason', async () => {
+  const bad = [
+    [201, dayReply({ cdId: 'CD-stag-2345' })],
+    [201, dayReply({ cdId: undefined })],
+    [201, dayReply({ signIn: { email: 'someone@example.com', password: DAY.password, pin: DAY.pin } })],
+    [201, dayReply({ signIn: { email: DAY.email, password: DAY.password, pin: '48210' } })],
+    [201, dayReply({ signIn: { email: DAY.email, password: 'short', pin: DAY.pin } })],
+    [201, dayReply({ signIn: undefined })],
+    [200, dayReply()],
+    [404, { error: 'not_found' }],
+    [429, { error: 'slow_down' }],
+    [503, { error: 'staging_unavailable', detail: 'This staging door can’t open a shop just now. No desk was opened.' }],
+    [0, { error: 'network', detail: 'offline' }],
+  ];
+  for (const [status, body] of bad) {
+    const h = landing();
+    h.reply(0, status, body); await drain(); await drain();
+    const label = `${status} ${JSON.stringify(body)}`;
+    assert.deepEqual(h.paths(), ['POST /api/staging/day-one'], label);
+    assert.equal(h.c.state.i, 0, label);
+    assert.equal(h.CD._paying, false, label);
+    assert.ok(h.CD.err, label);
+    if (body.detail) assert.equal(h.CD.err, body.detail, label);
+    assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '', label);
+    assert.equal(h.store.get('cdSignupId'), undefined, label);
+    assert.equal(h.CD.code, '', label);
+  }
+});
+
+test('a refused resume or staging-open stops before /open and says why', async () => {
+  const r = landing();
+  r.reply(0, 201, dayReply()); await drain();
+  r.reply(1, 401, { error: 'sign_in_again', detail: 'For your security, sign in again to carry on.' }); await drain(); await drain();
+  assert.equal(r.pending.length, 2); assert.equal(r.c.state.i, 0); assert.equal(r.CD.err, 'For your security, sign in again to carry on.');
+  const o = landing();
+  o.reply(0, 201, dayReply()); await drain();
+  o.reply(1, 200, resumedDay); await drain(); await drain();
+  o.reply(2, 409, { error: 'agreement_changed', detail: 'Your desk or plan changed.' }); await drain();
+  assert.equal(o.pending.length, 3); assert.equal(o.c.state.i, 0); assert.equal(o.CD.err, 'Your desk or plan changed.');
+  assert.equal(o.store.get('cdSignupId'), undefined);
+  assert.equal(o.CD.priced(o.c, {}).stagingDayOne || '', '');
+});
+
+test('an ordinary launch never draws the staging line; leaving Day 1 forgets it', async () => {
+  const plain = landing({ hash: '', flag: null });
+  plain.CD.launched = true; plain.c.state.i = 16;
+  assert.equal(plain.CD.priced(plain.c, {}).stagingDayOne || '', '');
+  const h = await landed();
+  assert.match(h.CD.priced(h.c, {}).stagingDayOne, /4821/);
+  h.fire('pagehide');
+  assert.equal(h.CD.priced(h.c, {}).stagingDayOne || '', '');
+  assert.equal(h.node.style.display, 'none');
+  /* staging-open answering already open carries on the same way */
+  const w = await landed([409, { error: 'already_open' }]);
+  assert.match(w.CD.priced(w.c, {}).stagingDayOne, /4821/);
+  w.CD.walk();
+  assert.equal(w.CD.priced(w.c, {}).stagingDayOne || '', '');
+});
+
+test('the built page draws the staging Day 1 line once, only when it is set', () => {
+  const page = fs.readFileSync(new URL('../web/app/signup.js', import.meta.url), 'utf8');
+  assert.equal(page.split('"data-staging-day-one":"true"').length - 1, 1);
+  assert.match(page, /v\?\.\["stagingDayOne"\] \?/);
+});
