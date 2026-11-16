@@ -290,26 +290,29 @@
       return { count: h.length, total, windowCad, winDays, days, top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null };
     }, [name, live, settings]);
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
     useEffect(() => {
       const id = rec && rec.clientId;
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !id) { setStanding(null); return undefined; }
       let live = true;
-      const pull = () => { api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const pull = () => {
+        api.checks(id).then((body) => { if (live) { setReadError(""); setStanding((body && body.standing) || null); } }).catch(() => { if (live) { setStanding(null); setReadError("Could not read the ID check. Try again."); } });
+      };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const standingNow = (rec && rec.idCheckError) ? null : (standing || (rec && rec.idStanding) || null);
-    const viewed = standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec;
+    const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
+    const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
     /* The chip and idOk follow the server standing only. Typed papers
        do not count. PR 3 owns the posting gate. */
     const idOk = kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
-    const badge = (rec && rec.idCheckError)
-      ? { t: rec.idCheckError, c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+    const badge = (readError || (rec && rec.idCheckError))
+      ? { t: readError || rec.idCheckError, c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
       : idOk
       ? { t: (viewed.idStanding && viewed.idStanding.chip) || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
       : kycState === 'ID expired'

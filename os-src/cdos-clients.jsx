@@ -1223,21 +1223,29 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState('');
     useEffect(() => {
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       const clientId = rec && rec.clientId;
       if (!api || !clientId) return undefined;
       let live = true;
-      const pull = () => { api.checks(clientId).then((body) => { if (live) setStanding(body && body.standing ? body.standing : null); }).catch(() => {}); };
+      const pull = () => {
+        api.checks(clientId).then((body) => {
+          if (!live) return;
+          setReadError('');
+          setStanding(body && body.standing ? body.standing : null);
+        }).catch(() => { if (live) { setStanding(null); setReadError('Could not read the ID check. Try again.'); } });
+      };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec);
-    const stat = standing ? standing.chip : fallbackStat;
-    const col = standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol;
-    const bg = standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg;
+    const shown = readError ? { ...rec, idCheckError: readError } : rec;
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
+    const stat = readError ? readError : (standing ? standing.chip : fallbackStat);
+    const col = readError ? CD.flag : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
+    const bg = readError ? CD.flagSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -1295,10 +1303,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
-          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => { if (rec && rec.clientId) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: rec.clientId } })); }} standing={standing} />
+          <ClientCompliance name={name} rec={shown} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => { if (rec && rec.clientId) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: rec.clientId } })); }} standing={readError ? null : standing} />
           {/* Then the two things an operator came in for: where this
               customer is in identification, and the papers filed for them. */}
-          <ProcessStanding rec={rec} settings={settings} standing={standing} />
+          <ProcessStanding rec={shown} settings={settings} standing={readError ? null : standing} />
           {rec && rec.clientId ? <IdentityCheck clientId={rec.clientId} canEdit={canEdit} /> : null}
           <FileFolder rec={rec} canEdit={canEdit} writer={writer} log={log} name={name} />
           {/* risk rating — always visible on the profile, set inline without entering edit mode */}

@@ -27850,6 +27850,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState('');
     useEffect(() => {
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       const clientId = rec && rec.clientId;
@@ -27857,8 +27858,15 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       let live = true;
       const pull = () => {
         api.checks(clientId).then(body => {
-          if (live) setStanding(body && body.standing ? body.standing : null);
-        }).catch(() => {});
+          if (!live) return;
+          setReadError('');
+          setStanding(body && body.standing ? body.standing : null);
+        }).catch(() => {
+          if (live) {
+            setStanding(null);
+            setReadError('Could not read the ID check. Try again.');
+          }
+        });
       };
       const onStanding = event => {
         if (!event.detail || event.detail.clientId !== clientId) return;
@@ -27871,10 +27879,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec);
-    const stat = standing ? standing.chip : fallbackStat;
-    const col = standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
-    const bg = standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
+    const shown = readError ? {
+      ...rec,
+      idCheckError: readError
+    } : rec;
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
+    const stat = readError ? readError : standing ? standing.chip : fallbackStat;
+    const col = readError ? CD.flag : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
+    const bg = readError ? CD.flagSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -28070,7 +28082,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     }, rec.duplicateReason))), /*#__PURE__*/React.createElement(ClientCompliance, {
       name: name,
-      rec: rec,
+      rec: shown,
       mine: mine,
       flags: flags,
       settings: settings,
@@ -28083,11 +28095,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           }
         }));
       },
-      standing: standing
+      standing: readError ? null : standing
     }), /*#__PURE__*/React.createElement(ProcessStanding, {
-      rec: rec,
+      rec: shown,
       settings: settings,
-      standing: standing
+      standing: readError ? null : standing
     }), rec && rec.clientId ? /*#__PURE__*/React.createElement(IdentityCheck, {
       clientId: rec.clientId,
       canEdit: canEdit
@@ -30402,6 +30414,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       };
     }, [name, live, settings]);
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
     useEffect(() => {
       const id = rec && rec.clientId;
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
@@ -30412,8 +30425,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       let liveFlag = true;
       const pull = () => {
         api.checks(id).then(body => {
-          if (liveFlag) setStanding(body && body.standing || null);
-        }).catch(() => {});
+          if (liveFlag) {
+            setReadError("");
+            setStanding(body && body.standing || null);
+          }
+        }).catch(() => {
+          if (liveFlag) {
+            setStanding(null);
+            setReadError("Could not read the ID check. Try again.");
+          }
+        });
       };
       const onStanding = event => {
         if (!event.detail || event.detail.clientId !== id) return;
@@ -30426,8 +30447,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const standingNow = rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
-    const viewed = standingNow ? {
+    const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = readError ? {
+      ...(rec || {}),
+      idCheckError: readError
+    } : standingNow ? {
       ...(rec || {}),
       idStanding: standingNow,
       idCheckError: undefined
@@ -30436,7 +30460,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     /* The chip follows the server standing only. Typed papers do not count. */
     const idOk = kycState === 'ok';
     const idTone = idOk ? CD.green : kycState === 'Checking ID' ? CD.mute : CD.flag;
-    const idLabel = rec && rec.idCheckError ? rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const idLabel = readError || rec && rec.idCheckError ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -36608,6 +36632,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       };
     }, [name, live, settings]);
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
     useEffect(() => {
       const id = rec && rec.clientId;
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
@@ -36618,8 +36643,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       let live = true;
       const pull = () => {
         api.checks(id).then(body => {
-          if (live) setStanding(body && body.standing || null);
-        }).catch(() => {});
+          if (live) {
+            setReadError("");
+            setStanding(body && body.standing || null);
+          }
+        }).catch(() => {
+          if (live) {
+            setStanding(null);
+            setReadError("Could not read the ID check. Try again.");
+          }
+        });
       };
       const onStanding = event => {
         if (!event.detail || event.detail.clientId !== id) return;
@@ -36632,8 +36665,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         window.removeEventListener("cdos-id-standing", onStanding);
       };
     }, [rec && rec.clientId]);
-    const standingNow = rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
-    const viewed = standingNow ? {
+    const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = readError ? {
+      ...(rec || {}),
+      idCheckError: readError
+    } : standingNow ? {
       ...(rec || {}),
       idStanding: standingNow,
       idCheckError: undefined
@@ -36643,8 +36679,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
        do not count. PR 3 owns the posting gate. */
     const idOk = kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
-    const badge = rec && rec.idCheckError ? {
-      t: rec.idCheckError,
+    const badge = readError || rec && rec.idCheckError ? {
+      t: readError || rec.idCheckError,
       c: CD.flag,
       bg: CD.flagSoft,
       ic: 'alert'

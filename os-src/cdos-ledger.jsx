@@ -171,24 +171,27 @@
     }, [name, live, settings]);
 
     const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
     useEffect(() => {
       const id = rec && rec.clientId;
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !id) { setStanding(null); return undefined; }
       let liveFlag = true;
-      const pull = () => { api.checks(id).then((body) => { if (liveFlag) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const pull = () => {
+        api.checks(id).then((body) => { if (liveFlag) { setReadError(""); setStanding((body && body.standing) || null); } }).catch(() => { if (liveFlag) { setStanding(null); setReadError("Could not read the ID check. Try again."); } });
+      };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
       return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
-    const standingNow = (rec && rec.idCheckError) ? null : (standing || (rec && rec.idStanding) || null);
-    const viewed = standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec;
+    const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
+    const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
     /* The chip follows the server standing only. Typed papers do not count. */
     const idOk = kycState === 'ok';
     const idTone = idOk ? CD.green : (kycState === 'Checking ID' ? CD.mute : CD.flag);
-    const idLabel = (rec && rec.idCheckError) ? rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const idLabel = (readError || (rec && rec.idCheckError)) ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;

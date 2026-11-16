@@ -1227,13 +1227,13 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await openName(typedOnlyName);
     await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
-    await expect(page.getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
+    await expect(page.locator(".client-file").getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
     await closeFile();
     await openName(readFailName);
     await expect(page.getByTestId("client-standing")).toContainText("Could not read the ID check. Try again.");
     await expect(page.getByTestId("client-where")).toContainText("Could not read the ID check. Try again.");
     await expect(page.getByTestId("client-where")).toContainText("Not identified");
-    await expect(page.getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
+    await expect(page.locator(".client-file").getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
     await closeFile();
 
     expect(await readFlags(ids.pass)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
