@@ -21,7 +21,7 @@ import { idTail, type IdDoor } from "../onboarding/cd-id-door.js";
 import { enrolmentFor } from "../onboarding/email-code.js";
 import { loadAccount, withSignupAccount, sha256, type Account } from "../onboarding/signup-account.js";
 import { checkPin, savePin } from "../onboarding/signup-pin.js";
-import { answersBody, parseAnswers, resumable } from "../onboarding/signup-answers.js";
+import { answersBody, parseAnswers, resumable, saveSignupAnswers } from "../onboarding/signup-answers.js";
 import { stopSignupCalls, signupCallPreference, saveSignupCallPreference } from "../onboarding/signup-preferences.js";
 import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
@@ -118,16 +118,7 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
     const parsed = parseAnswers(body.data.step, body.data.answers);
     if (!parsed.ok) return reply.code(422).send({ error: "invalid_answer", detail: parsed.detail });
-    const saved = await withSignupAccount(db, r.row.id, async (db, account) => {
-      if (account.state !== "verified") return false;
-      const row = await loadOrCreateOnboarding(db, r.row.id);
-      if (row.tenantId) return false;
-      const answers = { ...(row.answers ?? {}), ...parsed.values };
-      await db.update(schema.onboarding).set({ answers, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, r.row.id));
-      await db.update(schema.signupAccounts).set({ lastStep: parsed.step, confirmedAt: null, answersHash: null, setupIntentId: null, planChoice: null, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, r.row.id));
-      return true;
-    });
-    if (!saved) return reply.code(409).send({ error: "already_open" });
+    if (!(await saveSignupAnswers(db, r.row.id, parsed))) return reply.code(409).send({ error: "already_open" });
     return { ok: true, lastStep: parsed.step };
   });
 

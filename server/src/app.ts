@@ -19,6 +19,7 @@ import { registerPasswordChangeGate } from "./auth/password-change-gate.js";
 import { stagingDoorOpen } from "./auth/staging-runtime.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
 import { registerStagingFreshShopRoutes } from "./routes/staging-fresh-shop.js";
+import { registerStagingDayOneRoutes } from "./routes/staging-day-one.js";
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerDeskRoutes } from "./routes/desk.js";
 import { registerTenantRoutes } from "./routes/tenant.js";
@@ -324,6 +325,7 @@ export async function buildApp(
   if (stagingDoorOpen()) {
     registerStagingSignInRoutes(app, db);
     registerStagingFreshShopRoutes(app, db);
+    registerStagingDayOneRoutes(app, db);
   }
   registerSignupRoutes(app, db);
   registerEnquiryRoutes(app, db);

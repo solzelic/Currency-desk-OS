@@ -96,6 +96,23 @@ This output change does not alter their financial fixtures or assertions.
   `STAGING=1`, a staging `RENDER_EXTERNAL_HOSTNAME` and Host, and the database marker
   from `npm run staging -- mark-db`; any missing piece closes it and the page asks
   for the emailed code as usual. Ordinary reservations never get a code in a response.
+- **Staging Start on Day 1**: to try the onboarding after payment without walking the
+  sign-up, open `https://staging.currencydeskos.com/app` and press **Start on Day 1**
+  (beside Start a fresh shop, both tagged Staging). A few seconds on a holding screen
+  ("Opening a staging test shop…", then the new shop's name; nothing under it can be
+  pressed) later, the same tab is on Day 1 of a brand-new test shop, signed in as its
+  owner, over the real Home: Build my desk, the tour and the first apps from there.
+  Every press is a new shop. The boxed line under Build my desk gives the counter PIN
+  (needed to take a drawer; it becomes 0000 when staging next restarts) and the owner's
+  email and password (Forgot PIN asks for the password). Note them: they are shown
+  once, never stored in the browser, and a reload drops them. Signing that owner in
+  again from the sign-in page waits on CD-221; until then the browser stays signed in
+  for 12 hours, or press the button again for another shop. It needs the same staging
+  pieces as above, including `npm run staging -- mark-db`; without the marker it says
+  the staging door can't open a shop. Eight presses an hour per address (shared with
+  Start a fresh shop) and 30 an hour in all.
+  Locally, `tests/e2e/staging-day-one.spec.ts` runs it against a staging-shaped server
+  on its own database (`SEAM_DATABASE_URL=… npx playwright test tests/e2e/staging-day-one.spec.ts`).
 
 ## Sandboxed/CI environments
 
