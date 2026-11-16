@@ -26,3 +26,16 @@ test('styles move into the head; focus and active styles remain available', () =
   assert.match(built.html, /:focus\{color: green !important;/);
   assert.match(built.html, /:active\{opacity: .5 !important;/);
 });
+
+test('lifecycle reports the last committed state across batches and forced renders', () => {
+ const built=compileSignup(shell('<span/>'));
+ let mount;
+ const React={createElement:(type,props)=>({type,props}),Component:class{constructor(p){this.props=p;} setState(){} forceUpdate(){}}};
+ vm.runInNewContext(built.js,{React,ReactDOM:{createRoot:()=>({render:v=>{mount=v;}})},document:{getElementById:()=>({})}});
+ const host=new mount.type(mount.props), c=host.logic, seen=[];
+ c.state={i:0};c.componentDidUpdate=(_p,previous)=>seen.push(previous.i);host.componentDidMount();
+ c.setState({i:1});c.setState({i:2});host.componentDidUpdate({});
+ c.forceUpdate();host.componentDidUpdate({});
+ c.setState({label:'changed'});host.componentDidUpdate({});
+ assert.deepEqual(seen,[0,2,2]);
+});

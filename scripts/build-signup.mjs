@@ -173,6 +173,21 @@ patch("desk apps reachable", '<div data-deskapps="true" style=', '<div data-desk
 /* every button at least 44px on a phone (build doc §5); the count's two tabs were 40 */
 patch("phone tap targets", "</helmet>", "<style>@media (max-width: 720px) { [data-card] [role=\"tab\"] { min-height: 44px !important; } }</style>\n</helmet>");
 
+/* Credential managers can suggest a new password without treating this as returning login. */
+patch("new password autofill", "country_addr:'country-name', ownerName:'name'", "ownerPass:'new-password', pass2:'new-password', country_addr:'country-name', ownerName:'name'");
+/* Native controls keep their Enter action; a chapter shortcut must not swallow it. */
+patch("keyboard choice activation", "  onKey(e) {", "  onKey(e) {\n    if (e.defaultPrevented || (e.key === 'Enter' && e.target && e.target.closest && e.target.closest('button,a,summary,[role=button],[role=tab],[role=checkbox]'))) return;");
+patch("payment fold disabled state", "R['pf' + k + 'NextL'] = nexts[k];", "R['pf' + k + 'NextL'] = nexts[k]; R['pf' + k + 'Disabled'] = !nextOk[k];");
+for (let k = 0; k < 4; k++) patch("payment disabled " + k, '<button onClick="{{ pf' + k + 'Next }}"', '<button disabled="{{ pf' + k + 'Disabled }}" onClick="{{ pf' + k + 'Next }}"');
+patch("accessible control targets", "</helmet>", `<style>
+[data-product] button, [data-product] a[href] { min-height:24px; }
+[data-product] a[href] { display:inline-flex;align-items:center; }
+[data-product] :is(button,a,input,[tabindex]):focus-visible { outline:2px solid #1D6B45;outline-offset:3px; }
+@media(max-width:720px) {
+ [data-product] :is(button,a[href],input,[role=tab],[role=button]) { min-height:44px!important;min-width:44px!important;box-sizing:border-box; }
+}
+</style>\n</helmet>`);
+
 /* ======== CHAPTERS (signup-v2.1-chapters.js) ======== */
 /* ---- the address: Google Places through our server, by hand otherwise ---- */
 patch("places list", "const list = ql.length < 3 ? [] : this.ADDR.filter(", "const list = window.__cdOnb ? window.__cdOnb.places(this, ql) : this.ADDR.filter(");

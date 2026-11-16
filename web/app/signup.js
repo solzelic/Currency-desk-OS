@@ -3,7 +3,7 @@
 const h=React.createElement;
 function text(v,k){return v==null||typeof v==='boolean'?null:React.isValidElement(v)||Array.isArray(v)?h(React.Fragment,{key:k},v):h('span',{key:k,className:'sc-interp'},String(v));}
 function style(s){if(typeof s!=='string')return s;const o={};for(const part of s.split(';')){const i=part.indexOf(':');if(i<0)continue;const k=part.slice(0,i).trim();o[k.startsWith('--')?k:k.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=part.slice(i+1).trim();}return o;}
-class DCLogic{constructor(props){this.props=props||{};this.state={};}setState(p,cb){const prev=this.state;this.state={...prev,...(typeof p==='function'?p(prev):p)};this.__previous=prev;this.__host?.setState(s=>({revision:s.revision+1}),cb);}forceUpdate(){this.__host?.forceUpdate();}}
+class DCLogic{constructor(props){this.props=props||{};this.state={};}setState(p,cb){const prev=this.state;this.state={...prev,...(typeof p==='function'?p(prev):p)};this.__host?.setState(s=>({revision:s.revision+1}),cb);}forceUpdate(){this.__host?.forceUpdate();}}
 
 class Component extends DCLogic {
   KEY = 'cdos_onb_v2';
@@ -417,6 +417,7 @@ class Component extends DCLogic {
     if (this.state.i === 31) { this._dir = -1; this.setState({ i: 11, apFx: null }); return; }
     this._dir = -1; this.setState({ pkPhase: 'idle', ssoPhase: 'idle', lockErr: '', pkScan: false }); this.setState(s => ({ i: this._before(s.i), adding: false, paid: false })); }
   onKey(e) {
+    if (e.defaultPrevented || (e.key === 'Enter' && e.target && e.target.closest && e.target.closest('button,a,summary,[role=button],[role=tab],[role=checkbox]'))) return;
     if (this._meta && this._meta.type === 'pin') { if (/^\d$/.test(e.key)) { e.preventDefault(); this.pinTap(e.key); return; } if (e.key === 'Backspace') { e.preventDefault(); this.pinBack(); return; } }
     if (e.key === 'Enter' && this._meta && this._meta.enter && this._meta.valid !== false) { e.preventDefault(); this.next(); }
   }
@@ -993,7 +994,7 @@ class Component extends DCLogic {
         R['pf' + k + 'SumS'] = 'display: block; font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: ' + (dn ? '#17583A' : '#736C62') + ';';
         R['pf' + k + 'Chev'] = 'flex: none; display: flex; color: #736C62; transition: transform .25s; transform: rotate(' + (open ? '180deg' : '0deg') + ');';
         R['pf' + k + 'Head'] = () => { this._tone('tap'); this.setState({ payOpen: open ? -1 : k }); };
-        R['pf' + k + 'NextL'] = nexts[k];
+        R['pf' + k + 'NextL'] = nexts[k]; R['pf' + k + 'Disabled'] = !nextOk[k];
         R['pf' + k + 'NextS'] = "display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 999px; border: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; color: #FCFAF5; cursor: " + (nextOk[k] ? 'pointer' : 'not-allowed') + '; background: ' + (nextOk[k] ? '#1D6B45' : '#17140F') + '; opacity: ' + (nextOk[k] ? 1 : 0.3) + ';' + (nextOk[k] ? ' box-shadow: 0 8px 18px -8px #1D6B45;' : '');
         R['pf' + k + 'Next'] = () => { if (!nextOk[k]) return; this._tone(k === 3 ? 'done' : 'step'); if (k === 3) this.setState({ termsRead: true }); const ns = Object.assign({}, this.state.paySeen || {}, { [k]: true }); const nx = [0, 1, 2, 3].find(x => x > k && !(x === 3 ? this.state.termsRead : ns[x])); this.setState({ paySeen: ns, payOpen: nx != null ? nx : -1 }); };
       }
@@ -1269,7 +1270,7 @@ class Component extends DCLogic {
         /* Let the browser's own address fill help too. Ours only works
            where Google does; theirs already knows this person. */
         ac: ({ street:'address-line1', city:'address-level2', region:'address-level1', postal:'postal-code',
-              country_addr:'country-name', ownerName:'name', ownerEmail:'email', phone:'tel' })[f.key] || 'off',
+              ownerPass:'new-password', pass2:'new-password', country_addr:'country-name', ownerName:'name', ownerEmail:'email', phone:'tel' })[f.key] || 'off',
         onChange: (e) => this.set(f.key, f.num ? e.target.value.replace(/\D/g, '').slice(0, f.max || 4) : f.upper ? e.target.value.toUpperCase() : e.target.value)
       }));
       }
@@ -4895,7 +4896,7 @@ function s3360(v,k){return h(React.Fragment,{key:k},"",text(v?.["planPerLoc"],1)
 function s3357(v,k){return h("div",{key:k,"data-pfnote":"true","style":style("display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--mute);")},s3358(v,0),s3360(v,1));}
 function s3361(v,k){return "\n\n                  ";}
 function s3364(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf0NextL"],1),"");}
-function s3363(v,k){return h("button",{key:k,"onClick":v?.["pf0Next"],"style":style(v?.["pf0NextS"])},s3364(v,0));}
+function s3363(v,k){return h("button",{key:k,"disabled":v?.["pf0Disabled"],"onClick":v?.["pf0Next"],"style":style(v?.["pf0NextS"])},s3364(v,0));}
 function s3362(v,k){return h("div",{key:k,"data-pfnext":"true","style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3363(v,0));}
 function s3365(v,k){return "\n                ";}
 function s3268(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3269(v,0),s3270(v,1),s3280(v,2),s3281(v,3),s3356(v,4),s3357(v,5),s3361(v,6),s3362(v,7),s3365(v,8));}
@@ -5061,7 +5062,7 @@ function s3526(v,k){return "\n                  ";}
 function s3511(v,k){return h("button",{key:k,"onClick":v?.["onXSite"],"style":style(v?.["xSiteS"])},s3512(v,0),s3513(v,1),s3517(v,2),s3518(v,3),s3523(v,4),s3524(v,5),s3526(v,6));}
 function s3527(v,k){return "\n\n\n                  ";}
 function s3530(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf1NextL"],1),"");}
-function s3529(v,k){return h("button",{key:k,"onClick":v?.["pf1Next"],"style":style(v?.["pf1NextS"])},s3530(v,0));}
+function s3529(v,k){return h("button",{key:k,"disabled":v?.["pf1Disabled"],"onClick":v?.["pf1Next"],"style":style(v?.["pf1NextS"])},s3530(v,0));}
 function s3528(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3529(v,0));}
 function s3531(v,k){return "\n                ";}
 function s3396(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3397(v,0),s3398(v,1),s3400(v,2),s3401(v,3),s3417(v,4),s3418(v,5),s3437(v,6),s3438(v,7),s3440(v,8),s3442(v,9),s3443(v,10),s3510(v,11),s3511(v,12),s3527(v,13),s3528(v,14),s3531(v,15));}
@@ -5180,7 +5181,7 @@ function s3645(v,k){return "\n            ";}
 function s3562(v,k){return h("div",{key:k},s3563(v,0),s3564(v,1),s3573(v,2),s3574(v,3),s3609(v,4),s3610(v,5),s3637(v,6),s3638(v,7),s3645(v,8));}
 function s3646(v,k){return "\n\n\n                  ";}
 function s3649(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2NextL"],1),"");}
-function s3648(v,k){return h("button",{key:k,"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3649(v,0));}
+function s3648(v,k){return h("button",{key:k,"disabled":v?.["pf2Disabled"],"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3649(v,0));}
 function s3647(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3648(v,0));}
 function s3650(v,k){return "\n                ";}
 function s3560(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3561(v,0),s3562(v,1),s3646(v,2),s3647(v,3),s3650(v,4));}
@@ -5366,7 +5367,7 @@ function s3831(v,k){return "\n            ";}
 function s3681(v,k){return h("div",{key:k},s3682(v,0),s3683(v,1),s3691(v,2),s3692(v,3),s3820(v,4),s3821(v,5),s3831(v,6));}
 function s3832(v,k){return "\n\n\n                  ";}
 function s3835(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3NextL"],1),"");}
-function s3834(v,k){return h("button",{key:k,"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3835(v,0));}
+function s3834(v,k){return h("button",{key:k,"disabled":v?.["pf3Disabled"],"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3835(v,0));}
 function s3833(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3834(v,0));}
 function s3836(v,k){return "\n                ";}
 function s3679(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3680(v,0),s3681(v,1),s3832(v,2),s3833(v,3),s3836(v,4));}
@@ -5522,6 +5523,6 @@ function s351(v,k){return h("div",{key:k,"style":style("--f: 'Schibsted Grotesk'
 function s3978(v,k){return "\n  ";}
 function s349(v,k){return h("div",{key:k,"data-product":"true","style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s351(v,0),s3978(v,1));}
 function s347(v,k){return h("div",{key:k,"style":style("display: flex; height: 100vh; width: 100%; overflow: hidden;")},s348(v,0),s349(v,1));}
-class Signup extends React.Component{constructor(p){super(p);this.state={revision:0};this.logic=new Component(p);this.logic.__host=this;}componentDidMount(){this.logic.componentDidMount?.();}componentDidUpdate(p){this.logic.componentDidUpdate?.(p,this.logic.__previous||this.logic.state);}componentWillUnmount(){this.logic.componentWillUnmount?.();}render(){const v={...this.props,...this.logic.renderVals()};return h('div',{className:'sc-host'},s3(v,0),s347(v,1));}}
+class Signup extends React.Component{constructor(p){super(p);this.state={revision:0};this.logic=new Component(p);this.logic.__host=this;}componentDidMount(){this.committed=this.logic.state;this.logic.componentDidMount?.();}componentDidUpdate(p){const previous=this.committed;this.committed=this.logic.state;this.logic.componentDidUpdate?.(p,previous);}componentWillUnmount(){this.logic.componentWillUnmount?.();}render(){const v={...this.props,...this.logic.renderVals()};return h('div',{className:'sc-host'},s3(v,0),s347(v,1));}}
 ReactDOM.createRoot(document.getElementById('dc-root')).render(h(Signup,{startStep:0,prefillDemo:false}));
 })();
