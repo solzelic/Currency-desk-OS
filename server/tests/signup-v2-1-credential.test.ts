@@ -12,7 +12,8 @@ import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { THROTTLE_KEYS, createIdDoor } from "../src/onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "../src/routes/signup-credential.js";
-import { advance, allowedFrom, loadAccount } from "../src/onboarding/signup-account.js";
+import { advance, allowedFrom, loadAccount, sha256 } from "../src/onboarding/signup-account.js";
+import { verifySignupCode } from "../src/onboarding/email-code.js";
 import { checkPassword, isBreached, lengthOf } from "../src/onboarding/password-rule.js";
 import { ProviderHttpError, clearJwksCache, providerConfig, sameEmail, type FetchJson } from "../src/onboarding/sso.js";
 import { relyingParty } from "../src/onboarding/passkey.js";
@@ -517,7 +518,8 @@ describe("provider readiness", () => {
   it("says which ways in this server can finish, with no secret, client ID or email", async () => {
     const res = await app.inject({ method: "GET", url: "/api/onboarding/methods" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ password: true, passkey: true, passkeyOrigins: [ORIGIN], google: true, microsoft: true, ssoOrigin: ORIGIN });
+    /* microsoft: false while the Microsoft email-proof exception is off (below) */
+    expect(res.json()).toEqual({ password: true, passkey: true, passkeyOrigins: [ORIGIN], google: true, microsoft: false, ssoOrigin: ORIGIN });
     for (const hidden of ["google-secret", "ms-secret", "google-client", "ms-client", "@"]) expect(res.body).not.toContain(hidden);
     const bare = Fastify();
     await bare.register(cookie);
@@ -525,5 +527,102 @@ describe("provider readiness", () => {
     expect((await bare.inject({ method: "GET", url: "/api/onboarding/methods" })).json())
       .toEqual({ password: true, passkey: false, passkeyOrigins: [], google: false, microsoft: false, ssoOrigin: null });
     await bare.close();
+  });
+});
+
+/* Microsoft sends no email_verified claim (its ID-token and optional-claims
+   references list none). PROTECTED SPEC EXCEPTION, for CTO: with
+   SIGNUP_MICROSOFT_EMAIL_PROOF=signup_code, a signed Microsoft identity whose
+   `email` equals the one applied with becomes only a candidate, and the
+   6-digit code to that email, typed in this same browser, is the proof.
+   Off (the default), the pack's literal rule stands. Tokens here are shaped
+   like Microsoft's: no email_verified. */
+describe("Microsoft email proof (protected spec exception)", () => {
+  const now = () => Math.floor(Date.now() / 1000);
+  const TENANT = "9188040d-6c67-4c5b-b112-36a304b66dad";
+  const mailed: { to: string; text: string }[] = [];
+  let ex: FastifyInstance;
+  const exEnv = { ...ENV, SIGNUP_MICROSOFT_EMAIL_PROOF: "signup_code" } as NodeJS.ProcessEnv;
+  beforeAll(async () => {
+    ex = Fastify();
+    await ex.register(cookie);
+    registerCredentialRoutes(ex, handle.db, door, { env: exEnv, http, mail: async (to, _s, body) => { mailed.push({ to, text: body.text }); return "simulated"; } });
+    await ex.ready();
+  });
+  afterAll(async () => { await ex.close(); });
+  const start = async (target: FastifyInstance, cdId: string) => {
+    const res = await target.inject({ method: "GET", url: `/api/onboarding/${cdId}/sso/microsoft/start`, remoteAddress: "198.51.100.9" });
+    expect(res.statusCode, res.body).toBe(200);
+    const url = new URL(res.json().url);
+    return { jar: cookieFrom(res), state: url.searchParams.get("state")!, nonce: url.searchParams.get("nonce")! };
+  };
+  const microsoft = (s: { nonce: string }, extra: Record<string, unknown>) => ({
+    iss: `https://login.microsoftonline.com/${TENANT}/v2.0`, aud: "ms-client", exp: now() + 300, iat: now(), nonce: s.nonce,
+    sub: "pairwise-sub-1", oid: "00000000-0000-0000-aaaa-000000000001", tid: TENANT, ver: "2.0", ...extra,
+  });
+  const callback = (target: FastifyInstance, cdId: string, s: { state: string; jar: Record<string, string> }) =>
+    target.inject({ method: "POST", url: `/api/onboarding/${cdId}/sso/callback`, payload: { provider: "microsoft", code: "c", state: s.state }, cookies: s.jar, remoteAddress: "198.51.100.9" });
+
+  it("off by default: a real-shaped Microsoft token is refused as unconfirmed, and Microsoft is not offered", async () => {
+    const { cdId, email } = await reserve();
+    const s = await start(app, cdId);
+    nextClaims = microsoft(s, { email });
+    const res = await callback(app, cdId, s);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("email_unverified");
+    expect((await app.inject({ method: "GET", url: "/api/onboarding/methods" })).json().microsoft).toBe(false);
+  });
+
+  it("on: the matching email is a candidate only; the code to that email, in this browser, is what verifies it", async () => {
+    expect((await ex.inject({ method: "GET", url: "/api/onboarding/methods" })).json().microsoft).toBe(true);
+    const { id, cdId, email } = await reserve();
+    const s = await start(ex, cdId);
+    nextClaims = microsoft(s, { email: email.toUpperCase() });
+    const res = await callback(ex, cdId, s);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({ ok: true, kind: "microsoft", state: "enrolling", codeSent: true });
+    const cred = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
+    expect(cred).toMatchObject({ kind: "microsoft", ssoSubject: "pairwise-sub-1", ssoTenant: TENANT, verifiedAt: null });
+    expect((await loadAccount(handle.db, id)).state).toBe("enrolling");
+    const code = mailed.filter((m) => m.to === email).at(-1)!.text.match(/\b(\d{6})\b/)![1]!;
+    expect(await verifySignupCode(handle.db, id, sha256("another-browser"), code)).toMatchObject({ ok: false, error: "no_candidate" });
+    const attempt = sha256(s.jar.cd_enrol_attempt!);
+    expect(await verifySignupCode(handle.db, id, attempt, code)).toMatchObject({ ok: true });
+    const verified = (await handle.db.select().from(schema.signupCredentials).where(eq(schema.signupCredentials.enquiryId, id)))[0]!;
+    expect(verified.verifiedAt).not.toBeNull();
+  });
+
+  it("on: still refuses an explicit unverified flag, an unverified domain owner, another email, no email, and never reads the UPN", async () => {
+    for (const [extra, error] of [
+      [{ email_verified: false }, "email_unverified"],
+      [{ xms_edov: false }, "email_unverified"],
+      [{ email: "someone@else.test" }, "email_mismatch"],
+      [{ email: undefined, preferred_username: "__OWNER__", upn: "__OWNER__" }, "email_missing"],
+    ] as [Record<string, unknown>, string][]) {
+      const { cdId, email } = await reserve();
+      const s = await start(ex, cdId);
+      const claims: Record<string, unknown> = microsoft(s, { email, ...extra });
+      for (const k of Object.keys(claims)) if (claims[k] === "__OWNER__") claims[k] = email;
+      nextClaims = claims;
+      const res = await callback(ex, cdId, s);
+      expect(res.statusCode, JSON.stringify(extra)).toBe(409);
+      expect(res.json().error, JSON.stringify(extra)).toBe(error);
+      expect(res.body).not.toContain(email);
+    }
+  });
+
+  it("on: the stronger token checks still apply, and Google keeps its strict verified claim", async () => {
+    const { cdId, email } = await reserve();
+    let s = await start(ex, cdId);
+    nextClaims = microsoft(s, { email, oid: undefined });
+    expect((await callback(ex, cdId, s)).statusCode).toBe(400);
+    s = await start(ex, cdId);
+    nextClaims = microsoft(s, { email, iss: "https://login.microsoftonline.com/another-tenant/v2.0" });
+    expect((await callback(ex, cdId, s)).statusCode).toBe(400);
+    const g = await ex.inject({ method: "GET", url: `/api/onboarding/${cdId}/sso/google/start`, remoteAddress: "198.51.100.9" });
+    const gs = { jar: cookieFrom(g), state: new URL(g.json().url).searchParams.get("state")!, nonce: new URL(g.json().url).searchParams.get("nonce")! };
+    nextClaims = { iss: "https://accounts.google.com", aud: "google-client", exp: now() + 300, nonce: gs.nonce, sub: "g-no-claim", email };
+    const res = await ex.inject({ method: "POST", url: `/api/onboarding/${cdId}/sso/callback`, payload: { provider: "google", code: "c", state: gs.state }, cookies: gs.jar, remoteAddress: "198.51.100.9" });
+    expect(res.json().error).toBe("email_unverified");
   });
 });

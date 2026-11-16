@@ -201,6 +201,16 @@ live only in the Render dashboard of the service they belong to.
 | `GOOGLE_CLIENT_ID` / `_SECRET` | a staging-only Google OAuth client (type Web application), authorized redirect URI exactly the staging `SSO_REDIRECT_URI` | a separate production client, its own redirect URI |
 | `MICROSOFT_CLIENT_ID` / `_SECRET` | a staging-only app registration: any organizational directory and personal Microsoft accounts (`common`), platform Web, redirect URI exactly the staging `SSO_REDIRECT_URI`, a client secret | a separate production registration |
 
+`SIGNUP_MICROSOFT_EMAIL_PROOF` (unset by default; protected spec exception,
+set only with CTO's recorded approval): `signup_code` lets a Microsoft account
+whose signed token carries `email` equal to the reservation email be saved as a
+candidate, with the sign-up's own 6-digit code to that email, typed in the same
+browser, as the email proof. Unset, Microsoft is not offered (`/methods` says
+`microsoft:false`), because Microsoft never sends the `email_verified` the pack
+requires. Either way: `email_verified` or `xms_edov` explicitly false,
+another email, or no email are refused, and `preferred_username` / UPN are
+never read.
+
 Rules the server enforces, so a mistake shows as "not offered" rather than a
 broken button:
 - The RP ID must have a dot (or be `localhost`) and must not be a shared
