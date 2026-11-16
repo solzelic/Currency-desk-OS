@@ -219,8 +219,20 @@ test.describe("sign-up v2.1, the visitor's path", () => {
 
     /* no Stripe keys on this server: the card step says so, and nothing opens */
     await page.locator("[data-paybody] button, [data-card] button, button").filter({ hasText: /^Continue$/ }).first().click();
+    const sam = page.getByRole("button", { name: /^A call from SAM/ });
+    await expect(sam).toHaveAttribute("aria-pressed", "false");
+    await expect(sam).toContainText("SAM can call this number to help set up my desk.");
+    await sam.click();
+    await expect(sam).toHaveAttribute("aria-pressed", "true");
+    expect((await (await page.request.get(`/api/onboarding/${cdId}/resume`)).json()).callPreference.call).toBe(true);
+    await page.screenshot({ path: test.info().outputPath("sam-consent-saved.png") });
     await page.locator("button").filter({ hasText: /^Continue$/ }).first().click();
     await expect(page.getByText(/Card payments aren['’]t switched on here yet\. Nothing was charged\./).first()).toBeVisible();
+    // Opt-out is effective even with payment unavailable; no payment action is needed.
+    await page.getByRole("button", { name: /^Extras/ }).click();
+    await sam.click();
+    await expect(sam).toHaveAttribute("aria-pressed", "false");
+    expect((await (await page.request.get(`/api/onboarding/${cdId}/resume`)).json()).callPreference.call).toBe(false);
     const after = await request.get(`/api/onboarding/${cdId}/state`);
     expect(((await after.json()) as { state: string }).state).not.toBe("active");
   });

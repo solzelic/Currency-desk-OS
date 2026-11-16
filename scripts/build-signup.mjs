@@ -40,7 +40,7 @@ const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -199,6 +199,11 @@ patch("website price", ">$99 CAD/mo<", ">{{ xWebPrice }}<", 2);
   lines.splice(note, 1);
   html = lines.join("\n");
 }
+
+/* Consent is an explicit persisted choice; this row is not a payment side effect. */
+patch("call consent accessibility", '<button onClick="{{ onXCall }}" style="{{ xCallS }}">', '<button onClick="{{ onXCall }}" style="{{ xCallS }}" aria-pressed="{{ xCall }}" disabled="{{ samBusy }}">');
+patch("call consent words", 'SAM will call you to set up your desk. No call, thanks? Tap to switch it off.', '{{ samText }}');
+patch("call consent status", '<div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 16px 0 8px;">Add if you like</div>', '<div role="status" style="font-size:12px;line-height:1.45;color:var(--mute);margin-top:8px">{{ samStatus }}</div><div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 16px 0 8px;">Add if you like</div>');
 
 /* ---- the tour follows the pack ---------------------------------------- */
 patch("tour values", "tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',",
