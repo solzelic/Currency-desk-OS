@@ -817,8 +817,8 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
   await enableChecks(request);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
-  const typedName = "Ida Typed";
-  const failName = "Ida Unread";
+  const typedName = "Maya Cohen";
+  const failName = "Daniel Levi";
   try {
     await db.query("DELETE FROM desk_clients WHERE display_name = ANY($1::text[])", [[typedName, failName]]);
     await signInAtDesk(page, "m.costa");
