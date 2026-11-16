@@ -887,12 +887,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       {actionLabel && <button onClick={onAction} className="flex items-center gap-1 text-[12px] font-medium flex-none px-2.5 py-1.5" style={{ color: tone, border: `1px solid ${tone}`, borderRadius: 7, background: 'var(--cd-panel)', whiteSpace: 'nowrap' }}>{actionLabel} <Ic n="chev" s={12} c={tone} /></button>}
     </div>);
   }
-  function ClientCompliance({ name, rec, mine, flags, settings, canEdit, onOpenLedger, onFixId }) {
+  function ClientCompliance({ name, rec, mine, flags, settings, canEdit, onOpenLedger, onFixId, standing }) {
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => { const f = flags[r.id] || {}; return (f.single || f.agg24) && !r.filed; });
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
-    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : ((!rec || !rec.idType || !rec.idNum) ? 'missing ID' : null);
+    const fromCheck = standing ? standing.gap : ((!rec || !rec.idType || !rec.idNum) ? 'missing ID' : null);
+    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = (settings && +settings.structuringDays) || 7;
     const open = rpt.length + (strRows.length ? 1 : 0) + (kycReason ? 1 : 0);
@@ -1095,29 +1096,42 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     return null;
   }
 
-  function ProcessStanding({ rec, settings }) {
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
+  function ProcessStanding({ rec, settings, standing }) {
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
-    const standing = {
+    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const rule = stated
+      ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+      : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    if (standing) {
+      const on = !!standing.onFile;
+      const tone = on ? CD.green : CD.flag;
+      const soft = on ? CD.greenSoft : CD.flagSoft;
+      return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Pill text={standing.title} c={tone} bg={soft} />
+          <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing.line}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
+    const status = rec && rec.verificationStatus;
+    if (!status) return null;
+    const documentStanding = {
       unverified: ['Not identified', 'No identity-document number is on this file yet.'],
       identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
       expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
       verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.'],
     }[status];
-    if (!standing) return null;
-    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
-    const rule = stated
-      ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
-      : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    if (!documentStanding) return null;
     const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
     const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
-    return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+    return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
       <div className="flex items-center gap-2 flex-wrap">
-        <Pill text={standing[0]} c={tone} bg={soft} />
-        <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+        <Pill text={documentStanding[0]} c={tone} bg={soft} />
+        <span className="text-[12.5px]" style={{ color: CD.ink }}>{documentStanding[1]}</span>
       </div>
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
     </div>);
@@ -1222,7 +1236,19 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
-    const [stat, col, bg] = kycStatus(rec, settings, name);
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      const clientId = rec && rec.clientId;
+      if (!api || !clientId) return undefined;
+      let live = true;
+      api.checks(clientId).then((body) => { if (live) setStanding(body && body.standing ? body.standing : null); }).catch(() => {});
+      return () => { live = false; };
+    }, [rec && rec.clientId]);
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec, settings, name);
+    const stat = standing ? standing.chip : fallbackStat;
+    const col = standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol;
+    const bg = standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -1236,7 +1262,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
@@ -1280,10 +1306,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
-          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} />
+          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} standing={standing} />
           {/* Then the two things an operator came in for: where this
               customer is in identification, and the papers filed for them. */}
-          <ProcessStanding rec={rec} settings={settings} />
+          <ProcessStanding rec={rec} settings={settings} standing={standing} />
           {rec && rec.clientId ? <IdentityCheck clientId={rec.clientId} canEdit={canEdit} /> : null}
           <FileFolder rec={rec} canEdit={canEdit} writer={writer} log={log} name={name} />
           {/* risk rating — always visible on the profile, set inline without entering edit mode */}

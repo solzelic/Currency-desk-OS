@@ -621,8 +621,44 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       due: earlier?.due ? DUE_LINE : null,
       records,
       headline: records[0]?.statusLine ?? NONE_LINE,
+      standing: idFileStanding(records.map((record) => ({
+        result: String(record.result),
+        line: record.line,
+        maskedNumber: record.maskedNumber,
+      }))),
     },
   };
+}
+
+const NOT_ON_FILE = "No identity-document number is on this file yet.";
+
+export type IdFileStanding = {
+  onFile: boolean;
+  chip: "ID on file" | "Missing ID" | "ID expired";
+  title: "Identified" | "Not identified" | "ID expired";
+  line: string;
+  gap: "missing ID" | "expired ID" | null;
+};
+
+/* One read of the latest check record. A pass, including in person and
+   a confirmed returning client, is ID on file. Expired and every other
+   result stay a gap. The browser prints this. It does not decide it. */
+export function idFileStanding(records: Array<{ result?: string; line?: string; maskedNumber?: string | null }>): IdFileStanding {
+  const latest = records[0];
+  if (!latest) {
+    return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
+  }
+  const line = latest.line || "";
+  const expired = latest.result === "expired" || line.startsWith("Expired");
+  const passed = !expired && (latest.result === "pass" || latest.result === "returning_confirmed");
+  if (passed) {
+    const shown = latest.maskedNumber ? `${line}. ${latest.maskedNumber}` : line;
+    return { onFile: true, chip: "ID on file", title: "Identified", line: shown, gap: null };
+  }
+  if (expired) {
+    return { onFile: false, chip: "ID expired", title: "ID expired", line: line || "Expired", gap: "expired ID" };
+  }
+  return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
 }
 
 function statusLine(

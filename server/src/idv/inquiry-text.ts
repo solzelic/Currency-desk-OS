@@ -60,9 +60,24 @@ function frontUrl(attributes: Record<string, unknown>): string | null {
   return typeof nested === "string" && nested.trim() ? nested.trim() : null;
 }
 
-export function personaFileHost(value: string): boolean {
+/* A local seam stub may serve the ID front photo from the same host as
+   PERSONA_API_BASE. That exception is off in production and on any host
+   that is not this machine. */
+function seamFileHost(url: URL, env: NodeJS.ProcessEnv): boolean {
+  if (env.NODE_ENV === "production") return false;
+  if ((env.RENDER_EXTERNAL_HOSTNAME || "").trim()) return false;
+  const base = (env.PERSONA_API_BASE || "").trim();
+  if (!base) return false;
+  let api: URL;
+  try { api = new URL(base); } catch { return false; }
+  const local = api.hostname === "127.0.0.1" || api.hostname === "localhost";
+  return local && url.protocol === api.protocol && url.hostname === api.hostname && url.port === api.port;
+}
+
+export function personaFileHost(value: string, env: NodeJS.ProcessEnv = process.env): boolean {
   try {
     const url = new URL(value);
+    if (seamFileHost(url, env)) return true;
     if (url.protocol !== "https:") return false;
     if (url.port !== "" && url.port !== "443") return false;
     const host = url.hostname.toLowerCase();

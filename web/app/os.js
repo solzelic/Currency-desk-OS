@@ -27105,7 +27105,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     settings,
     canEdit,
     onOpenLedger,
-    onFixId
+    onFixId,
+    standing
   }) {
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => {
@@ -27120,7 +27121,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const f = flags[r.id] || {};
       return f.kyc && f.kyc !== 'ok';
     });
-    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : !rec || !rec.idType || !rec.idNum ? 'missing ID' : null;
+    const fromCheck = standing ? standing.gap : !rec || !rec.idType || !rec.idNum ? 'missing ID' : null;
+    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = settings && +settings.structuringDays || 7;
     const open = rpt.length + (strRows.length ? 1 : 0) + (kycReason ? 1 : 0);
@@ -27472,25 +27474,64 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   }
   function ProcessStanding({
     rec,
-    settings
+    settings,
+    standing
   }) {
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
-    const standing = {
+    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    if (standing) {
+      const on = !!standing.onFile;
+      const tone = on ? CD.green : CD.flag;
+      const soft = on ? CD.greenSoft : CD.flagSoft;
+      return /*#__PURE__*/React.createElement("div", {
+        "data-tour": "identification",
+        "data-testid": "client-where",
+        className: "mb-3 p-3.5",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] uppercase tracking-widest mb-1.5",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-center gap-2 flex-wrap"
+      }, /*#__PURE__*/React.createElement(Pill, {
+        text: standing.title,
+        c: tone,
+        bg: soft
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "text-[12.5px]",
+        style: {
+          color: CD.ink
+        }
+      }, standing.line)), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11.5px] mt-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, rule));
+    }
+    const status = rec && rec.verificationStatus;
+    if (!status) return null;
+    const documentStanding = {
       unverified: ['Not identified', 'No identity-document number is on this file yet.'],
       identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
       expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
       verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.']
     }[status];
-    if (!standing) return null;
-    const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
-    const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    if (!documentStanding) return null;
     const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
     const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
       "data-tour": "identification",
+      "data-testid": "client-where",
       className: "mb-3 p-3.5",
       style: {
         background: CD.panel,
@@ -27506,7 +27547,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, "Where they are"), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-wrap"
     }, /*#__PURE__*/React.createElement(Pill, {
-      text: standing[0],
+      text: documentStanding[0],
       c: tone,
       bg: soft
     }), /*#__PURE__*/React.createElement("span", {
@@ -27514,7 +27555,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.ink
       }
-    }, standing[1])), /*#__PURE__*/React.createElement("div", {
+    }, documentStanding[1])), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
@@ -27809,7 +27850,23 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
-    const [stat, col, bg] = kycStatus(rec, settings, name);
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      const clientId = rec && rec.clientId;
+      if (!api || !clientId) return undefined;
+      let live = true;
+      api.checks(clientId).then(body => {
+        if (live) setStanding(body && body.standing ? body.standing : null);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [rec && rec.clientId]);
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec, settings, name);
+    const stat = standing ? standing.chip : fallbackStat;
+    const col = standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
+    const bg = standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -27871,11 +27928,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       text: corp ? 'Corporate' : 'Individual',
       c: CD.mute,
       bg: CD.lineSoft
-    }), /*#__PURE__*/React.createElement(Pill, {
+    }), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "client-standing"
+    }, /*#__PURE__*/React.createElement(Pill, {
       text: stat,
       c: col,
       bg: bg
-    }), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
+    })), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
       text: normalizeRisk(rec.risk) + ' risk',
       c: riskTone(rec.risk).c,
       bg: riskTone(rec.risk).bg
@@ -28009,10 +28068,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       settings: settings,
       canEdit: canEdit,
       onOpenLedger: onOpenLedger,
-      onFixId: () => setEdit(true)
+      onFixId: () => setEdit(true),
+      standing: standing
     }), /*#__PURE__*/React.createElement(ProcessStanding, {
       rec: rec,
-      settings: settings
+      settings: settings,
+      standing: standing
     }), rec && rec.clientId ? /*#__PURE__*/React.createElement(IdentityCheck, {
       clientId: rec.clientId,
       canEdit: canEdit
@@ -53038,11 +53099,25 @@ ${(filing.map || []).map(blockHTML).join('')}
       return ["Passport", "Driver's Licence"];
     }
   }
+  function holdSheet() {
+    const count = Number(document.body.dataset.idCheckCount || "0") + 1;
+    document.body.dataset.idCheckCount = String(count);
+    document.body.setAttribute("data-id-check", "open");
+    return () => {
+      const next = Number(document.body.dataset.idCheckCount || "1") - 1;
+      if (next <= 0) {
+        delete document.body.dataset.idCheckCount;
+        document.body.removeAttribute("data-id-check");
+      } else document.body.dataset.idCheckCount = String(next);
+    };
+  }
   function CopyBlock({
     text,
-    testid
+    testid,
+    omit
   }) {
-    const parts = linesOf(text);
+    const skip = omit || [];
+    const parts = linesOf(text).filter(part => skip.indexOf(part) < 0);
     return /*#__PURE__*/React.createElement("div", {
       "data-testid": testid,
       className: "space-y-2 text-[13px]",
@@ -53098,6 +53173,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       doubtReason: "",
       pep: ""
     });
+    useEffect(() => holdSheet(), []);
     useEffect(() => {
       const client = api();
       if (!client) return undefined;
@@ -53156,7 +53232,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
         const full = (pack.records || []).some(item => item.result === "pass" && item.method !== "returning_client");
         setStep(pack.due || !full ? "blocked" : "returning");
-      } else setStep("notice");
+      } else if (next === "4") return;else setStep("notice");
     };
     const agree = async () => {
       const client = api();
@@ -53325,7 +53401,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Reading the notice."));
     if (step === "chooser") {
-      const tiers = counter ? [["1", "In person", "Staff inspect the original ID. No photo is taken."]] : [["1", "In person", "Staff inspect the original ID. No photo is taken."], ["2", "Returning client", "This shop already holds a full ID check. No new provider check."], ["3", "ID and selfie", "Document check and a selfie, in the sandbox."], ["4", "ID, selfie and database", "The database step is not on yet. This check runs ID and selfie."]];
+      const tiers = counter ? [["1", "In person", "Staff inspect the original ID. No photo is taken."]] : [["1", "In person", "Staff inspect the original ID. No photo is taken.", false], ["2", "Returning client", "This shop already holds a full ID check. No new provider check.", false], ["3", "ID and selfie", "Document check and a selfie, in the sandbox.", false], ["4", "ID, selfie and database", "Coming later.", true]];
       return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
         className: "space-y-2"
       }, (counterLine || counter && copy.counterLine) && /*#__PURE__*/React.createElement("div", {
@@ -53334,15 +53410,19 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.ink
         }
-      }, counterLine || copy.counterLine), tiers.map(([id, label, note]) => /*#__PURE__*/React.createElement("button", {
+      }, counterLine || copy.counterLine), tiers.map(([id, label, note, later]) => /*#__PURE__*/React.createElement("button", {
         key: id,
         type: "button",
-        onClick: () => pick(id),
+        disabled: !!later,
+        onClick: () => {
+          if (!later) pick(id);
+        },
         className: "w-full text-left px-3 py-2.5",
         style: {
           border: `1px solid ${CD.line}`,
           borderRadius: 10,
-          background: "transparent"
+          background: "transparent",
+          opacity: later ? 0.55 : 1
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[13px] font-semibold",
@@ -53369,7 +53449,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: btnStyle(false)
     }, "Continue"))));
     if (step === "consent") return shell("id-check-consent", "Optional face match", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
-      text: copy.selfieConsent
+      text: copy.selfieConsent,
+      omit: ["I agree to the face match."]
     }), /*#__PURE__*/React.createElement("label", {
       className: "flex items-start gap-2 mt-3 text-[13px]",
       style: {
@@ -53715,6 +53796,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     useEffect(() => {
       load();
     }, [record.recordId]);
+    useEffect(() => holdSheet(), []);
     const show = async () => {
       const client = api();
       if (!client || !reason || busy) return;
@@ -53955,8 +54037,9 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, latest.photoOnFile ? "Small photo from the ID, for comparison by eye." : latest.photoLine || "No photo on file"), photo && /*#__PURE__*/React.createElement("img", {
-      alt: "Small photo from the ID",
+    }, latest.photoOnFile ? "Photo from ID, for comparison by eye" : latest.photoLine || "No photo on file"), photo && /*#__PURE__*/React.createElement("img", {
+      "data-testid": "id-check-photo",
+      alt: "Photo from ID, for comparison by eye",
       src: photo,
       width: 96,
       height: 96,

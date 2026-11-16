@@ -46,8 +46,22 @@
     }
   }
 
-  function CopyBlock({ text, testid }) {
-    const parts = linesOf(text);
+  function holdSheet() {
+    const count = Number(document.body.dataset.idCheckCount || "0") + 1;
+    document.body.dataset.idCheckCount = String(count);
+    document.body.setAttribute("data-id-check", "open");
+    return () => {
+      const next = Number(document.body.dataset.idCheckCount || "1") - 1;
+      if (next <= 0) {
+        delete document.body.dataset.idCheckCount;
+        document.body.removeAttribute("data-id-check");
+      } else document.body.dataset.idCheckCount = String(next);
+    };
+  }
+
+  function CopyBlock({ text, testid, omit }) {
+    const skip = omit || [];
+    const parts = linesOf(text).filter((part) => skip.indexOf(part) < 0);
     return (<div data-testid={testid} className="space-y-2 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
       {parts.map((part, i) => {
         const cut = part.indexOf(": ");
@@ -75,6 +89,7 @@
     const [form, setForm] = useState({ nameOnId: "", documentType: "", documentNumber: "", issuingJurisdiction: "", issuingCountry: "CA", expiryDate: "", attested: false });
     const [ret, setRet] = useState({ noDoubts: false, detailsChanged: false, doubtReason: "", pep: "" });
 
+    useEffect(() => holdSheet(), []);
     useEffect(() => {
       const client = api();
       if (!client) return undefined;
@@ -119,7 +134,8 @@
         if (!pack) { setError("Reading the earlier check."); return; }
         const full = (pack.records || []).some((item) => item.result === "pass" && item.method !== "returning_client");
         setStep(pack.due || !full ? "blocked" : "returning");
-      } else setStep("notice");
+      } else if (next === "4") return;
+      else setStep("notice");
     };
     const agree = async () => {
       const client = api();
@@ -224,15 +240,15 @@
 
     if (step === "chooser") {
       const tiers = counter ? [["1", "In person", "Staff inspect the original ID. No photo is taken."]] : [
-        ["1", "In person", "Staff inspect the original ID. No photo is taken."],
-        ["2", "Returning client", "This shop already holds a full ID check. No new provider check."],
-        ["3", "ID and selfie", "Document check and a selfie, in the sandbox."],
-        ["4", "ID, selfie and database", "The database step is not on yet. This check runs ID and selfie."],
+        ["1", "In person", "Staff inspect the original ID. No photo is taken.", false],
+        ["2", "Returning client", "This shop already holds a full ID check. No new provider check.", false],
+        ["3", "ID and selfie", "Document check and a selfie, in the sandbox.", false],
+        ["4", "ID, selfie and database", "Coming later.", true],
       ];
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-2">
         {(counterLine || (counter && copy.counterLine)) && <div data-testid="id-check-counter-line" className="text-[13px]" style={{ color: CD.ink }}>{counterLine || copy.counterLine}</div>}
-        {tiers.map(([id, label, note]) => (
-          <button key={id} type="button" onClick={() => pick(id)} className="w-full text-left px-3 py-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: "transparent" }}>
+        {tiers.map(([id, label, note, later]) => (
+          <button key={id} type="button" disabled={!!later} onClick={() => { if (!later) pick(id); }} className="w-full text-left px-3 py-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: "transparent", opacity: later ? 0.55 : 1 }}>
             <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>{label}</div>
             <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{note}</div>
           </button>
@@ -244,7 +260,7 @@
       <div className="mt-3"><button type="button" onClick={() => { setAgreed(false); setStep("consent"); }} style={btnStyle(false)}>Continue</button></div>
     </div>));
     if (step === "consent") return shell("id-check-consent", "Optional face match", (<div>
-      <CopyBlock text={copy.selfieConsent} />
+      <CopyBlock text={copy.selfieConsent} omit={["I agree to the face match."]} />
       <label className="flex items-start gap-2 mt-3 text-[13px]" style={{ color: CD.ink }}>
         <input data-testid="id-check-agree-box" type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
         <span>I agree to the face match.</span>
@@ -332,6 +348,7 @@
       client.reveals(record.recordId).then((body) => setRows(body.reveals || [])).catch(() => {});
     };
     useEffect(() => { load(); }, [record.recordId]);
+    useEffect(() => holdSheet(), []);
     const show = async () => {
       const client = api();
       if (!client || !reason || busy) return;
@@ -437,8 +454,8 @@
       {pack && pack.advice && <div data-testid="id-check-advice" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.advice}</div>}
       {pack && pack.due && <div data-testid="id-check-due" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.due}</div>}
       {latest && latest.maskedNumber && <div data-testid="id-check-masked" className="text-[13px] mt-1.5" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{latest.maskedNumber}</div>}
-      {latest && <div data-testid="id-check-photo-line" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{latest.photoOnFile ? "Small photo from the ID, for comparison by eye." : (latest.photoLine || "No photo on file")}</div>}
-      {photo && <img alt="Small photo from the ID" src={photo} width={96} height={96} className="mt-2" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }} />}
+      {latest && <div data-testid="id-check-photo-line" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{latest.photoOnFile ? "Photo from ID, for comparison by eye" : (latest.photoLine || "No photo on file")}</div>}
+      {photo && <img data-testid="id-check-photo" alt="Photo from ID, for comparison by eye" src={photo} width={96} height={96} className="mt-2" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }} />}
       <div className="flex flex-wrap gap-2 mt-2">
         {role !== "auditor" && !passed && <button type="button" data-testid="id-check-start" onClick={() => setOpen(true)} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>{checksOn ? "Check ID" : "Check ID in person"}</button>}
         {canReveal && latest && latest.maskedNumber && <button type="button" data-testid="id-check-reveal-open" onClick={() => setReveal(true)} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "transparent" }}>Show number</button>}

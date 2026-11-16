@@ -20,8 +20,26 @@ const { Client } = requireFromServer("pg") as { Client: new (config: { connectio
 
 const SECRET = "seam-webhook-secret";
 const ARTIFACTS = "/opt/cursor/artifacts";
+const pngjs = requireFromServer("pngjs") as { PNG: any };
 let stub: Server | null = null;
 let inquiryId = "";
+let frontPhoto: Buffer | null = null;
+
+function idFrontPng(): Buffer {
+  if (frontPhoto) return frontPhoto;
+  const png = new pngjs.PNG({ width: 160, height: 100 });
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const i = (y * png.width + x) * 4;
+      png.data[i] = x < 48 ? 210 : 30;
+      png.data[i + 1] = 80;
+      png.data[i + 2] = x < 48 ? 40 : 160;
+      png.data[i + 3] = 255;
+    }
+  }
+  frontPhoto = pngjs.PNG.sync.write(png);
+  return frontPhoto;
+}
 
 function inquiryBody(selfie: string) {
   return JSON.stringify({
@@ -48,7 +66,7 @@ function inquiryBody(selfie: string) {
           "birthdate": "1990-04-02",
           "address-street-1": "1 King St",
           "address-city": "Toronto",
-          "front-photo-url": "https://example.test/id-front.jpg",
+          "front-photo-url": "http://127.0.0.1:4199/id-front.png",
         },
       },
       { type: "verification/selfie", id: "ver_self_seam", attributes: { status: selfie } },
@@ -62,6 +80,12 @@ test.beforeAll(async () => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
+      if (req.method === "GET" && url.startsWith("/id-front.png")) {
+        const bytes = idFrontPng();
+        res.writeHead(200, { "content-type": "image/png", "content-length": String(bytes.length) });
+        res.end(bytes);
+        return;
+      }
       if (req.method === "POST" && url.includes("/inquiries") && !url.includes("one-time-link")) {
         inquiryId = `inq_${Date.now().toString(36)}`;
         res.writeHead(201, { "content-type": "application/json" });
@@ -209,8 +233,14 @@ async function closeHeldTill(page: Page, snapshot: { status: string; sessionId: 
     let counts: Record<string, string> = {};
     let generation = shot.balanceGeneration;
     const known = Object.entries(shot.balances);
-    if (known.length) {
-      for (const [currency, amount] of known) counts[currency] = String(amount);
+    const heldNow = known.length ? null : await fetch("/api/ledger/till-balances").then((res) => res.json());
+    const seen = known.length ? known : Object.entries((heldNow && heldNow.balances) || {});
+    if (heldNow && heldNow.balanceGeneration != null) generation = String(heldNow.balanceGeneration);
+    if (seen.length) {
+      for (const [currency, amount] of seen) {
+        const figure = Number(amount);
+        counts[currency] = Number.isFinite(figure) ? figure.toFixed(2) : String(amount);
+      }
     } else {
       /* A teller cannot put an opening count on the drawer, so the
          session can be open with no figures. The supervisor states
@@ -291,6 +321,9 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await openDeal(page, legalName);
     await page.getByTestId("deal-check-id").click();
     await expect(page.getByTestId("id-check-chooser")).toBeVisible();
+    await expect(page.getByRole("button", { name: /ID, selfie and database/ })).toBeDisabled();
+    await expect(page.getByText("Coming later.")).toBeVisible();
+    await expect(page.locator(".cd-tx-go")).toBeHidden();
     await themeShot(page, "chooser");
     await page.getByTestId("id-check-chooser").locator("button").filter({ hasText: /^ID and selfie/ }).click();
     await expect(page.getByTestId("id-check-notice")).toContainText("Your ID details are kept for at least 5 years because the law requires it.");
@@ -300,6 +333,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     const agree = page.getByRole("button", { name: "I agree" });
     await expect(agree).toBeDisabled();
     await expect(page.getByTestId("id-check-agree-box")).not.toBeChecked();
+    await expect(page.getByText("I agree to the face match.", { exact: true })).toHaveCount(1);
     await themeShot(page, "consent");
     const started = page.waitForResponse((res) => res.url().includes("/api/idv/start-check") && res.request().method() === "POST");
     await page.getByTestId("id-check-agree-box").check();
@@ -321,8 +355,14 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
       const res = await fetch(`/api/idv/clients/${id}/checks`);
       return res.json();
     }, clientId);
-    const record = (linked.records as Array<{ deals?: string[]; maskedNumber?: string; line?: string }>)[0];
+    const record = (linked.records as Array<{ deals?: string[]; maskedNumber?: string; line?: string; photoOnFile?: boolean }>)[0];
+    const linkedStanding = linked as { standing: { onFile: boolean; chip: string; line: string } };
     expect(record.maskedNumber).toBe("•••• 8991");
+    expect(record.photoOnFile).toBe(true);
+    expect(linkedStanding.standing.onFile).toBe(true);
+    expect(linkedStanding.standing.chip).toBe("ID on file");
+    expect(linkedStanding.standing.line).toContain("ID and selfie");
+    expect(linkedStanding.standing.line).toContain("•••• 8991");
     expect(record.deals && record.deals.length).toBeGreaterThan(0);
     expect(JSON.stringify(linked)).not.toContain("AB12348991");
 
@@ -362,6 +402,23 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(file.getByTestId("id-check-masked")).toHaveText("•••• 8991");
     await expect(file.getByTestId("id-check-reveal-open")).toHaveCount(0);
     await expect(file).not.toContainText("Approved");
+    const profile = page.locator(".client-file");
+    await expect(page.getByTestId("client-standing")).toHaveText("ID on file");
+    await expect(page.getByTestId("client-standing")).not.toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).toContainText("Identified");
+    await expect(page.getByTestId("client-where")).toContainText("ID and selfie");
+    await expect(page.getByTestId("client-where")).toContainText("•••• 8991");
+    await expect(page.getByTestId("client-where")).not.toContainText("Not identified");
+    await expect(profile.getByText("KYC / ID gap")).toHaveCount(0);
+    await expect(file.getByTestId("id-check-photo-line")).toHaveText("Photo from ID, for comparison by eye");
+    await expect(file).not.toContainText("No photo on file");
+    await file.getByRole("button", { name: "Show the photo" }).click();
+    const photo = file.getByTestId("id-check-photo");
+    await expect(photo).toBeVisible();
+    await expect(photo).toHaveAttribute("width", "96");
+    await expect(photo).toHaveAttribute("height", "96");
+    const views = await db.query("SELECT reason FROM idv_crop_views WHERE client_id = $1", [clientId]);
+    expect(views.rows.some((row) => row.reason === "eye_comparison")).toBe(true);
     await themeShot(page, "badge-passed");
     await themeShot(page, "masked-teller");
 

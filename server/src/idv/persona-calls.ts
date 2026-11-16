@@ -112,7 +112,7 @@ export async function cropFromFrontPhoto(input: {
   fetchImpl?: typeof fetch;
 }): Promise<Buffer | null> {
   const url = input.url?.trim() ?? "";
-  if (!url || !personaFileHost(url) || /selfie/i.test(url)) return null;
+  if (!url || !personaFileHost(url, input.env) || /selfie/i.test(url)) return null;
   assertPersonaKey(input.key, input.env, baseOf(input.env));
   const fetchImpl = input.fetchImpl ?? fetch;
   const res = await fetchImpl(url, { method: "GET", redirect: "manual" });
