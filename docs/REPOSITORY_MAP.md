@@ -33,7 +33,7 @@ say.
 | `web/` | **GENERATED** marketing site + onboarding + compiled apps (`web/app/`) + committed extracted assets (`fonts/`, `photos/`, `assets/`, `vendor/`) | ❌ never by hand |
 | `YorkFX/` | customer storefront, served as-is at `/sites/yorkfx`. Customer HTML does not load unpkg, Babel, or React dev builds. The Rate Board here is also the OS's board editor (iframe); its published boards live under `yorkfx_*` localStorage keys — moving the board into the product needs a key migration or published boards orphan | ✅ (it is production) |
 | `yorkfx.css`, `yorkfx-converter.js` | shared storefront runtime at the repo root (served-path contract: `/sites/<file>`) | ✅ |
-| `scripts/` | build + design-import tools + governance checks | ✅ |
+| `scripts/` | build + design-import tools + governance checks; `capture-signup.cjs` / `signup-capture-measure.cjs` capture visible signup states, and `compare-signup-capture.mjs` retains every comparison difference | ✅ |
 | `tests/e2e/` | Playwright seam suite (drives the browser, then asks the ledger) | ✅ |
 | `docs/` | durable engineering docs; `PROJECT_STATE.md` is the living one. Product-demo sit-down: `docs/DEMO_DESK.md` | ✅ |
 | `render.yaml` | the deployment: build command, env contract, routes | ✅ carefully |
@@ -44,7 +44,7 @@ say.
 | --- | --- | --- |
 | `design/site/*.dc.html` | `npm run build:site` | `web/*.html`, `web/support.js`, `web/image-slot.js`, `web/vendor/` |
 | `design/onboarding/currencydesk-onboarding.html` | `npm run build:onboarding` (also runs on Render deploy) | `web/onboarding.html` |
-| `design/onboarding/signup-v2.1/*` + `signup-v2.1-{bridge,chapters,open,consent}.js` + `signup-sso.html` | `npm run build:signup` (asserted patches, agreement hash checked, `scripts/signup-aot.mjs` compiles the template to React calls with pinned parse5) | `web/signup.html`, `web/app/signup.js`, `web/signup-sso.html`, `web/signup/{flags,shots}` |
+| `design/onboarding/signup-v2.1/*` + `signup-v2.1-{bridge,chapters,open,consent,audio,tour}.js` + `signup-recordings/` + `signup-sso.html` | `npm run build:signup` (asserted patches, agreement hash checked, `scripts/signup-aot.mjs` compiles the template to React calls with pinned parse5) | `web/signup.html`, `web/app/signup.js`, `web/signup-sso.html`, `web/signup/{flags,shots,recordings}` |
 | `CurrencyDesk OS.html` + `os-src/` + `shared/` | `npm run build:os` | `web/app/index.html`, `web/app/os.js`, `web/app/tw.css` |
 | `admin.html` | `npm run build:os` | `web/app/admin.html`, `web/app/admin.js` |
 | designer "standalone" export | `scripts/extract-design-assets.mjs` (occasional) | `web/fonts/`, `web/photos/`, `web/assets/` |

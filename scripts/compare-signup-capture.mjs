@@ -23,10 +23,10 @@ if (!BASE || !BUILD) { console.error("usage: compare-signup-capture.mjs <baselin
 const NO_SCROLL = new Set(["desktop", "laptop", "check"]);
 const TOL = 1;
 
-/* The four drifting currency glyphs behind the card (aria-hidden, cdRise) are
-   ambient decoration whose position depends on the moment of capture. */
+/* Only capture-proven aria-hidden cdRise glyphs may be treated as ambient.
+   A visible monetary symbol remains evidence. Older captures have no exemption. */
 const DECOR = new Set(["$", "€", "£", "¥"]);
-const shown = (list) => list.filter((e) => !(e.tag === "span" && DECOR.has((e.text ?? "").trim())));
+const shown = (list) => list.filter((e) => !(e.decorativeCurrencyDrift === true && e.tag === "span" && DECOR.has((e.text ?? "").trim())));
 const key = (e) => `${e.tag}|${e.role ?? ""}|${(e.text ?? "").trim()}`;
 function match(a, b) {
   /* in document order, each baseline element takes the next unused build element with the same key */
@@ -65,7 +65,8 @@ for (const s of states.sort()) {
     scrollersSame: scrollers(b) === scrollers(c), scrollers: { base: scrollers(b), build: scrollers(c) },
     elements: shown(b.elements).length, matched: pairs.length, withinTolerance: pairs.length - moved.length,
     moved: moved.length, styled: styled.length, missing: missing.length, extra: extra.length,
-    detail: { moved: moved.slice(0, 12), styled: styled.slice(0, 12), missing: missing.slice(0, 12).map((e) => `${e.tag} ${e.text}`), extra: extra.slice(0, 12).map((e) => `${e.tag} ${e.text}`) },
+    excludedAmbient: { base: b.elements.filter(e => !shown([e]).length), build: c.elements.filter(e => !shown([e]).length) },
+    detail: { moved: moved, styled: styled, missing: missing.map((e) => `${e.tag} ${e.text}`), extra: extra.map((e) => `${e.tag} ${e.text}`) },
   });
 }
 const exact = report.filter((r) => r.captured && !r.moved && !r.styled && !r.missing && !r.extra && r.scrollersSame && (r.pageScrollAllowed || !r.pageScrolls));
