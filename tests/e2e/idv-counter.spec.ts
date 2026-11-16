@@ -120,8 +120,10 @@ test.afterAll(async () => {
 });
 
 async function dismissTour(page: Page) {
-  const skip = page.locator(".cdos-tour-skip");
-  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await page.evaluate(() => {
+    const skip = document.querySelector(".cdos-tour-skip");
+    if (skip instanceof HTMLButtonElement) skip.click();
+  });
   await expect(page.locator(".cdos-tour")).toHaveCount(0);
 }
 
@@ -704,7 +706,7 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await themeShot(page, "returning-blocked");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
-    await openFile(returningName);
+    await openFile(adviceName);
     await startCheck();
     await page.getByText("More options").click();
     await page.getByRole("button", { name: "Returning client" }).click();

@@ -54343,7 +54343,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       primary = fromInquiry;
     }
     const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
-    const passed = !stale && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
+    const advised = !!(pack && pack.advice);
+    const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
