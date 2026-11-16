@@ -43,11 +43,20 @@ export const idTail = (id: string): string => `…${id.slice(-4)}`;
 export const emailHash = (email: string): string =>
   createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 16);
 
+/* The most keys one throttle remembers. Past it, the key seen longest ago
+   is forgotten. A flood of new keys pushes out its own oldest keys and never
+   refuses anyone else's. A full table that refused every key let one crowd
+   of made-up IDs lock every applicant out. */
+export const THROTTLE_KEYS = 10_000;
+
+type Seen = { times: number[]; lockedUntil?: number };
+
 /* A sliding count of events per key, with a lock once the count is reached.
    The clock is passed in so tests are deterministic (standards §7.3). */
 export class Throttle {
-  private hits = new Map<string, number[]>();
-  private lockedUntil = new Map<string, number>();
+  /* In the order keys were last seen: a Map iterates in insertion order,
+     and seeing a key inserts it again. */
+  private seen = new Map<string, Seen>();
   constructor(
     private readonly max: number,
     private readonly windowMs: number,
@@ -56,49 +65,54 @@ export class Throttle {
   ) {}
 
   locked(key: string): boolean {
-    const until = this.lockedUntil.get(key);
-    if (until === undefined) return false;
-    if (this.now() < until) return true;
-    this.lockedUntil.delete(key);
-    this.hits.delete(key);
+    const entry = this.seen.get(key);
+    if (entry?.lockedUntil === undefined) return false;
+    /* Asking counts as being seen, so a key that keeps knocking while
+       locked stays locked however many others pass. */
+    if (this.now() < entry.lockedUntil) { this.remember(key, entry); return true; }
+    this.seen.delete(key);
     return false;
   }
 
   /** Count one event. True when this event reached the limit. */
   hit(key: string): boolean {
     const t = this.now();
-    if (this.hits.size > 10_000) {
-      for (const [key, times] of this.hits) if (!times.some(at => t - at < this.windowMs)) { this.hits.delete(key); this.lockedUntil.delete(key); }
-      if (this.hits.size > 10_000) return true; // bounded memory; refuse new work under saturation
-    }
-    const recent = (this.hits.get(key) ?? []).filter((at) => t - at < this.windowMs);
-    recent.push(t);
-    this.hits.set(key, recent);
-    if (recent.length >= this.max) {
-      this.lockedUntil.set(key, t + this.lockMs);
-      return true;
-    }
-    return false;
+    const entry = this.recent(key, t);
+    entry.times.push(t);
+    if (entry.times.length < this.max) return false;
+    entry.lockedUntil = t + this.lockMs;
+    return true;
   }
 
   /** Room for one more, counting it if there is. */
   take(key: string): boolean {
     if (this.locked(key)) return false;
     const t = this.now();
-    if (this.hits.size > 10_000) {
-      for (const [key, times] of this.hits) if (!times.some(at => t - at < this.windowMs)) { this.hits.delete(key); this.lockedUntil.delete(key); }
-      if (this.hits.size > 10_000) return false;
-    }
-    const recent = (this.hits.get(key) ?? []).filter((at) => t - at < this.windowMs);
-    if (recent.length >= this.max) return false;
-    recent.push(t);
-    this.hits.set(key, recent);
+    const entry = this.recent(key, t);
+    if (entry.times.length >= this.max) return false;
+    entry.times.push(t);
     return true;
   }
 
   clear(): void {
-    this.hits.clear();
-    this.lockedUntil.clear();
+    this.seen.clear();
+  }
+
+  /* The key's entry with only the times inside the window, seen now. */
+  private recent(key: string, t: number): Seen {
+    const entry = this.seen.get(key) ?? { times: [] };
+    entry.times = entry.times.filter((at) => t - at < this.windowMs);
+    this.remember(key, entry);
+    return entry;
+  }
+
+  private remember(key: string, entry: Seen): void {
+    this.seen.delete(key);
+    this.seen.set(key, entry);
+    for (const oldest of this.seen.keys()) {
+      if (this.seen.size <= THROTTLE_KEYS) break;
+      this.seen.delete(oldest);
+    }
   }
 }
 
@@ -110,6 +124,8 @@ export type StateAnswer =
   | { status: 429; body: { error: "slow_down" } };
 
 export type Refusal = { reason: string; id: string; connection: string };
+
+type Enquiry = typeof schema.enquiries.$inferSelect;
 
 export interface DoorDeps {
   db: Db;
@@ -164,7 +180,6 @@ export function createIdDoor(deps: DoorDeps) {
   const resendByConnection = new Throttle(RESEND_PER_CONNECTION, RESEND_WINDOW_MS, 0, now);
   const credentialById = new Throttle(12, MISS_WINDOW_MS, 0, now);
   const credentialByConnection = new Throttle(30, MISS_WINDOW_MS, 0, now);
-  const takeCredential = (id: string, connection: string): boolean => credentialByConnection.take(connection) && credentialById.take(id);
   const send = deps.send ?? ((to, m) => sendEmail(to, m.subject, { text: m.text, html: m.html, sensitive: true }));
   const logRefusal = deps.logRefusal ?? ((r: Refusal) =>
     console.warn(`[onboarding refused] ${r.reason} id=${r.id} connection=${emailHash(r.connection)}`));
@@ -176,6 +191,28 @@ export function createIdDoor(deps: DoorDeps) {
       .where(and(eq(schema.enquiries.cdId, cdId), eq(schema.enquiries.kind, "early_access"), inArray(schema.enquiries.status, [...OPENABLE])))
       .limit(1);
     return rows[0];
+  }
+
+  /* The reservation a sign-in may be saved against, within the credential
+     limits. The connection is counted before the lookup. The ID is counted
+     only once it names a reservation, so a made-up ID costs the connection
+     that sent it a miss and never takes a place in the per-ID table. */
+  async function findForCredential(cdId: string, connection: string): Promise<{ row: Enquiry } | { refused: "slow_down" | "no_such_id" }> {
+    if (!credentialByConnection.take(connection)) {
+      logRefusal({ reason: "credential_rate_limit", id: idTail(cdId), connection });
+      return { refused: "slow_down" };
+    }
+    const row = await findByCdId(cdId);
+    if (!row) {
+      missesByConnection.hit(connection);
+      logRefusal({ reason: "credential_unknown_id", id: idTail(cdId), connection });
+      return { refused: "no_such_id" };
+    }
+    if (!credentialById.take(cdId)) {
+      logRefusal({ reason: "credential_rate_limit", id: idTail(cdId), connection });
+      return { refused: "slow_down" };
+    }
+    return { row };
   }
 
   /** What a typed ID may learn: the shop's operating name, and that it is valid. */
@@ -251,7 +288,7 @@ export function createIdDoor(deps: DoorDeps) {
     for (const t of [missesById, missesByConnection, resendByEmail, resendByConnection, credentialById, credentialByConnection]) t.clear();
   }
 
-  return { state, resend, reset, findByCdId, fail, closed, logRefusal, takeCredential };
+  return { state, resend, reset, findByCdId, findForCredential, fail, closed, logRefusal };
 }
 
 export type IdDoor = ReturnType<typeof createIdDoor>;

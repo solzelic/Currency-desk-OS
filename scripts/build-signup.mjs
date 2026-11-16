@@ -252,6 +252,8 @@ patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "
 patch("no backup yet", "R.showBackup = !!d.showBackup; R.notShowBackup = !d.showBackup;", "R.showBackup = false; R.notShowBackup = false;");
 patch("pay", "  goLive() {", "  goLive() { if (window.__cdOnb) { if (this._payValid) window.__cdOnb.pay(this); return; }");
 patch("price retry", '<div data-paysum="true"', '<sc-if value="{{ retryPricesVisible }}"><button type="button" onClick="{{ onRetryPrices }}" style="min-height:44px;padding:10px 16px;">Try loading prices again</button></sc-if><div data-paysum="true"');
+/* the card is confirmed but the desk has not opened yet: ask /open again (the bridge's checkOpen) */
+patch("open check again", "{{ goLiveSub }}</div>", '{{ goLiveSub }}</div><sc-if value="{{ checkOpenVisible }}"><button type="button" onClick="{{ onCheckOpen }}" style="display:block;margin:12px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;">Check again</button></sc-if>');
 patch("prices and day one", "    return Object.assign(R, this._railVals(), this._tourVals());",
   "    return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));");
 patch("setup week price", ">$5,000 once<", ">{{ xSetupPrice }}<");

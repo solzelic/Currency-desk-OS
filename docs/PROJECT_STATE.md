@@ -1,3 +1,59 @@
+## Signup v2.1 coming back carries on, 16 November 2026
+
+Coming back to sign-up v2.1 now carries on where the owner stopped. This is
+client only (`design/onboarding/signup-v2.1-{bridge,open}.js`); no server route
+changed. A reload after more shops (screen 30) or adding a person (31) opens
+registration or the team screen, where the prototype's own Continue goes, not
+the ID screen that every way forward then refused. A new tab in the same browser
+that types the ID resumes from its live enrolment instead of asking for a
+sign-in again. Another browser, or one idle past the 24-hour enrolment, is told
+its sign-in is set in the browser where it was chosen: signing in again from
+elsewhere does not exist yet (CD-221). An open desk whose hand-off this browser
+still holds asks `POST /open` before sending anyone to `/login`; after the
+opening poll gives up, Check again asks once more instead of confirming the card
+twice. A reload on Check your inbox lands back on it from a bare per-tab
+`cdSignupInbox` flag ("1", nothing personal, cleared once the code passes); the
+unreachable `enrolling` branch is gone. The Confirm record is headed with the
+reserved address instead of the prototype's yorkfx. Not release, CTO or
+Compliance acceptance.
+
+## Signup opens only an invited application, 16 November 2026
+
+A declined or held v2.1 application could still open its desk: the owner's
+browser already held the SetupIntent secret, Stripe.js confirmed it, and the
+signed `setup_intent.succeeded` provisioned the tenant and overwrote the
+decision with accepted. Activation (card webhook and staging no-card Open) now
+locks the enquiry under the account lock and refuses anything but an Invited
+early access row with its ID (`not_invited`): nothing is provisioned, the
+account is untouched, a `signup.open_refused` audit row is written, and the
+webhook acknowledges the event so Stripe stops retrying but keeps no claim on
+it: Stripe sends no second event for that intent, so once support invites the
+application again, resending the same event from the Stripe dashboard opens
+the desk (a manual step; nothing re-opens on its own). `POST …/open` issues
+a desk session only for an application accepted for that tenant, and pipeline
+moves are compare-and-set, so a stale decline answers `changed` instead of
+overwriting an opened desk. Not done: revoking enrolment sessions or clearing
+the intent when support declines, and detaching a card saved after a decline.
+Protected surface (provisioning, money): CTO review required.
+
+## Signup credential door throttle, 16 November 2026
+
+A crowd of made-up CurrencyDesk IDs can no longer lock every applicant out of
+saving a sign-in. Each in-memory throttle in `server/src/onboarding/cd-id-door.ts`
+used to refuse every key once it held 10,000. About 1,000 addresses (one IPv6
+/64), each sending ten well-shaped IDs nobody holds, turned every real passkey,
+Google/Microsoft or password save into 429 for 15 minutes. A full table also
+stopped locking connections on `/state` and dropped resends. Each throttle now
+forgets the key it saw longest ago (`THROTTLE_KEYS`, 10,000), and a key that
+keeps asking while locked stays locked. The credential routes count the
+connection before the lookup and the ID only once it names a reservation, so an
+unknown ID is a miss against its connection alone. The limits are unchanged: 12
+per ID and 30 per connection per 15 minutes, and 10 misses close for 15 minutes.
+The counters are still per process and per address. A sender rotating more than
+10,000 addresses can outlast the per-connection counts, so durable shared
+counters and /64 bucketing remain release review items. Protected surface
+(auth): CTO review required.
+
 ## Signup staging payment refusal — 16 November 2026
 
 If a synthetic staging reservation loses a fixture gate after verification,
@@ -113,6 +169,27 @@ Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
+
+**2026-11-16, the every-exchange ID line is enforced at the counter.** Sign-up
+stores `id_threshold` 0.00 for "every exchange" and opens every desk on
+`pack-ca-v2`. That pack's split gate read zero as no desk line and identified at
+CAD 3,000, while Settings said 0.00. It now reads zero as a stated line: an
+unidentified customer is refused at any amount, and the foreign-exchange ticket
+is asked for on every exchange. NULL still follows the pack. A desk number still
+cannot lift the CAD 1,000 lines. Other country gates still drop a zero; nothing
+writes one for them today. Compliance and CTO review are required.
+
+**2026-11-16: failed sign-up activation logs.** When the Stripe webhook's
+`setup_intent.succeeded` fails to open a v2.1 desk, the log keeps only a
+bounded reason: the error's class, the Postgres SQLSTATE, and the Stripe event
+id and type. It no longer logs the error itself, whose message and params held
+the owner's email, password and PIN hashes and full CD ID on every Stripe
+retry. Outside `/api/onboarding/` (which already had this rule), a database
+query error on any route is logged the same way and answered 500
+`temporarily_unavailable`, not Fastify's default body that echoed the SQL and
+bound values. That covers the Early Access form and the admin CD ID reissue.
+Other errors keep Fastify's default handling. The rule is
+`server/src/error-reason.ts`.
 
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
 PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
