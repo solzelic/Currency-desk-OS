@@ -316,7 +316,7 @@ export async function provisionDesk(
   spec: DeskSpec,
   passwordHash: string,
   via: string,
-  options: { requireNewTenant?: boolean } = {},
+  options: { requireNewTenant?: boolean; requireMarketRates?: boolean } = {},
 ): Promise<Provisioned> {
   const slug = spec.slug;
   const tenantId = "tnt-" + slug;
@@ -448,6 +448,7 @@ export async function provisionDesk(
     homeCurrency: bookHome,
     // the margin they set, shown back to them, and previewed on screen 12
     spreadAll: setup.spreadAll,
+    requireMarketRates: options.requireMarketRates,
   });
   await seedOpeningFloat(db, {
     tenantId, legalEntityId, branchId, workspaceId, tillId: "till-01",

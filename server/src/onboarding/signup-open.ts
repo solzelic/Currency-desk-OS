@@ -263,7 +263,7 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   /* A passkey or SSO owner has no password: theirs is a random one nobody
      holds (see KNOWN GAPS). */
   const passwordHash = password?.passwordHash ?? (await hashPassword(randomBytes(32).toString("base64url")));
-  const made = await provisionDesk(db, spec, passwordHash, "signup-v2.1", { requireNewTenant: true });
+  const made = await provisionDesk(db, spec, passwordHash, "signup-v2.1", { requireNewTenant: true, requireMarketRates: true });
 
   await db.update(schema.staffUsers).set({
     ...(account.pinHash ? { pinHash: account.pinHash, pinSetAt: account.pinSetAt ?? new Date() } : {}),

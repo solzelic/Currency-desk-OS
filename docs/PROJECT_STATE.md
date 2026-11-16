@@ -25,6 +25,9 @@ the wizard; payment folds expose actual disabled states and phone controls have
 phone (76 audits); axe gradient/occlusion and video manual checks are retained as
 incomplete, not certified. The AOT lifecycle uses the last committed state so a
 forced update cannot replay chapter focus; new-password autofill is enabled.
+New v2.1 desks publish starting rates only from valid market snapshot entries for
+selected currencies, with snapshot provenance. Missing rates remain absent; the
+legacy provisioning fallback is unchanged. Snapshot-age policy still needs CTO.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
