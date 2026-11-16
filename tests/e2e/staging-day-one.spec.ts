@@ -254,6 +254,8 @@ test("on a short phone, an /open that refuses keeps the reason and Check again o
   await expect(build).toHaveText("Desk not open yet");
   await expect(build).toHaveAttribute("aria-busy", "false");
   const check = page.getByRole("button", { name: "Check again" });
+  /* measured once the card's entrance (a scale-in, then fade-ups) has settled */
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.effect?.getTiming().iterations === Infinity || a.playState === "finished"));
   /* reached the way a person would, with the wheel over the page, never scrollIntoView */
   await page.mouse.move(180, 320);
   for (let k = 0; k < 6; k++) await page.mouse.wheel(0, 400);

@@ -16,10 +16,17 @@ landing or its sample desk, and not the prototype's desk chrome. The real Home's
 stays transparent until it has drawn itself (its existing ready message), so the
 sign-in page it starts on never shows, for an ordinary launch too.
 
-A slow `/open` (still 202 after ten tries) says "Still opening the desk. This can take a
-minute. Stay on this page." under Build my desk; after sixty tries, or if `/open`
-refuses, the welcome keeps its place with the reason and a Check again button (the
-existing `checkOpen`). This replaces #785's behaviour, where a pending `/open` held a
+While `/open` is in flight, Build my desk is `aria-busy`. A slow `/open` (still 202
+after ten tries) changes the welcome's sentence to "Still opening the desk. This can take
+a minute. Stay on this page." After sixty tries, or on a refusal that may clear (5xx or
+429), the sentence gives the reason, Build my desk reads "Desk not open yet" (disabled,
+not busy) and a Check again button (the existing `checkOpen`) asks the same `/open`
+again. A refusal that can never open (401 with no live enrolment, 404, 409) ends the
+wait on the ID screen with the reason, as a failed press does, so the page is never
+left stuck. Behind a real Home, or while waiting, the welcome card now sits in the
+page's flow instead of being absolutely placed, so the page grows and a short phone
+(360x640) can scroll to all of it, including Check again; the card's position on a
+desktop is unchanged. This replaces #785's behaviour, where a pending `/open` held a
 full-page cover for about 160 seconds with card copy and then lifted onto the plan
 screen. A staging Open from the plan screen (Start a fresh shop) no longer says "Your
 card is saved" while it waits or stalls: no card is taken there.
@@ -31,11 +38,17 @@ fade), built `web/signup.html` and `web/app/signup.js`. The ordinary paid flow s
 plays the plan screen's landing before Day 1, as the prototype draws it. Server, auth,
 the frozen design file, `os-src` and deployment configuration are unchanged.
 
-Evidence: the client tests (22 in `tests/signup-staging-client.test.mjs`) failed first
-against staging 8b62f503 (8 of them), then pass; `tests/e2e/staging-day-one.spec.ts`
-now records every screen the press draws (only Day 1), every stand-in, landing or hold
-text (none), and any moment the Home frame is visible before it has drawn itself
-(none), and walks a slow `/open` on a phone-sized page.
+Evidence: the client tests in `tests/signup-staging-client.test.mjs` failed first
+against staging 8b62f503, then pass. `tests/e2e/staging-day-one.spec.ts` records every
+screen the press draws: a wizard screen by number, the plan screen by its payment panel,
+the prototype desk by its chrome, and Day 1. Only Day 1 is drawn. It also watches for
+every stand-in, landing, "Sample rates" or hold text (none appear) and for any moment the
+Home frame is visible before it has drawn itself (none). The built page is checked to
+contain each of those markers, so "never" is not vacuous. The spec walks a slow `/open`
+on a 390x844 phone and a refused one on a 360x640 phone, where Check again is reached
+with the scroll wheel and opens the desk. An independent review (four lenses, each
+finding re-checked by a skeptic) found the stuck refusal, the clipped Check again, the
+busy state after a stop, the cursor and the watcher gap; all are fixed here.
 
 ## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
 

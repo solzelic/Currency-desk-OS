@@ -298,11 +298,18 @@ patch("home loading status", '{{ dkCta }}</button>', '{{ dkCta }}</button><sc-if
   + '<sc-if value="{{ stagingDayOne }}"><p data-staging-day-one="true" role="note" style="max-width:520px;margin:14px auto 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;line-height:1.55;color:var(--ink);text-align:left;white-space:pre-line;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text">{{ stagingDayOne }}</p></sc-if>');
 patch("build my desk", "R.onDkWalk = ", "R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : ");
 /* Staging Start on Day 1 (signup-v2.1-open.js dayOne) is on Day 1 from the
-   press: until the desk opens, Build my desk waits (dkWaiting), the welcome's
-   sentence says the shop is opening and speaks as it changes, and a slow or
-   refused /open puts its reason under the button with Check again. */
+   press: until the desk opens, Build my desk waits (dkWaiting, busy while a
+   request is in flight), the welcome's sentence says the shop is opening and
+   speaks as it changes, and a stalled /open, or a refusal that may clear,
+   puts its reason in that sentence with Check again under the button. */
 patch("build my desk waits", '<button onClick="{{ onDkWalk }}" style="width: 100%; margin-top: 24px;',
-  '<button onClick="{{ onDkWalk }}" disabled="{{ dkWaiting }}" aria-busy="{{ dkWaiting }}" data-build-my-desk="true" style="{{ dkCtaLook }}width: 100%; margin-top: 24px;');
+  '<button onClick="{{ onDkWalk }}" disabled="{{ dkWaiting }}" aria-busy="{{ dkBusy }}" data-build-my-desk="true" style="width: 100%; margin-top: 24px;');
+/* its waiting look last, so it wins over the prototype's own cursor */
+patch("build my desk waiting look", 'animation: cdFadeUp 0.7s ease 0.8s both;" style-hover="background: #1D6B45;">{{ dkCta }}</button>',
+  'animation: cdFadeUp 0.7s ease 0.8s both; {{ dkCtaLook }}" style-hover="background: #1D6B45;">{{ dkCta }}</button>');
+/* behind a real Home or while waiting, the welcome card is in the page's flow (open.js dkCardBox) */
+patch("day one card box", '<div style="position: absolute; left: 18px; right: 18px; top: 84px; display: grid; place-items: center;">',
+  '<div style="{{ dkCardBox }}display: grid; place-items: center;">');
 patch("day one sentence speaks", '<div style="font-size: 15px; color: #6B6459; margin-top: 14px; line-height: 1.55; animation: cdFadeUp 0.7s ease 0.6s both;">{{ dkSub }}</div>',
   '<div role="status" aria-live="polite" style="font-size: 15px; color: #6B6459; margin-top: 14px; line-height: 1.55; animation: cdFadeUp 0.7s ease 0.6s both;">{{ dkSub }}</div>');
 patch("day one check again", '<sc-if value="{{ stagingDayOne }}">',

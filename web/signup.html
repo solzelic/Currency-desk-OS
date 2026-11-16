@@ -753,6 +753,14 @@
       "Password " + s.password + " (Forgot PIN asks for it)",
       "The sign-in page can’t sign this owner in again yet (CD-221), so this browser stays signed in for 12 hours."].join("\n");
   }
+  /* Start on Day 1 could not open a shop: back to the ID screen with the
+     reason, with nothing held and nothing of the shop kept in this tab */
+  function dayOneFailed(c, r) {
+    CD._paying = false; CD._dayOneWait = false; CD._dayOneNote = ""; CD._openStalled = null;
+    CD._dayOneLine = ""; CD._dayOneName = ""; CD.code = ""; tabSet("");
+    CD.err = r && r.status === 429 ? DAY_ONE_SLOW : why(r, DAY_ONE_FAILED);
+    c._dir = -1; c.setState({ i: 0 });
+  }
   /* ---- money, as the server sent it ------------------------------------ */
   var STAGING_NOTE = "Staging test shop. No card is taken, nothing on this form is sent and nothing is charged: Open finishes the desk as a test shop.";
   /* while /open waits: a staging Open took no card, so its lines never say one was saved */
@@ -810,23 +818,33 @@
       /* the real Home shows once it has drawn itself (its ready message below),
          never the sign-in page it starts on; until then the desk's own background */
       R.homeOpacity = CD.homeReady ? "1" : "0";
-      R.welcomeWrap = "position:relative;max-width:780px;margin:" + (R.realHome || waiting ? "158px auto 0" : "0 auto") + ";padding:38px 18px 60px;";
+      /* Behind a real Home, or while waiting, the welcome card sits in the page's
+         flow (dkCardBox), so the page grows and a short phone can scroll to all
+         of it; over the prototype's own desk it keeps its drawn place. */
+      var inFlow = R.realHome || waiting;
+      R.welcomeWrap = "position:relative;max-width:780px;margin:" + (inFlow ? "158px auto 0" : "0 auto") + ";padding:" + (inFlow ? "38px 18px 24px" : "38px 18px 60px") + ";";
+      R.dkCardBox = inFlow ? "position: relative; margin-top: 46px; " : "position: absolute; left: 18px; right: 18px; top: 84px; ";
       if (CD._errAt !== i) { CD._errAt = i; if (CD.err && i !== 0) CD.err = ""; }
       if (CD.err && i !== 14 && i !== 0) R.help = CD.err;
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       /* Start on Day 1's one staging line: on Day 1 only, after that launch */
       R.stagingDayOne = i === 16 && CD.launched === true && CD._dayOneLine ? CD._dayOneLine : "";
-      /* and, until the desk opens, its welcome says so: the shop's name once the
-         server has given it, Build my desk waiting, no confetti yet, and why if
-         /open is slow or refuses, with Check again (the same /open, once more) */
-      R.dkWaiting = i === 16 && waiting; /* a filter, not opacity: the button's entrance (cdFadeUp, fill both) holds opacity at 1 */
-      R.dkCtaLook = R.dkWaiting ? "filter: saturate(0.35) brightness(1.18); cursor: progress; " : "";
+      /* and, until the desk opens, its welcome says so in its own sentence (a
+         polite live region): opening, the shop's name once the server has given
+         it, still opening if /open is slow. Build my desk waits, busy while a
+         request is in flight; no confetti yet. Once asking has stopped (a stall,
+         or a refusal that may clear) the sentence gives the reason, nothing is
+         busy, and Check again asks the same /open once more. */
+      R.dkWaiting = i === 16 && waiting; R.dkBusy = R.dkWaiting && !!CD._paying;
+      /* a filter, not opacity: the button's entrance (cdFadeUp, fill both) holds opacity at 1 */
+      R.dkCtaLook = R.dkWaiting ? "filter: saturate(0.35) brightness(1.18); cursor: " + (R.dkBusy ? "progress" : "not-allowed") + ";" : "";
       R.dayOneCheckVisible = false;
       if (R.dkWaiting) {
-        R.dkSub = CD._dayOneName ? "Opening " + CD._dayOneName + ". This takes a few seconds." : DAY_ONE_SIGNING;
-        R.dkCta = "Opening your desk…"; R.dkConf = [];
-        R.homeStatus = CD._dayOneNote || "";
-        R.dayOneCheckVisible = !!CD._openStalled && !CD._paying;
+        var stopped = !!CD._openStalled && !CD._paying;
+        R.dkSub = CD._dayOneNote || (CD._dayOneName ? "Opening " + CD._dayOneName + ". This takes a few seconds." : DAY_ONE_SIGNING);
+        R.dkCta = stopped ? "Desk not open yet" : "Opening your desk…"; R.dkConf = [];
+        R.homeStatus = "";
+        R.dayOneCheckVisible = stopped;
         R.onDayOneCheck = function () { CD.checkOpen(c); };
       }
       if (i !== 15) return R;
@@ -1031,10 +1049,16 @@
           c._dir = -1; c.setState({ i: 0 }); return;
         }
         CD._paying = false;
-        /* Start on Day 1 keeps its welcome, with the reason and Check again */
-        if (dayOne) { CD._openStalled = attempt; CD._dayOneNote = why(r, DAY_ONE_REFUSED); }
-        else CD.payErr = why(r, "The desk didn’t open. Nothing was charged.");
-        c.forceUpdate();
+        if (dayOne) {
+          /* Start on Day 1: a refusal that may clear (the server failing, or
+             slow_down) keeps the welcome with the reason and Check again; one
+             that cannot (401 no live enrolment, 404, 409) ends the wait on the
+             ID screen, where Start on Day 1 can be pressed again */
+          if (r.status === 429 || r.status >= 500) { CD._openStalled = attempt; CD._dayOneNote = why(r, DAY_ONE_REFUSED); c.forceUpdate(); }
+          else dayOneFailed(c, r);
+          return;
+        }
+        CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
       });
     },
     walk: function () { CD._dayOneLine = ""; location.assign("/app"); },
@@ -1054,16 +1078,11 @@
     /* Is Start on Day 1 still opening its desk? Continue, the skips and Back
        ask first (the bridge, the build's back()), so nothing moves the page off
        Day 1 meanwhile and a 201 is always carried on, never dropped. It ends
-       when the desk opens or the press fails; a slow or refused /open keeps
-       it, with Check again on the welcome. */
+       when the desk opens or the press fails; a slow /open, or a refusal
+       that may clear, keeps it, with Check again on the welcome. */
     holding: function () { return !!CD._dayOneWait; },
     dayOne: function (c) {
-      var fail = function (r) {
-        CD._paying = false; CD._dayOneWait = false; CD._dayOneNote = ""; CD._openStalled = null;
-        CD._dayOneLine = ""; CD._dayOneName = ""; CD.code = ""; tabSet("");
-        CD.err = r && r.status === 429 ? DAY_ONE_SLOW : why(r, DAY_ONE_FAILED);
-        c._dir = -1; c.setState({ i: 0 });
-      };
+      var fail = function (r) { dayOneFailed(c, r); };
       tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._dayOneName = ""; CD._dayOneNote = ""; CD._openStalled = null;
       CD._paying = true; CD._dayOneWait = true; c._dir = 1; c.setState({ i: 16 });
       call("POST", "/api/staging/day-one", {}, 60000).then(function (r) {

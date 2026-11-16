@@ -2075,7 +2075,7 @@ function s491(v,k){return h(React.Fragment,{key:k},"",text(v?.["dkSub"],1),"");}
 function s490(v,k){return h("div",{key:k,"role":"status","aria-live":"polite","style":style("font-size: 15px; color: #6B6459; margin-top: 14px; line-height: 1.55; animation: cdFadeUp 0.7s ease 0.6s both;")},s491(v,0));}
 function s492(v,k){return "\n              ";}
 function s494(v,k){return h(React.Fragment,{key:k},"",text(v?.["dkCta"],1),"");}
-function s493(v,k){return h("button",{key:k,"onClick":v?.["onDkWalk"],"disabled":v?.["dkWaiting"],"aria-busy":v?.["dkWaiting"],"data-build-my-desk":"true","style":style("" + (v?.["dkCtaLook"] ?? "") + "width: 100%; margin-top: 24px; padding: 17px; border: 0; border-radius: 14px; background: #17583A; color: #fff; font-family: var(--m); font-size: 14px; letter-spacing: 0.02em; font-weight: 700; cursor: pointer; box-shadow: 0 14px 30px -10px rgba(29,107,69,0.7); animation: cdFadeUp 0.7s ease 0.8s both;"),className:"signup-p0"},s494(v,0));}
+function s493(v,k){return h("button",{key:k,"onClick":v?.["onDkWalk"],"disabled":v?.["dkWaiting"],"aria-busy":v?.["dkBusy"],"data-build-my-desk":"true","style":style("width: 100%; margin-top: 24px; padding: 17px; border: 0; border-radius: 14px; background: #17583A; color: #fff; font-family: var(--m); font-size: 14px; letter-spacing: 0.02em; font-weight: 700; cursor: pointer; box-shadow: 0 14px 30px -10px rgba(29,107,69,0.7); animation: cdFadeUp 0.7s ease 0.8s both; " + (v?.["dkCtaLook"] ?? "") + ""),className:"signup-p0"},s494(v,0));}
 function s497(v,k){return h(React.Fragment,{key:k},"",text(v?.["homeStatus"],1),"");}
 function s496(v,k){return h("p",{key:k,"data-real-home-status":"true","role":"status","style":style("font-size:12px;color:var(--mute)")},s497(v,0));}
 function s495(v,k){return (v?.["homeStatus"] ? h(React.Fragment,{key:k},s496(v,0)) : null);}
@@ -2095,7 +2095,7 @@ function s508(v,k){return (v?.["dkToast"] ? h(React.Fragment,{key:k},s509(v,0)) 
 function s511(v,k){return "\n            ";}
 function s467(v,k){return h("div",{key:k,"style":style("position: relative; width: min(560px, 100%); padding: 40px 34px 34px; border-radius: 24px; background: rgba(255,253,248,0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 50px 100px -40px rgba(23,20,15,0.65), 0 0 0 1px rgba(23,20,15,0.05); text-align: center; animation: cdPop 0.7s cubic-bezier(0.2,1.2,0.4,1) both;")},s468(v,0),s476(v,1),s477(v,2),s483(v,3),s484(v,4),s486(v,5),s487(v,6),s489(v,7),s490(v,8),s492(v,9),s493(v,10),s495(v,11),s498(v,12),s501(v,13),s504(v,14),s505(v,15),s507(v,16),s508(v,17),s511(v,18));}
 function s512(v,k){return "\n          ";}
-function s465(v,k){return h("div",{key:k,"style":style("position: absolute; left: 18px; right: 18px; top: 84px; display: grid; place-items: center;")},s466(v,0),s467(v,1),s512(v,2));}
+function s465(v,k){return h("div",{key:k,"style":style("" + (v?.["dkCardBox"] ?? "") + "display: grid; place-items: center;")},s466(v,0),s467(v,1),s512(v,2));}
 function s513(v,k){return "\n        ";}
 function s459(v,k){return (v?.["dkOn"] ? h(React.Fragment,{key:k},s460(v,0),s461(v,1),s464(v,2),s465(v,3),s513(v,4)) : null);}
 function s514(v,k){return "\n      ";}
