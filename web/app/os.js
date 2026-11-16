@@ -10564,7 +10564,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), " ", exported ? 'Downloaded' : 'Export CSV')))), tab === 'clients' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "users",
       title: "Clients \xB7 KYC",
-      sub: "Defaults and identity checks for the Clients app \u2014 these drive the KYC status badges on every contact."
+      sub: "Defaults and identity checks for the Clients app. These drive the KYC status badges on every contact."
     }), window.CDOS.IdCheck ? /*#__PURE__*/React.createElement(window.CDOS.IdCheck.Settings, null) : null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1",
       style: {
@@ -10610,7 +10610,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         maxWidth: 620
       }
-    }, "Your own client risk ratings \u2014 staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check."), /*#__PURE__*/React.createElement("div", {
+    }, "Your own client risk ratings. Staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check."), /*#__PURE__*/React.createElement("div", {
       className: "space-y-2"
     }, (window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High']).map(r => {
       const tn = window.CDOS.riskTone(r);
@@ -10642,8 +10642,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         placeholder: {
           Normal: 'Standard walk-in activity',
           Low: 'Known, established, low-risk',
-          Medium: 'Elevated — enhanced due diligence',
-          High: 'High-risk — deepest checks & monitoring'
+          Medium: 'Elevated, enhanced due diligence',
+          High: 'High-risk, deepest checks and monitoring'
         }[r],
         className: "flex-1 text-[12.5px] px-2.5 py-1.5 outline-none",
         style: {
@@ -10658,12 +10658,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: esc ? CD.flag : CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, esc ? 'escalates' : '—'));
+      }, esc ? 'escalates' : 'Not set'));
     })), /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(Row, {
       title: "Also escalate Medium-risk to a full check",
-      desc: "Off by default \u2014 Medium stays a lighter, recommended check; High always escalates."
+      desc: "Off by default. Medium stays a lighter, recommended check. High always escalates."
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.escalateMediumRisk,
       click: () => toggleSet('escalateMediumRisk', 'Escalate medium-risk')
@@ -10792,7 +10792,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             }
           }));
         },
-        placeholder: "\u2014",
+        placeholder: "Not set",
         className: "text-sm px-1.5 py-1 outline-none text-right w-full bg-transparent",
         style: {
           fontVariantNumeric: 'tabular-nums'
@@ -26007,7 +26007,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: value ? CD.ink : CD.faint,
         fontVariantNumeric: mono ? 'tabular-nums' : 'normal'
       }
-    }, value || '—')));
+    }, value || 'Not set')));
   }
   function EditField({
     label,
@@ -26513,7 +26513,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           color: CD.green,
           fontWeight: 600
         }
-      }, x.outAmt === '' ? '—' : num(x.outAmt), " ", /*#__PURE__*/React.createElement("span", {
+      }, x.outAmt === '' ? 'Not set' : num(x.outAmt), " ", /*#__PURE__*/React.createElement("span", {
         style: {
           color: CD.faint,
           fontWeight: 400
@@ -26531,7 +26531,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontSize: 10,
           color: CD.mute
         }
-      }, v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || '—'));
+      }, v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || 'Not set'));
     }))));
   }
 
@@ -26734,7 +26734,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, st.last || '—')))), /*#__PURE__*/React.createElement("div", {
+    }, st.last || 'Not set')))), /*#__PURE__*/React.createElement("div", {
       className: "p-5"
     }, (rec.email || rec.phone) && /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-x-5 gap-y-1 mb-3"
@@ -27048,7 +27048,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.faint
       }
-    }, "No beneficiaries on file. ", canEdit ? `Add who ${first} sends money to — it'll be ready at the counter.` : ''), edit && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Tx.BeneficiaryModal, {
+    }, "No beneficiaries on file. ", canEdit ? `Add who ${first} sends money to. It will be ready at the counter.` : ''), edit && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Tx.BeneficiaryModal, {
       init: edit === 'new' ? null : edit,
       sender: name,
       lockSender: true,
@@ -27181,13 +27181,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "checkcircle",
       s: 15,
       c: CD.green
-    }), " No open flags \u2014 reportables filed, ID on file, no structuring pattern.") : /*#__PURE__*/React.createElement("div", {
+    }), " No open flags. Reportables filed, ID on file, no structuring pattern.") : /*#__PURE__*/React.createElement("div", {
       className: "space-y-2"
     }, rpt.length > 0 && /*#__PURE__*/React.createElement(CompRow, {
       tone: CD.flag,
       soft: CD.flagSoft,
       icon: "alert",
-      title: "Reportable \u2014 not yet filed",
+      title: "Reportable, not yet filed",
       sub: `${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`,
       actionLabel: "Review & file",
       onAction: () => onOpenLedger(name)
@@ -27950,7 +27950,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-wrap"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "client-file-name text-[20px] font-bold",
+      className: "client-file-name text-[20px] font-bold min-w-0",
       style: {
         color: CD.ink
       }
@@ -54689,17 +54689,33 @@ ${(filing.map || []).map(blockHTML).join('')}
       type: "checkbox",
       checked: row.checksEnabled === true,
       onChange: e => set("checksEnabled", e.target.checked)
-    })), /*#__PURE__*/React.createElement("label", {
+    })), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center justify-between gap-3 py-1.5 text-[13px]",
       style: {
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("span", null, "Small photo from the ID"), /*#__PURE__*/React.createElement("input", {
+    }, /*#__PURE__*/React.createElement("span", null, "Small photo from the ID"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
       "data-testid": "id-check-crop-switch",
-      type: "checkbox",
-      checked: row.faceCropEnabled !== false,
-      onChange: e => set("faceCropEnabled", e.target.checked)
-    })), /*#__PURE__*/React.createElement("label", {
+      "aria-checked": row.faceCropEnabled !== false,
+      "aria-label": "Small photo from the ID",
+      onClick: () => set("faceCropEnabled", row.faceCropEnabled === false),
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: row.faceCropEnabled !== false ? CD.ink : "var(--cd-disabled)",
+        borderRadius: 999,
+        border: "none",
+        padding: 0
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: row.faceCropEnabled !== false ? 22 : 2,
+        background: "var(--cd-panel)",
+        borderRadius: 999
+      }
+    }))), /*#__PURE__*/React.createElement("label", {
       className: "block text-[12px] mt-2",
       style: {
         color: CD.mute

@@ -2289,6 +2289,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-top: 1px solid #E2DFD8;
     box-shadow: none;
   }
+  html[data-cdtheme="dark"] #phone-dock {
+    background: #1d1c19;
+    border-top-color: rgba(255,255,255,0.16);
+    --tab-inactive: rgba(236,234,227,0.62);
+  }
   #phonebar {
     height: var(--tabbar-h);
     display: flex;
@@ -2510,7 +2515,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      name, and the name collapsed to a word a line. */
   .client-file-head { flex-wrap: wrap; row-gap: 10px; }
   .client-file-head > .flex-1 { flex: 1 1 calc(100% - 88px); }
-  .client-file-name { white-space: nowrap; }
+  .client-file-name { white-space: normal; overflow-wrap: break-word; min-width: 0; }
   .client-file-actions {
     flex: 1 1 100%;
     width: 100%;

@@ -610,7 +610,7 @@
       {icon && <span className="grid place-items-center flex-none mt-0.5" style={{ width: 24, height: 24, borderRadius: 7, background: CD.lineSoft }}><Ic n={icon} s={13} c={CD.mute} /></span>}
       <div className="min-w-0 flex-1">
         <div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div>
-        <div className="text-[13px] break-words" style={{ color: value ? CD.ink : CD.faint, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value || '—'}</div>
+        <div className="text-[13px] break-words" style={{ color: value ? CD.ink : CD.faint, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value || 'Not set'}</div>
       </div>
     </div>);
   }
@@ -719,9 +719,9 @@
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: CD.text }}>{x.date}</td>
             <td className="px-3 py-2" style={{ color: CD.mute }}>{x.type}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>
-            <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
+            <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? 'Not set' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
             {!compact && <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmtHome(x.fee)}</td>}
-            <td className="px-3 py-2 text-center" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: CD.mute }}>{v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td>
+            <td className="px-3 py-2 text-center" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: CD.mute }}>{v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || 'Not set')}</td>
           </tr>); })}</tbody>
       </table>
     </div>);
@@ -813,7 +813,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Txns</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.n}</div></div>
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Volume</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(st.vol)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Last seen</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.last || '—'}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Last seen</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.last || 'Not set'}</div></div>
           </div>
         </div>
         <div className="p-5">
@@ -873,7 +873,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>); })}
         </div>
       ) : (
-        <div className="text-[12px] py-4 text-center" style={{ color: CD.faint }}>No beneficiaries on file. {canEdit ? `Add who ${first} sends money to — it'll be ready at the counter.` : ''}</div>
+        <div className="text-[12px] py-4 text-center" style={{ color: CD.faint }}>No beneficiaries on file. {canEdit ? `Add who ${first} sends money to. It will be ready at the counter.` : ''}</div>
       )}
       {edit && <Portal><Tx.BeneficiaryModal init={edit === 'new' ? null : edit} sender={name} lockSender corridors={corridors} onClose={() => setEdit(null)} onSave={save} /></Portal>}
     </div>);
@@ -908,10 +908,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {open ? <Pill text={`${open} open`} c={CD.flag} bg={CD.flagSoft} /> : <Pill text="All clear" c={CD.green} bg={CD.greenSoft} />}
       </div>
       {open === 0 ? (
-        <div className="flex items-center gap-2 text-[12.5px] px-1 py-1" style={{ color: CD.mute }}><Ic n="checkcircle" s={15} c={CD.green} /> No open flags — reportables filed, ID on file, no structuring pattern.</div>
+        <div className="flex items-center gap-2 text-[12.5px] px-1 py-1" style={{ color: CD.mute }}><Ic n="checkcircle" s={15} c={CD.green} /> No open flags. Reportables filed, ID on file, no structuring pattern.</div>
       ) : (
         <div className="space-y-2">
-          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable — not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
+          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable, not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
           {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
           {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}.`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
         </div>
@@ -1270,7 +1270,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}

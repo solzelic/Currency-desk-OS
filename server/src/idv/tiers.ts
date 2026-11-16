@@ -112,6 +112,7 @@ export function expiredLine(isoDate: string): string {
 }
 
 export const TYPED_NOT_RECORDED = "ID typed in, check not recorded";
+export const TOO_OLD_LINE = "This check is too old. A new ID check is needed.";
 
 export function seenInPersonLine(staff: string, type: string, expiry: string, checked: string): string {
   return `ID seen in person by ${staff}, ${type}, expires ${expiry}, checked ${checked}`;

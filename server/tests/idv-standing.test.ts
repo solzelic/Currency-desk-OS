@@ -78,7 +78,10 @@ describe("ID on file from the check record", () => {
       line: "Expired 1 Jan 2020. A new ID check is needed before the next deal of $3,000 or more.",
     });
     expect(idFileStanding({ ...seen, sameShop: false }).onFile).toBe(false);
-    expect(idFileStanding({ ...seen, withinFiveYears: false }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, withinFiveYears: false })).toMatchObject({
+      onFile: false,
+      line: "This check is too old. A new ID check is needed.",
+    });
     expect(idFileStanding({ ...seen, numberUnavailable: true }).onFile).toBe(false);
     expect(idFileStanding({ ...seen, result: "needs_review" }).onFile).toBe(false);
     expect(idFileStanding({ ...seen, acceptedPhotoId: false }).onFile).toBe(false);

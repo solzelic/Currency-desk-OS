@@ -133,15 +133,32 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
 }
 
+async function showIdentity(page: Page) {
+  await page.evaluate(() => {
+    const flow = document.querySelector("[data-testid='id-check-flow']");
+    if (flow instanceof HTMLElement) flow.scrollTop = 0;
+    const scroller = document.querySelector(".client-file .overflow-auto");
+    const panel = document.querySelector("[data-testid='identity-check']");
+    if (scroller instanceof HTMLElement && panel instanceof HTMLElement) {
+      const top = panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      scroller.scrollTop = Math.max(0, top - 12);
+    } else if (scroller instanceof HTMLElement) {
+      scroller.scrollTop = 0;
+    }
+  });
+}
+
 async function themeShot(page: Page, stem: string) {
   if (process.env.PR2B_SHOTS !== "1") return;
   await dismissTour(page);
+  await showIdentity(page);
   for (const theme of ["light", "dark"] as const) {
     await page.evaluate((value) => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
     }, theme);
     for (const width of [1280, 390] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await showIdentity(page);
       const shotPath = path.join(ARTIFACTS, `pr2-${stem}-${width}-${theme}.png`);
       if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
       if (width === 390) {
@@ -156,6 +173,7 @@ async function themeShot(page: Page, stem: string) {
         });
         const scrolled = path.join(ARTIFACTS, `pr2-${stem}-390-${theme}-scrolled.png`);
         if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
+        await showIdentity(page);
       }
     }
   }
@@ -513,7 +531,8 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "masked-teller");
     await themeShot(page, "file-teller");
 
-    const otherName = `Other File ${Date.now()}`;
+    const otherName = "Ada Other";
+    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = 'Ada Other'");
     const other = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -574,7 +593,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
 
 test("counter screens for the other badge states", async ({ page, request }) => {
   test.skip(process.env.PR2B_SHOTS !== "1", "screenshot pass");
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   await enableChecks(request);
   await signInAtDesk(page, "m.costa");
   const made = async (name: string) => {
@@ -589,15 +608,19 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     expect(created.status).toBe(201);
     return created.body.clientId as string;
   };
-  const mark = String(Date.now());
-  const noneName = `No Check Client ${mark}`;
-  const progressName = `Progress Check Client ${mark}`;
-  const reviewName = `Review Check Client ${mark}`;
-  const declinedName = `Declined Check Client ${mark}`;
-  const incompleteName = `Incomplete Check Client ${mark}`;
-  const adviceName = `Advice Check Client ${mark}`;
-  const dueName = `Due Check Client ${mark}`;
-  const returningName = `Returning Check Client ${mark}`;
+  const noneName = "No Check";
+  const progressName = "In Progress";
+  const reviewName = "In Review";
+  const declinedName = "Not Passed";
+  const incompleteName = "Incomplete";
+  const adviceName = "Advised";
+  const dueName = "Too Old";
+  const returningName = "Returning";
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  for (const fixed of [noneName, progressName, reviewName, declinedName, incompleteName, adviceName, dueName, returningName]) {
+    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = $1", [fixed]);
+  }
   const none = await made(noneName);
   const progress = await made(progressName);
   const review = await made(reviewName);
@@ -606,8 +629,6 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   const advice = await made(adviceName);
   const due = await made(dueName);
   const returning = await made(returningName);
-  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
-  await db.connect();
   const insert = async (clientId: string, result: string, method: string, yearsAgo: number) => {
     const person = method === "in_person";
     await db.query(
@@ -714,6 +735,8 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await themeShot(page, "badge-in-person");
     await openFile(dueName);
     await expect(page.getByTestId("id-check-due")).toContainText("A new full ID check is needed.");
+    await expect(page.getByTestId("client-where")).toContainText("This check is too old. A new ID check is needed.");
+    await expect(page.getByTestId("client-where")).not.toContainText("No identity-document number");
     await themeShot(page, "badge-due");
     await startCheck();
     await page.getByText("More options").click();
@@ -789,11 +812,13 @@ test("settings is one opaque window and the privacy phone is formatted", async (
         zoom();
       });
       await expect(settingsWin).toHaveClass(/max/);
+      await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = 0; });
       const shotPath = path.join(ARTIFACTS, `pr2-settings-crop-${width}-${theme}.png`);
       if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
       if (width === 390) {
         await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = el.scrollHeight; });
         await page.screenshot({ path: path.join(ARTIFACTS, `pr2-settings-crop-390-${theme}-scrolled.png`) });
+        await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = 0; });
       }
     }
   }

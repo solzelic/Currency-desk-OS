@@ -14,7 +14,7 @@ import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED, TOO_OLD_LINE,
   branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
 } from "./tiers.js";
@@ -829,6 +829,9 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
       ? expiredNextDealLine(civilDateWords(latest.expiryIso))
       : (line || "Expired");
     return { onFile: false, chip: "ID expired", title: "ID expired", line: shown, gap: "expired ID" };
+  }
+  if (latest.withinFiveYears === false) {
+    return { onFile: false, chip: "Missing ID", title: "Not identified", line: TOO_OLD_LINE, gap: "missing ID" };
   }
   return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
 }
