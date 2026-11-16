@@ -50307,8 +50307,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       className: "block text-left text-[13px]",
       style: {
         color: CD.ink,
-        minHeight: 44,
-        padding: "10px 12px"
+        minHeight: 48,
+        padding: "12px 12px"
       }
     }, name))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",

@@ -949,7 +949,7 @@
         </div></div>
         {pepNames.length > 0 && <div data-testid="pep-review-list" className="mt-3 mb-1">
           <div className="text-[12px] font-semibold mb-1" style={{ color: CD.ink }}>PEP review</div>
-          {pepNames.map((name) => <button key={name} type="button" onClick={() => onOpenClient && onOpenClient(name)} className="block text-left text-[13px]" style={{ color: CD.ink, minHeight: 44, padding: "10px 12px" }}>{name}</button>)}
+          {pepNames.map((name) => <button key={name} type="button" onClick={() => onOpenClient && onOpenClient(name)} className="block text-left text-[13px]" style={{ color: CD.ink, minHeight: 48, padding: "12px 12px" }}>{name}</button>)}
         </div>}
         <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic, badge]) => (
