@@ -38,6 +38,8 @@ live submission capability and remain Compliance/Sol/CD156 review items.
 Visual comparison now retains every difference and excludes only capture-proven
 aria-hidden cdRise glyphs; monetary symbols are never blanket-filtered. The
 reviewer-owned capture tool preserves full text and fails on missing captures.
+Its real-DOM regression runs in the Playwright job; the Node-only CI job retains
+the comparison regression without requiring a browser binary.
 The final 38-state × five-size comparison and complete browser run are pending.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.

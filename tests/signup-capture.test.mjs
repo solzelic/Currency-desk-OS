@@ -4,20 +4,6 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
-import { chromium } from '@playwright/test';
-import measureSignup from '../scripts/signup-capture-measure.cjs';
-test('capture measures visible controls by their full labels, excluding closed details and hidden ancestors',async()=>{
- const browser=await chromium.launch();
- try{
-  const page=await browser.newPage();
-  await page.setContent('<details><summary>Account</summary><button><span>Sound on</span></button></details><button><span>Continue</span></button><button aria-label="Close"><svg width="20" height="20"></svg></button><div style="visibility:hidden"><button>Hidden</button></div><div style="opacity:0"><button>Transparent</button></div>');
-  const first=await page.evaluate(measureSignup);
-  assert.deepEqual(first.elements.filter(e=>e.tag==='button').map(e=>e.text),['Continue','Close']);
-  await page.locator('summary').click();
-  const second=await page.evaluate(measureSignup);
-  assert.deepEqual(second.elements.filter(e=>e.tag==='button').map(e=>e.text),['Sound on','Continue','Close']);
- }finally{await browser.close();}
-});
 test('visual evidence keeps monetary glyphs and every difference, excluding only proven ambient motion',()=>{
  const dir=mkdtempSync(path.join(tmpdir(),'signup-capture-'));
  try{
