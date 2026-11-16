@@ -47,7 +47,7 @@ import { fromApplication, resolve } from "./flow.js";
 import { freeSlug, provisionDesk, specFromAnswers } from "./provision.js";
 import { loadOrCreateOnboarding } from "./verify.js";
 import { resumable, STEP_FIELDS } from "./signup-answers.js";
-import { advance, withSignupAccount } from "./signup-account.js";
+import { advance, withSignupAccount, type Account } from "./signup-account.js";
 
 export const DECLARATION_VERSION = "v2.1-2026-11-14";
 // Exact frozen prototype fragment: agreement title through its final sentence.
@@ -144,18 +144,30 @@ export type SignupStripe = {
   setupIntents: { create(p: { customer: string; usage: "off_session"; automatic_payment_methods: { enabled: true }; metadata: Record<string, string> }, options: { idempotencyKey: string }): Promise<{ id: string; client_secret: string | null }> };
 };
 
+/* What the plan screen agreed to, checked under the account lock: shared by
+   the card path and the staging door's no-card path. */
+async function preparedPlan(db: Db, row: Enquiry, account: Account, choice: PlanChoice) {
+  if (account.state !== "verified" || !account.pinHash || !(await stillConfirmed(db, row.id))) throw new Error("signup_not_confirmed");
+  const ob = await loadOrCreateOnboarding(db, row.id);
+  const details = row.details ?? {};
+  if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") throw new Error("signup_billing_country_unavailable");
+  if (choice.website) throw new Error("signup_website_unavailable");
+  const answers = ob.answers ?? {};
+  const locations = answers.shops === "more" ? z.number().int().min(2).max(50).parse(answers.shopCount) : 1;
+  const selected = { ...choice, locations };
+  if (!account.confirmedName || !account.answersHash) throw new Error("signup_signature_missing");
+  const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH })).digest("hex");
+  return { answers, selected, agreement, confirmedName: account.confirmedName, answersHash: account.answersHash };
+}
+
+async function rememberPlan(db: Db, enquiryId: string, answers: Record<string, unknown>, selected: PlanChoice) {
+  await db.update(schema.onboarding).set({ answers: { ...answers, plan: selected.plan, term: selected.term, brief: selected.brief, call: selected.call }, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, enquiryId));
+}
+
 export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, choice: PlanChoice, agreed = true) {
   return withSignupAccount(db, row.id, async (db, account) => {
-    if (account.state !== "verified" || !account.pinHash || !(await stillConfirmed(db, row.id))) throw new Error("signup_not_confirmed");
-    const ob = await loadOrCreateOnboarding(db, row.id);
+    const { answers, selected, agreement, confirmedName, answersHash: signed } = await preparedPlan(db, row, account, choice);
     const details = row.details ?? {};
-    if (signupPack(typeof details.jurisdiction === "string" ? details.jurisdiction : null).billingCurrency !== "CAD") throw new Error("signup_billing_country_unavailable");
-    if (choice.website) throw new Error("signup_website_unavailable");
-    const answers = ob.answers ?? {};
-    const locations = answers.shops === "more" ? z.number().int().min(2).max(50).parse(answers.shopCount) : 1;
-    const selected = { ...choice, locations };
-    if (!account.confirmedName || !account.answersHash) throw new Error("signup_signature_missing");
-    const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH })).digest("hex");
     const metadata = { currencydesk_signup_enquiry: row.id, currencydesk_signup_agreement: agreement };
     const customerId = account.stripeCustomerId ?? z.object({ id: z.string().startsWith("cus_") }).parse(
       await stripe.customers.create({ email: row.email, name: typeof details.shopName === "string" ? details.shopName : row.name ?? "", metadata: { currencydesk_signup_enquiry: row.id } }, { idempotencyKey: `signup-customer-${account.accountId}` })
@@ -165,14 +177,33 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
     );
     await db.update(schema.signupAccounts).set({
       stripeCustomerId: customerId, setupIntentId: intent.id,
-      planChoice: { ...selected, agreement, answersHash: account.answersHash, price: monthlyFor(selected), agreed, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH }, updatedAt: new Date(),
+      planChoice: { ...selected, agreement, answersHash: signed, price: monthlyFor(selected), agreed, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH }, updatedAt: new Date(),
     }).where(eq(schema.signupAccounts.enquiryId, row.id));
-    await db.update(schema.onboarding).set({ answers: { ...answers, plan: selected.plan, term: selected.term, brief: selected.brief, call: selected.call }, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, row.id));
-    if (agreed) await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId: row.id, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
-      declarationVersion: DECLARATION_VERSION, answersHash: account.answersHash,
+    await rememberPlan(db, row.id, answers, selected);
+    if (agreed) await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId: row.id, accountId: account.accountId, kind: "plan", signerName: confirmedName,
+      declarationVersion: DECLARATION_VERSION, answersHash: signed,
       record: { selected, price: monthlyFor(selected), agreed: true, agreement, setupIntentId: intent.id, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH },
     });
     return { clientSecret: intent.client_secret, setupIntentId: intent.id, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH, price: monthlyFor(selected) };
+  });
+}
+
+/* ---- the staging door's synthetic shop (onboarding/signup-staging.ts) ----
+   No card processor is ever called for it: billing refuses test shops
+   (403 TEST_SHOP), and a fake intent would be a lie on the webhook path.
+   The plan is prepared exactly as above, marked `staging`, with no customer
+   and no intent; Open records the owner's assent and activates through the
+   same provisioning as a paid desk, as a test shop. Callers must have passed
+   stagingSignupFixture for this request first. */
+export async function prepareStagingPlan(db: Db, row: Enquiry, choice: PlanChoice) {
+  return withSignupAccount(db, row.id, async (db, account) => {
+    if (account.stripeCustomerId || account.setupIntentId) throw new Error("signup_staging_has_card");
+    const { answers, selected, agreement, answersHash: signed } = await preparedPlan(db, row, account, choice);
+    await db.update(schema.signupAccounts).set({
+      planChoice: { ...selected, agreement, answersHash: signed, price: monthlyFor(selected), agreed: false, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH, staging: true }, updatedAt: new Date(),
+    }).where(eq(schema.signupAccounts.enquiryId, row.id));
+    await rememberPlan(db, row.id, answers, selected);
+    return { staging: true as const, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH, price: monthlyFor(selected) };
   });
 }
 
@@ -200,7 +231,32 @@ export async function acceptServiceAgreement(db: Db, enquiryId: string, setupInt
 
 /* ---- opening the desk ------------------------------------------------ */
 
-export type OpenResult = { opened: true; tenantId: string } | { opened: false; reason: "unknown_intent" | "not_verified" | "not_confirmed" | "already_open" };
+export type OpenResult = { opened: true; tenantId: string } | { opened: false; reason: "unknown_intent" | "not_verified" | "not_confirmed" | "already_open" | "not_staging" };
+
+/** The staging door's Open: the owner's assent to the plan prepared above,
+    then the shared activation as a test shop. Retries are idempotent: one
+    assent row, one desk. */
+export async function openStagingDesk(db: Db, enquiryId: string): Promise<OpenResult> {
+  return withSignupAccount(db, enquiryId, async (db, account): Promise<OpenResult> => {
+    if (account.state === "active") return { opened: false, reason: "already_open" };
+    if (account.state !== "verified") return { opened: false, reason: "not_verified" };
+    const choice = selectedPlan.extend({ agreement: z.string(), answersHash: z.string(), agreed: z.boolean(), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH), staging: z.literal(true) }).safeParse(account.planChoice);
+    if (!choice.success || account.setupIntentId || account.stripeCustomerId || !account.pinHash || !account.confirmedName
+      || choice.data.answersHash !== account.answersHash || !(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
+    const row = (await db.select().from(schema.enquiries).where(eq(schema.enquiries.id, enquiryId)).limit(1))[0];
+    if (!row || !isStagingRuntime(undefined) || !stagingOnboardingMark(row.email, row.details)) return { opened: false, reason: "not_staging" };
+    const selected = selectedPlan.parse(choice.data);
+    const planChoice = { ...choice.data, agreed: true };
+    if (!choice.data.agreed) {
+      await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
+        declarationVersion: DECLARATION_VERSION, answersHash: choice.data.answersHash,
+        record: { selected, price: monthlyFor(selected), agreed: true, agreement: choice.data.agreement, setupIntentId: null, staging: true, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH },
+      });
+      await db.update(schema.signupAccounts).set({ planChoice, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, enquiryId));
+    }
+    return activate(db, enquiryId, { ...account, planChoice }, selected, true);
+  });
+}
 
 /** Stripe said the card is saved. Create the desk, once. */
 export async function openFromSetupIntent(db: Db, intent: { id: string; metadata?: Record<string, string> | null; customer?: string | null; status?: string | null; paymentMethod?: string | null }): Promise<OpenResult> {
@@ -214,6 +270,14 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   if (account.setupIntentId !== intent.id || intent.customer !== account.stripeCustomerId || intent.status !== "succeeded" || !intent.paymentMethod) return { opened: false, reason: "unknown_intent" };
   const choice = selectedPlan.extend({ agreement: z.string(), answersHash: z.string(), agreed: z.literal(true), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH) }).safeParse(account.planChoice);
   if (!choice.success || choice.data.agreement !== intent.metadata?.currencydesk_signup_agreement || choice.data.answersHash !== account.answersHash || !account.pinHash) return { opened: false, reason: "not_confirmed" };
+  return activate(db, enquiryId, account, choice.data, false);
+  });
+}
+
+/* The one activation, under the caller's account lock, once the caller has
+   checked how the plan was agreed (a signed Stripe intent, or the staging
+   door's assent). `testShop`: the desk must be the staging door's test shop. */
+async function activate(db: Db, enquiryId: string, account: Account, choice: z.infer<typeof selectedPlan>, testShop: boolean): Promise<OpenResult> {
   if (account.state === "active") return { opened: false, reason: "already_open" };
   if (account.state !== "verified") return { opened: false, reason: "not_verified" };
   if (!(await stillConfirmed(db, enquiryId))) return { opened: false, reason: "not_confirmed" };
@@ -237,8 +301,8 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
     const m = z.object({ first: z.string(), last: z.string() }).passthrough().parse(member);
     return { ...m, name: `${m.first} ${m.last}`.trim() };
   });
-  const callConsent = choice.data.call && (await signupCallPreference(db, enquiryId)).call;
-  const resolved = resolve({ ...values, plan: choice.data.plan, term: choice.data.term, brief: choice.data.brief, call: callConsent }, fromApplication(row));
+  const callConsent = choice.call && (await signupCallPreference(db, enquiryId)).call;
+  const resolved = resolve({ ...values, plan: choice.plan, term: choice.term, brief: choice.brief, call: callConsent }, fromApplication(row));
   const spec = specFromAnswers(resolved, row);
   spec.email = row.email;
   const pack = signupPack(typeof row.details?.jurisdiction === "string" ? row.details.jurisdiction : null);
@@ -248,11 +312,12 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   if (values.complianceMode === "me") spec.setup.compliance = { mode: "me", name: row.name ?? "", email: row.email };
   else if (values.complianceMode === "else") spec.setup.compliance = { mode: "other", name: values.compName ?? "", email: values.compEmail ?? "" };
   // Retain what remains to be completed without pretending it is ledger money.
-  spec.setup.signup = { version: "2.1", locationCount: choice.data.locations, brief: choice.data.brief, call: callConsent,
+  spec.setup.signup = { version: "2.1", locationCount: choice.locations, brief: choice.brief, call: callConsent,
     vaultCount: values.count ?? null, vaultCountStatus: values.countLater ? "deferred" : "pending-ledger-integration" };
 
   const d = row.details ?? {};
   const stagingSlug = isStagingRuntime(undefined) ? stagingOnboardingMark(row.email, row.details) : null;
+  if (testShop && !stagingSlug) return { opened: false, reason: "not_staging" };
   spec.isTestShop = !!stagingSlug;
   const wanted = stagingSlug || (typeof d.workspace === "string" ? d.workspace.split(".")[0] : "") || spec.slug;
   spec.slug = await freeSlug(db, wanted ?? spec.slug, row.email);
@@ -290,5 +355,4 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
     action: "signup.completed", detail: { enquiryId, plan: account.planChoice ?? null, via: "signup-v2.1" },
   });
   return { opened: true, tenantId: made.tenantId };
-  });
 }

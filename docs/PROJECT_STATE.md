@@ -1,3 +1,31 @@
+## Signup staging payment refusal — 16 November 2026
+
+If a synthetic staging reservation loses a fixture gate after verification,
+`/payment` and `/plan` now return `503 staging_unavailable` before constructing
+a Stripe client. A configured processor must never be the fallback for an
+`@staging.invalid` address. The regression closes the database marker after
+real credential/code/PIN/signature steps with a configured processor spy;
+it failed before the guard and passes with no Stripe call or billing identifiers.
+The shared staging-owner helper and CD221-owned authentication files are unchanged.
+This is a staging walkthrough safeguard, not release or CTO acceptance.
+
+## Signup v2.1 staging walkthrough — 16 November 2026
+
+A synthetic shop from the staging door can now walk the real v2.1 page end to end on
+staging: credential, the 6-digit code shown in the frozen "Staging code" row, PIN,
+chapters, signature, plan, Open with no card, Day 1 in the real Home, sign out, and the
+existing staging sign-in. Only that reservation qualifies: the staging runtime and raw
+Host, the `db_environment` staging marker, and server-written provenance
+(`owner+<h8>@staging.invalid`, `stg-<h8>`, stagingFresh, the staging do-not-contact
+reason). It reuses the ordinary code limits, PIN, answers, signature, assent record,
+provisioning and session upgrade. No Stripe customer, intent or `stripe_customers` row is
+created, the live webhook is untouched, and the desk is a test shop. Ordinary reservations
+and live are unchanged, and no `@staging.invalid` address is ever mailed. Hosted use
+needs the staging database marker (`npm run staging -- mark-db`), which is unverified as
+of this note; without it the page asks for an emailed code as before. Not release, CTO or
+Compliance approval. The legacy sign-in screen does not yet show the staging sign-in code
+(CD221 owns it).
+
 ## Signup v2.1 staging integration — 16 November 2026
 
 Sol requested merging signup to staging. This integration combines the reviewed
