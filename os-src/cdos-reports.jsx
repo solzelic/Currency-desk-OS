@@ -996,7 +996,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : ((!c.idType || !kycIdNumber(c)) ? 'missing ID' : 'ok'); if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft]; if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft]; return ['ID on file', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : ((!c.idType || !kycIdNumber(c)) ? 'missing ID' : 'ok'); if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft]; if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft]; if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft]; return ['ID on file', CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>

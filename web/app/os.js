@@ -4761,19 +4761,15 @@ if (typeof window !== "undefined") {
   const deskTime = window.CDOS.deskTime;
   const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
-  /* The server standing, when this file has one. Otherwise the papers
-     typed on the contact. Every screen that says ID on file uses this. */
+  /* The server standing is the only ID on file answer. Until that
+     read arrives, the desk says it is still checking. Typed papers
+     on the contact are not a pass. */
   function idFileKyc(rec) {
     const standing = rec && rec.idStanding;
-    if (standing) {
-      if (standing.onFile) return "ok";
-      if (standing.chip === "ID expired") return "ID expired";
-      return "missing ID";
-    }
-    if (!rec || !rec.idType || !rec.idNum) return "missing ID";
-    const today = window.CDOS.wallClock ? window.CDOS.wallClock() : businessDate();
-    if (rec.idExpiry && rec.idExpiry < today) return "ID expired";
-    return "ok";
+    if (!standing) return "Checking ID";
+    if (standing.onFile) return "ok";
+    if (standing.chip === "ID expired") return "ID expired";
+    return "missing ID";
   }
   function computeFlags(rows, clients, settings) {
     const map = {};
@@ -51649,7 +51645,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }
   const NUDGE_CTA = {
     verify: {
-      label: 'Run verify check',
+      label: 'Check ID',
       ic: 'id'
     },
     plus: {
@@ -57654,6 +57650,7 @@ ${snap}`;
         const stat = n => {
           const c = clients[n] || {};
           const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !kycIdNumber(c) ? 'missing ID' : 'ok';
+          if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
           if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
           if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft];
           return ['ID on file', CD.green, CD.greenSoft];

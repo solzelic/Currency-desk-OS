@@ -119,13 +119,21 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => stub!.close(() => resolve()));
 });
 
+async function dismissTour(page: Page) {
+  const skip = page.locator(".cdos-tour-skip");
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  await expect(page.locator(".cdos-tour")).toHaveCount(0);
+}
+
 async function shot(page: Page, name: string) {
   if (process.env.PR2B_SHOTS !== "1") return;
+  await dismissTour(page);
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
 }
 
 async function themeShot(page: Page, stem: string) {
   if (process.env.PR2B_SHOTS !== "1") return;
+  await dismissTour(page);
   for (const theme of ["light", "dark"] as const) {
     await page.evaluate((value) => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
@@ -137,7 +145,12 @@ async function themeShot(page: Page, stem: string) {
       if (width === 390) {
         await page.evaluate(() => {
           const flow = document.querySelector("[data-testid='id-check-flow']");
-          if (flow) flow.scrollTop = flow.scrollHeight;
+          if (flow && flow.scrollHeight > flow.clientHeight + 1) {
+            flow.scrollTop = flow.scrollHeight;
+            return;
+          }
+          const scroller = document.querySelector(".client-file .overflow-auto");
+          if (scroller) scroller.scrollTop = scroller.scrollHeight;
         });
         const scrolled = path.join(ARTIFACTS, `pr2-${stem}-390-${theme}-scrolled.png`);
         if (!existsSync(scrolled)) await page.screenshot({ path: scrolled });
@@ -479,8 +492,10 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(photo).toHaveAttribute("height", "96");
     const views = await db.query("SELECT reason FROM idv_crop_views WHERE client_id = $1", [clientId]);
     expect(views.rows.some((row) => row.reason === "eye_comparison")).toBe(true);
+    await expect(file.getByTestId("id-check-reveal-open")).toHaveCount(0);
     await themeShot(page, "badge-passed");
     await themeShot(page, "masked-teller");
+    await themeShot(page, "file-teller");
 
     const otherName = `Other File ${Date.now()}`;
     const other = await page.evaluate(async (legalName) => {
@@ -516,6 +531,25 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("id-check-audit")).toContainText("FINTRAC request");
     await expect(page.getByTestId("id-check-audit")).not.toContainText("AB12348991");
     await themeShot(page, "audit");
+    const openPassed = async () => {
+      await page.locator('[data-app="clients"]').click();
+      await page.getByText(legalName, { exact: true }).click();
+      await expect(page.getByTestId("identity-check")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Show number" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Show the photo" })).toBeVisible();
+    };
+    await signInAtDesk(page, "r.haddad");
+    await landOnDesktop(page);
+    await openPassed();
+    await themeShot(page, "role-manager");
+    await themeShot(page, "file-manager");
+    await page.locator(".client-file-actions button").last().click();
+    await signInAtDesk(page, "j.masri");
+    await landOnDesktop(page);
+    await openPassed();
+    await themeShot(page, "role-owner");
+    await themeShot(page, "file-owner");
+    await page.locator(".client-file-actions button").last().click();
   } finally {
     await request.put("/api/settings/idv", { data: { checksEnabled: false } }).catch(() => {});
     await db.end();
@@ -559,11 +593,20 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
   const insert = async (clientId: string, result: string, method: string, yearsAgo: number) => {
+    const person = method === "in_person";
     await db.query(
       `INSERT INTO idv_check_records
-        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id, verified_at, document_number_last4, name_on_id)
-       VALUES ($1, 'tnt-yorkfx', 'le-yorkfx-canada', 'br-yorkville', $2, '1', $3, $4, 'm.costa', now() - ($5 || ' years')::interval, '8991', 'Fixture Person')`,
-      [`idc_${clientId}_${result}`, clientId, method, result, String(yearsAgo)],
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         inspector_staff_id, verified_at, document_type, document_number_ciphertext, document_number_last4,
+         number_unavailable, issuing_jurisdiction, issuing_country, expiry_date, name_on_id)
+       VALUES ($1, 'tnt-yorkfx', 'le-yorkfx-canada', 'br-yorkville', $2, $3, $4, $5, 'm.costa',
+         $6, now() - ($7 || ' years')::interval, $8, $9, '8991', false, $10, $11, $12, 'Fixture Person')`,
+      [
+        `idc_${clientId}_${result}`, clientId, person ? "1" : "3", method, result,
+        person ? "m.costa" : null, String(yearsAgo),
+        person ? "Passport" : null, person ? "aes-256-gcm$seam" : null,
+        person ? "Canada" : null, person ? "CA" : null, person ? "2030-04-01" : null,
+      ],
     );
   };
   try {
@@ -641,9 +684,15 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
     await openFile(adviceName);
+    await expect(page.getByTestId("client-standing")).toContainText("ID on file");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked");
     await expect(page.getByTestId("id-check-advice")).toContainText("A new ID and selfie check is advised.");
-    await themeShot(page, "badge-advice");
     await expect(page.getByTestId("id-check-badge")).toContainText("photo ID, in person");
+    await themeShot(page, "badge-advice");
+    await openFile(returningName);
+    await expect(page.getByTestId("client-standing")).toContainText("ID on file");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 15 Jan 2030, checked");
+    await expect(page.getByTestId("id-check-advice")).toHaveCount(0);
     await themeShot(page, "badge-in-person");
     await openFile(dueName);
     await expect(page.getByTestId("id-check-due")).toContainText("A new full ID check is needed.");
@@ -680,22 +729,6 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await themeShot(page, "quebec");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
-    await signInAtDesk(page, "r.haddad");
-    await landOnDesktop(page);
-    await themeShot(page, "role-manager");
-    await page.locator('[data-app="clients"]').click();
-    await page.getByText(returningName, { exact: true }).click();
-    await expect(page.getByTestId("identity-check")).toBeVisible();
-    await themeShot(page, "file-manager");
-    await page.locator(".client-file-actions button").last().click();
-    await signInAtDesk(page, "j.masri");
-    await landOnDesktop(page);
-    await themeShot(page, "role-owner");
-    await page.locator('[data-app="clients"]').click();
-    await page.getByText(returningName, { exact: true }).click();
-    await expect(page.getByTestId("identity-check")).toBeVisible();
-    await themeShot(page, "file-owner");
-    await page.locator(".client-file-actions button").last().click();
     const skip = page.locator(".cdos-tour-skip");
     if (await skip.isVisible().catch(() => false)) await skip.click();
     await expect(page.locator(".cdos-tour")).toHaveCount(0);
@@ -713,12 +746,14 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     });
     await expect(page.locator(".win")).toHaveCount(1);
     if (process.env.PR2B_SHOTS === "1") {
+      await dismissTour(page);
       for (const theme of ["light", "dark"] as const) {
         await page.evaluate((value) => {
           (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
         }, theme);
         for (const width of [1280, 390] as const) {
           await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          await dismissTour(page);
           await settingsWin.evaluate((el) => {
             const bar = el.querySelector(".win-bar");
             if (!bar) return;
@@ -766,12 +801,14 @@ test("settings is one opaque window and the privacy phone is formatted", async (
   await expect(page.getByLabel("Privacy phone")).toHaveValue("416-555-0100");
   const settingsWin = page.locator(".win").filter({ has: page.getByTestId("id-check-settings") });
   await expect(settingsWin).toHaveCount(1);
+  await dismissTour(page);
   for (const theme of ["light", "dark"] as const) {
     await page.evaluate((value) => {
       (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
     }, theme);
     for (const width of [1280, 390] as const) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await dismissTour(page);
       await settingsWin.evaluate((el) => {
         const bar = el.querySelector(".win-bar");
         if (!bar) return;
@@ -910,6 +947,17 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
   };
   try {
     await signInAtDesk(page, "m.costa");
+    const beforeStanding = await page.evaluate(() => {
+      const read = (window as unknown as { CDOS: { idFileKyc: (rec: unknown) => string } }).CDOS.idFileKyc;
+      return {
+        bare: read({ idType: "Passport", idNum: "AB1234", idExpiry: "2030-04-01" }),
+        on: read({ idStanding: { onFile: true, chip: "ID on file" } }),
+        gap: read({ idStanding: { onFile: false, chip: "Missing ID" }, idType: "Passport", idNum: "AB1234" }),
+      };
+    });
+    expect(beforeStanding.bare).toBe("Checking ID");
+    expect(beforeStanding.on).toBe("ok");
+    expect(beforeStanding.gap).toBe("missing ID");
     const ids = {
       pass: await made(names.pass),
       unavailable: await made(names.unavailable),

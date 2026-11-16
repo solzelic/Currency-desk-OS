@@ -451,7 +451,7 @@
      Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
-  const NUDGE_CTA = { verify: { label: 'Run verify check', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
+  const NUDGE_CTA = { verify: { label: 'Check ID', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
   function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
