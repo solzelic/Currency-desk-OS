@@ -46,8 +46,8 @@ export const PROGRESS_LINE = "ID check in progress";
 export const PASSED_TEST_LINE = "Check passed (test)";
 export const VERIFIED_SCAN_BADGE = "ID verified, scan and selfie";
 
-export function verifiedScanChip(date: string): string {
-  return `${VERIFIED_SCAN_BADGE}, ${date}`;
+export function verifiedScanChip(date: string, test = false): string {
+  return test ? `${VERIFIED_SCAN_BADGE} (test), ${date}` : `${VERIFIED_SCAN_BADGE}, ${date}`;
 }
 
 export function resolveTier(input: string): TierNumber | null {
@@ -117,6 +117,7 @@ export function expiredLine(isoDate: string): string {
 }
 
 export const TYPED_NOT_RECORDED = "ID typed in, check not recorded";
+export const HAND_TYPED_LINE = "ID typed by hand, not checked";
 export const TOO_OLD_LINE = "This check is too old. A new ID check is needed.";
 
 export function seenInPersonLine(staff: string, type: string, expiry: string, checked: string): string {

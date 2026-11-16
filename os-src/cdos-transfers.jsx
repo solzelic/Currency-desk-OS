@@ -354,7 +354,10 @@
       ? priceDeal({ inCcy: home, outCcy: recvCcy, inAmt: amtN, settings })
       : priceDeal({ inCcy: recvCcy, outCcy: home, inAmt: amtN, settings }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const kyc = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(clients[senderName]) : (!clients[senderName] || !clients[senderName].idType || !clients[senderName].idNum ? "missing ID" : "ok");
+    const sender = clients[senderName];
+    const kyc = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(sender) : (!sender || !sender.idType || !sender.idNum ? "missing ID" : "ok");
+    const idLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(sender) : kyc;
+    const handTyped = idLabel === "ID typed by hand, not checked";
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];
@@ -676,7 +679,7 @@
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
               {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
-              {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.ink : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? CD.ink : CD.flag} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
+              {idRequired && <div data-testid="transfer-sender-id" className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.ink : handTyped ? CD.mute : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? CD.ink : handTyped ? CD.mute : CD.flag} /> {kyc === 'ok' ? 'Sender ID on file, OK.' : handTyped ? idLabel : `ID required. Sender ID is ${idLabel}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>
           )}

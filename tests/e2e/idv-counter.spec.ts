@@ -972,7 +972,7 @@ test("a passed ID check badge never uses the green token", async ({ page, reques
 
 test("typed-by-hand and try-again frames", async ({ page, request }) => {
   test.skip(process.env.PR2B_SHOTS !== "1", "screenshot pass");
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   await enableChecks(request);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
@@ -1031,8 +1031,34 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 900 });
     await lightShot(page, "badge-typed-deal");
+    await page.locator(".cd-money input").first().fill("5000");
+    await page.locator(".cd-money input").first().blur();
+    const purpose = page.locator(".cd-tx-purpose");
+    if (await purpose.count()) {
+      await purpose.fill("Personal travel");
+      await page.locator(".cd-tx-source").fill("Employment income");
+    }
+    await page.getByTestId("before-you-post").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("before-you-post")).toContainText("ID typed by hand, not checked");
+    await expect(page.getByTestId("post-id-row")).toContainText("ID typed by hand, not checked");
+    await lightShot(page, "before-post-typed");
     await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator(".cd-tx-customer input").fill("Maya");
+    await expect(page.getByTestId("suggest-id-chip")).toContainText("ID typed by hand, not checked");
+    await lightShot(page, "suggest-typed", [1280]);
     await page.locator(".cd-tx-x").click();
+    await page.locator('[data-app="transfers"]').click();
+    const newTransfer = page.getByRole("button", { name: /New transfer/i }).first();
+    await expect(newTransfer).toBeVisible({ timeout: 20_000 });
+    await newTransfer.click();
+    const form = page.locator("div.fixed.inset-0").filter({ has: page.getByRole("button", { name: /Create transfer/i }) });
+    await form.getByPlaceholder("Type a name").click();
+    await form.getByPlaceholder("Type a name").fill("Maya Cohen");
+    await form.getByRole("button", { name: "Maya Cohen", exact: true }).click();
+    await form.getByPlaceholder("0.00").first().fill("100");
+    await expect(form.getByTestId("transfer-sender-id")).toContainText("ID typed by hand, not checked");
+    await lightShot(page, "transfer-sender-typed", [1280]);
+    await page.keyboard.press("Escape");
     await page.locator('[data-app="clients"]').click();
     await page.getByText(failName, { exact: true }).click();
     await expect(page.getByTestId("id-check-try-again")).toBeVisible({ timeout: 20_000 });
@@ -1335,6 +1361,14 @@ test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) 
     await expect(typedBadge).toBeVisible({ timeout: 20_000 });
     await expect(typedBadge).toContainText("ID typed by hand, not checked");
     await expect(typedBadge).not.toContainText("Missing ID");
+    const postRow = page.getByTestId("post-id-row");
+    await expect(postRow).toContainText("ID typed by hand, not checked");
+    await expect(postRow).not.toContainText("Customer identified");
+    await expect(page.getByTestId("before-you-post")).toContainText("ID typed by hand, not checked");
+    await expect(page.getByTestId("before-you-post")).not.toContainText(/ready/i);
+    const postMark = await page.getByTestId("post-id-mark").evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(postMark).not.toBe("rgb(31, 138, 76)");
+    await expect(page.getByRole("button", { name: "Get server quote" })).toBeEnabled();
     await expect(page.locator(".cd-tx-nudge")).toHaveCount(0);
     const typedDoc = page.locator(".cd-tx-stats").getByText("Passport", { exact: true });
     const typedPaint = await typedDoc.evaluate((el) => {
@@ -1601,9 +1635,13 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
       return { kyc: flags["agree-row"].kyc, chip: clients[name].idStanding?.chip, onFile: !!clients[name].idStanding?.onFile };
     }, id);
 
+    const clientSearch = () => page.getByPlaceholder(/Search name/);
     const openName = async (name: string) => {
       await page.locator('[data-app="clients"]').click();
-      await page.getByText(name, { exact: true }).click();
+      await clientSearch().fill(name);
+      const card = page.locator("div.cursor-pointer", { hasText: name }).first();
+      await expect(card).toBeVisible();
+      await card.click();
       await expect(page.getByTestId("client-standing")).toBeVisible();
     };
     const closeFile = async () => {
@@ -1627,7 +1665,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
     await closeFile();
     await openName(names.old);
-    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-standing")).toContainText("This check is too old. A new ID check is needed.");
+    await expect(page.getByTestId("client-standing")).not.toContainText("ID typed by hand");
     await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
     await closeFile();
     await openName(names.typed);
@@ -1640,7 +1679,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await closeFile();
     await openName(names.noDate);
     await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
-    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed by hand, not checked");
+    await expect(page.locator(".client-file")).not.toContainText("typed in, check not recorded");
     await closeFile();
     await openName(names.typedExpired);
     await expect(page.getByTestId("client-standing")).toContainText("ID expired");
@@ -1652,7 +1692,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
     await closeFile();
     await openName(names.typedOld);
-    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-standing")).toContainText("This check is too old. A new ID check is needed.");
+    await expect(page.getByTestId("client-standing")).not.toContainText("ID typed by hand");
     await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
     await closeFile();
     await openName(names.typedUnavailable);
@@ -1667,7 +1708,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(listCard(readFailName)).not.toContainText("ID on file");
     await openName(typedOnlyName);
     await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
-    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed by hand, not checked");
+    await expect(page.locator(".client-file")).not.toContainText("typed in, check not recorded");
     await expect(page.locator(".client-file").getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
     await closeFile();
     await openName(readFailName);
@@ -1685,7 +1727,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
     expect(await readFlags(ids.typed)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
     expect(await readFlags(ids.noStaff)).toMatchObject({ kyc: "missing ID", onFile: false });
-    expect(await readFlags(ids.noDate)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.noDate)).toMatchObject({ kyc: "ID typed by hand, not checked", onFile: false });
     expect(await readFlags(ids.typedExpired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.otherShop)).toMatchObject({ kyc: "missing ID", onFile: false });
     expect(await readFlags(ids.typedOld)).toMatchObject({ kyc: "missing ID", onFile: false });
@@ -1693,17 +1735,24 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
 
     await page.locator('[data-app="clients"]').click();
     await page.getByTestId("client-filter-attention").click();
-    await expect(page.getByText(names.pass, { exact: true })).toHaveCount(0);
-    await expect(page.getByText(names.unavailable, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.expired, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.old, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.typed, { exact: true })).toHaveCount(0);
-    await expect(page.getByText(names.noStaff, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.noDate, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.typedExpired, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.otherShop, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.typedOld, { exact: true })).toBeVisible();
-    await expect(page.getByText(names.typedUnavailable, { exact: true })).toBeVisible();
+    const attentionHas = async (name: string, present: boolean) => {
+      await clientSearch().fill(name);
+      const card = page.locator("div.cursor-pointer", { hasText: name });
+      if (present) await expect(card.first()).toBeVisible();
+      else await expect(card).toHaveCount(0);
+    };
+    await attentionHas(names.pass, false);
+    await attentionHas(names.unavailable, true);
+    await attentionHas(names.expired, true);
+    await attentionHas(names.old, true);
+    await attentionHas(names.typed, false);
+    await attentionHas(names.noStaff, true);
+    await attentionHas(names.noDate, true);
+    await attentionHas(names.typedExpired, true);
+    await attentionHas(names.otherShop, true);
+    await attentionHas(names.typedOld, true);
+    await attentionHas(names.typedUnavailable, true);
+    await clientSearch().fill("");
 
     await page.locator('[data-app="ledger"]').click();
     await ensureTill(page);

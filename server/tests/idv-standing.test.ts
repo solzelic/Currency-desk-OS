@@ -1,6 +1,8 @@
 /* What counts as ID on file, and which one-time links may be opened. */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { day, idFileStanding } from "../src/idv/records.js";
+import { verifiedScanChip } from "../src/idv/tiers.js";
 import { personaOneTimeLink } from "../src/idv/persona-calls.js";
 import { personaFileHost } from "../src/idv/inquiry-text.js";
 
@@ -74,7 +76,11 @@ describe("ID on file from the check record", () => {
     });
     expect(idFileStanding({ ...seen, staffSeen: null }).line).toBe("ID typed in, check not recorded");
     expect(idFileStanding({ ...seen, seenOn: null }).line).toBe("ID typed in, check not recorded");
-    expect(idFileStanding({ typedOnly: true, method: "in_person" }).line).toBe("ID typed in, check not recorded");
+    expect(idFileStanding({ typedOnly: true, method: "in_person" })).toMatchObject({
+      chip: "ID typed by hand, not checked",
+      line: "ID typed by hand, not checked",
+    });
+    expect(idFileStanding({ typedOnly: true }).line).not.toContain("typed in, check not recorded");
     expect(idFileStanding({ ...seen, documentExpired: true, expiryIso: "2020-01-01" })).toMatchObject({
       onFile: false,
       chip: "ID expired",
@@ -83,8 +89,10 @@ describe("ID on file from the check record", () => {
     expect(idFileStanding({ ...seen, sameShop: false }).onFile).toBe(false);
     expect(idFileStanding({ ...seen, withinFiveYears: false })).toMatchObject({
       onFile: false,
+      chip: "This check is too old. A new ID check is needed.",
       line: "This check is too old. A new ID check is needed.",
     });
+    expect(idFileStanding({ ...seen, withinFiveYears: false }).chip).not.toContain("ID typed by hand");
     expect(idFileStanding({ ...seen, numberUnavailable: true }).onFile).toBe(false);
     expect(idFileStanding({ ...seen, result: "needs_review" }).onFile).toBe(false);
     expect(idFileStanding({ ...seen, acceptedPhotoId: false }).onFile).toBe(false);
@@ -93,13 +101,24 @@ describe("ID on file from the check record", () => {
 
   it("keeps the gap for declined, review, and no record", () => {
     expect(idFileStanding(null)).toMatchObject({ onFile: false, chip: "Missing ID", gap: "missing ID" });
-    expect(idFileStanding({ ...pass, result: "declined", line: "Not passed 16 Nov 2026" }).onFile).toBe(false);
-    expect(idFileStanding({ ...pass, result: "needs_review", line: "Under review since 16 Nov 2026" }).onFile).toBe(false);
-    expect(idFileStanding({ ...pass, result: "method_not_completed", line: "Method not completed. Check the ID at the counter." }).onFile).toBe(false);
+    const declined = idFileStanding({ ...pass, result: "declined", line: "Not passed 16 Nov 2026" });
+    expect(declined.onFile).toBe(false);
+    expect(declined.chip).toBe("Not passed 16 Nov 2026");
+    expect(declined.chip).not.toContain("ID typed by hand");
+    const review = idFileStanding({ ...pass, result: "needs_review", line: "Under review since 16 Nov 2026" });
+    expect(review.chip).toBe("Under review since 16 Nov 2026");
+    expect(review.chip).not.toContain("ID typed by hand");
+    expect(idFileStanding({ ...pass, result: "method_not_completed", line: "Method not completed. Check the ID at the counter." }).chip).toBe("Method not completed. Check the ID at the counter.");
   });
 
   it("uses the scan-and-selfie badge only after a pass on this shop", () => {
+    expect(verifiedScanChip("16 Nov 2026")).toBe("ID verified, scan and selfie, 16 Nov 2026");
+    expect(verifiedScanChip("16 Nov 2026", true)).toBe("ID verified, scan and selfie (test), 16 Nov 2026");
     expect(idFileStanding(pass).chip).toBe(verified);
+    expect(idFileStanding({ ...pass, testPass: true }).chip).toBe("ID verified, scan and selfie (test), 16 Nov 2026");
+    const records = readFileSync(new URL("../src/idv/records.ts", import.meta.url), "utf8");
+    expect(records).toContain("return verifiedScanChip(date, test);");
+    expect(records).toContain("testPass: test && method === \"id_and_selfie\" && result === \"pass\"");
     const pending = { ...pass, result: "in_progress", line: "ID check in progress" };
     const failed = { ...pass, result: "declined", line: "Not passed 16 Nov 2026" };
     const otherShop = { ...pass, sameShop: false };

@@ -14,7 +14,7 @@ import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED, TOO_OLD_LINE,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED, HAND_TYPED_LINE, TOO_OLD_LINE,
   branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
   verifiedScanChip,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
@@ -644,6 +644,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       documentType: docType,
       expiryIso,
       sameShop: true,
+      testPass: test && method === "id_and_selfie" && result === "pass",
       original: method === "returning_client" || result === "returning_confirmed" ? {
         result: str(row, "original_result") ?? "",
         method: originalMethod,
@@ -794,6 +795,7 @@ export type StandingInput = {
   expiryIso?: string | null;
   sameShop?: boolean;
   typedOnly?: boolean;
+  testPass?: boolean;
   original?: StandingInput | null;
 };
 
@@ -821,7 +823,7 @@ function scanVerifiedChip(record: StandingInput): string | null {
   if (record.method !== "id_and_selfie" || record.result !== "pass") return null;
   const date = (record.seenOn || "").trim();
   if (!date || !qualifiesAsId(record)) return null;
-  return verifiedScanChip(date);
+  return verifiedScanChip(date, record.testPass === true);
 }
 
 function qualifiesAsId(record: StandingInput | null | undefined): boolean {
@@ -848,7 +850,10 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
   if (!latest) {
     return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
   }
-  if (latest.typedOnly || (latest.method === "in_person" && (!latest.staffSeen || !latest.seenOn))) {
+  if (latest.typedOnly) {
+    return { onFile: false, chip: HAND_TYPED_LINE, title: "Not identified", line: HAND_TYPED_LINE, gap: "missing ID" };
+  }
+  if (latest.method === "in_person" && (!latest.staffSeen || !latest.seenOn)) {
     return { onFile: false, chip: "Missing ID", title: "Not identified", line: TYPED_NOT_RECORDED, gap: "missing ID" };
   }
   const line = latest.line || "";
@@ -871,13 +876,17 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
     return { onFile: false, chip: "ID expired", title: "ID expired", line: shown, gap: "expired ID" };
   }
   if (latest.withinFiveYears === false) {
-    return { onFile: false, chip: "Missing ID", title: "Not identified", line: TOO_OLD_LINE, gap: "missing ID" };
+    return { onFile: false, chip: TOO_OLD_LINE, title: "Not identified", line: TOO_OLD_LINE, gap: "missing ID" };
+  }
+  if (latest.result === "declined" || latest.result === "needs_review" || latest.result === "method_not_completed") {
+    const shown = (latest.line || "").trim() || NOT_ON_FILE;
+    return { onFile: false, chip: shown, title: "Not identified", line: shown, gap: "missing ID" };
   }
   return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
 }
 
 function statusLine(
-  result: string, method: CheckMethod, date: string, _test: boolean,
+  result: string, method: CheckMethod, date: string, test: boolean,
   extra: { expiredStamp: string | null; returningStamp: string | null },
 ): string {
   if (extra.expiredStamp) return extra.expiredStamp;
@@ -887,7 +896,7 @@ function statusLine(
   if (result === "expired") return extra.expiredStamp ?? "Expired";
   if (result === "returning_confirmed" || method === "returning_client") return extra.returningStamp ?? "Returning client";
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
-  if (result === "pass" && method === "id_and_selfie") return verifiedScanChip(date);
+  if (result === "pass" && method === "id_and_selfie") return verifiedScanChip(date, test);
   return PROGRESS_LINE;
 }
 

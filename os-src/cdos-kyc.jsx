@@ -475,7 +475,7 @@
     const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
-    const handTyped = !idMissing && !(standing && standing.onFile);
+    const handTyped = !!(standing && standing.chip === 'ID typed by hand, not checked');
     const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/high|enhanced/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
     const highRisk = riskLvl === 'High';
@@ -511,7 +511,7 @@
     const escalateRisk = highRisk || (riskLvl === 'Medium' && !!(settings && settings.escalateMediumRisk));
     if (ESCALATE_HIGH_RISK && escalateRisk && tier === 'verify') { tier = 'plus'; title = 'Enhanced ' + title.charAt(0).toLowerCase() + title.slice(1); reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`; }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force' && !handTyped) { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
+    if (idRequired && !lastFull && level !== 'force' && !handTyped) { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID. ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
     if (dismissed && level !== 'force') return null;
     const force = level === 'force';
     const BLUE = '#2B50E2';

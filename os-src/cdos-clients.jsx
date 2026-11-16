@@ -543,8 +543,10 @@
     if (state === 'ok') { const tone = window.CDOS.idBadgeTone('checked'); return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', tone.c, tone.bg]; }
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
     if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
-    if (rec && rec.idType && rec.idNum) { const tone = window.CDOS.idBadgeTone('hand'); return ['ID typed by hand, not checked', tone.c, tone.bg]; }
-    return [(rec && rec.idStanding && rec.idStanding.chip) || 'Missing ID', CD.flag, CD.flagSoft];
+    const chip = rec && rec.idStanding && rec.idStanding.chip;
+    if (chip === 'ID typed by hand, not checked') { const tone = window.CDOS.idBadgeTone('hand'); return [chip, tone.c, tone.bg]; }
+    if (chip && chip !== 'Missing ID') return [chip, CD.flag, CD.flagSoft];
+    return [chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
@@ -884,7 +886,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
     const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
     const papers = !!(rec && rec.idType && rec.idNum);
-    const handTyped = papers && standing && !standing.onFile && standing.chip !== 'ID expired' && !(rec && rec.idCheckError);
+    const handTyped = standing && standing.chip === 'ID typed by hand, not checked' && !(rec && rec.idCheckError);
     const fromCheck = (rec && rec.idCheckError) ? rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.gap : (idState === 'ok' ? null : idState);
     const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
@@ -1263,7 +1265,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const shown = readError ? { ...rec, idCheckError: readError } : rec;
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
     const failedRead = !!(readError || (rec && rec.idCheckError));
-    const handTyped = !failedRead && !!(rec && rec.idType && rec.idNum) && !(standing && standing.onFile) && !(standing && standing.chip === 'ID expired') && !!standing;
+    const handTyped = !failedRead && standing && standing.chip === 'ID typed by hand, not checked';
     const stat = failedRead ? (readError || rec.idCheckError) : handTyped ? 'ID typed by hand, not checked' : (standing ? standing.chip : fallbackStat);
     const checkedTone = window.CDOS.idBadgeTone('checked');
     const handTone = window.CDOS.idBadgeTone('hand');

@@ -201,7 +201,7 @@
        A failed read is neutral. It is not a pass, so it is not green. */
     const unread = !!(readError || (rec && rec.idCheckError));
     const idOk = !unread && kycState === 'ok';
-    const handTyped = !unread && !idOk && kycState === 'missing ID' && rec && rec.idType && rec.idNum;
+    const handTyped = !unread && !!(viewed && viewed.idStanding && viewed.idStanding.chip === 'ID typed by hand, not checked');
     const checkedTone = window.CDOS.idBadgeTone('checked');
     const handTone = window.CDOS.idBadgeTone('hand');
     const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
@@ -1192,7 +1192,14 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   {!isVoid && flagCount >= 2 && openAckable && <button onClick={ackAll} title="Mark every open compliance item on this deal as reviewed" className="flex items-center gap-1 text-[11px] px-2 py-1" style={{ background: 'transparent', color: CD.mute, border: `1px solid ${CD.line}`, borderRadius: 7 }} onMouseEnter={e => { e.currentTarget.style.color = CD.ink; e.currentTarget.style.borderColor = CD.mute; }} onMouseLeave={e => { e.currentTarget.style.color = CD.mute; e.currentTarget.style.borderColor = CD.line; }}><Ic n="check" s={12} c="currentColor" /> Acknowledge all</button>}
                 </div>);
               })()}
-              {!flag.single && !flag.str && (flag.kyc === 'ok' || !flag.idNeeded) && !(flag.kyc !== 'ok' && !flag.idNeeded) && <div className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.green, background: CD.greenSoft, borderRadius: 9 }}><Ic n="checkcircle" s={14} /> No flags — within thresholds, ID on file.</div>}
+              {(() => {
+                const idLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(clients[row.customer]) : (flag.kyc === 'ok' ? 'ID on file' : flag.kyc);
+                const handPosted = idLabel === 'ID typed by hand, not checked';
+                if (flag.single || flag.str) return null;
+                if (handPosted) return <div data-testid="posted-id-label" className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.mute, background: CD.lineSoft, borderRadius: 9 }}><Ic n="alert" s={14} c={CD.mute} /> ID typed by hand, not checked</div>;
+                if (flag.kyc === 'ok') return <div className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.green, background: CD.greenSoft, borderRadius: 9 }}><Ic n="checkcircle" s={14} /> No flags. Within thresholds, ID on file.</div>;
+                return null;
+              })()}
 
               {flag.single && (
                 <div className="px-3 py-2.5 mb-2" style={{ background: isFiled ? CD.greenSoft : CD.flagSoft, borderRadius: 9 }}>
@@ -1210,13 +1217,13 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   </div>
                 </div>
               )}
-              {flag.kyc && flag.kyc !== 'ok' && flag.idNeeded && (
+              {flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && flag.idNeeded && (
                 <div className="px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: CD.flagSoft, borderRadius: 9 }}>
                   <div className="text-[12px] font-medium flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="id" s={14} /> Client ID — {flag.kyc} <span style={{ color: CD.mute, fontWeight: 400 }}>· required over {fmtHome(flag.idFloor)}</span></div>
                   <button onClick={() => onOpenClient(row.customer, row.ref)} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" style={{ borderRadius: 7, background: CD.ink, color: 'var(--cd-on-ink)' }}><Ic n="users" s={13} c="var(--cd-on-ink)" /> Open in Clients</button>
                 </div>
               )}
-              {flag.kyc && flag.kyc !== 'ok' && !flag.idNeeded && (
+              {flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && !flag.idNeeded && (
                 <div className="px-3 py-2.5" style={{ background: row.idNoteAcked ? CD.lineSoft : CD.amberSoft, borderRadius: 9 }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[12px] font-medium" style={{ color: row.idNoteAcked ? CD.mute : CD.amber }}><div className="flex items-center gap-1.5"><Ic n={row.idNoteAcked ? 'check' : 'id'} s={14} /> No ID on file{row.idNoteAcked ? ' — acknowledged' : ''}</div><div className="text-[10px] mt-0.5" style={{ color: CD.mute }}>Not required under {fmtHome(flag.idFloor)} · {fmtHome(inCad)} deal{row.idNoteInfo ? ` · ${row.idNoteInfo.by}` : ''}</div></div>

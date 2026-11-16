@@ -39,6 +39,21 @@ describe("idv source locks", () => {
     expect(panel).not.toContain("ID details from this check are not saved on the desk");
   });
 
+  it("prints a typed ID from one helper on every reader", () => {
+    const root = join(import.meta.dirname, "../..");
+    const modules = readFileSync(join(root, "os-src/cdos-modules.jsx"), "utf8");
+    expect(modules).toContain("function idStandingLabel");
+    expect(modules).toContain("idStandingLabel(rec)");
+    for (const file of [
+      "os-src/cdos-txmodal.jsx",
+      "os-src/cdos-reports.jsx",
+      "os-src/cdos-transfers.jsx",
+      "os-src/cdos-ledger.jsx",
+    ]) {
+      expect(readFileSync(join(root, file), "utf8"), file).toContain("idStandingLabel");
+    }
+  });
+
   it("compares the webhook signature with timingSafeEqual", () => {
     const text = readFileSync(join(root, "idv/providers/persona/index.ts"), "utf8");
     const body = text.slice(text.indexOf("function setOk"), text.indexOf("function verify"));

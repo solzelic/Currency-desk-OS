@@ -35,6 +35,19 @@
     if (standing.chip === "ID expired") return "ID expired";
     return "missing ID";
   }
+  /* The words a reader prints. idFileKyc stays the gate answer
+     (ok, or not). A typed ID with no check record is this sentence
+     on every reader. A real check state keeps that sentence. */
+  function idStandingLabel(rec) {
+    if (rec && rec.idCheckError) return rec.idCheckError;
+    const state = idFileKyc(rec);
+    const chip = rec && rec.idStanding && rec.idStanding.chip;
+    if (state === "ok") return chip || "ID on file";
+    if (chip === "ID typed by hand, not checked") return chip;
+    if (state === "Checking ID" || state === "ID expired") return state;
+    if (chip && chip !== "Missing ID") return chip;
+    return state || "missing ID";
+  }
   /* A passed or paid check uses the neutral chip, the same family as
      the other status chips. It does not use the green success token.
      A hand-typed ID stays the grey mute chip, and it uses a different
@@ -144,8 +157,10 @@
       const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer];
       let kyc = idFileKyc(rec);
+      const label = idStandingLabel(rec);
       const pep = !!(rec && rec.pepReview === "open");
       if (kyc === "ok" && settings.requireIdPhoto && !(rec && rec.photo)) kyc = "photo needed";
+      else if (kyc !== "ok" && label === "ID typed by hand, not checked") kyc = label;
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
@@ -515,6 +530,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, idFileKyc, idBadgeTone, Audit, Calc, ReceiptModal, deskTime, Tag
+    computeFlags, computeAlerts, idFileKyc, idStandingLabel, idBadgeTone, Audit, Calc, ReceiptModal, deskTime, Tag
   });
 })();

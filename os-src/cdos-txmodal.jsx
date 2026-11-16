@@ -261,9 +261,9 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const failed = !!c.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = failed ? c.idCheckError : state === 'ok' ? ((c.idStanding && c.idStanding.chip) || 'ID on file') : state; const onfile = !failed && state === 'ok'; return (
+              {shown.map(n => { const c = clients[n] || {}; const failed = !!c.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : (failed ? c.idCheckError : state === 'ok' ? ((c.idStanding && c.idStanding.chip) || 'ID on file') : state); const onfile = !failed && state === 'ok'; const hand = st === 'ID typed by hand, not checked'; const tone = (failed || hand) ? window.CDOS.idBadgeTone('hand') : onfile ? window.CDOS.idBadgeTone('checked') : null; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
-                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : onfile ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft, color: failed ? CD.mute : onfile ? window.CDOS.idBadgeTone('checked').c : CD.flag }}>{st}</span>
+                  <span>{n}</span><span data-testid="suggest-id-chip" className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: tone ? tone.bg : CD.flagSoft, color: tone ? tone.c : CD.flag }}>{st}</span>
                 </button>); })}
               {shown.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
               <button onMouseDown={e => e.preventDefault()} onClick={() => { onAddNew(); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> {idRequired ? 'Scan ID & add new client' : 'Add new client'}{query ? ` “${query.trim()}”` : ''}</button>
@@ -305,7 +305,7 @@
       window.addEventListener("cdos-id-standing", onStanding);
       window.addEventListener("cdos-id-reread", onReread);
       return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
-    }, [rec && rec.clientId]);
+    }, [rec && rec.clientId, rec && rec.idType, rec && rec.idNum, rec && rec.idExpiry]);
     const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
     const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
     const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
@@ -314,7 +314,7 @@
     const unread = !!(readError || (rec && rec.idCheckError));
     const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
-    const handTyped = !unread && !idOk && kycState === 'missing ID' && !papersMissing;
+    const handTyped = !unread && !!(viewed && viewed.idStanding && viewed.idStanding.chip === 'ID typed by hand, not checked');
     const checkedTone = window.CDOS.idBadgeTone('checked');
     const handTone = window.CDOS.idBadgeTone('hand');
     const badge = unread
@@ -383,18 +383,19 @@
   }
 
   /* ---------- checklist row ---------- */
-  function Check({ ok, warn, label, sub, action, mark, onActivate }) {
+  function Check({ ok, warn, hand, label, sub, action, mark, onActivate, testId }) {
+    const ticked = ok && !hand;
     const copy = (
       <>
-        <div className="text-[12.5px] leading-tight" style={{ color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ok ? 500 : 400 }}>{label}</div>
+        <div className="text-[12.5px] leading-tight" style={{ color: hand ? CD.mute : ticked ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute, fontWeight: ticked ? 500 : 400 }}>{label}</div>
         {sub && <div className="text-[11px] mt-0.5 leading-snug" style={{ color: warn ? CD.amber : CD.faint }}>{sub}</div>}
         {action}
       </>
     );
     return (
-      <div className={'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')}>
-        <span className="flex-none grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', border: ok ? 'none' : `1.5px solid ${warn ? CD.amber : CD.line}`, background: ok ? CD.green : 'transparent', marginTop: 1 }}>
-          {ok ? <Ic n="check" s={11} c="var(--cd-on-ink)" /> : warn ? <Ic n="alert" s={11} c={CD.amber} /> : null}
+      <div data-testid={testId || undefined} className={'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')}>
+        <span data-testid={testId ? testId + '-mark' : undefined} className="flex-none grid place-items-center" style={{ width: 18, height: 18, borderRadius: '50%', border: ticked ? 'none' : `1.5px solid ${hand ? CD.line : warn ? CD.amber : CD.line}`, background: ticked ? CD.green : hand ? CD.lineSoft : 'transparent', marginTop: 1 }}>
+          {ticked ? <Ic n="check" s={11} c="var(--cd-on-ink)" /> : (hand || warn) ? <Ic n="alert" s={11} c={hand ? CD.mute : CD.amber} /> : null}
         </span>
         {onActivate
           ? <button type="button" onClick={onActivate} className="cd-tx-check-go min-w-0 flex-1">{copy}</button>
@@ -769,6 +770,11 @@
       ? (unpriced || !idRow || idRow.threshold == null || overId)
       : (unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend));
     const idOk = kyc === 'ok';
+    /* Papers still pass the gate. A typed ID with no check on file
+       does not get a tick or a Ready, and the deal still posts. */
+    const fileState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const handLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(rec) : '';
+    const handPosted = !!customer && idOk && fileState !== 'ok' && handLabel === 'ID typed by hand, not checked';
     const recent = useMemo(() => {
       if (!customer) return { sum: 0, unknown: false };
       let sum = 0, unknown = false;
@@ -799,7 +805,7 @@
     if (isBill) { reqs.push({ key: 'biller', ok: !!biller.trim(), label: 'Biller' }); reqs.push({ key: 'acct', ok: !!account.trim(), label: 'Account number' }); }
     // identity
     const custLabel = isSend ? 'Sender' : isReceive ? 'Recipient' : isMO ? 'Purchaser' : isBill ? 'Payer' : 'Customer';
-    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, warn: !!customer && !idOk, label: `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file`) : null });
+    if (idRequired) reqs.push({ key: 'id', ok: !!customer && idOk, hand: handPosted, warn: !!customer && !idOk, label: handPosted ? 'ID typed by hand, not checked' : `${custLabel} identified`, sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : !idOk ? (phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc}. Fix it on the client file`) : null });
     else reqs.push({ key: 'cust', ok: !!customer.trim(), label: customer.trim() ? `${custLabel}: ${customer}` : `${custLabel} name`, sub: !customer.trim() ? 'A name is required — ID not needed at this amount, but capture who this is' : 'No ID needed at this amount' });
     // reportable capture
     if (single) {
@@ -1464,9 +1470,9 @@
                 <div className="px-3.5 py-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 12 }}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
-                    <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
+                    <span data-testid="before-you-post" className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: handPosted ? CD.lineSoft : allGreen ? CD.greenSoft : CD.lineSoft, color: handPosted ? CD.mute : allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace', whiteSpace: 'normal', textAlign: 'right' }}>{handPosted ? 'ID typed by hand, not checked' : allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} hand={r.hand} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} testId={r.key === 'id' ? 'post-id-row' : ''} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}

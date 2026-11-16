@@ -539,8 +539,7 @@
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
             const idNum = kycIdNumber(c);
-            const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : ((!c.idType || !idNum) ? 'missing ID' : 'ok');
-            const st = c.idCheckError ? c.idCheckError : state === 'ok' ? 'ID on file' : state;
+            const st = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : (c.idCheckError ? c.idCheckError : ((!c.idType || !idNum) ? 'missing ID' : 'ok'));
             return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
       }
       return [];
@@ -996,7 +995,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (c.idCheckError) return [c.idCheckError, CD.mute, CD.lineSoft]; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : ((!c.idType || !kycIdNumber(c)) ? 'missing ID' : 'ok'); if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft]; if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft]; if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft]; const tone = window.CDOS.idBadgeTone('checked'); return [(c.idStanding && c.idStanding.chip) || 'ID on file', tone.c, tone.bg]; };
+        const stat = (n) => { const c = clients[n] || {}; const label = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : 'missing ID'; if (c.idCheckError || label === 'Checking ID') return [label, CD.mute, CD.lineSoft]; if (label === 'ID expired') return [label, CD.flag, CD.flagSoft]; if (label === 'ID typed by hand, not checked') { const tone = window.CDOS.idBadgeTone('hand'); return [label, tone.c, tone.bg]; } const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : 'missing ID'; if (state !== 'ok') return [label, CD.flag, CD.flagSoft]; const tone = window.CDOS.idBadgeTone('checked'); return [label, tone.c, tone.bg]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
