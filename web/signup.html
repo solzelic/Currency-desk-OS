@@ -72,15 +72,15 @@
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctl ? ctl.signal : undefined,
     }).then(function (r) {
-      if (timer) clearTimeout(timer);
-      return r.json().then(function (j) { return { status: r.status, body: j || {} }; },
-        function () { return { status: r.status, body: {} }; });
-    }, function (err) {
-      if (timer) clearTimeout(timer);
-      /* the network, not the server: say so in the screen's own words */
-      return { status: 0, body: { error: "network", detail: "We couldn’t reach CurrencyDesk just now. Check your connection and try again." }, err: err };
-    });
+      return r.json().then(function (j) {
+        if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("invalid response");
+        return { status: r.status, body: j };
+      });
+    }).catch(function () {
+      return { status: 0, body: { error: "network", detail: NET } };
+    }).finally(function () { if (timer) clearTimeout(timer); });
   }
+
   function api(method, suffix, body, ms) {
     return call(method, "/api/onboarding/" + encodeURIComponent(CD.code || "") + suffix, body, ms);
   }
@@ -91,6 +91,7 @@
     code: "",
     known: {},
     names: {},
+    states: {},
     checking: "",
     throttled: false,
     err: "",
@@ -129,19 +130,32 @@
     checkRef: function (v, done) {
       var id = String(v || "").toUpperCase();
       clearTimeout(CD._rt);
-      if (!ID.test(id) || CD.known[id] === true || CD.known[id] === false) return;
+      var request = CD._refRequest = (CD._refRequest || 0) + 1;
+      CD.checking = ""; CD.throttled = false; CD.err = "";
+      if (CD.code && CD.code !== id) {
+        CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
+      }
+      CD.code = ""; CD.alreadyOpen = false; tabSet("");
+      if (CD.comp) CD.comp.set("operatingName", "");
+      function select() {
+        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
+        if (CD.comp) CD.comp.set("operatingName", CD.names[id]);
+      }
+      if (!ID.test(id)) return;
+      if (CD.known[id] === true) { select(); return; }
+      if (CD.known[id] === false) return;
       CD._rt = setTimeout(function () {
         CD.checking = id; done();
         call("GET", "/api/onboarding/" + encodeURIComponent(id) + "/state").then(function (r) {
+          if (request !== CD._refRequest) return;
           CD.checking = "";
           if (r.status === 429) { CD.throttled = true; done(); return; }
-          CD.throttled = false;
           if (r.status === 200 && r.body.valid) {
             CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
-            CD.code = id; tabSet(id);
-            if (CD.comp) CD.comp.set("operatingName", CD.names[id]);
-            if (r.body.state === "active") CD.alreadyOpen = true;
+            CD.states[id] = r.body.state; select();
           } else if (r.status === 404) CD.known[id] = false;
+          else CD.err = NET;
           done();
         });
       }, 450);
@@ -256,8 +270,9 @@
 
     /* ---- after the code: the server's copy of everything ------------------ */
     loadResume: function (fresh) {
+      var id = CD.code, nav = CD._nav || 0;
       return api("GET", "/resume").then(function (r) {
-        if (r.status !== 200) return false;
+        if (CD.code !== id || (CD._nav || 0) !== nav || r.status !== 200) return false;
         var c = CD.comp, b = r.body;
         CD.pack = b.pack || null;
         CD.applyPack(c, CD.pack);
@@ -266,14 +281,16 @@
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
         if (CD.pack) data.country = CD.pack.code;
-        c.setState(function (s) { return { data: Object.assign({}, s.data, data) }; });
+        var modes = {};
+        Object.keys((b.answers || {}).count || {}).forEach(function (cc) { modes[cc] = b.answers.count[cc].mode; });
         CD.pinSet = !!b.pinSet;
-        var to = SCREEN_OF[b.lastStep];
-        /* a finished screen reopens on the one after it (the prototype's own order, so the one-shop branch skips "more than one") */
-        if (to != null && b.saved && b.lastStep !== "22-confirm") to = c._after(to);
-        if (to != null) CD._resumeTo = fresh ? to : null;
-        if (!fresh && to != null) { c._dir = 1; c.setState({ i: to }); }
-        return true;
+        return new Promise(function (resolve) { c.setState(function (s) { return { data: Object.assign({}, s.data, data), cntMode: modes }; }, function () {
+          var to = SCREEN_OF[b.lastStep];
+          if (to != null && b.saved && b.lastStep !== "22-confirm") to = c._after(to);
+          if (to != null) CD._resumeTo = fresh ? to : null;
+          if (!fresh && to != null) { c._dir = 1; c.setState({ i: to }); }
+          resolve(true);
+        }); });
       });
     },
     applyPack: function (c, p) {
@@ -296,8 +313,10 @@
       if (CD._pass === i) { CD._pass = null; return true; }
       if (CD.seeded) return true;
       if (CD._busy) return false;
-      var go = function () { CD._busy = false; CD._pass = i; c.next(); };
-      var stop = function (msg) { CD._busy = false; CD.err = msg || ""; c.forceUpdate(); };
+      var id = CD.code, nav = CD._nav || 0;
+      var current = function () { return c.state.i === i && CD.code === id && (CD._nav || 0) === nav; };
+      var go = function () { CD._busy = false; if (!current()) return; CD._pass = i; c.next(); };
+      var stop = function (msg) { CD._busy = false; if (current()) { CD.err = msg || ""; c.forceUpdate(); } };
       if (i === 0) {
         if (CD.alreadyOpen) { CD.err = "This desk is already open. Sign in."; location.assign("/login"); return false; }
         return true;
@@ -315,7 +334,8 @@
       if (i === 18) {
         CD._busy = true;
         api("POST", "/pin", { pin: d.pin, confirm: d.pin2 }).then(function (r) {
-          if (r.status === 200) { CD._busy = false; CD._pass = i; c.next(); return; }
+          if (r.status === 200) return go();
+          if (!current()) { CD._busy = false; return; }
           CD._busy = false;
           if (r.status === 401) return CD.signInAgain(c, why(r));
           c._pinFail(why(r, r.status === 0 ? NET : "That PIN wasn’t saved. Try again."));
@@ -326,7 +346,8 @@
       return true;
     },
     /* Skip links ("I'll add this later" and the like): chapters decide (signup-v2.1-chapters.js). */
-    beforeGo: function (c, n) { return CD.chapterGo ? CD.chapterGo(c, n) : true; },
+    beforeGo: function (c, n) { CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
+    navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; },
     signInAgain: function (c, msg) {
       /* The enrolment session lapsed (24 hours idle) or was opened in another
          browser. Resuming with the credential belongs to the Sign-in pack;
@@ -371,9 +392,12 @@
       var id = (ret && ret.id) || tabGet();
       if (!ID.test(id)) return;
       CD.code = id;
+      var bootRequest = CD._refRequest || 0;
       call("GET", "/api/onboarding/" + encodeURIComponent(id) + "/state").then(function (r) {
+        if ((CD._refRequest || 0) !== bootRequest) return;
         if (r.status !== 200 || !r.body.valid) { tabSet(""); return; }
         CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
+        CD.states[id] = r.body.state; CD.alreadyOpen = r.body.state === "active";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
         if (r.body.state === "active") { CD.alreadyOpen = true; c.setState({ i: 0 }); return; }
         if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
@@ -435,11 +459,13 @@
   Object.assign(CD, {
     /* Continue on a chapter screen (called from the core's beforeNext) */
     chapterNext: function (c, go, stop) {
-      var i = c.state.i, d = c.state.data;
+      var i = c.state.i, d = c.state.data, id = CD.code, nav = CD._nav || 0;
+      var current = function () { return i === c.state.i && id === CD.code && nav === (CD._nav || 0); };
       if (i === 13) {
         if (!d.signed) return true; /* the prototype refuses on its own */
         CD._busy = true;
         api("POST", "/confirm", { signed: true, name: d.ownerName }).then(function (r) {
+          if (!current()) { CD._busy = false; return; }
           if (r.status === 200) { CD.declaration = r.body.declaration || ""; return go(); }
           if (r.status === 401) { CD._busy = false; return CD.signInAgain(c, why(r)); }
           c.set("signed", false); stop(why(r, NET));
@@ -449,6 +475,7 @@
       if (SAVES[i]) {
         CD._busy = true;
         CD.save(c, i, d).then(function (r) {
+          if (!current()) { CD._busy = false; return; }
           if (r.status === 200) return go();
           if (r.status === 401) { CD._busy = false; return CD.signInAgain(c, why(r)); }
           stop(why(r, NET));
@@ -465,7 +492,12 @@
         : (i === 11 && n === 24) ? { step: "20-team", answers: { team: [] }, to: 13 }
         : null;
       if (!skip) return true;
+      if (CD._busy) return false;
+      CD._busy = true;
+      var id = CD.code, nav = CD._nav || 0;
       api("PUT", "/answers", { step: skip.step, answers: skip.answers }).then(function (r) {
+        CD._busy = false;
+        if (CD.code !== id || c.state.i !== i || (CD._nav || 0) !== nav) return;
         if (r.status === 200) { CD.savedAnswers(); CD._goPass = true; c.go(skip.to != null ? skip.to : n); return; }
         if (r.status === 401) return CD.signInAgain(c, why(r));
         CD.err = why(r, NET); c.forceUpdate();
@@ -473,7 +505,9 @@
       return false;
     },
     save: function (c, i, d) {
-      return api("PUT", "/answers", { step: STEP_OF[i], answers: toServer(c, i, d) }).then(function (r) { if (r.status === 200) CD.savedAnswers(); return r; });
+      var answers;
+      try { answers = toServer(c, i, d); } catch (e) { return Promise.resolve({ status: 422, body: { detail: e.message } }); }
+      return api("PUT", "/answers", { step: STEP_OF[i], answers: answers }).then(function (r) { if (r.status === 200) CD.savedAnswers(); return r; });
     },
     savedAnswers: function () {
       CD._answersRevision = (CD._answersRevision || 0) + 1;
@@ -514,8 +548,11 @@
   });
 
   /* ---- answers: the prototype's names ⇄ the server's (signup-answers.ts) */
-  function digits(v) { return String(v == null ? "" : v).replace(/[^0-9.]/g, ""); }
-  function amount(v) { var s = digits(v); return /^\d{1,12}(\.\d{1,2})?$/.test(s) ? s : ""; }
+  function amount(v) {
+    var s = String(v == null ? "" : v).trim();
+    if (s && !/^\d{1,12}(\.\d{1,2})?$/.test(s)) throw new Error("Enter a non-negative amount with up to two decimal places.");
+    return s;
+  }
   function member(t) {
     var parts = String(t.name || "").trim().split(/\s+/);
     var first = (t.first || parts[0] || "").trim(), last = (t.last || parts.slice(1).join(" ") || "").trim();
@@ -537,12 +574,24 @@
       case 8: {
         var out = {}, home = c.jurisOf(d.country).home, all = [home].concat(d.currencies.filter(function (x) { return x !== home; }));
         all.forEach(function (cc) {
-          var k = (d.count || {})[cc] || {}, den = k.den || {}, notes = {}, any = false;
-          Object.keys(den).forEach(function (v) { var n = parseInt(den[v], 10); if (n > 0) { notes[v] = n; any = true; } });
-          var coins = amount(k.coins), total = amount((d.float || {})[cc]);
-          if (any) out[cc] = { mode: "notes", notes: notes, coins: coins || undefined, done: !!k.done };
-          else if (total) out[cc] = { mode: "total", total: total, done: !!k.done };
+          var k = (d.count || {})[cc] || {}, den = k.den || {}, notes = {};
+          var mode = (c.state.cntMode || {})[cc] || (Object.values(den).some(Boolean) || k.coins ? "notes" : ((d.float || {})[cc] ? "total" : "notes"));
+          if (mode === "total") {
+            var total = amount((d.float || {})[cc]);
+            if (total) out[cc] = { mode: "total", total: total, done: !!k.done };
+            else if (k.done) out[cc] = { mode: "none", done: true };
+            return;
+          }
+          Object.keys(den).forEach(function (v) {
+            var q = String(den[v] == null ? "" : den[v]).trim();
+            if (!q) return;
+            if (!/^\d+$/.test(q) || Number(q) > 1000000) throw new Error("Enter a whole number of notes, up to 1,000,000.");
+            if (Number(q) > 0) notes[v] = Number(q);
+          });
+          var coins = amount(k.coins);
+          if (Object.keys(notes).length || coins) out[cc] = { mode: "notes", notes: notes, coins: coins || undefined, done: !!k.done };
           else if (k.done) out[cc] = { mode: "none", done: true };
+
         });
         return { count: out, countLater: false };
       }
@@ -553,8 +602,8 @@
       }
       case 10: {
         var j = c.jurisOf(d.country);
-        var over = d.idOver === "" || d.idOver == null ? String(c.idRec(j)) : String(d.idOver).replace(/\D/g, "");
-        return { idOver: over || "0", idCustom: String(d.idCustom || "").replace(/\D/g, "") };
+        var over = d.idOver === "" || d.idOver == null ? String(c.idRec(j)) : String(d.idOver).trim();
+        return { idOver: over || "0", idCustom: String(d.idCustom || "").trim() };
       }
       case 11: return { team: d.team.map(member) };
       case 31: {
@@ -566,12 +615,13 @@
   }
   function fromServer(a) {
     var d = {};
-    ["operatingName", "bizName", "nameOk", "legalOk", "street", "unit", "city", "region", "postal", "country_addr", "addrVerified", "addrManual", "msbNumber", "compName", "compEmail", "idCustom"].forEach(function (k) { if (a[k] !== undefined) d[k] = a[k]; });
-    if (a.shopCount) d.shopCount = a.shopCount;
+    ["operatingName", "bizName", "nameOk", "legalOk", "street", "unit", "city", "region", "postal", "country_addr", "addrVerified", "addrManual", "msbNumber", "regSkipped", "countLater", "compName", "compEmail", "idCustom"].forEach(function (k) { if (a[k] !== undefined) d[k] = a[k]; });
+    if (a.shops === "one") d.shopCount = 1;
+    else if (a.shopCount) d.shopCount = a.shopCount;
     if (Array.isArray(a.currencies)) d.currencies = a.currencies;
     if (a.complianceMode) d.complianceMode = a.complianceMode === "else" ? "other" : "me";
     if (a.idOver !== undefined) d.idOver = String(a.idOver);
-    if (Array.isArray(a.team)) d.team = a.team.map(function (t) { return { name: t.name || (t.first + " " + t.last).trim(), first: t.first, last: t.last, role: t.role, email: t.email || "", phone: t.phone || "", mode: "email" }; });
+    if (Array.isArray(a.team)) d.team = a.team.map(function (t) { return { name: t.name || (t.first + " " + t.last).trim(), first: t.first, last: t.last, role: t.role, email: t.email || "", phone: t.phone || "", mode: t.mode || (t.email ? "email" : "noemail") }; });
     if (a.count && typeof a.count === "object") {
       d.count = {}; d.float = {};
       Object.keys(a.count).forEach(function (cc) {
@@ -3013,8 +3063,8 @@ class Component extends DCLogic {
   denomsOf(c) { return this.DENOMS[c] || [100,50,20,10,5]; }
   // count by denomination → total; the typed total wins if there's no count
   countOf(c) { const d = this.state.data, k = (d.count || {})[c] || {}; const den = k.den || {}; const sum = this.denomsOf(c).reduce((t, v) => t + v * (parseInt(den[v], 10) || 0), 0) + (parseFloat(k.coins) || 0); return sum; }
-  setDen(c, v, q) { this.setState(s => { const cnt = Object.assign({}, s.data.count || {}); const k = Object.assign({}, cnt[c] || {}); k.den = Object.assign({}, k.den || {}, { [v]: String(q).replace(/[^0-9]/g, '') }); cnt[c] = k; const fl = Object.assign({}, s.data.float); return { data: { ...s.data, count: cnt, float: fl } }; }, () => this._syncFloat(c)); }
-  setCoins(c, q) { this.setState(s => { const cnt = Object.assign({}, s.data.count || {}); cnt[c] = Object.assign({}, cnt[c] || {}, { coins: String(q).replace(/[^0-9.]/g, '') }); return { data: { ...s.data, count: cnt } }; }, () => this._syncFloat(c)); }
+  setDen(c, v, q) { this.setState(s => { const cnt = Object.assign({}, s.data.count || {}); const k = Object.assign({}, cnt[c] || {}); k.den = Object.assign({}, k.den || {}, { [v]: String(q) }); cnt[c] = k; const fl = Object.assign({}, s.data.float); return { data: { ...s.data, count: cnt, float: fl } }; }, () => this._syncFloat(c)); }
+  setCoins(c, q) { this.setState(s => { const cnt = Object.assign({}, s.data.count || {}); cnt[c] = Object.assign({}, cnt[c] || {}, { coins: String(q) }); return { data: { ...s.data, count: cnt } }; }, () => this._syncFloat(c)); }
   _syncFloat(c) { const t = this.countOf(c); this.setState(s => ({ data: { ...s.data, float: { ...s.data.float, [c]: t ? String(t) : (s.data.float[c] && !((s.data.count || {})[c] || {}).den ? s.data.float[c] : '') } } })); }
   /* Done on one currency: tick it, fold it, open the next uncounted one */
   countNext(c, nx) { this._tone('done'); this.setState(s => { const cnt = Object.assign({}, s.data.count || {}); cnt[c] = Object.assign({}, cnt[c] || {}, { done: true }); return { data: { ...s.data, count: cnt }, cntOpen: nx || null }; }); }
@@ -3238,7 +3288,7 @@ class Component extends DCLogic {
       setTimeout(() => this.setState({ apFx: null }), 3600);
       setTimeout(() => this.setState({ newIdx: null }), 5200);
       return; } this._dir = 1; this._tone(this.state.i === 0 ? 'open' : 'next'); this.setState(s => ({ i: this._after(s.i), adding: false })); }
-  back() {
+  back() { window.__cdOnb.navigation();
     if (this.state.i === 28) { this._dir = -1; this.setState({ i: 3, adSearch: true }); return; }
     if (this.state.i === 4 && this.locCount() > 1) { this._dir = -1; this.setState({ i: 30 }); return; }
     if (this.state.i === 30) { this._dir = -1; this.setState({ i: 29 }); return; }
@@ -3303,7 +3353,7 @@ class Component extends DCLogic {
   toggleCcy(c) { this.setState(s => { const cur = s.data.currencies; return { data: { ...s.data, currencies: cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c] } }; }); }
   pickCountry(id) { const jj = this.jurisOf(id); this.setState(s => ({ data: { ...s.data, country: id, idOver: String(jj.thr), currencies: s.data.currencies.filter(c => c !== jj.home), country_addr: s.data.country_addr || (id === 'XX' ? (s.data.elseCountry || '') : jj.country) } })); }
   setSpread(c, v) { this.setState(s => ({ data: { ...s.data, spreads: { ...s.data.spreads, [c]: v } } })); }
-  setFloat(c, v) { this.setState(s => ({ data: { ...s.data, float: { ...s.data.float, [c]: v.replace(/[^0-9.]/g, '') } } })); }
+  setFloat(c, v) { this.setState(s => ({ data: { ...s.data, float: { ...s.data.float, [c]: String(v) } } })); }
   addMember() { const dr = this.state.draft; if (!dr.name.trim() || !/.+@.+\..+/.test(dr.email || '')) return; this.setState(s => ({ data: { ...s.data, team: [...s.data.team, { name: dr.name.trim(), role: dr.role, email: dr.email.trim() }] }, adding: false, draft: { mode:'email', name:'', role:'Cashier', email:'' } })); }
   START_STEPS = [
     { id: 'import', kind: 'import', title: 'Bring your rates across', sub: 'Upload what you already keep them in — we read it for you.', mins: 'Not timed', cta: 'Open the rate board', href: '/app', tag: 'Agent' },
