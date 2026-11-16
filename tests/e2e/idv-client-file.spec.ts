@@ -31,7 +31,7 @@ test("the client file hides Start while identity checks are off", async ({ page 
   await page.getByText("Id Check Client", { exact: true }).click();
   const block = page.getByTestId("identity-check");
   await expect(block).toBeVisible();
-  await expect(block).toContainText("Persona's ID photo and selfie are not copied to this desk.");
+  await expect(block).toContainText("Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye.");
   await expect(block).toContainText("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
   await expect(block.getByRole("button", { name: "Start identity check" })).toHaveCount(0);
   await expect(block).not.toContainText("Approved");

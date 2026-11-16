@@ -354,7 +354,7 @@
       ? priceDeal({ inCcy: home, outCcy: recvCcy, inAmt: amtN, settings })
       : priceDeal({ inCcy: recvCcy, outCcy: home, inAmt: amtN, settings }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const kyc = (() => { const c = clients[senderName]; return !c || !c.idType || !c.idNum ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok'); })();
+    const kyc = window.CDOS.idFileKyc(clients[senderName]);
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const idRows = window.CDOS.deskIdThresholds ? (window.CDOS.deskIdThresholds() || []) : [];

@@ -117,6 +117,8 @@ export const migrations: readonly Migration[] = [
   /* 081 is the ID check record, the consent row, and the face crop.
      078 to 080 are claimed by open sign-up PRs, so this file is 081. */
   ["081_idv_check_records", "src/db/migrations/081_idv_check_records.sql"],
+  /* PEP answers are an append-only log. 082 follows 081. */
+  ["082_pep_answer_events", "src/db/migrations/082_pep_answer_events.sql"],
 ] as const;
 
 type MigrationReader = {

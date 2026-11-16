@@ -14,7 +14,7 @@ import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine, notPassedLine, underReviewLine,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
 } from "./tiers.js";
 
@@ -256,6 +256,7 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
 
 export async function storeConsent(db: Db, actor: DeskActor, input: {
   clientId: string; choice: "agreed" | "counter_check"; language: string; inquiryId: string | null;
+  copyVersion: string; faceCropShown: boolean;
 }): Promise<Step<{ consentId: string; choice: string; tellerLine: string | null; persona: boolean }>> {
   const q = dbQuery(db);
   if (!await clientOwned(q, actor, input.clientId)) return fail(404, "not_found", "That client is not on this shop.");
@@ -265,14 +266,17 @@ export async function storeConsent(db: Db, actor: DeskActor, input: {
   const language = input.language.trim().toLowerCase();
   if (!/^[a-z]{2}(-[a-z]{2})?$/.test(language)) return fail(400, "invalid_request", "The consent language is not valid.");
   const shop = await loadShopIdv(db, actor.legalEntityId);
+  if (input.copyVersion !== CONSENT_VERSION || input.faceCropShown !== shop.faceCrop) {
+    return fail(409, "consent_copy_changed", "The notice changed. Read it again before you choose.");
+  }
   const id = `cns_${randomUUID()}`;
   await q.query(
     `INSERT INTO idv_consents
       (consent_id, tenant_id, legal_entity_id, branch_id, client_id, copy_version, language, inquiry_id, choice, staff_id, face_crop_shown)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
-      id, actor.tenantId, actor.legalEntityId, actor.branchId, input.clientId, CONSENT_VERSION,
-      language, input.inquiryId, input.choice, actor.staffId, shop.faceCrop,
+      id, actor.tenantId, actor.legalEntityId, actor.branchId, input.clientId, input.copyVersion,
+      language, input.inquiryId, input.choice, actor.staffId, input.faceCropShown,
     ],
   );
   const counter = input.choice === "counter_check";
@@ -403,9 +407,9 @@ async function latestFullCheck(q: Q, actor: DeskActor, clientId: string): Promis
 
 export async function recordReturning(db: Db, actor: DeskActor, input: {
   clientId: string; noDoubts: boolean; detailsChanged: boolean; doubtReason?: string | null;
-  dealId?: string | null; pepAnswer: boolean;
+  dealId?: string | null; pepAnswer: "yes" | "no" | "not_asked";
 }): Promise<Step<Record<string, unknown>>> {
-  if (typeof input.pepAnswer !== "boolean") {
+  if (input.pepAnswer !== "yes" && input.pepAnswer !== "no" && input.pepAnswer !== "not_asked") {
     return fail(400, "pep_answer_required", "Ask the client whether they are a politically exposed person, and record the answer.");
   }
   return db.transaction(async (tx) => {
@@ -438,13 +442,21 @@ export async function recordReturning(db: Db, actor: DeskActor, input: {
     );
     const client = owned.rows[0];
     if (!client) return fail(404, "not_found", "That client is not on this shop.");
+    const answerId = `pep_${randomUUID()}`;
     await q.query(
-      `INSERT INTO client_pep_answers (client_id, tier, is_pep, answered_at, answered_by)
-       VALUES ($1,'2',$2,now(),$3)
-       ON CONFLICT (client_id) DO UPDATE
-         SET tier = EXCLUDED.tier, is_pep = EXCLUDED.is_pep, answered_at = now(), answered_by = EXCLUDED.answered_by`,
-      [input.clientId, input.pepAnswer, actor.staffId],
+      `INSERT INTO client_pep_answer_events
+        (answer_id, client_id, tenant_id, legal_entity_id, answer, staff_id)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [answerId, input.clientId, actor.tenantId, actor.legalEntityId, input.pepAnswer, actor.staffId],
     );
+    if (input.pepAnswer === "yes") {
+      await q.query(
+        `INSERT INTO client_pep_reviews
+          (review_id, client_id, tenant_id, legal_entity_id, answer_id, status)
+         VALUES ($1,$2,$3,$4,$5,'open')`,
+        [`prv_${randomUUID()}`, input.clientId, actor.tenantId, actor.legalEntityId, answerId],
+      );
+    }
     const plan = await screenSubject(q, {
       tenantId: actor.tenantId, legalEntityId: actor.legalEntityId, userId: actor.staffId,
     }, {
@@ -452,7 +464,9 @@ export async function recordReturning(db: Db, actor: DeskActor, input: {
       dob: client.date_of_birth ? String(client.date_of_birth).slice(0, 10) : null,
       clientId: input.clientId,
     });
-    const result: CheckResult = plan.hold || plan.outcome !== "clear" ? "needs_review" : "returning_confirmed";
+    /* A PEP Yes is a compliance review. It does not hold this check or the deal.
+       Only the sanctions plan holds the returning result. */
+    const result: CheckResult = plan.hold ? "needs_review" : "returning_confirmed";
     const photoOnFile = shop.faceCrop && Boolean(earlier.face_crop_ciphertext);
     const id = await insertRecord(q, actor, input.clientId, {
       tier: "2", method: "returning_client", result, confirmedBy: actor.staffId,
@@ -540,11 +554,15 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
   const test = await testLabel(db, actor, env);
   const found = await q.query(
     `SELECT r.record_id, r.tier, r.method, r.name_on_id, r.verified_at, r.document_type, r.persona_id_class,
-            r.document_number_last4, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
+            r.document_number_last4, r.number_unavailable, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
             r.provider_checks, r.persona_inquiry_id, r.staff_id, r.original_record_id, r.consent_id,
             r.counter_check_chosen, r.deal_id, r.database_step,
             (r.face_crop_ciphertext IS NOT NULL AND r.face_crop_retained_until > now()) AS has_crop,
-            o.verified_at AS original_verified_at, o.method AS original_method
+            r.verified_at > now() - interval '5 years' AS within_five_years,
+            o.verified_at AS original_verified_at, o.method AS original_method, o.result AS original_result,
+            o.document_number_last4 AS original_last4, o.number_unavailable AS original_unavailable,
+            o.expiry_date AS original_expiry,
+            o.verified_at > now() - interval '5 years' AS original_within_five
        FROM idv_check_records r
        LEFT JOIN idv_check_records o
          ON o.record_id = r.original_record_id
@@ -581,7 +599,34 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const returningStamp = method === "returning_client"
       ? returningLine(branchStamp(originalWhen, facts.timeZone).date, METHOD_LABEL[originalMethod] ?? METHOD_LABEL.in_person)
       : null;
-    const line = expiredStamp ?? returningStamp ?? idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie");
+    const result = String(row.result);
+    const line = expiredStamp
+      ?? (result === "declined" ? notPassedLine(stamp.date)
+        : result === "needs_review" ? underReviewLine(stamp.date)
+          : result === "method_not_completed" ? INCOMPLETE_LINE
+            : returningStamp ?? (result === "pass"
+              ? idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie")
+              : PROGRESS_LINE));
+    const originalExpiry = day(row.original_expiry);
+    const standingInput = {
+      result,
+      method,
+      line,
+      maskedNumber: last ? `•••• ${last}` : null,
+      numberUnavailable: row.number_unavailable === true,
+      withinFiveYears: row.within_five_years === true,
+      documentExpired: Boolean(expiredStamp),
+      original: method === "returning_client" || result === "returning_confirmed" ? {
+        result: str(row, "original_result") ?? "pass",
+        method: originalMethod,
+        line: "",
+        maskedNumber: str(row, "original_last4") ? `•••• ${str(row, "original_last4")}` : null,
+        numberUnavailable: row.original_unavailable === true,
+        withinFiveYears: row.original_within_five === true,
+        documentExpired: Boolean(originalExpiry && isPastExpiry(originalExpiry, facts.timeZone)),
+        original: null,
+      } : null,
+    };
     const deals = dealsByRecord.get(String(row.record_id)) ?? [];
     const columnDeal = str(row, "deal_id");
     if (columnDeal && !deals.includes(columnDeal)) deals.unshift(columnDeal);
@@ -591,6 +636,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       method,
       methodLabel: METHOD_LABEL[method],
       result: row.result,
+      standingInput,
       line,
       detail: DETAIL_LINE,
       verifiedDate: stamp.date,
@@ -609,7 +655,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       originalRecordId: str(row, "original_record_id"),
       dealId: str(row, "deal_id"),
       deals,
-      statusLine: statusLine(String(row.result), method, stamp.date, test, { expiredStamp, returningStamp }),
+      statusLine: statusLine(result, method, stamp.date, test, { expiredStamp, returningStamp }),
     };
   });
   return {
@@ -619,13 +665,9 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       detail: DETAIL_LINE,
       advice: earlier && earlier.advise && !earlier.due ? ADVISE_LINE : null,
       due: earlier?.due ? DUE_LINE : null,
-      records,
+      records: records.map(({ standingInput: _standing, ...record }) => record),
       headline: records[0]?.statusLine ?? NONE_LINE,
-      standing: idFileStanding(records.map((record) => ({
-        result: String(record.result),
-        line: record.line,
-        maskedNumber: record.maskedNumber,
-      }))),
+      standing: idFileStanding(records[0]?.standingInput ?? null),
     },
   };
 }
@@ -643,18 +685,44 @@ export type IdFileStanding = {
 /* One read of the latest check record. A pass, including in person and
    a confirmed returning client, is ID on file. Expired and every other
    result stay a gap. The browser prints this. It does not decide it. */
-export function idFileStanding(records: Array<{ result?: string; line?: string; maskedNumber?: string | null }>): IdFileStanding {
-  const latest = records[0];
+export type StandingInput = {
+  result?: string;
+  method?: string;
+  line?: string;
+  maskedNumber?: string | null;
+  numberUnavailable?: boolean;
+  withinFiveYears?: boolean;
+  documentExpired?: boolean;
+  original?: StandingInput | null;
+};
+
+function qualifiesAsId(record: StandingInput | null | undefined): boolean {
+  if (!record) return false;
+  if (record.documentExpired) return false;
+  if (record.withinFiveYears === false) return false;
+  if (record.result === "expired" || (record.line || "").startsWith("Expired")) return false;
+  if (record.method === "returning_client" || record.result === "returning_confirmed") {
+    return qualifiesAsId(record.original ?? null);
+  }
+  if (record.result !== "pass") return false;
+  if (record.numberUnavailable) return false;
+  if (!record.maskedNumber) return false;
+  return true;
+}
+
+/* ID on file only when the last 4 are stored, the number was available,
+   the document is not expired, and the check is under 5 years old.
+   A returning client counts only through an original record that meets
+   the same test. The browser prints this. It does not decide it. */
+export function idFileStanding(latest: StandingInput | null): IdFileStanding {
   if (!latest) {
     return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
   }
   const line = latest.line || "";
-  const expired = latest.result === "expired" || line.startsWith("Expired");
-  const passed = !expired && (latest.result === "pass" || latest.result === "returning_confirmed");
-  if (passed) {
-    const shown = latest.maskedNumber ? `${line}. ${latest.maskedNumber}` : line;
-    return { onFile: true, chip: "ID on file", title: "Identified", line: shown, gap: null };
+  if (qualifiesAsId(latest)) {
+    return { onFile: true, chip: "ID on file", title: "Identified", line, gap: null };
   }
+  const expired = latest.documentExpired || latest.result === "expired" || line.startsWith("Expired");
   if (expired) {
     return { onFile: false, chip: "ID expired", title: "ID expired", line: line || "Expired", gap: "expired ID" };
   }
@@ -666,8 +734,8 @@ function statusLine(
   extra: { expiredStamp: string | null; returningStamp: string | null },
 ): string {
   if (extra.expiredStamp) return extra.expiredStamp;
-  if (result === "needs_review") return REVIEW_LINE;
-  if (result === "declined") return DECLINED_LINE;
+  if (result === "needs_review") return underReviewLine(date);
+  if (result === "declined") return notPassedLine(date);
   if (result === "method_not_completed") return INCOMPLETE_LINE;
   if (result === "expired") return extra.expiredStamp ?? "Expired";
   if (result === "returning_confirmed" || method === "returning_client") return extra.returningStamp ?? "Returning client";

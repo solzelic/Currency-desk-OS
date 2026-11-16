@@ -277,7 +277,7 @@ describe("inquiry text and face crop", () => {
     expect(off).not.toContain(CROP_LINE);
     expect(on.toLowerCase()).not.toContain("stays in canada");
     expect(on.toLowerCase()).not.toContain("stored in canada");
-    expect(CONSENT_VERSION).toBe("consent-v0.3.8-draft");
+    expect(CONSENT_VERSION).toBe("consent-v0.3.9-draft");
     for (const word of ["verified", "approved", "cleared"]) {
       expect(on.toLowerCase()).not.toMatch(new RegExp(`\\b${word}\\b`));
     }
@@ -293,6 +293,7 @@ describe("id check records", () => {
   const seen: string[] = [];
   let inquiries = 0;
   let inquiryExpiry = "2030-01-02";
+  let refuseLink = false;
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
@@ -307,7 +308,10 @@ describe("id check records", () => {
       const body = String(init?.body ?? "");
       expect(body).not.toContain(NUMBER);
       expect(body.length).toBeLessThan(10);
-      return new Response(JSON.stringify({ meta: { "one-time-link": "https://inquiry.withpersona.com/verify?code=sandbox" } }), { status: 200 });
+      const link = refuseLink
+        ? "http://127.0.0.1:4199/sandbox-check"
+        : "https://inquiry.withpersona.com/verify?code=sandbox";
+      return new Response(JSON.stringify({ meta: { "one-time-link": link } }), { status: 200 });
     }
     if (url.includes(FRONT)) return new Response(source, { status: 200 });
     if (url.includes("/inquiries/")) {
@@ -472,7 +476,7 @@ describe("id check records", () => {
     const clientId = await client("Return");
     const first = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "no" },
     });
     expect(first.statusCode).toBe(409);
     expect(first.json().error).toBe("no_earlier_check");
@@ -484,7 +488,7 @@ describe("id check records", () => {
     );
     const otherShop = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "no" },
     });
     expect(otherShop.statusCode).toBe(409);
     const made = await app.inject({
@@ -497,7 +501,7 @@ describe("id check records", () => {
     expect(made.statusCode, made.body).toBe(200);
     const doubt = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: false, detailsChanged: false, doubtReason: "face does not match", pepAnswer: false },
+      payload: { clientId, noDoubts: false, detailsChanged: false, doubtReason: "face does not match", pepAnswer: "no" },
     });
     expect(doubt.statusCode).toBe(409);
     expect(doubt.json().error).toBe("doubt");
@@ -505,12 +509,12 @@ describe("id check records", () => {
     expect(blocks.rows[0]?.reason).toBe("face does not match");
     const changed = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: true, pepAnswer: false },
+      payload: { clientId, noDoubts: true, detailsChanged: true, pepAnswer: "no" },
     });
     expect(changed.statusCode).toBe(409);
     const used = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false, dealId: "deal-r" },
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "no", dealId: "deal-r" },
     });
     expect(used.statusCode, used.body).toBe(200);
     expect(used.json().photoLine).toBe("No photo on file");
@@ -530,7 +534,7 @@ describe("id check records", () => {
     );
     const due = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId: aged, noDoubts: true, detailsChanged: false, pepAnswer: false },
+      payload: { clientId: aged, noDoubts: true, detailsChanged: false, pepAnswer: "no" },
     });
     expect(due.statusCode).toBe(409);
     expect(due.json().message).toBe("A new full ID check is needed.");
@@ -543,10 +547,91 @@ describe("id check records", () => {
     );
     const advice = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId: mid, noDoubts: true, detailsChanged: false, pepAnswer: true },
+      payload: { clientId: mid, noDoubts: true, detailsChanged: false, pepAnswer: "yes" },
     });
     expect(advice.statusCode, advice.body).toBe(200);
     expect(advice.json().advice).toBe("A new ID and selfie check is advised.");
+  });
+
+  it("appends a PEP Yes, flags it for review, and still posts the deal", async () => {
+    const clientId = await client("Pep Yes");
+    await dbQuery(handle.db).query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         document_number_last4, expiry_date, verified_at)
+       VALUES ('idc_pep',$1,$2,$3,$4,'3','id_and_selfie','pass','m.costa','8991','2030-01-02', now())`,
+      [DEMO.tenantId, DEMO.legalEntityId, DEMO.branchId, clientId],
+    );
+    const saved = await app.inject({
+      method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "yes" },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().result).toBe("returning_confirmed");
+    const again = await app.inject({
+      method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "not_asked" },
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const answers = await dbQuery(handle.db).query(
+      "SELECT answer, staff_id FROM client_pep_answer_events WHERE client_id = $1 ORDER BY answered_at, answer_id",
+      [clientId],
+    );
+    expect(answers.rows.map((row) => row.answer)).toEqual(["yes", "not_asked"]);
+    expect(answers.rows.every((row) => row.staff_id === "m.costa")).toBe(true);
+    const reviews = await dbQuery(handle.db).query(
+      "SELECT status FROM client_pep_reviews WHERE client_id = $1",
+      [clientId],
+    );
+    expect(reviews.rows).toEqual([{ status: "open" }]);
+    const made = await app.inject({
+      method: "POST", url: "/api/quotes", cookies: cookies.teller,
+      payload: { customerId: clientId, from: "CAD", to: "USD", inputAmount: "100.00", feeCad: "0.00", direction: "customer_buy_foreign" },
+    });
+    expect(made.statusCode, made.body).not.toBe(409);
+    expect(made.body.toLowerCase()).not.toContain("politically exposed");
+    if (made.statusCode === 201) {
+      const posted = await app.inject({
+        method: "POST", url: `/api/quotes/${made.json().quoteId}/post`, cookies: cookies.teller,
+        payload: { idempotencyKey: `pep-${Date.now()}`, purpose: "Personal travel", sourceOfFunds: "Employment income" },
+      });
+      expect(posted.statusCode, posted.body).not.toBe(409);
+      expect(posted.body.toLowerCase()).not.toContain("politically exposed");
+    }
+  });
+
+  it("refuses a one-time link that is not https on a Persona host", async () => {
+    const clientId = await client("Bad Link");
+    const started = await app.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { clientId, tier: "3" },
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    const inquiryId = started.json().providerRef as string;
+    await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId },
+    });
+    refuseLink = true;
+    const link = await app.inject({
+      method: "POST", url: `/api/idv/inquiries/${inquiryId}/one-time-link`, cookies: cookies.teller, payload: {},
+    });
+    refuseLink = false;
+    expect(link.statusCode).toBe(502);
+    expect(link.json().error).toBe("link_failed");
+  });
+
+  it("does not store consent when the notice the customer saw no longer matches", async () => {
+    const clientId = await client("Copy Flip");
+    const before = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_consents WHERE client_id = $1", [clientId]);
+    const mismatch = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "counter_check", language: "en", copyVersion: "consent-old", faceCropShown: true },
+    });
+    expect(mismatch.statusCode).toBe(409);
+    expect(mismatch.json().code).toBe("consent_copy_changed");
+    const after = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_consents WHERE client_id = $1", [clientId]);
+    expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
   });
 
   it("requires consent for the link, refuses Quebec, and runs tier 4 as ID and selfie", async () => {
@@ -566,7 +651,7 @@ describe("id check records", () => {
     expect(blocked.json().error).toBe("consent_required");
     const consent = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId },
     });
     expect(consent.statusCode, consent.body).toBe(200);
     const row = await dbQuery(handle.db).query("SELECT copy_version, language, inquiry_id, staff_id, recorded_at FROM idv_consents WHERE consent_id = $1", [consent.json().consentId]);
@@ -624,7 +709,7 @@ describe("id check records", () => {
     expect(plus.json().message).toBe("The database step is not on yet. This check runs ID and selfie.");
     const thanks = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "counter_check", language: "en" },
+      payload: { clientId, choice: "counter_check", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true },
     });
     expect(thanks.json().persona).toBe(false);
     expect(thanks.json().tellerLine).toBe("Customer chose the counter check. Inspect the original ID.");
@@ -642,7 +727,7 @@ describe("id check records", () => {
     const referenceId = started.json().referenceId as string;
     const agreed = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId },
     });
     expect(agreed.statusCode, agreed.body).toBe(200);
     const raw = JSON.stringify({
@@ -773,7 +858,7 @@ describe("id check records", () => {
     const on = await startedInquiry(clientId);
     expect((await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId: on.inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: on.inquiryId },
     })).statusCode).toBe(200);
     await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: false } });
     expect((await postPersona("inquiry.approved", on.inquiryId, on.referenceId, "evt_on_off", { NODE_ENV: "test" })).statusCode).toBe(200);
@@ -783,7 +868,7 @@ describe("id check records", () => {
     const off = await startedInquiry(clientId);
     expect((await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId: off.inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: false, inquiryId: off.inquiryId },
     })).statusCode).toBe(200);
     await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
     expect((await postPersona("inquiry.approved", off.inquiryId, off.referenceId, "evt_off_on", { NODE_ENV: "test" })).statusCode).toBe(200);
@@ -793,7 +878,7 @@ describe("id check records", () => {
     const declined = await startedInquiry(clientId);
     expect((await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId: declined.inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: declined.inquiryId },
     })).statusCode).toBe(200);
     expect((await postPersona("inquiry.declined", declined.inquiryId, declined.referenceId, "evt_declined", { NODE_ENV: "test" })).statusCode).toBe(200);
     const refused = await dbQuery(handle.db).query("SELECT result, face_crop_ciphertext FROM idv_check_records WHERE persona_inquiry_id = $1", [declined.inquiryId]);
@@ -821,7 +906,7 @@ describe("id check records", () => {
     const remote = await startedInquiry(clientId);
     expect((await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "agreed", language: "en", inquiryId: remote.inquiryId },
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: remote.inquiryId },
     })).statusCode).toBe(200);
     expect((await postPersona("inquiry.approved", remote.inquiryId, remote.referenceId, "evt_expired", { NODE_ENV: "test" })).statusCode).toBe(200);
     inquiryExpiry = "2030-01-02";
@@ -851,7 +936,7 @@ describe("id check records", () => {
     expect(view.json().message).toBe("No photo on file");
     const back = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "no" },
     });
     expect(back.statusCode, back.body).toBe(200);
     expect(back.json().photoLine).toBe("No photo on file");
@@ -888,7 +973,7 @@ describe("id check records", () => {
     expect(made.statusCode, made.body).toBe(200);
     const used = await app.inject({
       method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
-      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: false },
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: "no" },
     });
     expect(used.statusCode, used.body).toBe(200);
     expect(used.json().result).toBe("returning_confirmed");
@@ -906,7 +991,7 @@ describe("id check records", () => {
     const owned = await startedInquiry(ownerClient);
     const crossed = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId: otherClient, choice: "agreed", language: "en", inquiryId: owned.inquiryId },
+      payload: { clientId: otherClient, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: owned.inquiryId },
     });
     expect(crossed.statusCode).toBe(404);
     await dbQuery(handle.db).query(
@@ -919,7 +1004,7 @@ describe("id check records", () => {
     );
     const foreign = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId: ownerClient, choice: "agreed", language: "en", inquiryId: "inq_other_shop" },
+      payload: { clientId: ownerClient, choice: "agreed", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: "inq_other_shop" },
     });
     expect(foreign.statusCode).toBe(404);
     const link = await app.inject({
@@ -1122,7 +1207,7 @@ describe("id check records", () => {
     const started = await plantInquiry(clientId, "inq_declined_consent");
     const consent = await app.inject({
       method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
-      payload: { clientId, choice: "counter_check", language: "en", inquiryId: started.inquiryId },
+      payload: { clientId, choice: "counter_check", language: "en", copyVersion: CONSENT_VERSION, faceCropShown: true, inquiryId: started.inquiryId },
     });
     expect(consent.statusCode, consent.body).toBe(200);
     const shown = await dbQuery(handle.db).query("SELECT face_crop_shown, choice FROM idv_consents WHERE consent_id = $1", [consent.json().consentId]);

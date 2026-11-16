@@ -1109,9 +1109,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const soft = on ? CD.greenSoft : CD.flagSoft;
       return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-start gap-2 flex-wrap min-w-0">
           <Pill text={standing.title} c={tone} bg={soft} />
-          <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing.line}</span>
+          <span className="text-[12.5px] min-w-0 flex-1" style={{ color: CD.ink, overflowWrap: "anywhere" }}>{standing.line}</span>
         </div>
         <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
       </div>);
@@ -1493,7 +1493,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const counts = useMemo(() => {
       let ind = 0, corp = 0, ver = 0, att = 0;
-      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (isVerified(s)) ver++; else att++; });
+      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (isVerified(s)) ver++; if (c.rec.idStanding ? !c.rec.idStanding.onFile : !isVerified(s)) att++; });
       return { all: list.length, individual: ind, corporate: corp, verified: ver, attention: att };
     }, [list, settings]);
 
@@ -1503,7 +1503,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'corporate' && r.kind !== 'corporate') return false;
       const [s] = kycStatus(r, settings, c.name);
       if (filter === 'verified' && !isVerified(s)) return false;
-      if (filter === 'attention' && isVerified(s)) return false;
+      if (filter === 'attention' && (r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
       /* A health number is never searched, even one still cached. */
@@ -1574,7 +1574,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.lineSoft}` }}>
         {FILTERS.map(([id, label, n]) => (
-          <button key={id} onClick={() => setFilter(id)} className="text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
+          <button key={id} data-testid={`client-filter-${id}`} onClick={() => setFilter(id)} className="text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
             {label}<span style={{ opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
           </button>
         ))}

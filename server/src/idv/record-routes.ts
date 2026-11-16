@@ -72,13 +72,16 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       choice: z.enum(["agreed", "counter_check"]),
       language: z.string().trim().min(2).max(8),
       inquiryId: z.string().trim().min(1).max(80).nullable().optional(),
+      copyVersion: z.string().trim().min(1).max(80),
+      faceCropShown: z.boolean(),
     }).strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const saved = await storeConsent(db, actor, {
       clientId: body.data.clientId, choice: body.data.choice, language: body.data.language,
       inquiryId: body.data.inquiryId ?? null,
+      copyVersion: body.data.copyVersion, faceCropShown: body.data.faceCropShown,
     });
-    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, code: saved.error, message: saved.message });
     return saved.body;
   });
 
@@ -116,7 +119,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       detailsChanged: z.boolean(),
       doubtReason: z.string().trim().max(500).optional(),
       dealId: z.string().trim().min(1).max(80).optional(),
-      pepAnswer: z.boolean(),
+      pepAnswer: z.enum(["yes", "no", "not_asked"]),
     }).strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const saved = await recordReturning(db, actor, body.data);

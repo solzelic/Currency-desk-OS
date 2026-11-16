@@ -2451,6 +2451,13 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     bottom: 0 !important;
     z-index: 9500 !important;
   }
+  [data-testid="id-check-flow"] input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    flex: none;
+  }
   .fixed.inset-0 > div,
   .fixed.inset-0 > form,
   .fixed.inset-0 > section {
@@ -3524,6 +3531,14 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 /* While an ID check sheet is open, the deal's post bar stays off
    the screen at every width. The sheet also covers it. */
 body[data-id-check="open"] .cd-tx-actions { display: none !important; }
+[data-testid="id-check-flow"] button,
+[data-testid="id-check-flow"] input,
+[data-testid="id-check-flow"] select,
+[data-testid="id-check-reveal"] button,
+[data-testid="id-check-reveal"] input,
+[data-testid="id-check-reveal"] select {
+  font-family: "Archivo", system-ui, sans-serif;
+}
 
 .cd-quote-face { z-index: 99999; display: flex; flex-direction: column; box-sizing: border-box; background: var(--cd-ink, #1c1917); color: var(--cd-on-ink, #fff); }
 .cd-quote-head, .cd-quote-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 24px 40px; }

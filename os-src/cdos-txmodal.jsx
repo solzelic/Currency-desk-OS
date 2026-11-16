@@ -261,7 +261,7 @@
           </div>
           {open && (
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
-              {shown.map(n => { const c = clients[n] || {}; const ver = (() => { try { return ((window.CDOS.KYC && window.CDOS.KYC.checksFor(n)) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved'); } catch (e) { return false; } })(); const st = (!c.idType) ? 'missing ID' : (c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file'); const ok = st === 'verified'; const onfile = st === 'ID on file'; return (
+              {shown.map(n => { const c = clients[n] || {}; const state = window.CDOS.idFileKyc(c); const st = state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
                   <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
                 </button>); })}
@@ -289,16 +289,32 @@
       const days = last ? Math.round((Date.parse(TODAY) - Date.parse(last)) / 86400000) : null;
       return { count: h.length, total, windowCad, winDays, days, top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null };
     }, [name, live, settings]);
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
-    const idOk = !idMissing && !idExpired;
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) { setStanding(null); return undefined; }
+      let live = true;
+      api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {});
+      return () => { live = false; };
+    }, [rec && rec.clientId]);
+    const standingNow = standing || (rec && rec.idStanding) || null;
+    const idMissing = standingNow ? !standingNow.onFile : (!rec || !rec.idType || !rec.idNum);
+    const idExpired = standingNow ? standingNow.chip === "ID expired" : (rec && rec.idExpiry && rec.idExpiry < TODAY);
+    const idOk = standingNow ? standingNow.onFile : (!idMissing && !idExpired);
     // green ONLY after a real provider verification (Verified / Verified Plus).
     // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
     const verified = (() => { try { const ch = (window.CDOS.KYC && window.CDOS.KYC.checksFor(name)) || []; return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
-    const badge = idMissing ? { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-      : idExpired ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
-      : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
-      : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' };
+    const badge = standingNow
+      ? (standingNow.onFile
+        ? { t: standingNow.chip || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
+        : idExpired
+          ? { t: standingNow.chip || 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+          : { t: standingNow.chip || 'Missing ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' })
+      : (idMissing ? { t: 'No ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+        : idExpired ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
+        : verified ? { t: 'ID verified', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
+        : { t: 'ID on file', c: CD.amber, bg: CD.amberSoft, ic: 'id' });
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
     const over = line != null && s.windowCad != null && s.windowCad >= line;
@@ -312,7 +328,7 @@
             <div className="flex items-center gap-2"><span className="font-semibold truncate" style={{ color: CD.ink }}>{name}</span>{s.count >= 3 && <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 flex-none" style={{ background: CD.amberSoft, color: 'var(--cd-brass-text)', borderRadius: 999, fontWeight: 600 }}><Ic n="star" s={10} c="var(--cd-brass-text)" /> Regular</span>}</div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here'}</div>
           </div>
-          <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
+          <span data-testid="deal-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" sentence={phone} value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />

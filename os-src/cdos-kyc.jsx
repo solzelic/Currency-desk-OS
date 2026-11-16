@@ -451,10 +451,19 @@
      Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
-  const NUDGE_CTA = { quick: { label: 'Run quick check · $3.99', ic: 'search' }, verify: { label: 'Run verify check · $6.99', ic: 'id' }, plus: { label: 'Run Verify Plus · $14.99', ic: 'shield' } };
+  const NUDGE_CTA = { quick: { label: 'Run quick check', ic: 'search' }, verify: { label: 'Run verify check', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
   function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) { setStanding(null); return undefined; }
+      let live = true;
+      api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {});
+      return () => { live = false; };
+    }, [rec && rec.clientId]);
     if (!name) return null;
     const RECO_DAYS = (settings && +settings.recheckDays) || 180;      // periodic quick-screen cadence
     const REVERIFY_DAYS = (settings && +settings.reverifyDays) || 365;  // full re-verification cadence
@@ -489,7 +498,7 @@
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
     else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
-    else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`; }
+    else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no ID on file.` : `${first} has an ID on file but has never been fully verified.`; }
     else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
     else { return null; }
     // house rule: a high-risk subject escalates any identity check to the deepest tier

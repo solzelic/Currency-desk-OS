@@ -22,6 +22,20 @@
   const deskTime = window.CDOS.deskTime;
   const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
+  /* The server standing, when this file has one. Otherwise the papers
+     typed on the contact. Every screen that says ID on file uses this. */
+  function idFileKyc(rec) {
+    const standing = rec && rec.idStanding;
+    if (standing) {
+      if (standing.onFile) return "ok";
+      if (standing.chip === "ID expired") return "ID expired";
+      return "missing ID";
+    }
+    if (!rec || !rec.idType || !rec.idNum) return "missing ID";
+    const today = window.CDOS.wallClock ? window.CDOS.wallClock() : businessDate();
+    if (rec.idExpiry && rec.idExpiry < today) return "ID expired";
+    return "ok";
+  }
   function computeFlags(rows, clients, settings) {
     const map = {};
     const countsForLctr = window.CDOS.countsForLctr || function () { return true; };
@@ -121,10 +135,9 @@
         return (dt(o) - end) / 3600000 <= hours;
       });
       const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
-      const rec = clients[row.customer]; let kyc = 'ok';
-      if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';
-      else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';
-      else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
+      const rec = clients[row.customer];
+      let kyc = idFileKyc(rec);
+      if (kyc === "ok" && settings.requireIdPhoto && !(rec && rec.photo)) kyc = "photo needed";
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
@@ -494,6 +507,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, Audit, Calc, ReceiptModal, deskTime, Tag
+    computeFlags, computeAlerts, idFileKyc, Audit, Calc, ReceiptModal, deskTime, Tag
   });
 })();

@@ -822,6 +822,37 @@
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
     useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.checks) return undefined;
+      const ids = [];
+      Object.keys(clients).forEach((name) => {
+        const id = clients[name] && clients[name].clientId;
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      if (!ids.length) return undefined;
+      let live = true;
+      Promise.all(ids.map((id) => api.checks(id).then((body) => [id, body && body.standing]).catch(() => [id, null]))).then((pairs) => {
+        if (!live) return;
+        setClients((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          pairs.forEach(([id, standing]) => {
+            if (!standing) return;
+            Object.keys(next).forEach((name) => {
+              const rec = next[name];
+              if (!rec || rec.clientId !== id) return;
+              const cur = rec.idStanding;
+              if (cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap) return;
+              next[name] = { ...rec, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
+              changed = true;
+            });
+          });
+          return changed ? next : prev;
+        });
+      });
+      return () => { live = false; };
+    }, [clients]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
       if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);

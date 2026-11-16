@@ -38,7 +38,7 @@ export const DUE_LINE = "A new full ID check is needed.";
 export const COUNTER_CHOSEN_LINE = "Customer chose the counter check. Inspect the original ID.";
 export const QUEBEC_LINE = "Face match is off for this branch. Inspect the original ID.";
 export const PROVINCE_LINE = "Set this branch's province before a face match. Inspect the original ID.";
-export const REVIEW_LINE = "This needs review. Your compliance officer will review this.";
+export const REVIEW_LINE = "This needs review. A supervisor will help.";
 export const DECLINED_LINE = "Check not passed. Check the ID at the counter.";
 export const INCOMPLETE_LINE = "Method not completed. Check the ID at the counter.";
 export const NONE_LINE = "No ID check on file";
@@ -82,6 +82,14 @@ export function counterOnly(province: string | null | undefined): { counter: boo
   const folded = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
   if (folded === "QC" || folded === "QUEBEC") return { counter: true, quebec: true, line: QUEBEC_LINE };
   return { counter: false, quebec: false, line: "" };
+}
+
+export function notPassedLine(date: string): string {
+  return `Not passed ${date}`;
+}
+
+export function underReviewLine(date: string): string {
+  return `Under review since ${date}`;
 }
 
 export function idCheckedLine(date: string, methodLabel: string, test: boolean): string {

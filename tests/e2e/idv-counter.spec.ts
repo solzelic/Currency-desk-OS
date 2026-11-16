@@ -31,9 +31,13 @@ function idFrontPng(): Buffer {
   for (let y = 0; y < png.height; y += 1) {
     for (let x = 0; x < png.width; x += 1) {
       const i = (y * png.width + x) * 4;
-      png.data[i] = x < 48 ? 210 : 30;
-      png.data[i + 1] = 80;
-      png.data[i + 2] = x < 48 ? 40 : 160;
+      const dx = x - 58;
+      const dy = y - 42;
+      const head = (dx * dx) / (26 * 26) + (dy * dy) / (32 * 32) <= 1;
+      const tone = head ? 150 : 226;
+      png.data[i] = tone;
+      png.data[i + 1] = tone - (head ? 6 : 2);
+      png.data[i + 2] = tone - (head ? 10 : 4);
       png.data[i + 3] = 255;
     }
   }
@@ -100,7 +104,7 @@ test.beforeAll(async () => {
       }
       if (url.includes("one-time-link")) {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ meta: { "one-time-link": "http://127.0.0.1:4199/sandbox-check" } }));
+        res.end(JSON.stringify({ meta: { "one-time-link": "https://inquiry.withpersona.com/sandbox-check" } }));
         return;
       }
       res.writeHead(200, { "content-type": "text/html" });
@@ -298,14 +302,15 @@ async function openDeal(page: Page, name: string) {
 }
 
 test("a staged deal runs the sandbox check, then the counter path", async ({ page, request }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   await enableChecks(request);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
   try {
     await signInAtDesk(page, "m.costa");
     await page.setViewportSize({ width: 1280, height: 900 });
-    const legalName = `Seam Id ${Date.now().toString(36)}`;
+    const legalName = "Maria Santos";
+    await db.query("UPDATE desk_clients SET display_name = display_name || ' earlier' WHERE display_name = 'Maria Santos'");
     const created = await page.evaluate(async (legalName) => {
       const res = await fetch("/api/clients", {
         method: "POST",
@@ -321,13 +326,19 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await openDeal(page, legalName);
     await page.getByTestId("deal-check-id").click();
     await expect(page.getByTestId("id-check-chooser")).toBeVisible();
-    await expect(page.getByRole("button", { name: /ID, selfie and database/ })).toBeDisabled();
-    await expect(page.getByText("Coming later.")).toBeVisible();
+    await expect(page.getByTestId("id-check-primary")).toContainText("ID and selfie");
+    await expect(page.getByText("in the sandbox")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /ID, selfie and database/ })).toHaveCount(0);
+    await expect(page.getByText("More options")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Returning client" })).toHaveCount(0);
     await expect(page.locator(".cd-tx-go")).toBeHidden();
     await themeShot(page, "chooser");
     await page.getByTestId("id-check-chooser").locator("button").filter({ hasText: /^ID and selfie/ }).click();
     await expect(page.getByTestId("id-check-notice")).toContainText("Your ID details are kept for at least 5 years because the law requires it.");
     await expect(page.getByTestId("id-check-notice")).toContainText("United States");
+    await expect(page.getByTestId("id-check-notice")).toContainText("416-555-0100");
+    await expect(page.getByTestId("id-check-notice")).not.toContainText("https://");
+    await expect(page.getByRole("link", { name: "Privacy policy" })).toBeVisible();
     await themeShot(page, "notice");
     await page.getByRole("button", { name: "Continue" }).click();
     const agree = page.getByRole("button", { name: "I agree" });
@@ -342,7 +353,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     expect(start.ok(), await start.text()).toBeTruthy();
     const providerRef = (await start.json()).providerRef as string;
     expect(providerRef).toBeTruthy();
-    await expect(page.getByTestId("id-check-link-url")).toContainText("sandbox-check");
+    await expect(page.getByTestId("id-check-link-url")).toHaveAttribute("href", "https://inquiry.withpersona.com/sandbox-check");
     await themeShot(page, "link");
     await postWebhook(page, providerRef, "inquiry.approved");
     await expect(page.getByTestId("id-check-done")).toContainText("ID checked", { timeout: 20_000 });
@@ -362,7 +373,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     expect(linkedStanding.standing.onFile).toBe(true);
     expect(linkedStanding.standing.chip).toBe("ID on file");
     expect(linkedStanding.standing.line).toContain("ID and selfie");
-    expect(linkedStanding.standing.line).toContain("•••• 8991");
+    expect(linkedStanding.standing.line).not.toContain("8991");
     expect(record.deals && record.deals.length).toBeGreaterThan(0);
     expect(JSON.stringify(linked)).not.toContain("AB12348991");
 
@@ -407,7 +418,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("client-standing")).not.toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).toContainText("Identified");
     await expect(page.getByTestId("client-where")).toContainText("ID and selfie");
-    await expect(page.getByTestId("client-where")).toContainText("•••• 8991");
+    await expect(page.getByTestId("client-where")).not.toContainText("8991");
     await expect(page.getByTestId("client-where")).not.toContainText("Not identified");
     await expect(profile.getByText("KYC / ID gap")).toHaveCount(0);
     await expect(file.getByTestId("id-check-photo-line")).toHaveText("Photo from ID, for comparison by eye");
@@ -421,6 +432,27 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     expect(views.rows.some((row) => row.reason === "eye_comparison")).toBe(true);
     await themeShot(page, "badge-passed");
     await themeShot(page, "masked-teller");
+
+    const otherName = `Other File ${Date.now()}`;
+    const other = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, otherName);
+    expect(other.status).toBe(201);
+    await page.locator(".client-file-actions button").last().click();
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(otherName, { exact: true }).click();
+    await expect(page.getByTestId("identity-check")).toBeVisible();
+    await expect(page.getByTestId("id-check-photo")).toHaveCount(0);
+    await expect(page.getByTestId("id-check-revealed")).toHaveCount(0);
+    await expect(page.getByTestId("identity-check")).not.toContainText("8991");
+    await page.locator(".client-file-actions button").last().click();
 
     const tillClose = await readTillClose(page);
     await signInAtDesk(page, "a.singh");
@@ -458,14 +490,23 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     expect(created.status).toBe(201);
     return created.body.clientId as string;
   };
-  const none = await made("No Check Client");
-  const progress = await made("Progress Check Client");
-  const review = await made("Review Check Client");
-  const declined = await made("Declined Check Client");
-  const incomplete = await made("Incomplete Check Client");
-  const advice = await made("Advice Check Client");
-  const due = await made("Due Check Client");
-  const returning = await made("Returning Check Client");
+  const mark = String(Date.now());
+  const noneName = `No Check Client ${mark}`;
+  const progressName = `Progress Check Client ${mark}`;
+  const reviewName = `Review Check Client ${mark}`;
+  const declinedName = `Declined Check Client ${mark}`;
+  const incompleteName = `Incomplete Check Client ${mark}`;
+  const adviceName = `Advice Check Client ${mark}`;
+  const dueName = `Due Check Client ${mark}`;
+  const returningName = `Returning Check Client ${mark}`;
+  const none = await made(noneName);
+  const progress = await made(progressName);
+  const review = await made(reviewName);
+  const declined = await made(declinedName);
+  const incomplete = await made(incompleteName);
+  const advice = await made(adviceName);
+  const due = await made(dueName);
+  const returning = await made(returningName);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
   const insert = async (clientId: string, result: string, method: string, yearsAgo: number) => {
@@ -517,46 +558,61 @@ test("counter screens for the other badge states", async ({ page, request }) => 
         if (node instanceof HTMLButtonElement) node.click();
       });
     };
-    await openFile("No Check Client");
+    await openFile(noneName);
     await expect(page.getByTestId("id-check-badge")).toContainText("No ID check on file");
     await themeShot(page, "badge-none");
     await startCheck();
     await expect(page.getByTestId("id-check-chooser")).toBeVisible();
-    await page.getByRole("button", { name: "Returning client" }).click();
-    await expect(page.getByTestId("id-check-returning-blocked")).toBeVisible();
-    await themeShot(page, "returning-blocked");
-    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("button", { name: "Returning client" })).toHaveCount(0);
+    await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
-    await openFile("Progress Check Client");
+    await openFile(progressName);
     await expect(page.getByTestId("id-check-badge")).toContainText("ID check in progress");
     await themeShot(page, "badge-progress");
-    await openFile("Review Check Client");
-    await expect(page.getByTestId("id-check-badge")).toContainText("This needs review. Your compliance officer will review this.");
+    await openFile(reviewName);
+    await expect(page.getByTestId("id-check-badge")).toContainText("Under review since");
     await themeShot(page, "badge-review");
-    await openFile("Declined Check Client");
-    await expect(page.getByTestId("id-check-badge")).toContainText("Check not passed. Check the ID at the counter.");
+    await openFile(declinedName);
+    await expect(page.getByTestId("id-check-badge")).toContainText("Not passed");
     await themeShot(page, "badge-declined");
-    await openFile("Incomplete Check Client");
+    await openFile(incompleteName);
     await expect(page.getByTestId("id-check-badge")).toContainText("Method not completed. Check the ID at the counter.");
     await themeShot(page, "badge-incomplete");
+    await startCheck();
+    await page.getByTestId("id-check-primary").click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByTestId("id-check-agree-box").check();
+    const failedStart = page.waitForResponse((res) => res.url().includes("/api/idv/start-check") && res.request().method() === "POST");
+    await page.getByRole("button", { name: "I agree" }).click();
+    const failed = await failedStart;
+    expect(failed.ok(), await failed.text()).toBeTruthy();
+    await postWebhook(page, (await failed.json()).providerRef as string, "inquiry.failed");
+    await expect(page.getByTestId("id-check-incomplete")).toBeVisible({ timeout: 20_000 });
+    await themeShot(page, "method-not-completed");
+    await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
-    await openFile("Advice Check Client");
+    await openFile(adviceName);
     await expect(page.getByTestId("id-check-advice")).toContainText("A new ID and selfie check is advised.");
     await themeShot(page, "badge-advice");
     await expect(page.getByTestId("id-check-badge")).toContainText("photo ID, in person");
     await themeShot(page, "badge-in-person");
-    await openFile("Due Check Client");
+    await openFile(dueName);
     await expect(page.getByTestId("id-check-due")).toContainText("A new full ID check is needed.");
     await themeShot(page, "badge-due");
     await startCheck();
+    await page.getByText("More options").click();
     await page.getByRole("button", { name: "Returning client" }).click();
     await expect(page.getByTestId("id-check-returning-blocked")).toContainText("A new full ID check is needed.");
-    await page.getByRole("button", { name: "Close" }).click();
+    await themeShot(page, "returning-blocked");
+    await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
-    await openFile("Returning Check Client");
+    await openFile(returningName);
     await startCheck();
+    await page.getByText("More options").click();
     await page.getByRole("button", { name: "Returning client" }).click();
     await expect(page.getByTestId("id-check-no-photo")).toContainText("No photo on file");
+    await expect(page.getByTestId("id-check-returning")).toContainText("Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?");
+    await expect(page.getByRole("button", { name: "Not asked" })).toBeVisible();
     await themeShot(page, "returning");
     await page.getByRole("button", { name: "No", exact: true }).click();
     await page.getByRole("checkbox", { name: /no doubts/i }).check();
@@ -569,13 +625,21 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await db.query("UPDATE branches SET province = 'QC' WHERE id = 'br-yorkville'");
     await page.reload();
     await landOnDesktop(page);
-    await openFile("No Check Client");
+    await openFile(noneName);
     await startCheck();
     await expect(page.getByTestId("id-check-quebec")).toContainText("Face match is off for this branch. Inspect the original ID.");
     await themeShot(page, "quebec");
-    await page.getByRole("button", { name: "Close" }).click();
+    await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
 
+    await signInAtDesk(page, "r.haddad");
+    await landOnDesktop(page);
+    await themeShot(page, "role-manager");
     await signInAtDesk(page, "j.masri");
+    await landOnDesktop(page);
+    await themeShot(page, "role-owner");
+    const skip = page.locator(".cdos-tour-skip");
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+    await expect(page.locator(".cdos-tour")).toHaveCount(0);
     await page.locator('[data-app="settings"]').click();
     await page.getByRole("button", { name: "Clients · KYC" }).click();
     await expect(page.getByTestId("id-check-settings")).toBeVisible({ timeout: 20_000 });
@@ -583,6 +647,161 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   } finally {
     await db.query("UPDATE branches SET province = 'ON' WHERE id = 'br-yorkville'");
     await request.put("/api/settings/idv", { data: { checksEnabled: false } }).catch(() => {});
+    await db.end();
+  }
+});
+
+test("the notice leaves out the photo sentence when the crop is off", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await enableChecks(request);
+  const saved = await request.put("/api/settings/idv", {
+    data: {
+      checksEnabled: true,
+      apiKeyRef: "PERSONA_API_KEY",
+      templateId: "itmpl_seamfixture",
+      faceCropEnabled: false,
+      privacyContact: "Privacy officer",
+      privacyEmail: "privacy@yorkfx.example",
+      privacyPhone: "4165550100",
+      privacyPolicyUrl: "https://yorkfx.example/privacy",
+    },
+  });
+  expect(saved.ok(), await saved.text()).toBeTruthy();
+  try {
+    await signInAtDesk(page, "m.costa");
+    const name = `Crop Off ${Date.now()}`;
+    const created = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, name);
+    expect(created.status).toBe(201);
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(name, { exact: true }).click();
+    await expect(page.getByTestId("identity-check")).not.toContainText("Show the photo");
+    await expect(page.getByTestId("id-check-photo")).toHaveCount(0);
+    await page.getByTestId("id-check-start").click();
+    await page.getByTestId("id-check-primary").click();
+    await expect(page.getByTestId("id-check-notice")).toBeVisible();
+    await expect(page.getByTestId("id-check-notice")).not.toContainText("small photo of your face");
+  } finally {
+    await request.put("/api/settings/idv", { data: { checksEnabled: false, faceCropEnabled: true } }).catch(() => {});
+  }
+});
+
+test("ID on file agrees on the chip, the file, the deal, the flags, and Needs attention", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await enableChecks(request);
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  const stamp = Date.now();
+  const names = {
+    pass: `Agree Pass ${stamp}`,
+    unavailable: `Agree Unavailable ${stamp}`,
+    expired: `Agree Expired ${stamp}`,
+    old: `Agree Old ${stamp}`,
+  };
+  const made = async (legalName: string) => {
+    const created = await page.evaluate(async (name) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName: name, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, legalName);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    return created.body.clientId as string;
+  };
+  try {
+    await signInAtDesk(page, "m.costa");
+    const ids = {
+      pass: await made(names.pass),
+      unavailable: await made(names.unavailable),
+      expired: await made(names.expired),
+      old: await made(names.old),
+    };
+    const insert = async (clientId: string, extra: string) => {
+      await db.query(
+        `INSERT INTO idv_check_records
+          (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+           verified_at, document_number_last4, number_unavailable, expiry_date, name_on_id)
+         VALUES ($1,'tnt-yorkfx','le-yorkfx-canada','br-yorkville',$2,'3','id_and_selfie','pass','m.costa', ${extra})`,
+        [`idc_agree_${clientId}`, clientId],
+      );
+    };
+    await insert(ids.pass, "now(), '3333', false, '2030-01-02', 'Agree Pass'");
+    await insert(ids.unavailable, "now(), NULL, true, '2030-01-02', 'Agree Unavailable'");
+    await insert(ids.expired, "now(), '1111', false, '2020-01-01', 'Agree Expired'");
+    await insert(ids.old, "now() - interval '6 years', '2222', false, '2030-01-02', 'Agree Old'");
+    await page.locator('[data-app="clients"]').click();
+    await page.waitForFunction((id) => {
+      const clients = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { clientId?: string; idStanding?: { onFile?: boolean } }>;
+      return Object.values(clients).some((rec) => rec && rec.clientId === id && rec.idStanding);
+    }, ids.pass);
+
+    const readFlags = (id: string) => page.evaluate((clientId) => {
+      const clients = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { clientId?: string; idStanding?: { chip: string; onFile: boolean } }>;
+      const name = Object.keys(clients).find((key) => clients[key] && clients[key].clientId === clientId) || "";
+      const row = { id: "agree-row", customer: name, status: "posted", type: "Currency Exchange", inAmt: 10000, inCcy: "CAD", outAmt: 7000, outCcy: "USD", date: "2026-11-16", time: "12:00", fee: 0 };
+      const flags = (window as unknown as { CDOS: { computeFlags: (rows: unknown[], clients: unknown, settings: unknown) => Record<string, { kyc: string }> } }).CDOS.computeFlags([row], clients, { threshold: 10000, idRequiredOver: 1, baselineRules: true });
+      return { kyc: flags["agree-row"].kyc, chip: clients[name].idStanding?.chip, onFile: !!clients[name].idStanding?.onFile };
+    }, id);
+
+    const openName = async (name: string) => {
+      await page.locator('[data-app="clients"]').click();
+      await page.getByText(name, { exact: true }).click();
+      await expect(page.getByTestId("client-standing")).toBeVisible();
+    };
+    const closeFile = async () => {
+      await page.locator(".client-file-actions button").last().click();
+    };
+
+    await openName(names.pass);
+    await expect(page.getByTestId("client-standing")).toContainText("ID on file");
+    await expect(page.getByTestId("client-where")).toContainText("Identified");
+    await closeFile();
+    await openName(names.unavailable);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).toContainText("Not identified");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
+    await closeFile();
+    await openName(names.expired);
+    await expect(page.getByTestId("client-standing")).toContainText("ID expired");
+    await expect(page.getByTestId("client-where")).toContainText("ID expired");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
+    await closeFile();
+    await openName(names.old);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
+    await closeFile();
+
+    expect(await readFlags(ids.pass)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
+    expect(await readFlags(ids.unavailable)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.expired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
+    expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
+
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    await page.getByRole("button", { name: /^New transaction$/i }).first().click();
+    await page.locator(".cd-tx-customer input").fill(names.pass);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.pass }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file");
+    await page.locator(".cd-tx-customer input").fill(names.expired);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.expired }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID expired");
+    await page.locator(".cd-tx-x").click();
+
+    await page.locator('[data-app="clients"]').click();
+    await page.getByTestId("client-filter-attention").click();
+    await expect(page.getByText(names.pass, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.unavailable, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.expired, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.old, { exact: true })).toBeVisible();
+  } finally {
     await db.end();
   }
 });

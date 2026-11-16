@@ -539,7 +539,8 @@
             const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
             const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
             const idNum = kycIdNumber(c);
-            const st = (!c.idType || !idNum) ? 'missing ID' : (c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'ID on file');
+            const state = window.CDOS.idFileKyc(c);
+            const st = state === 'ok' ? 'ID on file' : state;
             return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)]; })];
       }
       return [];
@@ -995,7 +996,7 @@
       }
       if (id === 'kyc') {
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
-        const stat = (n) => { const c = clients[n] || {}; if (!c.idType || !kycIdNumber(c)) return ['missing ID', CD.flag, CD.flagSoft]; if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft]; return ['ID on file', CD.green, CD.greenSoft]; };
+        const stat = (n) => { const state = window.CDOS.idFileKyc(clients[n]); if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft]; if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft]; return ['ID on file', CD.green, CD.greenSoft]; };
         return (<div>
           <DocHead title="Client & KYC Register" subtitle={`${names.length} client file(s) · activity within ${rangeLabel.toLowerCase()}`} rangeLabel={effRangeLabel} />
           <Card pad={0}>
