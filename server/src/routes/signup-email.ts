@@ -18,6 +18,7 @@ import { idTail, operatingNameOf, type IdDoor } from "../onboarding/cd-id-door.j
 import { existingAttempt, loadAccount } from "../onboarding/signup-account.js";
 import { maskEmail, maskPhone, sendSignupCode, setEnrolmentCookie, verifySignupCode, type Mailer } from "../onboarding/email-code.js";
 import { sendEmail } from "../email.js";
+import { stagingSignupFixture } from "../onboarding/signup-staging.js";
 
 const codeBody = z.object({ code: z.string().trim().min(1).max(12) });
 
@@ -44,8 +45,9 @@ export function ownerDetails(row: Enquiry) {
   };
 }
 
-export function registerSignupEmailRoutes(app: FastifyInstance, db: Db, door: IdDoor, deps: { mail?: Mailer } = {}): void {
+export function registerSignupEmailRoutes(app: FastifyInstance, db: Db, door: IdDoor, deps: { mail?: Mailer; env?: NodeJS.ProcessEnv } = {}): void {
   const mail = deps.mail ?? sendEmail;
+  const env = deps.env ?? process.env;
 
   type Found =
     | { found: false; status: 404 | 429; body: { error: string } }
@@ -68,12 +70,14 @@ export function registerSignupEmailRoutes(app: FastifyInstance, db: Db, door: Id
       eq(schema.signupCredentials.enquiryId, r.row.id), eq(schema.signupCredentials.attemptHash, attempt), isNull(schema.signupCredentials.verifiedAt),
     )).limit(1))[0];
     if (r.account.state !== "enrolling" || !candidate) return reply.code(409).send({ error: "no_candidate", detail: DETAIL.no_candidate });
-    const sent = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
+    const onScreen = await stagingSignupFixture(db, r.row, req.headers, env);
+    const sent = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail, Date.now(), { onScreen });
     if (!sent.sent && sent.reason === "not_enrolling") return reply.code(409).send({ error: "not_enrolling" });
     if (!sent.sent) {
       door.logRefusal({ reason: "code_resend_too_soon", id: idTail(r.cdId), connection: ip });
       return reply.code(429).send({ error: "too_soon", retryInSeconds: Math.ceil(sent.retryInMs / 1000), detail: "We've sent a few already. Give it a few minutes, then try again." });
     }
+    if (sent.delivery === "on_screen") return { ok: true, sent: true, stagingCode: sent.code };
     return { ok: true, sent: sent.delivery !== "failed" };
   });
 

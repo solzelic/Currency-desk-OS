@@ -78,6 +78,12 @@ This output change does not alter their financial fixtures or assertions.
   `SIGNUP_TEST_SEED=1` require explicit `test`/`development`, loopback bind and
   database hosts, no staging/deployment marker, and loopback request IP/Host.
   These flags do not expose codes on staging. A mailbox is cleared on close.
+- **Staging synthetic shop**: on the hosted staging service only, the reservation
+  minted by `POST /api/staging/fresh-onboarding` gets its signup code on screen and
+  opens without a card (`server/src/onboarding/signup-staging.ts`). It needs
+  `STAGING=1`, a staging `RENDER_EXTERNAL_HOSTNAME` and Host, and the database marker
+  from `npm run staging -- mark-db`; any missing piece closes it and the page asks
+  for the emailed code as usual. Ordinary reservations never get a code in a response.
 
 ## Sandboxed/CI environments
 

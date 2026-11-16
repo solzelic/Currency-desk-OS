@@ -150,6 +150,10 @@ patch("send my ID",
   "onIdSend: () => { if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test((this.state.idEmail || '').trim())) return; this._tone('done'); this.setState({ idSend: 'sent', idEmail: this.state.idEmail.trim() }); },",
   "onIdSend: () => { if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test((this.state.idEmail || '').trim())) return; const em = this.state.idEmail.trim(); window.__cdOnb.resendId(em).then((ok) => { if (ok) { this._tone('done'); this.setState({ idSend: 'sent', idEmail: em }); } else { window.__cdOnb.err = 'We couldn\\u2019t send that just now. Check your connection and try again.'; this.forceUpdate(); } }); },");
 
+/* ---- staging door's synthetic shop: its code is on screen, not emailed --- */
+patch("staging inbox copy", "help:'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });",
+  "help: window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code ? 'Staging test shop: no email is sent. Your 6-digit code is below.' : 'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });");
+
 /* ---- the pack decides the recommended ID line ------------------------- */
 patch("recommended line", "  idRec(j) { const L =", "  idRec(j) { if (j.idRecommended) return j.idRecommended; const L =");
 
@@ -230,11 +234,12 @@ patch("places pick", "  _adPick(a) {", "  _adPick(a) { if (a && a.placeId) retur
 
 /* ======== OPEN (signup-v2.1-open.js): plan, card, Day 1, tour ======== */
 /* ---- the plan: the server's prices, Stripe's card ---------------------- */
-patch("card complete", "(d.cardNum || '').replace(/\\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && ",
-  "!!window.__cdOnb.cardComplete && ", 2);
+/* the staging door's synthetic shop sends no card details anywhere: its name on card is not required */
+patch("card complete", "(d.cardNum || '').replace(/\\s/g, '').length >= 15 && (d.cardExp || '').length >= 4 && (d.cardCvc || '').length >= 3 && (d.cardName || '').trim().length > 1 && ",
+  "!!window.__cdOnb.cardComplete && (!!window.__cdOnb._staging || (d.cardName || '').trim().length > 1) && ", 2);
 patch("no last four", "const last4 = (d.cardNum || '').replace(/\\s/g, '').slice(-4);", "const last4 = '';");
 patch("no backup promised", "'Card, billing address, a backup if you like'", "'Card and billing address'");
-patch("card summary", "'Card •••• ' + last4 + ' · '", "'Card ready · '");
+patch("card summary", "'Card •••• ' + last4 + ' · '", "(window.__cdOnb && window.__cdOnb._staging ? 'Staging test shop, no card · ' : 'Card ready · ')");
 patch("not while paying", "this._payValid = this._payValid && read;", "this._payValid = this._payValid && read && !window.__cdOnb._paying;");
 patch("no promo yet", "R.promoMsg = 'Stripe checkout is not connected yet.';", "R.promoMsg = 'That code isn\\u2019t one we recognise.';");
 /* a backup card needs its own SetupIntent, which the server does not make

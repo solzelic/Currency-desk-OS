@@ -23,7 +23,7 @@ import { seed } from "../src/seed.js";
 import { buildApp, maskCdIds } from "../src/app.js";
 import { resetEnquiryThrottle } from "../src/routes/enquiries.js";
 import { resetIdDoor } from "../src/routes/onboarding-public.js";
-import { LOCK_MS, Throttle, createIdDoor, emailHash, idTail, type Refusal } from "../src/onboarding/cd-id-door.js";
+import { LOCK_MS, THROTTLE_KEYS, Throttle, createIdDoor, emailHash, idTail, type Refusal } from "../src/onboarding/cd-id-door.js";
 
 let handle: DbHandle;
 let app: FastifyInstance;
@@ -243,6 +243,36 @@ describe("logs", () => {
     expect([t.take("k"), t.take("k"), t.take("k"), t.take("k")]).toEqual([true, true, true, false]);
     now = 1001;
     expect(t.take("k")).toBe(true);
+  });
+});
+
+/* A throttle remembers THROTTLE_KEYS keys (10,000). Filling it must never
+   refuse, or stop counting, a key it has not seen: that let one crowd lock
+   everyone out. */
+describe("a full throttle", () => {
+  const fill = (t: Throttle, count: (key: string) => unknown) => { for (let i = 0; i <= THROTTLE_KEYS; i++) count(`k${i}`); };
+
+  it("forgets the key it saw longest ago, and still gives a new key its room", () => {
+    const t = new Throttle(1, 60_000, 0, () => 0);
+    fill(t, (k) => t.take(k));
+    expect(t.take("fresh")).toBe(true);
+    expect(t.take("fresh")).toBe(false);
+    expect(t.take(`k${THROTTLE_KEYS}`)).toBe(false);
+    expect(t.take("k0")).toBe(true);
+  });
+
+  it("still counts a new key's misses and locks it at the limit", () => {
+    const t = new Throttle(3, 60_000, 60_000, () => 0);
+    fill(t, (k) => t.hit(k));
+    expect([t.hit("guess"), t.hit("guess"), t.hit("guess")]).toEqual([false, false, true]);
+    expect(t.locked("guess")).toBe(true);
+  });
+
+  it("keeps the lock on a key that keeps knocking while the crowd passes", () => {
+    const t = new Throttle(1, 60_000, 60_000, () => 0);
+    t.hit("guess");
+    fill(t, (k) => { t.hit(k); t.locked("guess"); });
+    expect(t.locked("guess")).toBe(true);
   });
 });
 

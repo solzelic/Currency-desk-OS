@@ -647,7 +647,7 @@ class Component extends DCLogic {
       items:[['A rate page','Rates, hours, map and a converter. Share it, put it on Google, link to it from anywhere.','globe'],['A window screen','Any TV or tablet in the window. Open the link, tap once, leave it. It updates itself.','tv'],['Your own site','Put the page on your domain, or pull the rates into the site you already have. Both free.','link']], dots:['•','•','•'], ctaLabel:'Good. Now my rules', valid:true, wide:true, shot:'online', vid:true, shotCap:'Website & Window, then the public rate page and the window screen, as customers see them.' };
     S[24] = { type:'explain', eyebrow:'Chapter 5 of 5 · Open', q:'Confirmed. Now, open it.', paras:[(d.operatingName || 'Your desk') + ' is signed off and waiting behind this door. Choose a plan and it opens. From the first deal, the desk carries the weight:'],
       items:[['Rates that follow the market','Market rates land through the day. Your spread on top, your board, site and window all at once.','rateboard'],['Every deal checks itself','Your ID line, the 24-hour rule and the large-cash report, at the till, without asking.','complianceshield'],['Reports, ready to file','' + j.reg + ' reports drafted from the day’s deals. You review, the desk files nothing without you.','filetext'],['The rest, at your pace','Inside, the walk-through collects documents, bank details and records. Nothing holds up opening.','upload']], dots:['•','•','•','•'], ctaLabel:'Choose my plan', valid:true, wide:true, shot:'dashboard', vid:true, shotCap:'Your dashboard, filling up as you trade.' };
-    S[14] = Object.assign({}, S[14], { eyebrow:'Your account', q:'Check your inbox.', help:'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });
+    S[14] = Object.assign({}, S[14], { eyebrow:'Your account', q:'Check your inbox.', help: window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code ? 'Staging test shop: no email is sent. Your 6-digit code is below.' : 'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });
     S[19] = Object.assign({}, S[19], { eyebrow:'Chapter 5 of 5 \u00b7 Open', shot:'home', shotCap:'The desk walks you through all of it, inside', shotSide:'below' });
     const pkP = d.passkeyDone ? 'done' : (this.state.pkPhase || 'idle');
     S[5] = { type:'form', mark:'lock', formTop:'lock', eyebrow:'Your account', q:'How will you sign in?', help:'Choose how you’ll sign in to ' + (d.operatingName || 'your desk') + '. This login can do everything, so we recommend a passkey.', pkP,
@@ -922,7 +922,7 @@ class Component extends DCLogic {
     R.onBackupNum = (e) => this.setBk('num', this.formatCard(e.target.value));
     R.onBackupExp = (e) => this.setBk('exp', this.formatExp(e.target.value));
     R.onBackupCvc = (e) => this.setBk('cvc', e.target.value.replace(/\D/g, '').slice(0, 4));
-    this._payValid = !!window.__cdOnb.cardComplete && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
+    this._payValid = !!window.__cdOnb.cardComplete && (!!window.__cdOnb._staging || (d.cardName || '').trim().length > 1) && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
     const seen = true;
     const read = !!this.state.termsRead;
     R.termsRead = read;
@@ -972,7 +972,7 @@ class Component extends DCLogic {
 
     {
       const pOpenK = this.state.payOpen != null ? this.state.payOpen : 0, seen = this.state.paySeen || {};
-      const cardOk = !!window.__cdOnb.cardComplete && (d.cardName || '').trim().length > 1 && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
+      const cardOk = !!window.__cdOnb.cardComplete && (!!window.__cdOnb._staging || (d.cardName || '').trim().length > 1) && (d.billSame !== false || ((d.billStreet || '').trim() && (d.billCity || '').trim() && (d.billPostal || '').trim()));
       const done = [!!seen[0], !!seen[1], cardOk && !!seen[2], !!this.state.termsRead];
       const pl = this.PLANS.find(p => p.id === (d.plan || 'ai')) || this.PLANS[0], an = (d.term || 'monthly') === 'annual', nL = this.locCount();
       const mny2 = (n) => '$' + Math.round(n).toLocaleString('en-CA');
@@ -981,7 +981,7 @@ class Component extends DCLogic {
       const sums = [
         pl.name + ' · ' + (an ? mny2(pl.mo * 0.9) + ' CAD/mo per location, billed yearly' : mny2(pl.mo) + ' CAD/mo per location'),
         [d.brief !== false ? 'Desk Brief' : '', d.call !== false ? 'SAM call' : ''].filter(Boolean).join(' + ') + ((d.brief !== false || d.call !== false) ? ' free' : '') + (sel.length ? (((d.brief !== false || d.call !== false) ? ' · ' : '') + sel.map(a => a.id === 'website' ? 'rate website' : 'setup week').join(' + ')) : '') || 'Nothing extra',
-        cardOk ? ('Card ready · ' + (d.billSame !== false ? 'billed to the shop address' : 'billed to ' + (d.billCity || 'another address')) + ((d.backup || {}).num ? ' · backup added' : '')) : 'Card and billing address',
+        cardOk ? ((window.__cdOnb && window.__cdOnb._staging ? 'Staging test shop, no card · ' : 'Card ready · ') + (d.billSame !== false ? 'billed to the shop address' : 'billed to ' + (d.billCity || 'another address')) + ((d.backup || {}).num ? ' · backup added' : '')) : 'Card and billing address',
         this.state.termsRead ? 'Read and accepted' : 'Plain English. Compliance stays yours'
       ];
       const nexts = ['Continue', 'Continue', 'Continue', 'Accept'];

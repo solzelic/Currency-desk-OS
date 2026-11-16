@@ -134,14 +134,14 @@
       CD.checking = ""; CD.throttled = false; CD.err = "";
       if (CD.code && CD.code !== id) {
         CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
-        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._paying = false;
+        CD.prices = null; CD._priceFailed = false; CD._cardKey = null; CD.cardComplete = false; CD._staging = false; CD._paying = false;
         CD.callPreference = null; CD._consentBusy = false; CD.consentError = "";
         if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
       }
-      CD.code = ""; CD.alreadyOpen = false; tabSet("");
+      CD.code = ""; CD.alreadyOpen = false; CD.verify.code = ""; tabSet("");
       if (CD.comp) CD.comp.set("operatingName", "");
       function select() {
-        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
+        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; CD.verify.code = ""; tabSet(id);
         if (CD.comp) CD.comp.set("operatingName", CD.names[id] || "");
       }
       if (!ID.test(id)) return;
@@ -196,9 +196,10 @@
             },
             deviceLabel: c.deviceInfo().device,
           };
+          var id = CD.code;
           return api("POST", "/passkey/verify", body).then(function (v) {
             if (v.status !== 200 || !v.body.ok) return fail(why(v, cancelled));
-            CD.codeSent = v.body.codeSent !== false;
+            CD.codeSent = v.body.codeSent !== false; CD.stagingCode(v.body, id);
             c.setState({ pkScan: "ok" });
             setTimeout(function () { c.setState({ pkPhase: "done", pkScan: false }); c.set("passkeyDone", true);
               setTimeout(function () { if (c.state.i === 5) c.next(); }, 900); }, 400);
@@ -227,21 +228,21 @@
       });
     },
     ssoFinish: function (c, prov, code, state) {
-      var label = prov === "google" ? "Google" : "Microsoft";
+      var label = prov === "google" ? "Google" : "Microsoft", id = CD.code;
       api("POST", "/sso/callback", { provider: prov, code: code, state: state }).then(function (r) {
         if (r.status !== 200 || !r.body.ok) {
           c.setState({ ssoPhase: "idle", lockErr: why(r, "That " + label + " sign-in didn’t finish. Nothing was saved. Try again, or choose another way.") });
           return;
         }
-        CD.codeSent = r.body.codeSent !== false;
+        CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id);
         c.setState({ ssoPhase: "idle" }); c.set("lockMode", prov); c.set("ssoDone", prov);
         setTimeout(function () { if (c.state.i === 5) c.next(); }, 900);
       });
     },
     password: function (c) {
-      var d = c.state.data;
+      var d = c.state.data, id = CD.code;
       return api("POST", "/password", { password: d.ownerPass || "", confirm: d.pass2 || "" }).then(function (r) {
-        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; c.set("ownerPass", ""); c.set("pass2", ""); return true; }
+        if (r.status === 200 && r.body.ok) { CD.codeSent = r.body.codeSent !== false; CD.stagingCode(r.body, id); c.set("ownerPass", ""); c.set("pass2", ""); return true; }
         c.setState({ lockErr: why(r, "That password wasn’t saved. Try again.") });
         return false;
       });
@@ -252,19 +253,31 @@
       return { q: "Check your inbox.", help: "We just sent a 6-digit code to the email you applied with. This is the address we write to.",
         resend: "No email yet?", fixLead: "Wrong address?", fixTail: " — you’ll need this address every time you sign in." };
     },
+    /* The staging door's synthetic shop has no inbox: the server hands its
+       code to this browser alone, and the frozen "Staging code" row shows it
+       (it hides "Send it again" while it does). Never kept; a late reply for
+       another ID is dropped. Any other reservation never gets one. */
+    stagingCode: function (body, id) {
+      if (CD.code !== id) return;
+      CD.verify.code = body && typeof body.stagingCode === "string" && /^[0-9]{6}$/.test(body.stagingCode) ? body.stagingCode : "";
+    },
     /* "Send it again" only. The first code went when the credential saved. */
     sendCode: function () {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/send", {}).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return true;
+        if (r.status === 200 && r.body.ok !== false) { CD.stagingCode(r.body, id); return true; }
         CD.err = why(r, "We couldn’t send that code just now.");
         return false;
       });
     },
     checkCode: function (entered) {
       CD.err = "";
+      var id = CD.code;
       return api("POST", "/email/verify", { code: entered }).then(function (r) {
-        if (r.status === 200 && r.body.ok !== false) return CD.loadResume(true).then(function () { return true; });
+        if (r.status === 200 && r.body.ok !== false) { if (CD.code === id) CD.verify.code = ""; return CD.loadResume(true).then(function () { return true; }); }
+        /* a spent or lapsed staging code: bring "Send it again" back */
+        if (CD.code === id && /^(expired|too_many_attempts|no_code|no_candidate|not_enrolling)$/.test(String(r.body.error || ""))) CD.verify.code = "";
         CD.err = why(r, r.status === 0 ? NET : "That code isn’t right.");
         return false;
       });
@@ -654,6 +667,7 @@
   "use strict";
   var CD = window.__cdOnb, h = CD.h, call = h.call, api = h.api, why = h.why, NET = h.NET, tabSet = h.tabSet, STEP_OF = h.STEP_OF;
   /* ---- money, as the server sent it ------------------------------------ */
+  var STAGING_NOTE = "Staging test shop. No card is taken, nothing on this form is sent and nothing is charged: Open finishes the desk as a test shop.";
   var SYMBOL = { CAD: "$", USD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£" };
   function money(minor, currency) {
     if (typeof minor !== "number" || !isFinite(minor)) return "";
@@ -750,17 +764,21 @@
     },
     card: function (c) {
       var choice = CD.paymentChoice(c), key = CD.paymentKey(c);
-      if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD._cardFailed)) return;
+      if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD._cardFailed || CD._staging)) return;
       if (CD._pe) { try { CD._pe.destroy(); } catch (e) {} }
       CD._pe = null; CD._elements = null; CD._secret = null; CD._intent = null;
       if (CD._box) { CD._box.removeAttribute("data-mounted"); CD._box.textContent = ""; }
-      CD._cardKey = key; CD._cardBusy = true; CD._cardFailed = false; CD.cardComplete = false; CD.payErr = "";
+      CD._cardKey = key; CD._cardBusy = true; CD._cardFailed = false; CD.cardComplete = false; CD._staging = false; CD.payErr = "";
       var sequence = CD._cardRequest = (CD._cardRequest || 0) + 1;
       var current = function () { return CD._cardKey === key && key === CD.paymentKey(c) && sequence === CD._cardRequest; };
       var fail = function (message) { if (!current()) return; CD._cardBusy = false; CD._cardFailed = true; CD._elements = null; CD.payErr = message; c.forceUpdate(); };
       api("POST", "/payment", choice, 20000).then(function (r) {
         if (!current()) return;
-        if (r.status !== 200 || !r.body.clientSecret) { fail(why(r, "Card payments aren’t available just now. Nothing was charged.")); return; }
+        if (r.status !== 200 || (!r.body.clientSecret && r.body.staging !== true)) { fail(why(r, "Card payments aren’t available just now. Nothing was charged.")); return; }
+        if (r.body.staging === true && r.body.termsSourceHash === window.__cdAgreementHash) {
+          /* the staging door's synthetic shop: no card form, nothing to take */
+          CD._staging = true; CD._cardBusy = false; CD.cardComplete = true; c.forceUpdate(); setTimeout(CD.cardNote, 0); return;
+        }
         if (!r.body.setupIntentId || r.body.termsSourceHash !== window.__cdAgreementHash) { fail("The agreement has changed. Reload this page to review it before opening your desk."); return; }
         CD._secret = r.body.clientSecret; CD._intent = r.body.setupIntentId;
         return stripeJs().then(function () {
@@ -781,7 +799,7 @@
       if (!box || box.getAttribute("data-mounted") === "1") return;
       box.setAttribute("role", "status");
       box.style.cssText = "min-height: 46px; display: flex; align-items: center; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--line); font-size: 13px; line-height: 1.45; color: var(--mute);";
-      box.textContent = CD.payErr || (CD._cardBusy ? "Loading the card form\u2026" : "");
+      box.textContent = CD.payErr || (CD._staging ? STAGING_NOTE : CD._cardBusy ? "Loading the card form\u2026" : "");
     },
     mountCard: function () {
       var box = document.querySelector("[data-stripe-card]");
@@ -797,6 +815,7 @@
        webhook has told the server, and only then; the page asks until it
        has, and says so if it is taking a while. */
     pay: function (c) {
+      if (CD._staging) return CD.stagingPay(c);
       if (!CD._stripe || !CD._elements || CD._paying || !c.state.termsRead) return;
       if (CD._cardKey !== CD.paymentKey(c)) { CD.payErr = "Your plan changed. Open Payment again to update the card form."; CD.cardComplete = false; c.forceUpdate(); return; }
       var d = c.state.data;
@@ -816,6 +835,20 @@
           CD.waitOpen(c, 0);
         });
       }).catch(function () { CD._paying = false; CD.payErr = NET; c.forceUpdate(); });
+    },
+    /* Staging test shop: Open records the owner's assent and the server opens
+       the desk as a test shop; then the same /open as after a card. */
+    stagingPay: function (c) {
+      if (CD._paying || !c.state.termsRead || !CD.cardComplete) return;
+      if (CD._cardKey !== CD.paymentKey(c)) { CD.payErr = "Your plan changed. Open Payment again to update it."; CD.cardComplete = false; CD._staging = false; c.forceUpdate(); return; }
+      var key = CD._cardKey, attempt = { id: CD.code, nav: CD._nav || 0 };
+      CD._paying = true; CD.payErr = ""; c.forceUpdate();
+      api("POST", "/staging-open", { termsSourceHash: window.__cdAgreementHash, agreed: true }).then(function (r) {
+        if (attempt.id !== CD.code || attempt.nav !== (CD._nav || 0)) return;
+        if ((r.status === 200 && r.body.ok) || (r.status === 409 && r.body.error === "already_open")) { CD.waitOpen(c, 0, attempt); return; }
+        if (r.status === 409 || key !== CD.paymentKey(c)) { CD._cardKey = null; CD._staging = false; CD.cardComplete = false; }
+        CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
+      });
     },
     resumePayment: function (c) {
       // A URL is only a navigation hint. /open requires the unspent enrolment

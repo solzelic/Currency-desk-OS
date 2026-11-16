@@ -33,6 +33,7 @@ import { checkPassword, pwnedRange, type RangeFetch } from "../onboarding/passwo
 import { PROVIDERS, fetchJson, finishSso, providerConfig, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
 import { sendSignupCode, type Mailer } from "../onboarding/email-code.js";
 import { sendEmail } from "../email.js";
+import { stagingSignupFixture } from "../onboarding/signup-staging.js";
 
 type Enquiry = typeof schema.enquiries.$inferSelect;
 type Reservation = { cdId: string; row: Enquiry; account: Account; connection: string };
@@ -69,9 +70,13 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       takesCredential(account.state) && await signupReservationMatches(tx, r.row.id, r.cdId) ? work(tx) : null);
   }
 
-  async function codeAfterSave(r: Reservation): Promise<boolean> {
-    const result = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail);
-    return result.sent && result.delivery !== "failed";
+  /* The staging door's synthetic shop has no inbox: its code comes back in
+     this response, to this browser only (onboarding/signup-staging.ts). */
+  async function codeAfterSave(r: Reservation, req: FastifyRequest): Promise<{ codeSent: boolean; stagingCode?: string }> {
+    const onScreen = await stagingSignupFixture(db, r.row, req.headers, env);
+    const result = await sendSignupCode(db, r.row, operatingNameOf(r.row), mail, Date.now(), { onScreen });
+    if (result.sent && result.delivery === "on_screen") return { codeSent: true, stagingCode: result.code };
+    return { codeSent: result.sent && result.delivery !== "failed" };
   }
 
   /* The reservation this ID names, if it still takes a credential. Replies
@@ -81,16 +86,12 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     const cdId = normalizeCdIdInput(req.params.ref);
     if (!cdId) { reply.code(404).send({ error: "no_such_id" }); return undefined; }
     if (door.closed(cdId, connection)) { reply.code(429).send({ error: "slow_down" }); return undefined; }
-    if (!door.takeCredential(cdId, connection)) {
-      door.logRefusal({ reason: "credential_rate_limit", id: idTail(cdId), connection });
-      reply.code(429).send({ error: "slow_down" }); return undefined;
-    }
-    const row = await door.findByCdId(cdId);
-    if (!row) {
-      door.fail(cdId, connection, "credential_unknown_id");
-      reply.code(404).send({ error: "no_such_id" });
+    const found = await door.findForCredential(cdId, connection);
+    if ("refused" in found) {
+      reply.code(found.refused === "slow_down" ? 429 : 404).send({ error: found.refused });
       return undefined;
     }
+    const { row } = found;
     const account = await loadAccount(db, row.id);
     if (row.status === "accepted" || account.state === "active") {
       door.logRefusal({ reason: "already_open", id: idTail(cdId), connection });
@@ -136,7 +137,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       kind: "passkey", attemptHash: attempt, passkey: { ...result.passkey, deviceLabel: parsed.data.deviceLabel || "This device" },
     }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
-    return { ok: true, kind: "passkey", state: saved.state, codeSent: await codeAfterSave(r) };
+    return { ok: true, kind: "passkey", state: saved.state, ...(await codeAfterSave(r, req)) };
   });
 
   app.get<{ Params: { ref: string; provider: string } }>("/api/onboarding/:ref/sso/:provider/start", async (req, reply) => {
@@ -179,7 +180,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     }
     const saved = await saveCredential(db, r.row.id, { kind: provider, attemptHash: attempt, sso: { subject: result.subject, tenant: result.tenant } }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
-    return { ok: true, kind: provider, state: saved.state, codeSent: await codeAfterSave(r) };
+    return { ok: true, kind: provider, state: saved.state, ...(await codeAfterSave(r, req)) };
   });
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/password", async (req, reply) => {
@@ -199,6 +200,6 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
       kind: "password", attemptHash: attemptOf(req, reply), passwordHash: await hashSignupSecret(parsed.data.password),
     }, r.cdId);
     if (!saved) return reply.code(409).send({ error: "already_verified" });
-    return { ok: true, kind: "password", state: saved.state, codeSent: await codeAfterSave(r) };
+    return { ok: true, kind: "password", state: saved.state, ...(await codeAfterSave(r, req)) };
   });
 }

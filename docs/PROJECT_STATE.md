@@ -1,3 +1,49 @@
+## Signup credential door throttle, 16 November 2026
+
+A crowd of made-up CurrencyDesk IDs can no longer lock every applicant out of
+saving a sign-in. Each in-memory throttle in `server/src/onboarding/cd-id-door.ts`
+used to refuse every key once it held 10,000. About 1,000 addresses (one IPv6
+/64), each sending ten well-shaped IDs nobody holds, turned every real passkey,
+Google/Microsoft or password save into 429 for 15 minutes. A full table also
+stopped locking connections on `/state` and dropped resends. Each throttle now
+forgets the key it saw longest ago (`THROTTLE_KEYS`, 10,000), and a key that
+keeps asking while locked stays locked. The credential routes count the
+connection before the lookup and the ID only once it names a reservation, so an
+unknown ID is a miss against its connection alone. The limits are unchanged: 12
+per ID and 30 per connection per 15 minutes, and 10 misses close for 15 minutes.
+The counters are still per process and per address. A sender rotating more than
+10,000 addresses can outlast the per-connection counts, so durable shared
+counters and /64 bucketing remain release review items. Protected surface
+(auth): CTO review required.
+
+## Signup staging payment refusal — 16 November 2026
+
+If a synthetic staging reservation loses a fixture gate after verification,
+`/payment` and `/plan` now return `503 staging_unavailable` before constructing
+a Stripe client. A configured processor must never be the fallback for an
+`@staging.invalid` address. The regression closes the database marker after
+real credential/code/PIN/signature steps with a configured processor spy;
+it failed before the guard and passes with no Stripe call or billing identifiers.
+The shared staging-owner helper and CD221-owned authentication files are unchanged.
+This is a staging walkthrough safeguard, not release or CTO acceptance.
+
+## Signup v2.1 staging walkthrough — 16 November 2026
+
+A synthetic shop from the staging door can now walk the real v2.1 page end to end on
+staging: credential, the 6-digit code shown in the frozen "Staging code" row, PIN,
+chapters, signature, plan, Open with no card, Day 1 in the real Home, sign out, and the
+existing staging sign-in. Only that reservation qualifies: the staging runtime and raw
+Host, the `db_environment` staging marker, and server-written provenance
+(`owner+<h8>@staging.invalid`, `stg-<h8>`, stagingFresh, the staging do-not-contact
+reason). It reuses the ordinary code limits, PIN, answers, signature, assent record,
+provisioning and session upgrade. No Stripe customer, intent or `stripe_customers` row is
+created, the live webhook is untouched, and the desk is a test shop. Ordinary reservations
+and live are unchanged, and no `@staging.invalid` address is ever mailed. Hosted use
+needs the staging database marker (`npm run staging -- mark-db`), which is unverified as
+of this note; without it the page asks for an emailed code as before. Not release, CTO or
+Compliance approval. The legacy sign-in screen does not yet show the staging sign-in code
+(CD221 owns it).
+
 ## Signup v2.1 staging integration — 16 November 2026
 
 Sol requested merging signup to staging. This integration combines the reviewed
@@ -94,6 +140,18 @@ unidentified customer is refused at any amount, and the foreign-exchange ticket
 is asked for on every exchange. NULL still follows the pack. A desk number still
 cannot lift the CAD 1,000 lines. Other country gates still drop a zero; nothing
 writes one for them today. Compliance and CTO review are required.
+
+**2026-11-16: failed sign-up activation logs.** When the Stripe webhook's
+`setup_intent.succeeded` fails to open a v2.1 desk, the log keeps only a
+bounded reason: the error's class, the Postgres SQLSTATE, and the Stripe event
+id and type. It no longer logs the error itself, whose message and params held
+the owner's email, password and PIN hashes and full CD ID on every Stripe
+retry. Outside `/api/onboarding/` (which already had this rule), a database
+query error on any route is logged the same way and answered 500
+`temporarily_unavailable`, not Fastify's default body that echoed the SQL and
+bound values. That covers the Early Access form and the admin CD ID reissue.
+Other errors keep Fastify's default handling. The rule is
+`server/src/error-reason.ts`.
 
 **2026-11-15 — sign-up credential review corrections.** New v2.1 password and
 PIN hashes use pinned Argon2id; the shared verifier still reads existing scrypt
