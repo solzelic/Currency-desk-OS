@@ -3101,6 +3101,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     overflow-x: auto;
     scrollbar-width: none;
     padding: 8px 16px 12px !important;
+    scroll-snap-type: x proximity;
     scroll-padding-inline: 16px;
     grid-template-columns: none !important;
     -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent);
