@@ -143,7 +143,7 @@ export type SignupStripe = {
   setupIntents: { create(p: { customer: string; usage: "off_session"; automatic_payment_methods: { enabled: true }; metadata: Record<string, string> }, options: { idempotencyKey: string }): Promise<{ id: string; client_secret: string | null }> };
 };
 
-export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, choice: PlanChoice): Promise<{ clientSecret: string; price: ReturnType<typeof monthlyFor> }> {
+export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, choice: PlanChoice, agreed = true) {
   return withSignupAccount(db, row.id, async (db, account) => {
     if (account.state !== "verified" || !account.pinHash || !(await stillConfirmed(db, row.id))) throw new Error("signup_not_confirmed");
     const ob = await loadOrCreateOnboarding(db, row.id);
@@ -154,7 +154,7 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
     const locations = answers.shops === "more" ? z.number().int().min(2).max(50).parse(answers.shopCount) : 1;
     const selected = { ...choice, locations };
     if (!account.confirmedName || !account.answersHash) throw new Error("signup_signature_missing");
-    const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected })).digest("hex");
+    const agreement = createHash("sha256").update(JSON.stringify({ answers: account.answersHash, selected, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH })).digest("hex");
     const metadata = { currencydesk_signup_enquiry: row.id, currencydesk_signup_agreement: agreement };
     const customerId = account.stripeCustomerId ?? z.object({ id: z.string().startsWith("cus_") }).parse(
       await stripe.customers.create({ email: row.email, name: typeof details.shopName === "string" ? details.shopName : row.name ?? "", metadata: { currencydesk_signup_enquiry: row.id } }, { idempotencyKey: `signup-customer-${account.accountId}` })
@@ -164,14 +164,36 @@ export async function startPayment(db: Db, stripe: SignupStripe, row: Enquiry, c
     );
     await db.update(schema.signupAccounts).set({
       stripeCustomerId: customerId, setupIntentId: intent.id,
-      planChoice: { ...selected, agreement, answersHash: account.answersHash, price: monthlyFor(selected) }, updatedAt: new Date(),
+      planChoice: { ...selected, agreement, answersHash: account.answersHash, price: monthlyFor(selected), agreed, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH }, updatedAt: new Date(),
     }).where(eq(schema.signupAccounts.enquiryId, row.id));
     await db.update(schema.onboarding).set({ answers: { ...answers, plan: selected.plan, term: selected.term, brief: selected.brief, call: selected.call }, updatedAt: new Date() }).where(eq(schema.onboarding.enquiryId, row.id));
-    await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId: row.id, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
+    if (agreed) await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId: row.id, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
       declarationVersion: DECLARATION_VERSION, answersHash: account.answersHash,
       record: { selected, price: monthlyFor(selected), agreed: true, agreement, setupIntentId: intent.id, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH },
     });
-    return { clientSecret: intent.client_secret, price: monthlyFor(selected) };
+    return { clientSecret: intent.client_secret, setupIntentId: intent.id, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH, price: monthlyFor(selected) };
+  });
+}
+
+const selectedPlan = z.object({ plan: z.enum(["ai", "full", "rates"]), term: z.enum(["monthly", "annual"]), locations: z.number().int().min(1).max(50), brief: z.boolean(), call: z.boolean(), website: z.literal(false), setupWeek: z.boolean() });
+
+/** Open is the assent action. Card preparation never signs for the owner.
+ * Bind the displayed version to the exact current intent under the same
+ * account lock as edits and activation. Retries retain one evidence row. */
+export async function acceptServiceAgreement(db: Db, enquiryId: string, setupIntentId: string): Promise<boolean> {
+  return withSignupAccount(db, enquiryId, async (db, account) => {
+    if (account.state !== "verified" || !account.pinHash || !account.confirmedName || !account.answersHash
+      || account.setupIntentId !== setupIntentId || !(await stillConfirmed(db, enquiryId))) return false;
+    const parsed = selectedPlan.extend({ agreement: z.string(), answersHash: z.string(), agreed: z.boolean(), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH) }).safeParse(account.planChoice);
+    if (!parsed.success || parsed.data.answersHash !== account.answersHash) return false;
+    if (parsed.data.agreed) return true;
+    const selected = selectedPlan.parse(parsed.data);
+    await db.insert(schema.signupAgreements).values({ id: randomUUID(), enquiryId, accountId: account.accountId, kind: "plan", signerName: account.confirmedName,
+      declarationVersion: DECLARATION_VERSION, answersHash: account.answersHash,
+      record: { selected, price: monthlyFor(selected), agreed: true, agreement: parsed.data.agreement, setupIntentId, termsSourceHash: SERVICE_AGREEMENT_SOURCE_HASH },
+    });
+    await db.update(schema.signupAccounts).set({ planChoice: { ...account.planChoice, agreed: true }, updatedAt: new Date() }).where(eq(schema.signupAccounts.enquiryId, enquiryId));
+    return true;
   });
 }
 
@@ -189,7 +211,7 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   if (!account) return { opened: false, reason: "unknown_intent" };
   return withSignupAccount(db, enquiryId, async (db, account): Promise<OpenResult> => {
   if (account.setupIntentId !== intent.id || intent.customer !== account.stripeCustomerId || intent.status !== "succeeded" || !intent.paymentMethod) return { opened: false, reason: "unknown_intent" };
-  const choice = z.object({ agreement: z.string(), answersHash: z.string(), plan: z.enum(["ai", "full", "rates"]), term: z.enum(["monthly", "annual"]), locations: z.number().int().min(1).max(50), brief: z.boolean(), call: z.boolean(), website: z.literal(false), setupWeek: z.boolean() }).safeParse(account.planChoice);
+  const choice = selectedPlan.extend({ agreement: z.string(), answersHash: z.string(), agreed: z.literal(true), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH) }).safeParse(account.planChoice);
   if (!choice.success || choice.data.agreement !== intent.metadata?.currencydesk_signup_agreement || choice.data.answersHash !== account.answersHash || !account.pinHash) return { opened: false, reason: "not_confirmed" };
   if (account.state === "active") return { opened: false, reason: "already_open" };
   if (account.state !== "verified") return { opened: false, reason: "not_verified" };

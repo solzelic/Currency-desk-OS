@@ -26,7 +26,7 @@ import { signupPack } from "../onboarding/signup-pack.js";
 import { loadOrCreateOnboarding } from "../onboarding/verify.js";
 import { ownerDetails } from "./signup-email.js";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { confirmDesk, declarationName, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
+import { acceptServiceAgreement, SERVICE_AGREEMENT_SOURCE_HASH, confirmDesk, declarationName, priceList, startPayment, stillConfirmed, type SignupStripe } from "../onboarding/signup-open.js";
 import { stripeBillingConfig, signupStripeClient } from "../billing/stripe.js";
 import { createSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { ENROLMENT_COOKIE } from "../onboarding/email-code.js";
@@ -157,10 +157,10 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     return { ok: true, declaration: `I confirm these details are true, and I'm authorised to open this desk for ${declarationName(legal)}.` };
   });
 
-  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/plan", async (req, reply) => {
+  for (const prepare of [false, true]) app.post<{ Params: { ref: string } }>(`/api/onboarding/:ref/${prepare ? "payment" : "plan"}`, async (req, reply) => {
     const r = await enrolled(req, reply);
     if (!r) return;
-    const body = planBody.safeParse(req.body);
+    const body = (prepare ? planBody.omit({ agreed: true }) : planBody).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request", detail: body.error.issues[0]?.message });
     if (r.account.state !== "verified") return reply.code(409).send({ error: "not_verified" });
     if (!body.data.extras.call) await stopSignupCalls(db, r.row.id);
@@ -174,12 +174,21 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     const locations = answers.shops === "more" && typeof answers.shopCount === "number" ? answers.shopCount : 1;
     const choice = { plan: body.data.plan, term: body.data.term, locations, ...body.data.extras };
     try {
-      const { clientSecret, price } = await startPayment(db, client, r.row, choice);
-      return { ok: true, clientSecret, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null, price };
+      const payment = await startPayment(db, client, r.row, choice, !prepare);
+      return { ok: true, ...payment, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null };
     } catch (err) {
       req.log.error({ reason: err instanceof Error ? err.name : "stripe_error", id: idTail(r.cdId) }, "signup SetupIntent failed");
       return reply.code(502).send({ error: "payment_unavailable", detail: "We couldn't reach the card processor. Nothing was charged. Try again in a moment." });
     }
+  });
+
+  app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/agreement", async (req, reply) => {
+    const r = await enrolled(req, reply);
+    if (!r) return;
+    const body = z.object({ setupIntentId: z.string().startsWith("seti_").max(255), termsSourceHash: z.literal(SERVICE_AGREEMENT_SOURCE_HASH), agreed: z.literal(true) }).strict().safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_agreement" });
+    if (!(await acceptServiceAgreement(db, r.row.id, body.data.setupIntentId))) return reply.code(409).send({ error: "agreement_changed", detail: "Your desk or plan changed. Review it and open the card section again." });
+    return { ok: true };
   });
 
   /* The plan screen's prices (build doc §6, payment), for the locations the
