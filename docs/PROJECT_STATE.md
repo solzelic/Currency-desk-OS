@@ -63,6 +63,8 @@ the prototype's own 260px width.
 On Day 1 the Account/sound control sits in the welcome card instead of the
 viewport's top-right corner, where it covered the real Home's owner name and
 avatar on desktop and phone.
+The wider-text emulation runs off Linux only: Linux CI measures those metrics
+natively, and the native fit checks passed there after the card change.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and

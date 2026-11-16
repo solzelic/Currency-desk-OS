@@ -48,8 +48,11 @@ for (const [width, height] of [[1280, 760], [1440, 860], [1440, 900]]) test(`all
 
 /* Linux CI draws this text about 0.3px per glyph wider than macOS, which once
    wrapped the ID hint and overflowed fitted cards there only. Reproduce that
-   metric on any machine so a zero-slack card fails locally, not just in CI. */
+   metric on any machine so a zero-slack card fails locally, not just in CI.
+   On Linux the native fit checks above already measure these metrics; adding
+   0.3px there would test a renderer twice as wide as any real one. */
 for (const [width, height] of [[1280, 760], [1440, 860]]) test(`all signup states fit with wider renderer text at ${width}x${height}`, async ({ page }, info) => {
+  test.skip(process.platform === 'linux', 'Linux metrics are measured natively by the fit checks above');
   test.setTimeout(240_000);
   await page.setViewportSize({ width, height });
   const evidence = [];
