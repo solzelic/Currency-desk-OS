@@ -188,9 +188,11 @@
         api.checks(id).then((body) => { if (liveFlag) { setReadError(""); setStanding((body && body.standing) || null); } }).catch(() => { if (liveFlag) { setStanding(null); setReadError("Could not read the ID check. Try again."); } });
       };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      const onReread = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
-      return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); };
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
     }, [rec && rec.clientId]);
     const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
     const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
@@ -199,8 +201,9 @@
        A failed read is neutral. It is not a pass, so it is not green. */
     const unread = !!(readError || (rec && rec.idCheckError));
     const idOk = !unread && kycState === 'ok';
-    const idTone = unread || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
-    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const handTyped = !unread && !idOk && kycState === 'missing ID' && rec && rec.idType && rec.idNum;
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -227,7 +230,8 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (unread || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (unread || handTyped || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          {unread && rec && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}
         </div>
 
         {/* facts */}

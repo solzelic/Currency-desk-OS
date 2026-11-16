@@ -543,6 +543,7 @@
     if (state === 'ok') return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', CD.green, CD.greenSoft];
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
     if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    if (rec && rec.idType && rec.idNum) return ['ID typed by hand, not checked', CD.mute, CD.lineSoft];
     return [(rec && rec.idStanding && rec.idStanding.chip) || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
@@ -898,7 +899,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         <div className="space-y-2">
           {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable, not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
           {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
-          {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}.`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
+          {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}${/[.!?]$/.test(String(kycReason)) ? '' : '.'}`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
         </div>
       )}
     </div>);
@@ -1197,6 +1198,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
+    const [fixId, setFixId] = useState(false);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -1248,16 +1250,19 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         }).catch(() => { if (live) { setStanding(null); setReadError('Could not read the ID check. Try again.'); } });
       };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
+      const onReread = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
-      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
     }, [rec && rec.clientId]);
     const shown = readError ? { ...rec, idCheckError: readError } : rec;
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
     const failedRead = !!(readError || (rec && rec.idCheckError));
-    const stat = failedRead ? (readError || rec.idCheckError) : (standing ? standing.chip : fallbackStat);
-    const col = failedRead ? CD.mute : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
-    const bg = failedRead ? CD.lineSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
+    const handTyped = !failedRead && !!(rec && rec.idType && rec.idNum) && !(standing && standing.onFile) && !(standing && standing.chip === 'ID expired') && !!standing;
+    const stat = failedRead ? (readError || rec.idCheckError) : handTyped ? 'ID typed by hand, not checked' : (standing ? standing.chip : fallbackStat);
+    const col = failedRead || handTyped ? CD.mute : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
+    const bg = failedRead || handTyped ? CD.lineSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -1271,7 +1276,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file and valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon, re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{failedRead && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file and valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon, re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
@@ -1315,7 +1320,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
-          <ClientCompliance name={name} rec={shown} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => { if (rec && rec.clientId) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: rec.clientId } })); }} standing={readError ? null : standing} />
+          <ClientCompliance name={name} rec={shown} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setFixId(true)} standing={readError ? null : standing} />
           {/* Then the two things an operator came in for: where this
               customer is in identification, and the papers filed for them. */}
           <ProcessStanding rec={shown} settings={settings} standing={readError ? null : standing} />
@@ -1429,6 +1434,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
         </div>
       </div>
+      {fixId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, { name, rec, setClients, log, onClose: () => setFixId(false), onDone: () => setFixId(false) })}
     </div>);
   }
 

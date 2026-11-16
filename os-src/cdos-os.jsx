@@ -883,7 +883,17 @@
                   return;
                 }
                 const standing = body && body.standing;
-                if (!standing) return;
+                if (!standing) {
+                  if (rec.idCheckError || rec.idCheckTries) {
+                    const stored = { ...rec, idCheckTries: 0 };
+                    delete stored.idCheckError;
+                    delete stored.idStanding;
+                    delete stored.pepReview;
+                    next[name] = stored;
+                    changed = true;
+                  }
+                  return;
+                }
                 const pepReview = body && body.pepReview === "open" ? "open" : null;
                 const cur = rec.idStanding;
                 const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
@@ -900,8 +910,24 @@
           if (retry && live) retryTimer = window.setTimeout(pull, 2000);
         });
       };
+      const onReread = (event) => {
+        const id = event.detail && event.detail.clientId;
+        if (!id) return;
+        setClients((prev) => {
+          let touched = false;
+          const next = { ...prev };
+          Object.keys(next).forEach((name) => {
+            const rec = next[name];
+            if (!rec || rec.clientId !== id || !(rec.idCheckTries >= 3)) return;
+            next[name] = { ...rec, idCheckTries: 0 };
+            touched = true;
+          });
+          return touched ? next : prev;
+        });
+      };
+      window.addEventListener("cdos-id-reread", onReread);
       pull();
-      return () => { live = false; window.clearTimeout(retryTimer); };
+      return () => { live = false; window.clearTimeout(retryTimer); window.removeEventListener("cdos-id-reread", onReread); };
     }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {

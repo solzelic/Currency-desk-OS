@@ -300,9 +300,11 @@
         api.checks(id).then((body) => { if (live) { setReadError(""); setStanding((body && body.standing) || null); } }).catch(() => { if (live) { setStanding(null); setReadError("Could not read the ID check. Try again."); } });
       };
       const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      const onReread = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
-      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
     }, [rec && rec.clientId]);
     const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
     const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
@@ -312,6 +314,7 @@
     const unread = !!(readError || (rec && rec.idCheckError));
     const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !unread && !idOk && kycState === 'missing ID' && !papersMissing;
     const badge = unread
       ? { t: readError || rec.idCheckError, c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
       : idOk
@@ -320,6 +323,8 @@
       ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
       : kycState === 'Checking ID'
       ? { t: 'Checking ID', c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
+      : handTyped
+      ? { t: 'ID typed by hand, not checked', c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
       : { t: 'Missing ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
@@ -335,6 +340,7 @@
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here'}</div>
           </div>
           <span data-testid="deal-id-badge" className="cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: badge.bg, color: badge.c, borderRadius: 999 }}><Ic n={badge.ic} s={12} c={badge.c} /> {badge.t}</span>
+          {unread && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}
         </div>
         <div className="cd-tx-stats grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
           <CCstat label="ID on file" sentence={phone} value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file')} tone={idOk ? CD.ink : CD.flag} />
@@ -1221,7 +1227,7 @@
               {idRequired && String(customer || '').trim() && !idOk && (
                 <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
                   <span className="cd-tx-id-need-label">ID needed for this amount</span>
-                  <button type="button" onClick={() => { const id = clients[customer] && clients[customer].clientId; if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: id } })); else setRecordId(true); }} className="cd-tx-id-need-go">Record the ID</button>
+                  <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
                 </div>
               )}
               {idRequired && idOk && (
@@ -1456,7 +1462,7 @@
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => { const id = clients[customer] && clients[customer].clientId; if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: id } })); else setRecordId(true); }} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}

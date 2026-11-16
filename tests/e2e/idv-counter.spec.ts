@@ -1027,6 +1027,79 @@ test("a Persona check that times out offers the in-person check", async ({ page,
   await expect(page.getByTestId("id-check-in-person")).toBeVisible();
 });
 
+test("recording a typed ID unblocks a 5000 CAD deal", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await enableChecks(request);
+  const name = `Sample Paperless ${Date.now()}`;
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  let tillClose: { status: string; sessionId: string; balanceGeneration: string; balances: Record<string, string> } | null = null;
+  try {
+    await db.query("DELETE FROM desk_clients WHERE display_name = $1", [name]);
+    await signInAtDesk(page, "m.costa");
+    const created = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, name);
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    let deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    if (!(await deal.isEnabled())) {
+      await page.reload();
+      await landOnDesktop(page);
+      await page.locator('[data-app="ledger"]').click();
+      await ensureTill(page);
+      deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    }
+    tillClose = await readTillClose(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(deal).toBeEnabled({ timeout: 20_000 });
+    await deal.click();
+    await page.locator(".cd-tx-customer input").fill(name);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: name }).click();
+    await page.locator(".cd-money input").first().fill("5000");
+    await page.locator(".cd-money input").first().blur();
+    const purpose = page.locator(".cd-tx-purpose");
+    if (await purpose.count()) {
+      await purpose.fill("Personal travel");
+      await page.locator(".cd-tx-source").fill("Employment income");
+    }
+    await expect(page.getByRole("button", { name: "Record the ID" }).first()).toBeVisible();
+    await expect(page.getByTestId("deal-check-id")).toBeVisible();
+    await expect(page.getByTestId("id-check-in-person")).toHaveCount(0);
+    await page.getByRole("button", { name: "Record the ID" }).first().click();
+    const sheet = page.getByRole("dialog", { name: "Record the ID" });
+    await expect(sheet).toBeVisible();
+    await sheet.locator("select").first().selectOption("Passport");
+    await sheet.getByLabel("ID number").fill("TEST-000000000");
+    await sheet.locator('input[type="date"]').last().fill("2030-04-01");
+    await sheet.getByRole("button", { name: "Save and return" }).click();
+    await expect(sheet).toBeHidden({ timeout: 20_000 });
+    await expect(page.getByText("Passport on file")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Record the ID" })).toHaveCount(0);
+    await expect(page.getByText("Their ID is missing")).toHaveCount(0);
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("Missing ID");
+    const color = await page.getByTestId("deal-id-badge").evaluate((el) => getComputedStyle(el).color);
+    expect(color).not.toBe("rgb(31, 138, 76)");
+  } finally {
+    if (tillClose && tillClose.status === "open") {
+      await signInAtDesk(page, "a.singh").catch(() => {});
+      await closeHeldTill(page, tillClose);
+    }
+    await db.end();
+  }
+});
+
 test("a passed check that cannot be read is not ID on file", async ({ page, request }) => {
   test.setTimeout(180_000);
   await enableChecks(request);
@@ -1291,7 +1364,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
     await closeFile();
     await openName(names.noDate);
-    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
     await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
     await closeFile();
     await openName(names.typedExpired);
@@ -1317,7 +1390,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(listCard(readFailName)).toContainText("Could not read the ID check. Try again.");
     await expect(listCard(readFailName)).not.toContainText("ID on file");
     await openName(typedOnlyName);
-    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
     await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
     await expect(page.locator(".client-file").getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
     await closeFile();
@@ -1384,7 +1457,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
     await page.locator(".cd-tx-customer input").fill(typedOnlyName);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: typedOnlyName }).click();
-    await expect(page.getByTestId("deal-id-badge")).toContainText("Missing ID");
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID typed by hand, not checked");
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("Missing ID");
     await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
     await page.locator(".cd-tx-customer input").fill(readFailName);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: readFailName }).click();
@@ -1396,7 +1470,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     const ledgerSheet = page.locator("div.fixed").filter({ hasText: "Transaction type" });
     await ledgerSheet.getByPlaceholder(/Type a name/).fill(typedOnlyName);
     await ledgerSheet.locator(".absolute").getByRole("button", { name: typedOnlyName }).first().click();
-    await expect(page.getByTestId("ledger-id-badge")).toContainText("Missing ID");
+    await expect(page.getByTestId("ledger-id-badge")).toContainText("ID typed by hand, not checked");
+    await expect(page.getByTestId("ledger-id-badge")).not.toContainText("Missing ID");
     await expect(page.getByTestId("ledger-id-badge")).not.toContainText("ID on file");
     await ledgerSheet.getByPlaceholder(/Type a name/).fill(readFailName);
     await ledgerSheet.locator(".absolute").getByRole("button", { name: readFailName }).first().click();

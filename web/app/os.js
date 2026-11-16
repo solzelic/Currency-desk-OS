@@ -25852,6 +25852,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     if (state === 'ok') return [rec.idStanding && rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
     if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    if (rec && rec.idType && rec.idNum) return ['ID typed by hand, not checked', CD.mute, CD.lineSoft];
     return [rec && rec.idStanding && rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = s => s === 'Verified' || s === 'Verified Plus';
@@ -27189,7 +27190,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       soft: CD.flagSoft,
       icon: "id",
       title: "KYC / ID gap",
-      sub: `Identification issue: ${kycReason}.`,
+      sub: `Identification issue: ${kycReason}${/[.!?]$/.test(String(kycReason)) ? '' : '.'}`,
       actionLabel: canEdit ? 'Fix ID' : null,
       onAction: onFixId
     })));
@@ -27814,6 +27815,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     reload
   }) {
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
+    const [fixId, setFixId] = useState(false);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -27911,11 +27913,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         if (!event.detail || event.detail.clientId !== clientId) return;
         pull();
       };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        pull();
+      };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
       return () => {
         live = false;
         window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
       };
     }, [rec && rec.clientId]);
     const shown = readError ? {
@@ -27924,9 +27932,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     } : rec;
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
     const failedRead = !!(readError || rec && rec.idCheckError);
-    const stat = failedRead ? readError || rec.idCheckError : standing ? standing.chip : fallbackStat;
-    const col = failedRead ? CD.mute : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
-    const bg = failedRead ? CD.lineSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
+    const handTyped = !failedRead && !!(rec && rec.idType && rec.idNum) && !(standing && standing.onFile) && !(standing && standing.chip === 'ID expired') && !!standing;
+    const stat = failedRead ? readError || rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.chip : fallbackStat;
+    const col = failedRead || handTyped ? CD.mute : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
+    const bg = failedRead || handTyped ? CD.lineSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -27994,7 +28003,24 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       text: stat,
       c: col,
       bg: bg
-    })), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
+    })), failedRead && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again"), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
       text: normalizeRisk(rec.risk) + ' risk',
       c: riskTone(rec.risk).c,
       bg: riskTone(rec.risk).bg
@@ -28128,13 +28154,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       settings: settings,
       canEdit: canEdit,
       onOpenLedger: onOpenLedger,
-      onFixId: () => {
-        if (rec && rec.clientId) window.dispatchEvent(new CustomEvent("cdos-open-in-person", {
-          detail: {
-            clientId: rec.clientId
-          }
-        }));
-      },
+      onFixId: () => setFixId(true),
       standing: readError ? null : standing
     }), /*#__PURE__*/React.createElement(ProcessStanding, {
       rec: shown,
@@ -28649,7 +28669,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       flags: flags,
       onOpen: () => onOpenLedger(name),
       highlightRef: highlightTx
-    })))));
+    })))), fixId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, {
+      name,
+      rec,
+      setClients,
+      log,
+      onClose: () => setFixId(false),
+      onDone: () => setFixId(false)
+    }));
   }
 
   /* ---------- NEW CONTACT ---------- */
@@ -30489,11 +30516,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         if (!event.detail || event.detail.clientId !== id) return;
         pull();
       };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
       return () => {
         liveFlag = false;
         window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
       };
     }, [rec && rec.clientId]);
     const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
@@ -30510,8 +30543,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
        A failed read is neutral. It is not a pass, so it is not green. */
     const unread = !!(readError || rec && rec.idCheckError);
     const idOk = !unread && kycState === 'ok';
-    const idTone = unread || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
-    const idLabel = unread ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : 'Missing ID';
+    const handTyped = !unread && !idOk && kycState === 'missing ID' && rec && rec.idType && rec.idNum;
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const idLabel = unread ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -30579,7 +30613,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       "data-testid": "ledger-id-badge",
       className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
-        background: idOk ? CD.greenSoft : unread || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
+        background: idOk ? CD.greenSoft : unread || handTyped || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
         color: idTone,
         borderRadius: 999
       }
@@ -30587,7 +30621,24 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: idOk ? 'checkcircle' : 'alert',
       s: 12,
       c: idTone
-    }), " ", idLabel)), /*#__PURE__*/React.createElement("div", {
+    }), " ", idLabel), unread && rec && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again")), /*#__PURE__*/React.createElement("div", {
       className: "grid",
       style: {
         gridTemplateColumns: '1fr 1fr 1fr'
@@ -36712,11 +36763,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         if (!event.detail || event.detail.clientId !== id) return;
         pull();
       };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
       pull();
       window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
       return () => {
         live = false;
         window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
       };
     }, [rec && rec.clientId]);
     const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
@@ -36734,6 +36791,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const unread = !!(readError || rec && rec.idCheckError);
     const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !unread && !idOk && kycState === 'missing ID' && !papersMissing;
     const badge = unread ? {
       t: readError || rec.idCheckError,
       c: CD.mute,
@@ -36751,6 +36809,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ic: 'alert'
     } : kycState === 'Checking ID' ? {
       t: 'Checking ID',
+      c: CD.mute,
+      bg: CD.lineSoft,
+      ic: 'alert'
+    } : handTyped ? {
+      t: 'ID typed by hand, not checked',
       c: CD.mute,
       bg: CD.lineSoft,
       ic: 'alert'
@@ -36826,7 +36889,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: badge.ic,
       s: 12,
       c: badge.c
-    }), " ", badge.t)), /*#__PURE__*/React.createElement("div", {
+    }), " ", badge.t), unread && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again")), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-stats grid",
       style: {
         gridTemplateColumns: '1fr 1fr 1fr'
@@ -38399,14 +38479,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-id-need-label"
     }, "ID needed for this amount"), /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: () => {
-        const id = clients[customer] && clients[customer].clientId;
-        if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", {
-          detail: {
-            clientId: id
-          }
-        }));else setRecordId(true);
-      },
+      onClick: () => setRecordId(true),
       className: "cd-tx-id-need-go"
     }, "Record the ID")), idRequired && idOk && /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-id-need"
@@ -39403,14 +39476,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       onActivate: phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined,
       action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
         type: "button",
-        onClick: () => {
-          const id = clients[customer] && clients[customer].clientId;
-          if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", {
-            detail: {
-              clientId: id
-            }
-          }));else setRecordId(true);
-        },
+        onClick: () => setRecordId(true),
         className: "cd-tx-id-need-go mt-1"
       }, "Record the ID") : null
     }))), (single || structuring) && /*#__PURE__*/React.createElement("div", {
@@ -76527,7 +76593,20 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
                   return;
                 }
                 const standing = body && body.standing;
-                if (!standing) return;
+                if (!standing) {
+                  if (rec.idCheckError || rec.idCheckTries) {
+                    const stored = {
+                      ...rec,
+                      idCheckTries: 0
+                    };
+                    delete stored.idCheckError;
+                    delete stored.idStanding;
+                    delete stored.pepReview;
+                    next[name] = stored;
+                    changed = true;
+                  }
+                  return;
+                }
                 const pepReview = body && body.pepReview === "open" ? "open" : null;
                 const cur = rec.idStanding;
                 const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
@@ -76554,10 +76633,32 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           if (retry && live) retryTimer = window.setTimeout(pull, 2000);
         });
       };
+      const onReread = event => {
+        const id = event.detail && event.detail.clientId;
+        if (!id) return;
+        setClients(prev => {
+          let touched = false;
+          const next = {
+            ...prev
+          };
+          Object.keys(next).forEach(name => {
+            const rec = next[name];
+            if (!rec || rec.clientId !== id || !(rec.idCheckTries >= 3)) return;
+            next[name] = {
+              ...rec,
+              idCheckTries: 0
+            };
+            touched = true;
+          });
+          return touched ? next : prev;
+        });
+      };
+      window.addEventListener("cdos-id-reread", onReread);
       pull();
       return () => {
         live = false;
         window.clearTimeout(retryTimer);
+        window.removeEventListener("cdos-id-reread", onReread);
       };
     }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
