@@ -801,8 +801,15 @@
         if (save) { R.annualBadge = "Save " + f(save.saveYear); R.annualNudge = "Pay yearly instead and save " + f(save.saveYear) + " a year"; R.annualSaveStr = "You save " + f(save.saveYear) + " a year vs monthly"; }
       }
       R.xSetupPrice = CD.prices ? f(CD.prices.setupWeekMinor) + " once" : blank;
-      R.xWebPrice = "$99" + cur + "/mo"; /* coming soon: shown by the design, never sold (the server refuses it) */
-      (R.addonRows || []).forEach(function (a) { if (/setup week/i.test(a.name) && CD.prices) a.priceStr = f(CD.prices.setupWeekMinor) + cur + " once"; });
+      /* Coming soon: no price, not reserved, and not part of the total or the charge. */
+      R.xWebPrice = "";
+      R.hasWeb = false;
+      R.xWebOpen = false;
+      if (R.xWebWrap) R.xWebWrap = String(R.xWebWrap).replace("cursor: pointer", "cursor: default");
+      (R.addonRows || []).forEach(function (a) {
+        if (/rate website/i.test(a.name)) a.priceStr = "";
+        else if (/setup week/i.test(a.name) && CD.prices) a.priceStr = f(CD.prices.setupWeekMinor) + cur + " once";
+      });
       R.retryCardVisible = !!CD._cardFailed && !CD._paying && !CD.seeded && !CD._webRefused; /* a retry cannot help: the add-on is the problem */
       R.onRetryCard = function () { CD.retryCard(c); };
       R.retryPricesVisible = !!CD._priceFailed;

@@ -174,7 +174,7 @@ class Component extends DCLogic {
   ];
   locCount() { return Math.max(1, parseInt(this.state.data.shopCount, 10) || 1); }
   PRICE_CCY = 'CAD'; /* billing currency of the current price list. A new price list per market changes this, not the jurisdiction pack */
-  ADDONS = [ { id:'website', name:'Your own rate website', desc:'Your address, your live rates, a converter and a map.', price:99, unit:'mo' }, { id:'onsite', name:'A setup week, on site', desc:'We come to your shop for five days and run it with you.', price:5000, unit:'once' } ];
+  ADDONS = [ { id:'website', name:'Your own rate website', desc:'Your address, your live rates, a converter and a map.', price:0, unit:'mo' }, { id:'onsite', name:'A setup week, on site', desc:'We come to your shop for five days and run it with you.', price:5000, unit:'once' } ];
   setBk(k, v) { this.setState(s => ({ data: { ...s.data, backup: { ...(s.data.backup || {}), [k]: v } } })); }
   toggleBillSame() { this.setState(s => { const d = s.data; const willSame = (d.billSame === false); const patch = { billSame: willSame }; if (!willSame && !(d.billStreet || '').trim()) { patch.billStreet = d.street; patch.billCity = d.city; patch.billRegion = d.region; patch.billPostal = d.postal; patch.billCountry = d.country_addr; } return { data: { ...d, ...patch } }; }); }
   PHASES = ['Account', 'Shop', 'Money', 'Rules', 'Open'];
@@ -643,8 +643,8 @@ class Component extends DCLogic {
       items:[['Your currencies','Everything you buy or sell.','coins'],['The vault','What’s in the safe today. A ballpark is fine.','vaultsafe']], dots:['•','•'], ctaLabel:'Pick my currencies', valid:true, wide:true, shot:'currencies', vid:true, tour:'money', tourLabel:'Watch · how the money works', tourSub:'Forty seconds · board, vault, tills', shotCap:'Your currencies on the board, the vault and the tills, and how cash moves. Press play.' };
     S[23] = { type:'explain', eyebrow:'Chapter 4 of 5 · Rules', q:'Your rules. The desk keeps them.', paras:['Thresholds, overrides, who may do what. You set them once; every deal at the counter follows them, whoever is on the till. Three things now. The rest lives in Settings, and you can change any of it.'],
       items:[['Compliance officer','Usually you.','briefcase'],['When the desk asks for ID','The legal minimum, or sooner.','id'],['Your team','Each person gets their own sign-in and PIN.','users']], dots:['•','•','•'], ctaLabel:'Set my rules', valid:true, wide:true, shot:'settings', vid:true, shotCap:'Settings › Compliance. Every rule is one switch, and the desk enforces it.' };
-    S[26] = { type:'explain', eyebrow:'Chapter 3 of 5 · Money · included with your desk', q:'Your rates, online. Free.', paras:['Every desk comes with a rate page on its own address and a window screen for the TV in the shop. Both follow the board the moment you publish. Nothing to set up now; it’s waiting inside, in Rates › Website & Window.'],
-      items:[['A rate page','Rates, hours, map and a converter. Share it, put it on Google, link to it from anywhere.','globe'],['A window screen','Any TV or tablet in the window. Open the link, tap once, leave it. It updates itself.','tv'],['Your own site','Put the page on your domain, or pull the rates into the site you already have. Both free.','link']], dots:['•','•','•'], ctaLabel:'Good. Now my rules', valid:true, wide:true, shot:'online', vid:true, shotCap:'Website & Window, then the public rate page and the window screen, as customers see them.' };
+    S[26] = { type:'explain', eyebrow:'Chapter 3 of 5 · Money · included with your desk', q:'Your rates, online.', paras:['Every desk comes with a rate page on its own address and a window screen for the TV in the shop. Both follow the board the moment you publish. Nothing to set up now; it’s waiting inside, in Rates › Website & Window.'],
+      items:[['A rate page','Rates, hours, map and a converter. Share it, put it on Google, link to it from anywhere.','globe'],['A window screen','Any TV or tablet in the window. Open the link, tap once, leave it. It updates itself.','tv'],['Your own site','Put the page on your domain, or pull the rates into the site you already have. Coming soon.','link']], dots:['•','•','•'], ctaLabel:'Good. Now my rules', valid:true, wide:true, shot:'online', vid:true, shotCap:'Website & Window, then the public rate page and the window screen, as customers see them.' };
     S[24] = { type:'explain', eyebrow:'Chapter 5 of 5 · Open', q:'Confirmed. Now, open it.', paras:[(d.operatingName || 'Your desk') + ' is signed off and waiting behind this door. Choose a plan and it opens. From the first deal, the desk carries the weight:'],
       items:[['Rates that follow the market','Market rates land through the day. Your spread on top, your board, site and window all at once.','rateboard'],['Every deal checks itself','Your ID line, the 24-hour rule and the large-cash report, at the till, without asking.','complianceshield'],['Reports, ready to file','' + j.reg + ' reports drafted from the day’s deals. You review, the desk files nothing without you.','filetext'],['The rest, at your pace','Inside, the walk-through collects documents, bank details and records. Nothing holds up opening.','upload']], dots:['•','•','•','•'], ctaLabel:'Choose my plan', valid:true, wide:true, shot:'dashboard', vid:true, shotCap:'Your dashboard, filling up as you trade.' };
     S[14] = Object.assign({}, S[14], { eyebrow:'Your account', q:'Check your inbox.', help: window.__cdOnb && window.__cdOnb.verify && window.__cdOnb.verify.code ? 'Staging test shop: no email is sent. Your 6-digit code is below.' : 'We just sent a 6-digit code to the email you applied with. This is the address we write to.' });
@@ -903,7 +903,7 @@ class Component extends DCLogic {
     });
     R.addonRows = this.ADDONS.map(a => {
       const on = !!addons[a.id];
-      return { name: a.name, desc: a.desc, on: on, priceStr: a.unit === 'once' ? mny(a.price) + CUR + ' once' : mny(a.price) + CUR + '/mo',
+      return { name: a.name, desc: a.desc, on: on, priceStr: a.id === 'website' ? '' : (a.unit === 'once' ? mny(a.price) + CUR + ' once' : mny(a.price) + CUR + '/mo'),
         onToggle: () => this.setState(s => ({ data: { ...s.data, addons: { ...(s.data.addons || {}), [a.id]: !(s.data.addons || {})[a.id] } } })),
         style: 'display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border:1px solid ' + (on ? 'var(--primary)' : 'var(--line)') + ';border-radius:12px;background:' + (on ? 'rgba(29,107,69,0.08)' : 'rgba(255,255,255,0.6)') + ';cursor:pointer;font-family:inherit;color:var(--ink);margin-top:9px;transition:all .15s;',
         boxStyle: 'width:20px;height:20px;border-radius:6px;border:2px solid ' + (on ? 'var(--primary)' : 'var(--line)') + ';background:' + (on ? 'var(--primary)' : 'transparent') + ';flex:none;display:grid;place-items:center;' };
@@ -976,7 +976,7 @@ class Component extends DCLogic {
       const done = [!!seen[0], !!seen[1], cardOk && !!seen[2], !!this.state.termsRead];
       const pl = this.PLANS.find(p => p.id === (d.plan || 'ai')) || this.PLANS[0], an = (d.term || 'monthly') === 'annual', nL = this.locCount();
       const mny2 = (n) => '$' + Math.round(n).toLocaleString('en-CA');
-      const sel = this.ADDONS.filter(a => (d.addons || {})[a.id]);
+      const sel = this.ADDONS.filter(a => a.id !== 'website' && (d.addons || {})[a.id]);
       const last4 = '';
       const sums = [
         pl.name + ' · ' + (an ? mny2(pl.mo * 0.9) + ' CAD/mo per location, billed yearly' : mny2(pl.mo) + ' CAD/mo per location'),
@@ -1525,7 +1525,7 @@ class Component extends DCLogic {
     return window.__cdOnb.priced(this, Object.assign(R, this._railVals(), this._tourVals()));
   }
 
-  RAIL = [{"i": 17, "title": "Welcome. Let\u2019s open your desk.", "when": "First \u00b7 before the ID", "v1": "Not in v1.", "discuss": ["Moved in front of the ID (Sol, 6 Nov): the pitch comes first, then the key. Nobody is named yet, so it speaks to everyone.", "Watch the tour (Sol, 6 Nov): a two-minute film cut from the real recordings, with the script in captions. More air around it now, and it fits a short laptop screen and a phone.", "Whether a voice reads the script: to discuss.", "Icons instead of dots (Sol, 6 Nov, comment): the app's own icon set, plus three drawn to match (TV, link, keypad)."], "tag": "decided"}, {"i": 0, "title": "Let's build your desk.", "when": "Second \u00b7 the key", "v1": "Enter the CurrencyDesk ID from the invite email. A link from the email fills it in.", "discuss": ["Typed, even straight from the ticket (Sol, 6 Nov): it's the key to everything, so it should feel important and be remembered.", "Now comes after the welcome. Back goes to the welcome."], "tag": "decided"}, {"i": 20, "title": "Reserved for Daniel.", "when": "Chapter 1 \u00b7 personal", "v1": "Not in v1.", "discuss": ["The ID just found their reservation, so this is the first personal moment: their shop's name, and the four things we already know, so they see they won't be asked twice.", "Then the three account steps. No separate text-only intro for chapter 1 any more.", "Typed ID shows the reservation masked (d\u2022\u2022\u2022\u2022@, \u2022\u2022\u2022 0142): the ID is a handle, not a secret. The email link proves the inbox and shows it in full. The whole chain is in design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5", "title": "How will you sign in?", "when": "4 \u00b7 standard sign-in chooser", "v1": "Owner name, email, password (6+), mobile.", "discuss": ["Standard practice (Sol, 6 Nov): one screen, every option always visible as a full-width 'Continue with \u2026' button, in the order most products use: passkey (recommended), Google, Microsoft, then email and password. Nothing hides another option.", "Each button opens its own window (passkey: the device's sheet; Google/Microsoft: their account chooser, in a popup on desktop and a redirect on phone). Success moves on by itself; cancelling shows one red line and leaves every option there.", "Button styling follows Google's and Microsoft's sign-in button rules (white, grey border, their label text). The official logos drop into the data-logo slots.", "Server side: design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5a", "pk": "asking", "title": "The passkey window", "when": "4a \u00b7 your device asks", "v1": "Not in v1.", "discuss": ["Designed as the device's own window. Desktop: a dialog that drops from the top (key icon, 'Create a passkey for currencydesk.app?', where it's saved, the account, the Touch ID glyph, Cancel / Continue). Phone: a bottom sheet that slides up (grabber, key, title, account, one big Continue).", "Continue \u2192 the glyph scans as a ring draws (1s) \u2192 a tick draws, 'Passkey saved' \u2192 the window slides away and the button behind is already green \u2192 on to the inbox. Cancel \u2192 back, one red line.", "In the real product the OS draws this window; ours mirrors it closely so the prototype flows the same."], "tag": "decided"}, {"i": 5, "key": "5b", "pk": "sso", "title": "The Google window", "when": "4b \u00b7 provider account chooser", "v1": "Not in v1.", "discuss": ["Their account, matching the reservation email \u2192 signed in, on to the inbox. 'Use another account' shows what a mismatch looks like: refused, with one red line."], "tag": "decided"}, {"i": 5, "key": "5c", "pk": "failed", "title": "Cancelled", "when": "4c \u00b7 back on the chooser", "v1": "Not in v1.", "discuss": ["One red line above the buttons. Every option still there."], "tag": "decided"}, {"i": 14, "title": "Check your inbox.", "when": "Account \u00b7 after sign-in", "v1": "Was screen 15 of 17, at the very end.", "discuss": ["Moved after sign-in (Sol, 6 Nov): by now they've half forgotten they gave us the email, and the code is already there. That's the small magic.", "No 'go back and change it': this email already carried their desk ID."], "tag": "decided"}, {"i": 27, "title": "Now, your PIN. It\u2019s yours alone.", "when": "Account \u00b7 before the PIN", "v1": "Not in v1.", "discuss": ["A moment before the keypad (Sol, 6 Nov): what the PIN is, where it works (unlock the desk, hand over the till, approve voids and overrides, move cash), that it's theirs and nobody at CurrencyDesk sees it. The picture is the desk's own lock screen over a blurred desk, dots filling in.", "It doesn't say how a PIN is reset; that lives in Settings."], "tag": "decided"}, {"i": 18, "title": "Your counter PIN.", "when": "Account \u00b7 the till's keypad", "v1": "Not in v1 (PIN was set at first sign-in).", "discuss": ["The pill is gone (Sol, 6 Nov): two small bars instead, 1 \u00b7 Choose and 2 \u00b7 Confirm, filling as they type and turning green with a tick when each is done. The title follows: Choose your PIN \u2192 Once more, to be sure \u2192 That's your PIN.", "Typed twice, checked digit by digit; a mismatch shakes and starts over; 1111 refused; a match moves on by itself. Keyboard digits work too."], "tag": "decided"}, {"i": 2, "title": "What\u2019s your shop called?", "when": "Shop \u00b7 two confirmations", "v1": "Shop name and registered legal name.", "discuss": ["Built in Early Access's own language (Sol, 6 Nov): the folding question rows from 'Who runs the shop?'. Number badge, question and hint, a green check that pops when it's answered, the answer shown under the question, a Next pill. The '0 of 2' count and the bar above, as there.", "1 \u00b7 What's on the door? opens already filled from the reservation: Next (or Enter) confirms it. 2 \u00b7 What's the registered legal name? opens next, with quick picks: Same as on the door, + Inc., + Ltd., + Corp. Tap an answered row to change it."], "tag": "decided"}, {"i": 3, "title": "Where\u2019s the shop?", "when": "Shop \u00b7 found and verified", "v1": "Storefront address.", "discuss": ["Google Places autocomplete (Sol, 6 Nov), in Early Access's inputs: the same cream box and green focus ring, suggestions in a folding list, 'powered by Google' as Google requires. Pick one: the address fills in, a pin drops on the map preview, the green check pops, 'Verified by Google'. Unit / suite is the one thing to add. Arrow keys and Enter work.", "Can't find it: 'Enter it by hand' opens the plain form; it's marked 'Entered by hand' and we double-check it before the first report.", "Real build: v1 already proxies Places through the server with a session token (/api/onboarding/:id/places/suggest + details), so the key never reaches the browser. The prototype uses a short list of real-looking Toronto addresses; try 1420 Dundas.", "The note under the card now says: first shop, vault and one till. The question of other shops moves to its own screen, next."], "tag": "decided"}, {"i": 29, "title": "Just the one shop?", "when": "Shop \u00b7 the question", "v1": "Not in v1: one address, full stop.", "discuss": ["Rethought (Sol, 6 Nov): sign-up sets up the main shop only. Two tiles: Just the one, or We have more than one. The first is one tap and on. The second goes to the break.", "Nothing else is collected here for the other shops: no addresses, no names. They're opened inside, after payment, each from its own counter.", "To design next, inside: the multi-shop walk-through. After go-live, the head office gets a Shops step in the walk-through; each other shop is issued its own desk ID by email (the same email the first one got), and that shop's manager runs the same ten-minute setup from there: address, vault count, tills, people. Which of these the owner does centrally (address, people) and which the shop does itself (the count): to decide."], "tag": "discuss"}, {"i": 30, "title": "More than one shop. Good.", "when": "Shop \u00b7 the break, when there's more than one", "v1": "Not in v1.", "discuss": ["No price here (Sol, 6 Nov): the AI bundle is what everyone picks, so the break sells the network, not the number. What a shop is (its own vault, tills, window and rate page, up to ten people), what stays shared (one login, one board, one set of reports), and that each other shop is opened from inside, by its own desk ID.", "One thing to take: how many shops, counting this one. A plus and minus. It sets the plan (per location) and how many desk IDs go out after go-live.", "Price per location (Sol, 6 Nov): $750 a month, up to 10 users each. The plan screen prices per location and multiplies by the count; the website needs the same per-location wording.", "Beyond ten people at one location: not priced yet."], "tag": "discuss"}, {"i": 4, "title": "Your FINTRAC registration number?", "when": "Shop", "v1": "Skippable.", "discuss": ["Skip now reads I'll add this inside.", "With more than one shop the help line says one registration covers them all."], "tag": "decided"}, {"i": 22, "title": "The money.", "when": "Chapter 3 intro \u00b7 the money, in half a minute", "v1": "Not in v1.", "discuss": ["Educational (Sol, 6 Nov): a 40-second film on the recording, the same player as the tour. A title card; Rates \u203a Board (every currency is a row; on board means customers can buy and sell it; flipping one off takes it off the site and window; so right now, tell us which you trade); Rates \u203a Cost & stock (on hand split between vault and tills; the vault is the safe, a till a drawer, cash floats vault \u2192 till and back, PIN-signed; recording cash bought from the wholesaler, into the vault at cost); Settings \u203a Cash on hand \u00b7 Vault (a floor per currency; the opening balance is what's in the safe today); an end card that says exactly what to do next: Pick my currencies.", "The vault screen's own line now says the same in one sentence."], "tag": "discuss"}, {"i": 6, "title": "Which currencies do you trade?", "when": "Money \u00b7 the full list", "v1": "Unchanged.", "discuss": ["Every currency a Canadian desk is likely to trade, 64 of them (Sol, 6 Nov), in the order they're most traded: USD, EUR, GBP, MXN, JPY, INR, CNY, PHP, AUD, CHF, AED, HKD\u2026 down to the Gulf dinars and the Pacific. Quick buttons top right: Top 20, Top 50, All, Clear. A search box for the rest. Count pill shows what's selected.", "Flags: the app's own flag files where they exist; a plain tile for the others until the set is complete.", "The rate board inside is where they're put on board and priced."], "tag": "discuss"}, {"i": 8, "title": "Count the vault.", "when": "Money \u00b7 a checklist, counted by note", "v1": "Was Starting cash? (optional), 'in the drawer'.", "discuss": ["A checklist, not a form (Sol, 6 Nov, comment): one row per currency with a tick. Open a row and count the notes by denomination, the right notes for each currency ($100 \u2026 $5 for CAD, \u20ac500 \u2026 \u20ac5, \u00a510,000 \u2026 \u00a51,000, and so on, 40-odd currencies covered). The total adds itself and shows on the row. Coins & other is one field. Already counted? Type the total instead.", "Tick it off: the row goes green and the count reads 2 of 5 counted. Skipping is fine; the first count inside trues it up. The green bar under the list still shows the whole vault in CAD.", "Inside, the same count screen does the daily open and close, so this is the first one they do."], "tag": "discuss"}, {"i": 26, "title": "Your rates, online. Free.", "when": "Money \u00b7 advertising piece, nothing to fill in", "v1": "Was 'Your public rate board' (screen 13 of 17): a question, how rates go online.", "discuss": ["Back, as an advert, not a question (Sol, 6 Nov): what comes free with the desk, shown moving (Website & Window, the public rate page with its converter, the window screen going full screen), with 'you'll set it up inside'.", "Decisions about what to do with it: later."], "tag": "discuss"}, {"i": 23, "title": "Your rules. The desk keeps them.", "when": "Chapter 4 intro \u00b7 Settings, moving", "v1": "Not in v1.", "discuss": ["A real recording of Settings \u203a Compliance: margin-floor rules and who may override. The point: set once, enforced at the counter."], "tag": "discuss"}, {"i": 9, "title": "Who's your compliance officer?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 10, "title": "When should the desk ask for ID?", "when": "Rules \u00b7 the ID line", "v1": "Unchanged.", "discuss": ["The actual rules (Sol, 8 Nov), checked against the team's own Notion research (Compliance Officer \u203a Canada \u2014 FINTRAC report and data verification, 7 Nov) and FINTRAC's MSB guidance. On top, a locked card, 'What FINTRAC requires \u00b7 always on': any amount, a record of every exchange; 3,000 CAD, check ID and record name, address, date of birth and occupation; 10,000 CAD cash, check ID and file a Large Cash Transaction Report within 15 days, cash adding up over 24 hours; any amount, a Suspicious Transaction Report when something seems wrong. A shop in Qu\u00e9bec also sees Revenu Qu\u00e9bec's rule: name, address and phone before any exchange.", "The touch (Sol, 8 Nov): 'The rules you're agreeing to. The desk follows every one.' The card arrives closed, then opens itself with a soft chime (a beat after the screen lands); its arrow is a green button that pulses while they read. It sits open five seconds, every time the screen is reached, then folds itself back down to one line ('4 rules you've agreed to \u00b7 tap to read them again'), and the arrow gives a small wiggle every few seconds to say it opens again. The Bank of Canada line is gone: shops choose their own rate source.", "Why not 10,000 for ID: 10,000 is the large-cash report (and an ID check on that cash). For a currency exchange of any payment type, FINTRAC's ID line is 3,000 CAD. The research page says it in so many words: do not convert these into a single 'KYC above $10,000' setting.", "Under the card, one choice: 3,000 CAD (the law), 1,000 CAD (recommended, the default), every deal, or your own amount. Own amount can go above 3,000: the row turns red, a red block says 'Not FINTRAC compliant' and what it means (exchanges between 3,000 and their amount go through without the ID the law requires; the desk warns them on every one; CurrencyDesk can step in and switch it back. That's how the back end works today: warnings in the desk, then a manual block from our side), and the button becomes a red 'Use it anyway'. The review repeats it.", "Always on, mentioned not switched: the desk adds up a customer's deals within 24 hours toward the shop's line. That part is our rule, not FINTRAC's for exchange (FINTRAC's 24-hour rule is for the cash report), and it's labelled as the desk's.", "US pack: over 1,000 USD record with ID, Currency Transaction Report over 10,000 USD cash, Suspicious Activity Report from 2,000 USD. Other packs fall back to their two numbers and stay 'to be confirmed'.", "A small note at the foot (Sol, 8 Nov): 'More rules inside, in Settings \u203a Compliance: sanctions screening, politically exposed persons, third parties, approval over your own limits, and how long records are kept.'"], "tag": "discuss"}, {"i": 11, "title": "Who else works the counter?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 31, "title": "Add a person.", "when": "Rules \u00b7 from the team screen", "v1": "An inline form on the team screen: name, role, email.", "discuss": ["Its own page (Sol, 8 Nov). First name and last name, side by side (stacked on a phone). Their email, required: a green tick appears once it's a real address, and the line under it says the invite and their CurrencyDesk ID go there when the desk opens. Mobile number, optional ('Optional \u00b7 skip it'), used only for a sign-in code if they lose their device. Then What do they do? as six role tiles with what the role can and can't do. The title and button follow the first name: 'Add Samira.' The button stays dark until first name, last name and a valid email are in.", "On Add: a dark circle with their initials, a green ring spinning round it. 'Creating Samira's CurrencyDesk ID' \u2192 'Writing the invite to samira@\u2026' \u2192 the ring closes, a tick pops, the circle turns green, their role drops in as a pill (MANAGER), 'Samira is on the team. The invite goes out the moment your desk opens.' Then the circle grows out to fill the card and you're back on the team screen, where her card lands with a glow. About three seconds.", "Nothing is sent during sign-up: invites go out when the desk opens, so a half-finished sign-up never emails anyone.", "No email, no person (Sol, 8 Nov): the 'no email at work / setup code' route is gone from sign-up. The logic doc's setup-code idea stays open for the team to decide inside.", "A small note at the foot (Sol, 8 Nov): 'More roles inside. These six cover most counters. In Settings \u203a Employees you can make your own role, or fine-tune what any role can see and do.'"], "tag": "discuss"}, {"i": 13, "title": "Confirm your desk.", "when": "Open \u00b7 the sign-off", "v1": "Summary cards, then Secure & open my desk.", "discuss": ["Official (Sol, 8 Nov). The green flash is gone. After the team screen the card turns ink, a gold ring draws itself round the CurrencyDesk mark, a warm rising chord plays: 'Your desk is built. One careful look, then you sign it off.' About two and a half seconds, then this.", "A desk record, not a list of cards: desk ID and today's date at the top, one row per part (Business, Shop, Owner, Currencies, Vault count, ID line, Team), Edit on each. At the bottom a declaration: 'I confirm these details are true, and I'm authorised to open this desk for York Foreign Exchange Inc.' Tick it and the owner's name appears as a signature with the date. Confirm my desk stays dark until it's ticked.", "Confirm: a soft stamp sound and CONFIRMED lands on the record, then the last chapter.", "Found: the review showed spreads (2.0% on all) that are no longer asked here. Now it says rates and spreads are set inside."], "tag": "discuss"}, {"i": 24, "title": "Confirmed. Now, open it.", "when": "Open \u00b7 the pitch, finished", "v1": "Not in v1.", "discuss": ["After the sign-off, the last chapter closes the pitch (Sol, 8 Nov): what the desk carries from the first deal. Rates that follow the market; every deal checks itself; reports ready to file; the rest at your pace inside. Button: Choose my plan."], "tag": "discuss"}, {"i": 15, "title": "Open York Currency Exchange.", "when": "Open \u00b7 the plan, folded", "v1": "Plans, add-ons, card, billing address, over the frosted desk.", "discuss": ["For conversion (Sol, 8 Nov), built around how an owner feels at this exact moment: they've just spent ten minutes building something, and the only thing between them and it is a card number.", "Cleaner (Sol, 8 Nov): one line under the title, '$0 today. Nothing is charged until you go live.' Monthly first ($750/mo, about $25 a day; annual one tap away as $675/mo with 'Save $900'). The summary opens with DUE TODAY $0.00, then what starts at go-live, then 'Pay yearly instead and save $900 a year'. The chips of what they built, the Founding Operator strip and the talk-to-us card are gone.", "Plan cards, cleaner (Sol, 8 Nov, comment): name, one line, price, and a small green 'What's included' under each that opens on its own without choosing the plan. Inside: the monthly allowances as two quiet tiles (50 ID checks a month on both full plans, 250 AI drafts and answers on the AI plan) and a ticked list of what the plan does. The allowance is worded as what's included, 'your first ones every month are on us', then billed as you go, and the counter never stops for a limit. Revenue driver (Sol, 8 Nov): 50 checks covers roughly a busy shop's first week, then usage billing starts. 250 AI requests is set on the same logic. To confirm: the price of an extra ID check and an extra AI request.", "Nothing due until the first transaction (Sol, 8 Nov): right under DUE TODAY $0.00, a green band: 'Nothing is due until your first transaction. You're part of the founding cohort: your plan starts the day your desk makes its first exchange.' The lines below read 'From your first transaction'; the button line says '$0 today \u00b7 billing starts with your first transaction \u00b7 then $750/mo'; the top line and the guarantee say the same. Server: the subscription is created at payment with a trial that ends on the first posted deal (per location).", "Card check (Sol, 8 Nov): at the foot of the green band, 'We'll place a $1 hold to check your card works. It's released straight away.' Server: a $1 authorisation on the SetupIntent card, voided at once (or Stripe's own card verification); nothing is captured.", "Folds, Early Access style (Sol, 8 Nov): four rows, one open at a time, each closing to a one-line summary with a green tick. 1 Your plan (monthly / annual, three plans). 2 Extras. 3 Payment: card, billing address, backup card. 4 The agreement. Below them the promo code, the order summary and Open York Currency Exchange.", "Prices: $750 a month per location is the whole desk with AI (it was the $749 AI tier), now first, chosen by default and marked Most chosen. The whole desk without AI $599, rates only $299: to confirm. Every plan: up to 10 people per location.", "To decide: three promises sit on this screen at once: nothing charged until you go live, a 30-day money-back guarantee, and a founding code with three months free. Pick the one or two that are true.", "Extras (Sol, 8 Nov), built to convert: two free things already ticked, so keeping them costs nothing and unticking takes a decision. The weekly Desk Brief (every Monday: rule changes, what's new in the desk, one tip) keeps them reading. A setup call (45 minutes on video in week one, then a live Q&A every Thursday), shown as Free with $250 struck through, gets them using the desk properly in the week churn is decided.", "Then two add-ons. Your own rate website, $99 a month, marked Coming soon: ticking it opens a small advert with three designs (Classic, Bold, Minimal) drawn with the shop's own name and live rates, 'Pick a design inside, make it yours', and 'nothing is billed until it's live'. It reserves the site; the order box shows it as reserved, billed from launch. And the on-site setup week, $5,000 once, as agreed.", "To decide: whether the $99 website is per account (one site listing every shop, as designed) or per location; and who runs the Thursday Q&A."], "tag": "discuss"}, {"i": 16, "title": "Welcome to CurrencyDesk, Daniel.", "when": "Open \u00b7 the welcome, then the hand-over", "v1": "Greeting, then four first jobs.", "discuss": ["The welcome, not 'ready' (Sol, 8 Nov): the desk isn't ready yet, so this screen doesn't pretend. The real Home opens behind, full page, every app in the row dim and locked, the day's cards blurred, the status pill 'Open \u00b7 setting up'.", "Big and happy: confetti falls across the whole page, the CurrencyDesk mark pops in, the seal chord plays. 'Founding Operator \u00b7 Day 1. Welcome to CurrencyDesk, Daniel. York Currency Exchange is open. You're a Founding Operator, desk CD-12345. The apps up there are still locked: next we build the desk around you, one app at a time, and you choose which ones you need.' Button: Build my desk.", "Build my desk hands over to the next page, Walk-through and onboarding (new, to design from scratch): built on the Home journey but for the first setup, playful, each app arrives one at a time and asks its question first (do you cash cheques? no, and it isn't added), and the desk builds itself around them."], "tag": "discuss"}];
+  RAIL = [{"i": 17, "title": "Welcome. Let\u2019s open your desk.", "when": "First \u00b7 before the ID", "v1": "Not in v1.", "discuss": ["Moved in front of the ID (Sol, 6 Nov): the pitch comes first, then the key. Nobody is named yet, so it speaks to everyone.", "Watch the tour (Sol, 6 Nov): a two-minute film cut from the real recordings, with the script in captions. More air around it now, and it fits a short laptop screen and a phone.", "Whether a voice reads the script: to discuss.", "Icons instead of dots (Sol, 6 Nov, comment): the app's own icon set, plus three drawn to match (TV, link, keypad)."], "tag": "decided"}, {"i": 0, "title": "Let's build your desk.", "when": "Second \u00b7 the key", "v1": "Enter the CurrencyDesk ID from the invite email. A link from the email fills it in.", "discuss": ["Typed, even straight from the ticket (Sol, 6 Nov): it's the key to everything, so it should feel important and be remembered.", "Now comes after the welcome. Back goes to the welcome."], "tag": "decided"}, {"i": 20, "title": "Reserved for Daniel.", "when": "Chapter 1 \u00b7 personal", "v1": "Not in v1.", "discuss": ["The ID just found their reservation, so this is the first personal moment: their shop's name, and the four things we already know, so they see they won't be asked twice.", "Then the three account steps. No separate text-only intro for chapter 1 any more.", "Typed ID shows the reservation masked (d\u2022\u2022\u2022\u2022@, \u2022\u2022\u2022 0142): the ID is a handle, not a secret. The email link proves the inbox and shows it in full. The whole chain is in design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5", "title": "How will you sign in?", "when": "4 \u00b7 standard sign-in chooser", "v1": "Owner name, email, password (6+), mobile.", "discuss": ["Standard practice (Sol, 6 Nov): one screen, every option always visible as a full-width 'Continue with \u2026' button, in the order most products use: passkey (recommended), Google, Microsoft, then email and password. Nothing hides another option.", "Each button opens its own window (passkey: the device's sheet; Google/Microsoft: their account chooser, in a popup on desktop and a redirect on phone). Success moves on by itself; cancelling shows one red line and leaves every option there.", "Button styling follows Google's and Microsoft's sign-in button rules (white, grey border, their label text). The official logos drop into the data-logo slots.", "Server side: design_handoff_access/SIGNUP-LOGIC.md."], "tag": "decided"}, {"i": 5, "key": "5a", "pk": "asking", "title": "The passkey window", "when": "4a \u00b7 your device asks", "v1": "Not in v1.", "discuss": ["Designed as the device's own window. Desktop: a dialog that drops from the top (key icon, 'Create a passkey for currencydesk.app?', where it's saved, the account, the Touch ID glyph, Cancel / Continue). Phone: a bottom sheet that slides up (grabber, key, title, account, one big Continue).", "Continue \u2192 the glyph scans as a ring draws (1s) \u2192 a tick draws, 'Passkey saved' \u2192 the window slides away and the button behind is already green \u2192 on to the inbox. Cancel \u2192 back, one red line.", "In the real product the OS draws this window; ours mirrors it closely so the prototype flows the same."], "tag": "decided"}, {"i": 5, "key": "5b", "pk": "sso", "title": "The Google window", "when": "4b \u00b7 provider account chooser", "v1": "Not in v1.", "discuss": ["Their account, matching the reservation email \u2192 signed in, on to the inbox. 'Use another account' shows what a mismatch looks like: refused, with one red line."], "tag": "decided"}, {"i": 5, "key": "5c", "pk": "failed", "title": "Cancelled", "when": "4c \u00b7 back on the chooser", "v1": "Not in v1.", "discuss": ["One red line above the buttons. Every option still there."], "tag": "decided"}, {"i": 14, "title": "Check your inbox.", "when": "Account \u00b7 after sign-in", "v1": "Was screen 15 of 17, at the very end.", "discuss": ["Moved after sign-in (Sol, 6 Nov): by now they've half forgotten they gave us the email, and the code is already there. That's the small magic.", "No 'go back and change it': this email already carried their desk ID."], "tag": "decided"}, {"i": 27, "title": "Now, your PIN. It\u2019s yours alone.", "when": "Account \u00b7 before the PIN", "v1": "Not in v1.", "discuss": ["A moment before the keypad (Sol, 6 Nov): what the PIN is, where it works (unlock the desk, hand over the till, approve voids and overrides, move cash), that it's theirs and nobody at CurrencyDesk sees it. The picture is the desk's own lock screen over a blurred desk, dots filling in.", "It doesn't say how a PIN is reset; that lives in Settings."], "tag": "decided"}, {"i": 18, "title": "Your counter PIN.", "when": "Account \u00b7 the till's keypad", "v1": "Not in v1 (PIN was set at first sign-in).", "discuss": ["The pill is gone (Sol, 6 Nov): two small bars instead, 1 \u00b7 Choose and 2 \u00b7 Confirm, filling as they type and turning green with a tick when each is done. The title follows: Choose your PIN \u2192 Once more, to be sure \u2192 That's your PIN.", "Typed twice, checked digit by digit; a mismatch shakes and starts over; 1111 refused; a match moves on by itself. Keyboard digits work too."], "tag": "decided"}, {"i": 2, "title": "What\u2019s your shop called?", "when": "Shop \u00b7 two confirmations", "v1": "Shop name and registered legal name.", "discuss": ["Built in Early Access's own language (Sol, 6 Nov): the folding question rows from 'Who runs the shop?'. Number badge, question and hint, a green check that pops when it's answered, the answer shown under the question, a Next pill. The '0 of 2' count and the bar above, as there.", "1 \u00b7 What's on the door? opens already filled from the reservation: Next (or Enter) confirms it. 2 \u00b7 What's the registered legal name? opens next, with quick picks: Same as on the door, + Inc., + Ltd., + Corp. Tap an answered row to change it."], "tag": "decided"}, {"i": 3, "title": "Where\u2019s the shop?", "when": "Shop \u00b7 found and verified", "v1": "Storefront address.", "discuss": ["Google Places autocomplete (Sol, 6 Nov), in Early Access's inputs: the same cream box and green focus ring, suggestions in a folding list, 'powered by Google' as Google requires. Pick one: the address fills in, a pin drops on the map preview, the green check pops, 'Verified by Google'. Unit / suite is the one thing to add. Arrow keys and Enter work.", "Can't find it: 'Enter it by hand' opens the plain form; it's marked 'Entered by hand' and we double-check it before the first report.", "Real build: v1 already proxies Places through the server with a session token (/api/onboarding/:id/places/suggest + details), so the key never reaches the browser. The prototype uses a short list of real-looking Toronto addresses; try 1420 Dundas.", "The note under the card now says: first shop, vault and one till. The question of other shops moves to its own screen, next."], "tag": "decided"}, {"i": 29, "title": "Just the one shop?", "when": "Shop \u00b7 the question", "v1": "Not in v1: one address, full stop.", "discuss": ["Rethought (Sol, 6 Nov): sign-up sets up the main shop only. Two tiles: Just the one, or We have more than one. The first is one tap and on. The second goes to the break.", "Nothing else is collected here for the other shops: no addresses, no names. They're opened inside, after payment, each from its own counter.", "To design next, inside: the multi-shop walk-through. After go-live, the head office gets a Shops step in the walk-through; each other shop is issued its own desk ID by email (the same email the first one got), and that shop's manager runs the same ten-minute setup from there: address, vault count, tills, people. Which of these the owner does centrally (address, people) and which the shop does itself (the count): to decide."], "tag": "discuss"}, {"i": 30, "title": "More than one shop. Good.", "when": "Shop \u00b7 the break, when there's more than one", "v1": "Not in v1.", "discuss": ["No price here (Sol, 6 Nov): the AI bundle is what everyone picks, so the break sells the network, not the number. What a shop is (its own vault, tills, window and rate page, up to ten people), what stays shared (one login, one board, one set of reports), and that each other shop is opened from inside, by its own desk ID.", "One thing to take: how many shops, counting this one. A plus and minus. It sets the plan (per location) and how many desk IDs go out after go-live.", "Price per location (Sol, 6 Nov): $750 a month, up to 10 users each. The plan screen prices per location and multiplies by the count; the website needs the same per-location wording.", "Beyond ten people at one location: not priced yet."], "tag": "discuss"}, {"i": 4, "title": "Your FINTRAC registration number?", "when": "Shop", "v1": "Skippable.", "discuss": ["Skip now reads I'll add this inside.", "With more than one shop the help line says one registration covers them all."], "tag": "decided"}, {"i": 22, "title": "The money.", "when": "Chapter 3 intro \u00b7 the money, in half a minute", "v1": "Not in v1.", "discuss": ["Educational (Sol, 6 Nov): a 40-second film on the recording, the same player as the tour. A title card; Rates \u203a Board (every currency is a row; on board means customers can buy and sell it; flipping one off takes it off the site and window; so right now, tell us which you trade); Rates \u203a Cost & stock (on hand split between vault and tills; the vault is the safe, a till a drawer, cash floats vault \u2192 till and back, PIN-signed; recording cash bought from the wholesaler, into the vault at cost); Settings \u203a Cash on hand \u00b7 Vault (a floor per currency; the opening balance is what's in the safe today); an end card that says exactly what to do next: Pick my currencies.", "The vault screen's own line now says the same in one sentence."], "tag": "discuss"}, {"i": 6, "title": "Which currencies do you trade?", "when": "Money \u00b7 the full list", "v1": "Unchanged.", "discuss": ["Every currency a Canadian desk is likely to trade, 64 of them (Sol, 6 Nov), in the order they're most traded: USD, EUR, GBP, MXN, JPY, INR, CNY, PHP, AUD, CHF, AED, HKD\u2026 down to the Gulf dinars and the Pacific. Quick buttons top right: Top 20, Top 50, All, Clear. A search box for the rest. Count pill shows what's selected.", "Flags: the app's own flag files where they exist; a plain tile for the others until the set is complete.", "The rate board inside is where they're put on board and priced."], "tag": "discuss"}, {"i": 8, "title": "Count the vault.", "when": "Money \u00b7 a checklist, counted by note", "v1": "Was Starting cash? (optional), 'in the drawer'.", "discuss": ["A checklist, not a form (Sol, 6 Nov, comment): one row per currency with a tick. Open a row and count the notes by denomination, the right notes for each currency ($100 \u2026 $5 for CAD, \u20ac500 \u2026 \u20ac5, \u00a510,000 \u2026 \u00a51,000, and so on, 40-odd currencies covered). The total adds itself and shows on the row. Coins & other is one field. Already counted? Type the total instead.", "Tick it off: the row goes green and the count reads 2 of 5 counted. Skipping is fine; the first count inside trues it up. The green bar under the list still shows the whole vault in CAD.", "Inside, the same count screen does the daily open and close, so this is the first one they do."], "tag": "discuss"}, {"i": 26, "title": "Your rates, online.", "when": "Money \u00b7 advertising piece, nothing to fill in", "v1": "Was 'Your public rate board' (screen 13 of 17): a question, how rates go online.", "discuss": ["Back, as an advert, not a question (Sol, 6 Nov): what comes free with the desk, shown moving (Website & Window, the public rate page with its converter, the window screen going full screen), with 'you'll set it up inside'.", "Decisions about what to do with it: later."], "tag": "discuss"}, {"i": 23, "title": "Your rules. The desk keeps them.", "when": "Chapter 4 intro \u00b7 Settings, moving", "v1": "Not in v1.", "discuss": ["A real recording of Settings \u203a Compliance: margin-floor rules and who may override. The point: set once, enforced at the counter."], "tag": "discuss"}, {"i": 9, "title": "Who's your compliance officer?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 10, "title": "When should the desk ask for ID?", "when": "Rules \u00b7 the ID line", "v1": "Unchanged.", "discuss": ["The actual rules (Sol, 8 Nov), checked against the team's own Notion research (Compliance Officer \u203a Canada \u2014 FINTRAC report and data verification, 7 Nov) and FINTRAC's MSB guidance. On top, a locked card, 'What FINTRAC requires \u00b7 always on': any amount, a record of every exchange; 3,000 CAD, check ID and record name, address, date of birth and occupation; 10,000 CAD cash, check ID and file a Large Cash Transaction Report within 15 days, cash adding up over 24 hours; any amount, a Suspicious Transaction Report when something seems wrong. A shop in Qu\u00e9bec also sees Revenu Qu\u00e9bec's rule: name, address and phone before any exchange.", "The touch (Sol, 8 Nov): 'The rules you're agreeing to. The desk follows every one.' The card arrives closed, then opens itself with a soft chime (a beat after the screen lands); its arrow is a green button that pulses while they read. It sits open five seconds, every time the screen is reached, then folds itself back down to one line ('4 rules you've agreed to \u00b7 tap to read them again'), and the arrow gives a small wiggle every few seconds to say it opens again. The Bank of Canada line is gone: shops choose their own rate source.", "Why not 10,000 for ID: 10,000 is the large-cash report (and an ID check on that cash). For a currency exchange of any payment type, FINTRAC's ID line is 3,000 CAD. The research page says it in so many words: do not convert these into a single 'KYC above $10,000' setting.", "Under the card, one choice: 3,000 CAD (the law), 1,000 CAD (recommended, the default), every deal, or your own amount. Own amount can go above 3,000: the row turns red, a red block says 'Not FINTRAC compliant' and what it means (exchanges between 3,000 and their amount go through without the ID the law requires; the desk warns them on every one; CurrencyDesk can step in and switch it back. That's how the back end works today: warnings in the desk, then a manual block from our side), and the button becomes a red 'Use it anyway'. The review repeats it.", "Always on, mentioned not switched: the desk adds up a customer's deals within 24 hours toward the shop's line. That part is our rule, not FINTRAC's for exchange (FINTRAC's 24-hour rule is for the cash report), and it's labelled as the desk's.", "US pack: over 1,000 USD record with ID, Currency Transaction Report over 10,000 USD cash, Suspicious Activity Report from 2,000 USD. Other packs fall back to their two numbers and stay 'to be confirmed'.", "A small note at the foot (Sol, 8 Nov): 'More rules inside, in Settings \u203a Compliance: sanctions screening, politically exposed persons, third parties, approval over your own limits, and how long records are kept.'"], "tag": "discuss"}, {"i": 11, "title": "Who else works the counter?", "when": "Rules", "v1": "Unchanged.", "discuss": [], "tag": "decided"}, {"i": 31, "title": "Add a person.", "when": "Rules \u00b7 from the team screen", "v1": "An inline form on the team screen: name, role, email.", "discuss": ["Its own page (Sol, 8 Nov). First name and last name, side by side (stacked on a phone). Their email, required: a green tick appears once it's a real address, and the line under it says the invite and their CurrencyDesk ID go there when the desk opens. Mobile number, optional ('Optional \u00b7 skip it'), used only for a sign-in code if they lose their device. Then What do they do? as six role tiles with what the role can and can't do. The title and button follow the first name: 'Add Samira.' The button stays dark until first name, last name and a valid email are in.", "On Add: a dark circle with their initials, a green ring spinning round it. 'Creating Samira's CurrencyDesk ID' \u2192 'Writing the invite to samira@\u2026' \u2192 the ring closes, a tick pops, the circle turns green, their role drops in as a pill (MANAGER), 'Samira is on the team. The invite goes out the moment your desk opens.' Then the circle grows out to fill the card and you're back on the team screen, where her card lands with a glow. About three seconds.", "Nothing is sent during sign-up: invites go out when the desk opens, so a half-finished sign-up never emails anyone.", "No email, no person (Sol, 8 Nov): the 'no email at work / setup code' route is gone from sign-up. The logic doc's setup-code idea stays open for the team to decide inside.", "A small note at the foot (Sol, 8 Nov): 'More roles inside. These six cover most counters. In Settings \u203a Employees you can make your own role, or fine-tune what any role can see and do.'"], "tag": "discuss"}, {"i": 13, "title": "Confirm your desk.", "when": "Open \u00b7 the sign-off", "v1": "Summary cards, then Secure & open my desk.", "discuss": ["Official (Sol, 8 Nov). The green flash is gone. After the team screen the card turns ink, a gold ring draws itself round the CurrencyDesk mark, a warm rising chord plays: 'Your desk is built. One careful look, then you sign it off.' About two and a half seconds, then this.", "A desk record, not a list of cards: desk ID and today's date at the top, one row per part (Business, Shop, Owner, Currencies, Vault count, ID line, Team), Edit on each. At the bottom a declaration: 'I confirm these details are true, and I'm authorised to open this desk for York Foreign Exchange Inc.' Tick it and the owner's name appears as a signature with the date. Confirm my desk stays dark until it's ticked.", "Confirm: a soft stamp sound and CONFIRMED lands on the record, then the last chapter.", "Found: the review showed spreads (2.0% on all) that are no longer asked here. Now it says rates and spreads are set inside."], "tag": "discuss"}, {"i": 24, "title": "Confirmed. Now, open it.", "when": "Open \u00b7 the pitch, finished", "v1": "Not in v1.", "discuss": ["After the sign-off, the last chapter closes the pitch (Sol, 8 Nov): what the desk carries from the first deal. Rates that follow the market; every deal checks itself; reports ready to file; the rest at your pace inside. Button: Choose my plan."], "tag": "discuss"}, {"i": 15, "title": "Open York Currency Exchange.", "when": "Open \u00b7 the plan, folded", "v1": "Plans, add-ons, card, billing address, over the frosted desk.", "discuss": ["For conversion (Sol, 8 Nov), built around how an owner feels at this exact moment: they've just spent ten minutes building something, and the only thing between them and it is a card number.", "Cleaner (Sol, 8 Nov): one line under the title, '$0 today. Nothing is charged until you go live.' Monthly first ($750/mo, about $25 a day; annual one tap away as $675/mo with 'Save $900'). The summary opens with DUE TODAY $0.00, then what starts at go-live, then 'Pay yearly instead and save $900 a year'. The chips of what they built, the Founding Operator strip and the talk-to-us card are gone.", "Plan cards, cleaner (Sol, 8 Nov, comment): name, one line, price, and a small green 'What's included' under each that opens on its own without choosing the plan. Inside: the monthly allowances as two quiet tiles (50 ID checks a month on both full plans, 250 AI drafts and answers on the AI plan) and a ticked list of what the plan does. The allowance is worded as what's included, 'your first ones every month are on us', then billed as you go, and the counter never stops for a limit. Revenue driver (Sol, 8 Nov): 50 checks covers roughly a busy shop's first week, then usage billing starts. 250 AI requests is set on the same logic. To confirm: the price of an extra ID check and an extra AI request.", "Nothing due until the first transaction (Sol, 8 Nov): right under DUE TODAY $0.00, a green band: 'Nothing is due until your first transaction. You're part of the founding cohort: your plan starts the day your desk makes its first exchange.' The lines below read 'From your first transaction'; the button line says '$0 today \u00b7 billing starts with your first transaction \u00b7 then $750/mo'; the top line and the guarantee say the same. Server: the subscription is created at payment with a trial that ends on the first posted deal (per location).", "Card check (Sol, 8 Nov): at the foot of the green band, 'We'll place a $1 hold to check your card works. It's released straight away.' Server: a $1 authorisation on the SetupIntent card, voided at once (or Stripe's own card verification); nothing is captured.", "Folds, Early Access style (Sol, 8 Nov): four rows, one open at a time, each closing to a one-line summary with a green tick. 1 Your plan (monthly / annual, three plans). 2 Extras. 3 Payment: card, billing address, backup card. 4 The agreement. Below them the promo code, the order summary and Open York Currency Exchange.", "Prices: $750 a month per location is the whole desk with AI (it was the $749 AI tier), now first, chosen by default and marked Most chosen. The whole desk without AI $599, rates only $299: to confirm. Every plan: up to 10 people per location.", "To decide: three promises sit on this screen at once: nothing charged until you go live, a 30-day money-back guarantee, and a founding code with three months free. Pick the one or two that are true.", "Extras (Sol, 8 Nov), built to convert: two free things already ticked, so keeping them costs nothing and unticking takes a decision. The weekly Desk Brief (every Monday: rule changes, what's new in the desk, one tip) keeps them reading. A setup call (45 minutes on video in week one, then a live Q&A every Thursday), shown as Free with $250 struck through, gets them using the desk properly in the week churn is decided.", "Then two add-ons. Your own rate website is coming soon. And the on-site setup week, $5,000 once, as agreed.", "To decide: who runs the Thursday Q&A."], "tag": "discuss"}, {"i": 16, "title": "Welcome to CurrencyDesk, Daniel.", "when": "Open \u00b7 the welcome, then the hand-over", "v1": "Greeting, then four first jobs.", "discuss": ["The welcome, not 'ready' (Sol, 8 Nov): the desk isn't ready yet, so this screen doesn't pretend. The real Home opens behind, full page, every app in the row dim and locked, the day's cards blurred, the status pill 'Open \u00b7 setting up'.", "Big and happy: confetti falls across the whole page, the CurrencyDesk mark pops in, the seal chord plays. 'Founding Operator \u00b7 Day 1. Welcome to CurrencyDesk, Daniel. York Currency Exchange is open. You're a Founding Operator, desk CD-12345. The apps up there are still locked: next we build the desk around you, one app at a time, and you choose which ones you need.' Button: Build my desk.", "Build my desk hands over to the next page, Walk-through and onboarding (new, to design from scratch): built on the Home journey but for the first setup, playful, each app arrives one at a time and asks its question first (do you cash cheques? no, and it isn't added), and the desk builds itself around them."], "tag": "discuss"}];
   RAIL_CUT = [["Which country are you licensed in?", "Cut", "Early Access already knows the country; it's set from the application."], ["What's your margin on an exchange?", "Cut", "Shown on the rate board recording instead; set inside (Sol, 6 Nov)."], ["Chapter 2 intro \u00b7 Now, the shop.", "Cut in draft 3", "Not every chapter needs text (Sol, 6 Nov). The shop screens explain themselves."], ["The rest happens inside, safely.", "Merged in draft 3", "Folded into the last chapter's intro."]];
   SEQS = {
     money: [
@@ -5008,556 +5008,539 @@ function s3468(v,k){return h("div",{key:k,"style":style("font-family: var(--m); 
 function s3470(v,k){return "\n                  ";}
 function s3472(v,k){return "\n                    ";}
 function s3474(v,k){return "\n                      ";}
-function s3478(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3477(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3478(v,0));}
-function s3476(v,k){return (v?.["xWeb"] ? h(React.Fragment,{key:k},s3477(v,0)) : null);}
-function s3475(v,k){return h("span",{key:k,"style":style(v?.["xWebBox"])},s3476(v,0));}
-function s3479(v,k){return "\n                      ";}
-function s3483(v,k){return "Your own rate website";}
-function s3482(v,k){return h("b",{key:k,"style":style("font-weight: 800; font-size: 14px;")},s3483(v,0));}
-function s3485(v,k){return "Coming soon";}
-function s3484(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: #8A5A0E; background: #FBEFD2; padding: 3px 6px; border-radius: 5px;")},s3485(v,0));}
-function s3481(v,k){return h("span",{key:k,"style":style("display: flex; align-items: center; gap: 7px; flex-wrap: wrap;")},s3482(v,0),s3484(v,1));}
-function s3487(v,k){return "Your address, your live rates, a converter and a map.";}
-function s3486(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;")},s3487(v,0));}
-function s3480(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3481(v,0),s3486(v,1));}
-function s3488(v,k){return "\n                      ";}
-function s3490(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebPrice"],1),"");}
-function s3489(v,k){return h("span",{key:k,"style":style("flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;")},s3490(v,0));}
-function s3491(v,k){return "\n                    ";}
-function s3473(v,k){return h("button",{key:k,"onClick":v?.["onXWeb"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3474(v,0),s3475(v,1),s3479(v,2),s3480(v,3),s3488(v,4),s3489(v,5),s3491(v,6));}
-function s3492(v,k){return "\n                    ";}
-function s3495(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebRefused"],1),"");}
-function s3494(v,k){return h("p",{key:k,"data-web-refused":"true","role":"alert","style":style("margin:0;padding:0 14px 12px;font-size:12px;line-height:1.4;color:#B23A2A;")},s3495(v,0));}
-function s3493(v,k){return (v?.["xWebRefused"] ? h(React.Fragment,{key:k},s3494(v,0)) : null);}
-function s3497(v,k){return "\n                      ";}
-function s3499(v,k){return "\n                        ";}
-function s3501(v,k){return "\n                          ";}
-function s3503(v,k){return "\n                            ";}
-function s3505(v,k){return "\n                              ";}
-function s3507(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
-function s3508(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
-function s3509(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
-function s3506(v,k){return h("div",{key:k,"style":style("height: 10px; background: #EFEAE0; display: flex; gap: 3px; align-items: center; padding: 0 5px;")},s3507(v,0),s3508(v,1),s3509(v,2));}
-function s3510(v,k){return "\n                              ";}
-function s3513(v,k){return h(React.Fragment,{key:k},"",text(v?.["t"]?.["shop"],1),"");}
-function s3512(v,k){return h("span",{key:k,"style":style(v?.["t"]?.["name"])},s3513(v,0));}
-function s3514(v,k){return h("span",{key:k,"style":style("display: block; height: 3px; width: 60%; border-radius: 2px; background: currentColor; opacity: 0.35; margin-top: 4px;")});}
-function s3511(v,k){return h("div",{key:k,"style":style(v?.["t"]?.["hero"])},s3512(v,0),s3514(v,1));}
-function s3515(v,k){return "\n                              ";}
-function s3517(v,k){return "\n                                ";}
-function s3521(v,k){return h(React.Fragment,{key:k},"",text(v?.["r"]?.["c"],1),"");}
-function s3520(v,k){return h("span",{key:k},s3521(v,0));}
-function s3523(v,k){return h(React.Fragment,{key:k},"",text(v?.["r"]?.["v"],1),"");}
-function s3522(v,k){return h("span",{key:k,"style":style(v?.["t"]?.["num"])},s3523(v,0));}
-function s3519(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: space-between; font-family: var(--m); font-size: 7.5px; color: #4A443B;")},s3520(v,0),s3522(v,1));}
-function s3518(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["t"]?.["rows"] || []).map((item,i)=>{const v={...outer,"r":item,$index:i};return h(React.Fragment,{key:i},s3519(v,0))}));}
-function s3524(v,k){return "\n                              ";}
-function s3516(v,k){return h("div",{key:k,"style":style("padding: 6px 7px 7px; display: grid; gap: 3px;")},s3517(v,0),s3518(v,1),s3524(v,2));}
-function s3525(v,k){return "\n                              ";}
-function s3527(v,k){return h(React.Fragment,{key:k},"",text(v?.["t"]?.["label"],1),"");}
-function s3526(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 7.5px; letter-spacing: 0.1em; text-transform: uppercase; text-align: center; padding: 4px; border-top: 1px solid #F0EBE1; color: var(--mute);")},s3527(v,0));}
-function s3528(v,k){return "\n                            ";}
-function s3504(v,k){return h("div",{key:k,"style":style("border-radius: 10px; overflow: hidden; border: 1px solid #DDD5C6; background: #fff; box-shadow: 0 8px 18px -14px rgba(23,20,15,0.5);")},s3505(v,0),s3506(v,1),s3510(v,2),s3511(v,3),s3515(v,4),s3516(v,5),s3525(v,6),s3526(v,7),s3528(v,8));}
-function s3529(v,k){return "\n                          ";}
-function s3502(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["xTpls"] || []).map((item,i)=>{const v={...outer,"t":item,$index:i};return h(React.Fragment,{key:i},s3503(v,0),s3504(v,1),s3529(v,2))}));}
-function s3530(v,k){return "\n                        ";}
-function s3500(v,k){return h("div",{key:k,"data-webtpl":"true","style":style("display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;")},s3501(v,0),s3502(v,1),s3530(v,2));}
-function s3531(v,k){return "\n                        ";}
-function s3534(v,k){return "Pick a design inside, make it yours.";}
-function s3533(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3534(v,0));}
-function s3535(v,k){return " Your logo and colours, your rates live from the board, on your own address, with every shop listed. Reserve it now and you’re first in line; ";}
-function s3537(v,k){return "nothing is billed until it’s live.";}
-function s3536(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3537(v,0));}
-function s3532(v,k){return h("div",{key:k,"style":style("font-size: 12.5px; color: var(--mute); line-height: 1.5; margin-top: 10px;")},s3533(v,0),s3535(v,1),s3536(v,2));}
-function s3538(v,k){return "\n                      ";}
-function s3498(v,k){return h("div",{key:k,"style":style("padding: 0 14px 14px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3499(v,0),s3500(v,1),s3531(v,2),s3532(v,3),s3538(v,4));}
-function s3539(v,k){return "\n                    ";}
-function s3496(v,k){return (v?.["xWebOpen"] ? h(React.Fragment,{key:k},s3497(v,0),s3498(v,1),s3539(v,2)) : null);}
-function s3540(v,k){return "\n                  ";}
-function s3471(v,k){return h("div",{key:k,"style":style(v?.["xWebWrap"])},s3472(v,0),s3473(v,1),s3492(v,2),s3493(v,3),s3496(v,4),s3540(v,5));}
-function s3541(v,k){return "\n                  ";}
-function s3543(v,k){return "\n                    ";}
-function s3547(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3546(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3547(v,0));}
-function s3545(v,k){return (v?.["xSite"] ? h(React.Fragment,{key:k},s3546(v,0)) : null);}
-function s3544(v,k){return h("span",{key:k,"style":style(v?.["xSiteBox"])},s3545(v,0));}
-function s3548(v,k){return "\n                    ";}
-function s3551(v,k){return "A setup week, on site";}
-function s3550(v,k){return h("b",{key:k,"style":style("font-weight: 800; font-size: 14px;")},s3551(v,0));}
-function s3553(v,k){return "We come to your shop for five days: board, tills, rules, your team trained, your records brought across.";}
-function s3552(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;")},s3553(v,0));}
-function s3549(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3550(v,0),s3552(v,1));}
-function s3554(v,k){return "\n                    ";}
-function s3556(v,k){return h(React.Fragment,{key:k},"",text(v?.["xSetupPrice"],1),"");}
-function s3555(v,k){return h("span",{key:k,"style":style("flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;")},s3556(v,0));}
-function s3557(v,k){return "\n                  ";}
-function s3542(v,k){return h("button",{key:k,"onClick":v?.["onXSite"],"style":style(v?.["xSiteS"])},s3543(v,0),s3544(v,1),s3548(v,2),s3549(v,3),s3554(v,4),s3555(v,5),s3557(v,6));}
-function s3558(v,k){return "\n\n\n                  ";}
-function s3561(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf1NextL"],1),"");}
-function s3560(v,k){return h("button",{key:k,"disabled":v?.["pf1Disabled"],"onClick":v?.["pf1Next"],"style":style(v?.["pf1NextS"])},s3561(v,0));}
-function s3559(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3560(v,0));}
-function s3562(v,k){return "\n                ";}
-function s3424(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3425(v,0),s3426(v,1),s3428(v,2),s3429(v,3),s3445(v,4),s3446(v,5),s3465(v,6),s3466(v,7),s3468(v,8),s3470(v,9),s3471(v,10),s3541(v,11),s3542(v,12),s3558(v,13),s3559(v,14),s3562(v,15));}
-function s3563(v,k){return "\n              ";}
-function s3422(v,k){return (v?.["pf1Open"] ? h(React.Fragment,{key:k},s3423(v,0),s3424(v,1),s3563(v,2)) : null);}
-function s3564(v,k){return "\n            ";}
-function s3397(v,k){return h("div",{key:k,"style":style(v?.["pf1Box"])},s3398(v,0),s3399(v,1),s3421(v,2),s3422(v,3),s3564(v,4));}
-function s3565(v,k){return "\n            ";}
-function s3567(v,k){return "\n              ";}
-function s3569(v,k){return "\n                ";}
-function s3573(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3572(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3573(v,0));}
-function s3571(v,k){return (v?.["pf2Done"] ? h(React.Fragment,{key:k},s3572(v,0)) : null);}
-function s3575(v,k){return "3";}
-function s3574(v,k){return (v?.["pf2Num"] ? h(React.Fragment,{key:k},s3575(v,0)) : null);}
-function s3570(v,k){return h("span",{key:k,"style":style(v?.["pf2Badge"])},s3571(v,0),s3574(v,1));}
-function s3576(v,k){return "\n                ";}
-function s3580(v,k){return "Payment";}
-function s3579(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3580(v,0));}
-function s3578(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3579(v,0));}
-function s3582(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2Sum"],1),"");}
-function s3581(v,k){return h("span",{key:k,"style":style(v?.["pf2SumS"])},s3582(v,0));}
-function s3577(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3578(v,0),s3581(v,1));}
-function s3583(v,k){return "\n                ";}
-function s3586(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
-function s3585(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3586(v,0));}
-function s3584(v,k){return h("span",{key:k,"style":style(v?.["pf2Chev"])},s3585(v,0));}
-function s3587(v,k){return "\n              ";}
-function s3568(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf2Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3569(v,0),s3570(v,1),s3576(v,2),s3577(v,3),s3583(v,4),s3584(v,5),s3587(v,6));}
-function s3588(v,k){return "\n              ";}
-function s3590(v,k){return "\n                ";}
-function s3592(v,k){return "\n            ";}
-function s3594(v,k){return "\n              \n              ";}
+function s3478(v,k){return "Your own rate website";}
+function s3477(v,k){return h("b",{key:k,"style":style("font-weight: 800; font-size: 14px;")},s3478(v,0));}
+function s3480(v,k){return "Coming soon";}
+function s3479(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: #8A5A0E; background: #FBEFD2; padding: 3px 6px; border-radius: 5px;")},s3480(v,0));}
+function s3476(v,k){return h("span",{key:k,"style":style("display: flex; align-items: center; gap: 7px; flex-wrap: wrap;")},s3477(v,0),s3479(v,1));}
+function s3482(v,k){return "Your address, your live rates, a converter and a map.";}
+function s3481(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;")},s3482(v,0));}
+function s3475(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3476(v,0),s3481(v,1));}
+function s3483(v,k){return "\n                    ";}
+function s3473(v,k){return h("div",{key:k,"data-web-soon":"true","style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border: 0; background: none; font-family: inherit; color: var(--ink);")},s3474(v,0),s3475(v,1),s3483(v,2));}
+function s3484(v,k){return "\n                    ";}
+function s3487(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebRefused"],1),"");}
+function s3486(v,k){return h("p",{key:k,"data-web-refused":"true","role":"alert","style":style("margin:0;padding:0 14px 12px;font-size:12px;line-height:1.4;color:#B23A2A;")},s3487(v,0));}
+function s3485(v,k){return (v?.["xWebRefused"] ? h(React.Fragment,{key:k},s3486(v,0)) : null);}
+function s3489(v,k){return "\n                      ";}
+function s3491(v,k){return "\n                        ";}
+function s3493(v,k){return "\n                          ";}
+function s3495(v,k){return "\n                            ";}
+function s3497(v,k){return "\n                              ";}
+function s3499(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
+function s3500(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
+function s3501(v,k){return h("span",{key:k,"style":style("width: 4px; height: 4px; border-radius: 50%; background: #D5CDBE;")});}
+function s3498(v,k){return h("div",{key:k,"style":style("height: 10px; background: #EFEAE0; display: flex; gap: 3px; align-items: center; padding: 0 5px;")},s3499(v,0),s3500(v,1),s3501(v,2));}
+function s3502(v,k){return "\n                              ";}
+function s3505(v,k){return h(React.Fragment,{key:k},"",text(v?.["t"]?.["shop"],1),"");}
+function s3504(v,k){return h("span",{key:k,"style":style(v?.["t"]?.["name"])},s3505(v,0));}
+function s3506(v,k){return h("span",{key:k,"style":style("display: block; height: 3px; width: 60%; border-radius: 2px; background: currentColor; opacity: 0.35; margin-top: 4px;")});}
+function s3503(v,k){return h("div",{key:k,"style":style(v?.["t"]?.["hero"])},s3504(v,0),s3506(v,1));}
+function s3507(v,k){return "\n                              ";}
+function s3509(v,k){return "\n                                ";}
+function s3513(v,k){return h(React.Fragment,{key:k},"",text(v?.["r"]?.["c"],1),"");}
+function s3512(v,k){return h("span",{key:k},s3513(v,0));}
+function s3515(v,k){return h(React.Fragment,{key:k},"",text(v?.["r"]?.["v"],1),"");}
+function s3514(v,k){return h("span",{key:k,"style":style(v?.["t"]?.["num"])},s3515(v,0));}
+function s3511(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: space-between; font-family: var(--m); font-size: 7.5px; color: #4A443B;")},s3512(v,0),s3514(v,1));}
+function s3510(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["t"]?.["rows"] || []).map((item,i)=>{const v={...outer,"r":item,$index:i};return h(React.Fragment,{key:i},s3511(v,0))}));}
+function s3516(v,k){return "\n                              ";}
+function s3508(v,k){return h("div",{key:k,"style":style("padding: 6px 7px 7px; display: grid; gap: 3px;")},s3509(v,0),s3510(v,1),s3516(v,2));}
+function s3517(v,k){return "\n                              ";}
+function s3519(v,k){return h(React.Fragment,{key:k},"",text(v?.["t"]?.["label"],1),"");}
+function s3518(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 7.5px; letter-spacing: 0.1em; text-transform: uppercase; text-align: center; padding: 4px; border-top: 1px solid #F0EBE1; color: var(--mute);")},s3519(v,0));}
+function s3520(v,k){return "\n                            ";}
+function s3496(v,k){return h("div",{key:k,"style":style("border-radius: 10px; overflow: hidden; border: 1px solid #DDD5C6; background: #fff; box-shadow: 0 8px 18px -14px rgba(23,20,15,0.5);")},s3497(v,0),s3498(v,1),s3502(v,2),s3503(v,3),s3507(v,4),s3508(v,5),s3517(v,6),s3518(v,7),s3520(v,8));}
+function s3521(v,k){return "\n                          ";}
+function s3494(v,k){const outer=v;return h(React.Fragment,{key:k},(v?.["xTpls"] || []).map((item,i)=>{const v={...outer,"t":item,$index:i};return h(React.Fragment,{key:i},s3495(v,0),s3496(v,1),s3521(v,2))}));}
+function s3522(v,k){return "\n                        ";}
+function s3492(v,k){return h("div",{key:k,"data-webtpl":"true","style":style("display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;")},s3493(v,0),s3494(v,1),s3522(v,2));}
+function s3523(v,k){return "\n                        ";}
+function s3526(v,k){return "Pick a design inside, make it yours.";}
+function s3525(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3526(v,0));}
+function s3527(v,k){return " Your logo and colours, your rates live from the board, on your own address, with every shop listed.";}
+function s3524(v,k){return h("div",{key:k,"style":style("font-size: 12.5px; color: var(--mute); line-height: 1.5; margin-top: 10px;")},s3525(v,0),s3527(v,1));}
+function s3528(v,k){return "\n                      ";}
+function s3490(v,k){return h("div",{key:k,"style":style("padding: 0 14px 14px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3491(v,0),s3492(v,1),s3523(v,2),s3524(v,3),s3528(v,4));}
+function s3529(v,k){return "\n                    ";}
+function s3488(v,k){return (v?.["xWebOpen"] ? h(React.Fragment,{key:k},s3489(v,0),s3490(v,1),s3529(v,2)) : null);}
+function s3530(v,k){return "\n                  ";}
+function s3471(v,k){return h("div",{key:k,"style":style(v?.["xWebWrap"])},s3472(v,0),s3473(v,1),s3484(v,2),s3485(v,3),s3488(v,4),s3530(v,5));}
+function s3531(v,k){return "\n                  ";}
+function s3533(v,k){return "\n                    ";}
+function s3537(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3536(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3537(v,0));}
+function s3535(v,k){return (v?.["xSite"] ? h(React.Fragment,{key:k},s3536(v,0)) : null);}
+function s3534(v,k){return h("span",{key:k,"style":style(v?.["xSiteBox"])},s3535(v,0));}
+function s3538(v,k){return "\n                    ";}
+function s3541(v,k){return "A setup week, on site";}
+function s3540(v,k){return h("b",{key:k,"style":style("font-weight: 800; font-size: 14px;")},s3541(v,0));}
+function s3543(v,k){return "We come to your shop for five days: board, tills, rules, your team trained, your records brought across.";}
+function s3542(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.45;")},s3543(v,0));}
+function s3539(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3540(v,0),s3542(v,1));}
+function s3544(v,k){return "\n                    ";}
+function s3546(v,k){return h(React.Fragment,{key:k},"",text(v?.["xSetupPrice"],1),"");}
+function s3545(v,k){return h("span",{key:k,"style":style("flex: none; font-family: var(--m); font-size: 12.5px; font-weight: 700; white-space: nowrap;")},s3546(v,0));}
+function s3547(v,k){return "\n                  ";}
+function s3532(v,k){return h("button",{key:k,"onClick":v?.["onXSite"],"style":style(v?.["xSiteS"])},s3533(v,0),s3534(v,1),s3538(v,2),s3539(v,3),s3544(v,4),s3545(v,5),s3547(v,6));}
+function s3548(v,k){return "\n\n\n                  ";}
+function s3551(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf1NextL"],1),"");}
+function s3550(v,k){return h("button",{key:k,"disabled":v?.["pf1Disabled"],"onClick":v?.["pf1Next"],"style":style(v?.["pf1NextS"])},s3551(v,0));}
+function s3549(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3550(v,0));}
+function s3552(v,k){return "\n                ";}
+function s3424(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3425(v,0),s3426(v,1),s3428(v,2),s3429(v,3),s3445(v,4),s3446(v,5),s3465(v,6),s3466(v,7),s3468(v,8),s3470(v,9),s3471(v,10),s3531(v,11),s3532(v,12),s3548(v,13),s3549(v,14),s3552(v,15));}
+function s3553(v,k){return "\n              ";}
+function s3422(v,k){return (v?.["pf1Open"] ? h(React.Fragment,{key:k},s3423(v,0),s3424(v,1),s3553(v,2)) : null);}
+function s3554(v,k){return "\n            ";}
+function s3397(v,k){return h("div",{key:k,"style":style(v?.["pf1Box"])},s3398(v,0),s3399(v,1),s3421(v,2),s3422(v,3),s3554(v,4));}
+function s3555(v,k){return "\n            ";}
+function s3557(v,k){return "\n              ";}
+function s3559(v,k){return "\n                ";}
+function s3563(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3562(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3563(v,0));}
+function s3561(v,k){return (v?.["pf2Done"] ? h(React.Fragment,{key:k},s3562(v,0)) : null);}
+function s3565(v,k){return "3";}
+function s3564(v,k){return (v?.["pf2Num"] ? h(React.Fragment,{key:k},s3565(v,0)) : null);}
+function s3560(v,k){return h("span",{key:k,"style":style(v?.["pf2Badge"])},s3561(v,0),s3564(v,1));}
+function s3566(v,k){return "\n                ";}
+function s3570(v,k){return "Payment";}
+function s3569(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3570(v,0));}
+function s3568(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3569(v,0));}
+function s3572(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2Sum"],1),"");}
+function s3571(v,k){return h("span",{key:k,"style":style(v?.["pf2SumS"])},s3572(v,0));}
+function s3567(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3568(v,0),s3571(v,1));}
+function s3573(v,k){return "\n                ";}
+function s3576(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
+function s3575(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3576(v,0));}
+function s3574(v,k){return h("span",{key:k,"style":style(v?.["pf2Chev"])},s3575(v,0));}
+function s3577(v,k){return "\n              ";}
+function s3558(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf2Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3559(v,0),s3560(v,1),s3566(v,2),s3567(v,3),s3573(v,4),s3574(v,5),s3577(v,6));}
+function s3578(v,k){return "\n              ";}
+function s3580(v,k){return "\n                ";}
+function s3582(v,k){return "\n            ";}
+function s3584(v,k){return "\n              \n              ";}
+function s3586(v,k){return "\n                ";}
+function s3587(v,k){return h("div",{key:k,"data-stripe-card":"true","role":"group","aria-label":"Card details","style":style("min-height: 46px;")});}
+function s3590(v,k){return "Try the card form again";}
+function s3589(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryCard"],"style":style("min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3590(v,0));}
+function s3588(v,k){return (v?.["retryCardVisible"] ? h(React.Fragment,{key:k},s3589(v,0)) : null);}
+function s3591(v,k){return "\n                ";}
+function s3592(v,k){return h("input",{key:k,"value":(v?.["cardName"] ?? ""),"onChange":v?.["onCardName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p34"});}
+function s3593(v,k){return "\n              ";}
+function s3585(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3586(v,0),s3587(v,1),s3588(v,2),s3591(v,3),s3592(v,4),s3593(v,5));}
+function s3594(v,k){return "\n              ";}
 function s3596(v,k){return "\n                ";}
-function s3597(v,k){return h("div",{key:k,"data-stripe-card":"true","role":"group","aria-label":"Card details","style":style("min-height: 46px;")});}
-function s3600(v,k){return "Try the card form again";}
-function s3599(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryCard"],"style":style("min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3600(v,0));}
-function s3598(v,k){return (v?.["retryCardVisible"] ? h(React.Fragment,{key:k},s3599(v,0)) : null);}
-function s3601(v,k){return "\n                ";}
-function s3602(v,k){return h("input",{key:k,"value":(v?.["cardName"] ?? ""),"onChange":v?.["onCardName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p34"});}
-function s3603(v,k){return "\n              ";}
-function s3595(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3596(v,0),s3597(v,1),s3598(v,2),s3601(v,3),s3602(v,4),s3603(v,5));}
-function s3604(v,k){return "\n              ";}
-function s3606(v,k){return "\n                ";}
-function s3608(v,k){return "Billing address";}
-function s3607(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px;")},s3608(v,0));}
-function s3609(v,k){return "\n                ";}
-function s3611(v,k){return "\n                  ";}
-function s3615(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3614(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3615(v,0));}
-function s3613(v,k){return (v?.["billSame"] ? h(React.Fragment,{key:k},s3614(v,0)) : null);}
-function s3612(v,k){return h("span",{key:k,"style":style(v?.["billBoxStyle"])},s3613(v,0));}
-function s3616(v,k){return "\n                  ";}
-function s3619(v,k){return "Same as business address";}
-function s3618(v,k){return h("b",{key:k,"style":style("font-weight: 700; font-size: 14px;")},s3619(v,0));}
-function s3621(v,k){return h(React.Fragment,{key:k},"",text(v?.["bizAddrLine"],1),"");}
-function s3620(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.4;")},s3621(v,0));}
-function s3617(v,k){return h("span",{key:k,"style":style("flex: 1; text-align: left; min-width: 0;")},s3618(v,0),s3620(v,1));}
-function s3622(v,k){return "\n                ";}
-function s3610(v,k){return h("button",{key:k,"onClick":v?.["onToggleBillSame"],"style":style(v?.["billSameStyle"])},s3611(v,0),s3612(v,1),s3616(v,2),s3617(v,3),s3622(v,4));}
-function s3623(v,k){return "\n                ";}
-function s3625(v,k){return "\n                  ";}
-function s3627(v,k){return "\n                    ";}
-function s3628(v,k){return h("input",{key:k,"value":(v?.["billStreet"] ?? ""),"onChange":v?.["onBillStreet"],"placeholder":"Street address","style":style("grid-column: span 2; width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p35"});}
-function s3629(v,k){return "\n                    ";}
-function s3630(v,k){return h("input",{key:k,"value":(v?.["billCity"] ?? ""),"onChange":v?.["onBillCity"],"placeholder":"City","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p36"});}
-function s3631(v,k){return "\n                    ";}
-function s3632(v,k){return h("input",{key:k,"value":(v?.["billPostal"] ?? ""),"onChange":v?.["onBillPostal"],"placeholder":"Postal / ZIP","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p37"});}
-function s3633(v,k){return "\n                    ";}
-function s3634(v,k){return h("input",{key:k,"value":(v?.["billRegion"] ?? ""),"onChange":v?.["onBillRegion"],"placeholder":"State / province","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p38"});}
-function s3635(v,k){return "\n                    ";}
-function s3636(v,k){return h("input",{key:k,"value":(v?.["billCountry"] ?? ""),"onChange":v?.["onBillCountry"],"placeholder":"Country","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p39"});}
-function s3637(v,k){return "\n                  ";}
-function s3626(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px;")},s3627(v,0),s3628(v,1),s3629(v,2),s3630(v,3),s3631(v,4),s3632(v,5),s3633(v,6),s3634(v,7),s3635(v,8),s3636(v,9),s3637(v,10));}
-function s3638(v,k){return "\n                ";}
-function s3624(v,k){return (v?.["billCustom"] ? h(React.Fragment,{key:k},s3625(v,0),s3626(v,1),s3638(v,2)) : null);}
-function s3639(v,k){return "\n              ";}
-function s3605(v,k){return h("div",{key:k,"style":style("margin-top: 16px;")},s3606(v,0),s3607(v,1),s3609(v,2),s3610(v,3),s3623(v,4),s3624(v,5),s3639(v,6));}
-function s3640(v,k){return "\n              ";}
-function s3642(v,k){return "\n                ";}
-function s3644(v,k){return "\n                  ";}
-function s3647(v,k){return "Backup card";}
-function s3646(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3647(v,0));}
-function s3650(v,k){return h("path",{key:k,"d":"M5 12h14"});}
-function s3649(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3650(v,0));}
-function s3651(v,k){return "Remove";}
-function s3648(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"title":"Remove backup card","style":style("display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px 4px 6px; cursor: pointer;"),className:"signup-p40"},s3649(v,0),s3651(v,1));}
-function s3645(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;")},s3646(v,0),s3648(v,1));}
-function s3652(v,k){return "\n                  ";}
+function s3598(v,k){return "Billing address";}
+function s3597(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 10px;")},s3598(v,0));}
+function s3599(v,k){return "\n                ";}
+function s3601(v,k){return "\n                  ";}
+function s3605(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3604(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3605(v,0));}
+function s3603(v,k){return (v?.["billSame"] ? h(React.Fragment,{key:k},s3604(v,0)) : null);}
+function s3602(v,k){return h("span",{key:k,"style":style(v?.["billBoxStyle"])},s3603(v,0));}
+function s3606(v,k){return "\n                  ";}
+function s3609(v,k){return "Same as business address";}
+function s3608(v,k){return h("b",{key:k,"style":style("font-weight: 700; font-size: 14px;")},s3609(v,0));}
+function s3611(v,k){return h(React.Fragment,{key:k},"",text(v?.["bizAddrLine"],1),"");}
+function s3610(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 2px; line-height: 1.4;")},s3611(v,0));}
+function s3607(v,k){return h("span",{key:k,"style":style("flex: 1; text-align: left; min-width: 0;")},s3608(v,0),s3610(v,1));}
+function s3612(v,k){return "\n                ";}
+function s3600(v,k){return h("button",{key:k,"onClick":v?.["onToggleBillSame"],"style":style(v?.["billSameStyle"])},s3601(v,0),s3602(v,1),s3606(v,2),s3607(v,3),s3612(v,4));}
+function s3613(v,k){return "\n                ";}
+function s3615(v,k){return "\n                  ";}
+function s3617(v,k){return "\n                    ";}
+function s3618(v,k){return h("input",{key:k,"value":(v?.["billStreet"] ?? ""),"onChange":v?.["onBillStreet"],"placeholder":"Street address","style":style("grid-column: span 2; width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p35"});}
+function s3619(v,k){return "\n                    ";}
+function s3620(v,k){return h("input",{key:k,"value":(v?.["billCity"] ?? ""),"onChange":v?.["onBillCity"],"placeholder":"City","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p36"});}
+function s3621(v,k){return "\n                    ";}
+function s3622(v,k){return h("input",{key:k,"value":(v?.["billPostal"] ?? ""),"onChange":v?.["onBillPostal"],"placeholder":"Postal / ZIP","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p37"});}
+function s3623(v,k){return "\n                    ";}
+function s3624(v,k){return h("input",{key:k,"value":(v?.["billRegion"] ?? ""),"onChange":v?.["onBillRegion"],"placeholder":"State / province","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p38"});}
+function s3625(v,k){return "\n                    ";}
+function s3626(v,k){return h("input",{key:k,"value":(v?.["billCountry"] ?? ""),"onChange":v?.["onBillCountry"],"placeholder":"Country","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 12px 13px; background: #fff; color: var(--ink);"),className:"signup-p39"});}
+function s3627(v,k){return "\n                  ";}
+function s3616(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px;")},s3617(v,0),s3618(v,1),s3619(v,2),s3620(v,3),s3621(v,4),s3622(v,5),s3623(v,6),s3624(v,7),s3625(v,8),s3626(v,9),s3627(v,10));}
+function s3628(v,k){return "\n                ";}
+function s3614(v,k){return (v?.["billCustom"] ? h(React.Fragment,{key:k},s3615(v,0),s3616(v,1),s3628(v,2)) : null);}
+function s3629(v,k){return "\n              ";}
+function s3595(v,k){return h("div",{key:k,"style":style("margin-top: 16px;")},s3596(v,0),s3597(v,1),s3599(v,2),s3600(v,3),s3613(v,4),s3614(v,5),s3629(v,6));}
+function s3630(v,k){return "\n              ";}
+function s3632(v,k){return "\n                ";}
+function s3634(v,k){return "\n                  ";}
+function s3637(v,k){return "Backup card";}
+function s3636(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3637(v,0));}
+function s3640(v,k){return h("path",{key:k,"d":"M5 12h14"});}
+function s3639(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3640(v,0));}
+function s3641(v,k){return "Remove";}
+function s3638(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"title":"Remove backup card","style":style("display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--line); border-radius: 999px; color: var(--mute); font-family: var(--m); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px 4px 6px; cursor: pointer;"),className:"signup-p40"},s3639(v,0),s3641(v,1));}
+function s3635(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;")},s3636(v,0),s3638(v,1));}
+function s3642(v,k){return "\n                  ";}
+function s3644(v,k){return "\n                    ";}
+function s3645(v,k){return h("input",{key:k,"value":(v?.["backupNum"] ?? ""),"onChange":v?.["onBackupNum"],"inputMode":"numeric","placeholder":"Card number","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p41"});}
+function s3646(v,k){return "\n                    ";}
+function s3647(v,k){return h("input",{key:k,"value":(v?.["backupName"] ?? ""),"onChange":v?.["onBackupName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p42"});}
+function s3648(v,k){return "\n                    ";}
+function s3650(v,k){return "\n                      ";}
+function s3651(v,k){return h("input",{key:k,"value":(v?.["backupExp"] ?? ""),"onChange":v?.["onBackupExp"],"inputMode":"numeric","placeholder":"MM / YY","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p43"});}
+function s3652(v,k){return "\n                      ";}
+function s3653(v,k){return h("input",{key:k,"value":(v?.["backupCvc"] ?? ""),"onChange":v?.["onBackupCvc"],"inputMode":"numeric","placeholder":"CVC","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p44"});}
 function s3654(v,k){return "\n                    ";}
-function s3655(v,k){return h("input",{key:k,"value":(v?.["backupNum"] ?? ""),"onChange":v?.["onBackupNum"],"inputMode":"numeric","placeholder":"Card number","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p41"});}
-function s3656(v,k){return "\n                    ";}
-function s3657(v,k){return h("input",{key:k,"value":(v?.["backupName"] ?? ""),"onChange":v?.["onBackupName"],"placeholder":"Name on card","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: inherit; font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p42"});}
-function s3658(v,k){return "\n                    ";}
-function s3660(v,k){return "\n                      ";}
-function s3661(v,k){return h("input",{key:k,"value":(v?.["backupExp"] ?? ""),"onChange":v?.["onBackupExp"],"inputMode":"numeric","placeholder":"MM / YY","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p43"});}
-function s3662(v,k){return "\n                      ";}
-function s3663(v,k){return h("input",{key:k,"value":(v?.["backupCvc"] ?? ""),"onChange":v?.["onBackupCvc"],"inputMode":"numeric","placeholder":"CVC","style":style("width: 100%; border: 1px solid var(--line); border-radius: 10px; outline: none; font-family: var(--m); font-size: 15px; padding: 13px 14px; background: #fff; color: var(--ink);"),className:"signup-p44"});}
-function s3664(v,k){return "\n                    ";}
-function s3659(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px;")},s3660(v,0),s3661(v,1),s3662(v,2),s3663(v,3),s3664(v,4));}
-function s3665(v,k){return "\n                  ";}
-function s3653(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3654(v,0),s3655(v,1),s3656(v,2),s3657(v,3),s3658(v,4),s3659(v,5),s3665(v,6));}
-function s3666(v,k){return "\n                ";}
-function s3643(v,k){return h("div",{key:k,"style":style("margin-top: 12px;")},s3644(v,0),s3645(v,1),s3652(v,2),s3653(v,3),s3666(v,4));}
-function s3667(v,k){return "\n              ";}
-function s3641(v,k){return (v?.["showBackup"] ? h(React.Fragment,{key:k},s3642(v,0),s3643(v,1),s3667(v,2)) : null);}
-function s3668(v,k){return "\n              ";}
-function s3670(v,k){return "\n                ";}
-function s3673(v,k){return h("path",{key:k,"d":"M12 5v14M5 12h14"});}
-function s3672(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3673(v,0));}
-function s3674(v,k){return " Add a backup card";}
-function s3671(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"style":style("width: 100%; margin-top: 11px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"),className:"signup-p45"},s3672(v,0),s3674(v,1));}
-function s3675(v,k){return "\n              ";}
-function s3669(v,k){return (v?.["notShowBackup"] ? h(React.Fragment,{key:k},s3670(v,0),s3671(v,1),s3675(v,2)) : null);}
-function s3676(v,k){return "\n            ";}
-function s3593(v,k){return h("div",{key:k},s3594(v,0),s3595(v,1),s3604(v,2),s3605(v,3),s3640(v,4),s3641(v,5),s3668(v,6),s3669(v,7),s3676(v,8));}
-function s3677(v,k){return "\n\n\n                  ";}
-function s3680(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2NextL"],1),"");}
-function s3679(v,k){return h("button",{key:k,"disabled":v?.["pf2Disabled"],"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3680(v,0));}
-function s3678(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3679(v,0));}
-function s3681(v,k){return "\n                ";}
-function s3591(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3592(v,0),s3593(v,1),s3677(v,2),s3678(v,3),s3681(v,4));}
-function s3682(v,k){return "\n              ";}
-function s3589(v,k){return (v?.["pf2Open"] ? h(React.Fragment,{key:k},s3590(v,0),s3591(v,1),s3682(v,2)) : null);}
-function s3683(v,k){return "\n            ";}
-function s3566(v,k){return h("div",{key:k,"style":style(v?.["pf2Box"])},s3567(v,0),s3568(v,1),s3588(v,2),s3589(v,3),s3683(v,4));}
-function s3684(v,k){return "\n            ";}
-function s3686(v,k){return "\n              ";}
-function s3688(v,k){return "\n                ";}
-function s3692(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3691(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3692(v,0));}
-function s3690(v,k){return (v?.["pf3Done"] ? h(React.Fragment,{key:k},s3691(v,0)) : null);}
-function s3694(v,k){return "4";}
-function s3693(v,k){return (v?.["pf3Num"] ? h(React.Fragment,{key:k},s3694(v,0)) : null);}
-function s3689(v,k){return h("span",{key:k,"style":style(v?.["pf3Badge"])},s3690(v,0),s3693(v,1));}
-function s3695(v,k){return "\n                ";}
-function s3699(v,k){return "The agreement";}
-function s3698(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3699(v,0));}
-function s3697(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3698(v,0));}
-function s3701(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3Sum"],1),"");}
-function s3700(v,k){return h("span",{key:k,"style":style(v?.["pf3SumS"])},s3701(v,0));}
-function s3696(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3697(v,0),s3700(v,1));}
-function s3702(v,k){return "\n                ";}
-function s3705(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
-function s3704(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3705(v,0));}
-function s3703(v,k){return h("span",{key:k,"style":style(v?.["pf3Chev"])},s3704(v,0));}
-function s3706(v,k){return "\n              ";}
-function s3687(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf3Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3688(v,0),s3689(v,1),s3695(v,2),s3696(v,3),s3702(v,4),s3703(v,5),s3706(v,6));}
-function s3707(v,k){return "\n              ";}
-function s3709(v,k){return "\n                ";}
-function s3711(v,k){return "\n            ";}
-function s3713(v,k){return "\n              ";}
-function s3715(v,k){return "\n                ";}
-function s3717(v,k){return "Service agreement";}
-function s3716(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3717(v,0));}
-function s3718(v,k){return "\n                ";}
-function s3720(v,k){return "Full version";}
-function s3719(v,k){return h("a",{key:k,"href":"/legal","target":"_blank","style":style("font-family: var(--m); font-size: 10px; color: var(--mute); border-bottom: 1px solid var(--line);"),className:"signup-p46"},s3720(v,0));}
-function s3721(v,k){return "\n              ";}
-function s3714(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px;")},s3715(v,0),s3716(v,1),s3718(v,2),s3719(v,3),s3721(v,4));}
-function s3722(v,k){return "\n\n              ";}
-function s3724(v,k){return "\n                ";}
-function s3726(v,k){return "CurrencyDesk Service Agreement";}
-function s3725(v,k){return h("div",{key:k,"style":style("font-family: var(--serif); font-size: 19px; line-height: 1.15; color: var(--ink);")},s3726(v,0));}
-function s3727(v,k){return "\n                ";}
-function s3729(v,k){return "Version 1.0 · effective on the day you go live";}
-function s3728(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-top: 5px;")},s3729(v,0));}
-function s3730(v,k){return "\n\n                ";}
-function s3732(v,k){return "This agreement is between CurrencyDesk and the business named in your account. By opening your desk you accept it on that business's behalf and confirm you're authorised to do so.";}
-function s3731(v,k){return h("p",{key:k,"style":style("font-size: 12.5px; line-height: 1.6; color: var(--mute); margin: 13px 0 0;")},s3732(v,0));}
-function s3733(v,k){return "\n\n                ";}
-function s3735(v,k){return "1 · What you're getting";}
-function s3734(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3735(v,0));}
-function s3736(v,k){return "\n                ";}
-function s3738(v,k){return "Access to the CurrencyDesk platform for the plan you selected, for as long as the account is in good standing. We may add, change or retire individual features; we won't materially reduce what your plan does without telling you first.";}
-function s3737(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3738(v,0));}
-function s3739(v,k){return "\n\n                ";}
-function s3741(v,k){return "2 · Fees, billing and renewal";}
-function s3740(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3741(v,0));}
-function s3742(v,k){return "\n                ";}
-function s3744(v,k){return "Your subscription starts when you go live and renews automatically each period until cancelled. Fees are charged to the card on file. ID verification is coming and is not billed yet. Setup services are one-time and non-refundable once delivered. Prices are exclusive of tax. We may change pricing with thirty days' notice, effective at your next renewal.";}
-function s3743(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3744(v,0));}
-function s3745(v,k){return "\n                ";}
-function s3747(v,k){return "Promotional codes apply only to the subscription fee, for the stated period, on the plan they were issued against. If a payment fails we may retry, charge a backup card if you've added one, and suspend access if it stays unpaid.";}
-function s3746(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3747(v,0));}
-function s3748(v,k){return "\n\n                ";}
-function s3750(v,k){return "3 · Cancellation and refunds";}
-function s3749(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3750(v,0));}
-function s3751(v,k){return "\n                ";}
-function s3753(v,k){return "Cancel any time from your account; access continues to the end of the paid period. Fees already paid are not refunded except where the law requires it. We can suspend or close an account for non-payment, unlawful use, or a serious breach of this agreement.";}
-function s3752(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3753(v,0));}
-function s3754(v,k){return "\n\n                ";}
-function s3756(v,k){return "4 · Compliance stays yours";}
-function s3755(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3756(v,0));}
-function s3757(v,k){return "\n                ";}
-function s3759(v,k){return "This is the part that matters most. CurrencyDesk is software. It helps you watch thresholds, prepare reports and keep records — ";}
-function s3761(v,k){return "it does not file on your behalf and it is not compliance advice.";}
-function s3760(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3761(v,0));}
-function s3762(v,k){return " You remain the registered money services business. You remain responsible for your registration, your reporting obligations, your record retention, and for reviewing and submitting anything the system prepares. Nothing here transfers a regulatory duty to us.";}
-function s3758(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3759(v,0),s3760(v,1),s3762(v,2));}
-function s3763(v,k){return "\n\n                ";}
-function s3765(v,k){return "5 · Your data and your clients' data";}
-function s3764(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3765(v,0));}
-function s3766(v,k){return "\n                ";}
-function s3768(v,k){return "Your records stay yours. You grant us the licence needed to host, process, back up and display them so the service works, and to have our processors do the same. We handle personal information under our Privacy Policy, which forms part of this agreement.";}
-function s3767(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3768(v,0));}
-function s3769(v,k){return "\n                ";}
-function s3771(v,k){return "You confirm you have the right to give us any client information you enter, and that you'll collect and use it lawfully in your jurisdiction. We may use aggregated and de-identified data — data that cannot identify you, your business or your clients — to operate, secure and improve the service.";}
-function s3770(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3771(v,0));}
-function s3772(v,k){return "\n\n                ";}
-function s3774(v,k){return "6 · Your account and your team";}
-function s3773(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3774(v,0));}
-function s3775(v,k){return "\n                ";}
-function s3777(v,k){return "You're responsible for your credentials and for everything done under accounts you create for your team, including what they can see and do. Tell us promptly if you think an account has been compromised.";}
-function s3776(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3777(v,0));}
-function s3778(v,k){return "\n\n                ";}
-function s3780(v,k){return "7 · Acceptable use";}
-function s3779(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3780(v,0));}
-function s3781(v,k){return "\n                ";}
-function s3783(v,k){return "Don't use the service to break the law, to launder money, to evade sanctions, to store someone else's data without the right to, or to attack, reverse-engineer or resell the platform. Don't misrepresent rates or records you produce with it.";}
-function s3782(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3783(v,0));}
-function s3784(v,k){return "\n\n                ";}
-function s3786(v,k){return "8 · Early access";}
-function s3785(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3786(v,0));}
-function s3787(v,k){return "\n                ";}
-function s3789(v,k){return "If you're on an early-access or founding plan, you understand the platform is still being built. Features may change, break, or be withdrawn. In exchange for preferential pricing you agree we may contact you for feedback, and that feedback you give us can be used to improve the product without obligation or payment. Any founding rate we've confirmed in writing is held for the life of that account.";}
-function s3788(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3789(v,0));}
-function s3790(v,k){return "\n\n                ";}
-function s3792(v,k){return "9 · Availability and warranties";}
-function s3791(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3792(v,0));}
-function s3793(v,k){return "\n                ";}
-function s3795(v,k){return "We work hard to keep the desk up, but the service is provided \"as is\" and \"as available\". To the fullest extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. We don't warrant that the service will be uninterrupted, error-free, or that it will make you compliant.";}
-function s3794(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3795(v,0));}
-function s3796(v,k){return "\n\n                ";}
-function s3798(v,k){return "10 · Limitation of liability";}
-function s3797(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3798(v,0));}
-function s3799(v,k){return "\n                ";}
-function s3801(v,k){return "To the fullest extent the law allows, neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, lost business, lost data or regulatory penalties. Our total liability for any claim is capped at the fees you paid us in the twelve months before the claim arose. Some jurisdictions don't allow these limits; where that's so, they apply to the extent permitted.";}
-function s3800(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3801(v,0));}
-function s3802(v,k){return "\n\n                ";}
-function s3804(v,k){return "11 · Indemnity";}
-function s3803(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3804(v,0));}
-function s3805(v,k){return "\n                ";}
-function s3807(v,k){return "You'll defend and indemnify us against claims arising from your use of the service, your records, your clients, or your breach of this agreement or of the law that applies to your business.";}
-function s3806(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3807(v,0));}
-function s3808(v,k){return "\n\n                ";}
-function s3810(v,k){return "12 · Third parties";}
-function s3809(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3810(v,0));}
-function s3811(v,k){return "\n                ";}
-function s3813(v,k){return "The desk relies on third-party providers for things like payments, verification and rate data. Their terms govern their part, and we're not responsible for their acts or omissions.";}
-function s3812(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3813(v,0));}
-function s3814(v,k){return "\n\n                ";}
-function s3816(v,k){return "13 · Intellectual property";}
-function s3815(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3816(v,0));}
-function s3817(v,k){return "\n                ";}
-function s3819(v,k){return "The platform, its design and everything in it stays ours. You get a limited, non-exclusive, non-transferable right to use it while your account is active.";}
-function s3818(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3819(v,0));}
-function s3820(v,k){return "\n\n                ";}
-function s3822(v,k){return "14 · Changes to this agreement";}
-function s3821(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3822(v,0));}
-function s3823(v,k){return "\n                ";}
-function s3825(v,k){return "We may update these terms. For material changes we'll email the address on your account before they take effect. Continuing to use the service after that date means you accept the new version.";}
-function s3824(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3825(v,0));}
-function s3826(v,k){return "\n\n                ";}
-function s3828(v,k){return "15 · Law and disputes";}
-function s3827(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3828(v,0));}
-function s3829(v,k){return "\n                ";}
-function s3831(v,k){return "This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada that apply there, and both parties submit to the exclusive jurisdiction of the courts of Ontario. Claims must be brought individually, not as part of a class action. Before filing anything, talk to us — most things are resolved with an email.";}
-function s3830(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3831(v,0));}
-function s3832(v,k){return "\n\n                ";}
-function s3834(v,k){return "16 · The rest";}
-function s3833(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3834(v,0));}
-function s3835(v,k){return "\n                ";}
-function s3837(v,k){return "If a clause is unenforceable, the rest survives. Not enforcing something once doesn't waive it. You can't assign this agreement without our consent; we may assign it in a merger or sale. This agreement and the Privacy Policy are the whole understanding between us on this subject.";}
-function s3836(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3837(v,0));}
-function s3838(v,k){return "\n\n                ";}
-function s3840(v,k){return "\n                  ";}
-function s3842(v,k){return "End of agreement";}
-function s3841(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--primary); font-weight: 700;")},s3842(v,0));}
-function s3843(v,k){return "\n                  ";}
-function s3845(v,k){return "Questions before you sign? ";}
-function s3847(v,k){return "Ask us";}
-function s3846(v,k){return h("a",{key:k,"href":"/contact","target":"_blank","style":style("color: var(--primary); font-weight: 600;")},s3847(v,0));}
-function s3848(v,k){return " — we'd rather answer now.";}
-function s3844(v,k){return h("div",{key:k,"style":style("font-size: 11.5px; color: var(--faint); margin-top: 5px;")},s3845(v,0),s3846(v,1),s3848(v,2));}
-function s3849(v,k){return "\n                ";}
-function s3839(v,k){return h("div",{key:k,"style":style("margin: 18px 0 0; padding-top: 13px; border-top: 1px solid var(--hair); text-align: center;")},s3840(v,0),s3841(v,1),s3843(v,2),s3844(v,3),s3849(v,4));}
-function s3850(v,k){return "\n              ";}
-function s3723(v,k){return h("div",{key:k,"data-terms-box":"true","onScroll":v?.["onTermsScroll"],"style":style(v?.["termsBoxStyle"])},s3724(v,0),s3725(v,1),s3727(v,2),s3728(v,3),s3730(v,4),s3731(v,5),s3733(v,6),s3734(v,7),s3736(v,8),s3737(v,9),s3739(v,10),s3740(v,11),s3742(v,12),s3743(v,13),s3745(v,14),s3746(v,15),s3748(v,16),s3749(v,17),s3751(v,18),s3752(v,19),s3754(v,20),s3755(v,21),s3757(v,22),s3758(v,23),s3763(v,24),s3764(v,25),s3766(v,26),s3767(v,27),s3769(v,28),s3770(v,29),s3772(v,30),s3773(v,31),s3775(v,32),s3776(v,33),s3778(v,34),s3779(v,35),s3781(v,36),s3782(v,37),s3784(v,38),s3785(v,39),s3787(v,40),s3788(v,41),s3790(v,42),s3791(v,43),s3793(v,44),s3794(v,45),s3796(v,46),s3797(v,47),s3799(v,48),s3800(v,49),s3802(v,50),s3803(v,51),s3805(v,52),s3806(v,53),s3808(v,54),s3809(v,55),s3811(v,56),s3812(v,57),s3814(v,58),s3815(v,59),s3817(v,60),s3818(v,61),s3820(v,62),s3821(v,63),s3823(v,64),s3824(v,65),s3826(v,66),s3827(v,67),s3829(v,68),s3830(v,69),s3832(v,70),s3833(v,71),s3835(v,72),s3836(v,73),s3838(v,74),s3839(v,75),s3850(v,76));}
-function s3851(v,k){return "\n\n              ";}
-function s3853(v,k){return "\n                ";}
-function s3857(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
-function s3856(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3857(v,0));}
-function s3855(v,k){return (v?.["termsRead"] ? h(React.Fragment,{key:k},s3856(v,0)) : null);}
-function s3854(v,k){return h("span",{key:k,"style":style(v?.["termsBoxIconStyle"])},s3855(v,0));}
-function s3858(v,k){return "\n                ";}
-function s3860(v,k){return h(React.Fragment,{key:k},"",text(v?.["termsLabel"],1),"");}
-function s3859(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0; text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--mute);")},s3860(v,0));}
-function s3861(v,k){return "\n              ";}
-function s3852(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onToggleTerms"],"style":style(v?.["termsRowStyle"])},s3853(v,0),s3854(v,1),s3858(v,2),s3859(v,3),s3861(v,4));}
+function s3649(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr 1fr; gap: 11px;")},s3650(v,0),s3651(v,1),s3652(v,2),s3653(v,3),s3654(v,4));}
+function s3655(v,k){return "\n                  ";}
+function s3643(v,k){return h("div",{key:k,"style":style("display: grid; grid-template-columns: 1fr; gap: 11px;")},s3644(v,0),s3645(v,1),s3646(v,2),s3647(v,3),s3648(v,4),s3649(v,5),s3655(v,6));}
+function s3656(v,k){return "\n                ";}
+function s3633(v,k){return h("div",{key:k,"style":style("margin-top: 12px;")},s3634(v,0),s3635(v,1),s3642(v,2),s3643(v,3),s3656(v,4));}
+function s3657(v,k){return "\n              ";}
+function s3631(v,k){return (v?.["showBackup"] ? h(React.Fragment,{key:k},s3632(v,0),s3633(v,1),s3657(v,2)) : null);}
+function s3658(v,k){return "\n              ";}
+function s3660(v,k){return "\n                ";}
+function s3663(v,k){return h("path",{key:k,"d":"M12 5v14M5 12h14"});}
+function s3662(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3663(v,0));}
+function s3664(v,k){return " Add a backup card";}
+function s3661(v,k){return h("button",{key:k,"onClick":v?.["onToggleBackup"],"style":style("width: 100%; margin-top: 11px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; background: none; color: var(--mute); font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"),className:"signup-p45"},s3662(v,0),s3664(v,1));}
+function s3665(v,k){return "\n              ";}
+function s3659(v,k){return (v?.["notShowBackup"] ? h(React.Fragment,{key:k},s3660(v,0),s3661(v,1),s3665(v,2)) : null);}
+function s3666(v,k){return "\n            ";}
+function s3583(v,k){return h("div",{key:k},s3584(v,0),s3585(v,1),s3594(v,2),s3595(v,3),s3630(v,4),s3631(v,5),s3658(v,6),s3659(v,7),s3666(v,8));}
+function s3667(v,k){return "\n\n\n                  ";}
+function s3670(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf2NextL"],1),"");}
+function s3669(v,k){return h("button",{key:k,"disabled":v?.["pf2Disabled"],"onClick":v?.["pf2Next"],"style":style(v?.["pf2NextS"])},s3670(v,0));}
+function s3668(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3669(v,0));}
+function s3671(v,k){return "\n                ";}
+function s3581(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3582(v,0),s3583(v,1),s3667(v,2),s3668(v,3),s3671(v,4));}
+function s3672(v,k){return "\n              ";}
+function s3579(v,k){return (v?.["pf2Open"] ? h(React.Fragment,{key:k},s3580(v,0),s3581(v,1),s3672(v,2)) : null);}
+function s3673(v,k){return "\n            ";}
+function s3556(v,k){return h("div",{key:k,"style":style(v?.["pf2Box"])},s3557(v,0),s3558(v,1),s3578(v,2),s3579(v,3),s3673(v,4));}
+function s3674(v,k){return "\n            ";}
+function s3676(v,k){return "\n              ";}
+function s3678(v,k){return "\n                ";}
+function s3682(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3681(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"13","height":"13","fill":"none","stroke":"currentColor","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3682(v,0));}
+function s3680(v,k){return (v?.["pf3Done"] ? h(React.Fragment,{key:k},s3681(v,0)) : null);}
+function s3684(v,k){return "4";}
+function s3683(v,k){return (v?.["pf3Num"] ? h(React.Fragment,{key:k},s3684(v,0)) : null);}
+function s3679(v,k){return h("span",{key:k,"style":style(v?.["pf3Badge"])},s3680(v,0),s3683(v,1));}
+function s3685(v,k){return "\n                ";}
+function s3689(v,k){return "The agreement";}
+function s3688(v,k){return h("span",{key:k,"style":style("font-weight: 800; font-size: 15px;")},s3689(v,0));}
+function s3687(v,k){return h("span",{key:k,"style":style("display: flex; align-items: baseline; gap: 8px;")},s3688(v,0));}
+function s3691(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3Sum"],1),"");}
+function s3690(v,k){return h("span",{key:k,"style":style(v?.["pf3SumS"])},s3691(v,0));}
+function s3686(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0;")},s3687(v,0),s3690(v,1));}
+function s3692(v,k){return "\n                ";}
+function s3695(v,k){return h("path",{key:k,"d":"M6 9.5l6 6 6-6"});}
+function s3694(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"16","height":"16","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round"},s3695(v,0));}
+function s3693(v,k){return h("span",{key:k,"style":style(v?.["pf3Chev"])},s3694(v,0));}
+function s3696(v,k){return "\n              ";}
+function s3677(v,k){return h("button",{key:k,"data-pfhead":"true","onClick":v?.["pf3Head"],"style":style("display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px 15px; border: 0; background: none; cursor: pointer; font-family: inherit; color: var(--ink);")},s3678(v,0),s3679(v,1),s3685(v,2),s3686(v,3),s3692(v,4),s3693(v,5),s3696(v,6));}
+function s3697(v,k){return "\n              ";}
+function s3699(v,k){return "\n                ";}
+function s3701(v,k){return "\n            ";}
+function s3703(v,k){return "\n              ";}
+function s3705(v,k){return "\n                ";}
+function s3707(v,k){return "Service agreement";}
+function s3706(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute);")},s3707(v,0));}
+function s3708(v,k){return "\n                ";}
+function s3710(v,k){return "Full version";}
+function s3709(v,k){return h("a",{key:k,"href":"/legal","target":"_blank","style":style("font-family: var(--m); font-size: 10px; color: var(--mute); border-bottom: 1px solid var(--line);"),className:"signup-p46"},s3710(v,0));}
+function s3711(v,k){return "\n              ";}
+function s3704(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px;")},s3705(v,0),s3706(v,1),s3708(v,2),s3709(v,3),s3711(v,4));}
+function s3712(v,k){return "\n\n              ";}
+function s3714(v,k){return "\n                ";}
+function s3716(v,k){return "CurrencyDesk Service Agreement";}
+function s3715(v,k){return h("div",{key:k,"style":style("font-family: var(--serif); font-size: 19px; line-height: 1.15; color: var(--ink);")},s3716(v,0));}
+function s3717(v,k){return "\n                ";}
+function s3719(v,k){return "Version 1.0 · effective on the day you go live";}
+function s3718(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-top: 5px;")},s3719(v,0));}
+function s3720(v,k){return "\n\n                ";}
+function s3722(v,k){return "This agreement is between CurrencyDesk and the business named in your account. By opening your desk you accept it on that business's behalf and confirm you're authorised to do so.";}
+function s3721(v,k){return h("p",{key:k,"style":style("font-size: 12.5px; line-height: 1.6; color: var(--mute); margin: 13px 0 0;")},s3722(v,0));}
+function s3723(v,k){return "\n\n                ";}
+function s3725(v,k){return "1 · What you're getting";}
+function s3724(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3725(v,0));}
+function s3726(v,k){return "\n                ";}
+function s3728(v,k){return "Access to the CurrencyDesk platform for the plan you selected, for as long as the account is in good standing. We may add, change or retire individual features; we won't materially reduce what your plan does without telling you first.";}
+function s3727(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3728(v,0));}
+function s3729(v,k){return "\n\n                ";}
+function s3731(v,k){return "2 · Fees, billing and renewal";}
+function s3730(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3731(v,0));}
+function s3732(v,k){return "\n                ";}
+function s3734(v,k){return "Your subscription starts when you go live and renews automatically each period until cancelled. Fees are charged to the card on file. ID verification is coming and is not billed yet. Setup services are one-time and non-refundable once delivered. Prices are exclusive of tax. We may change pricing with thirty days' notice, effective at your next renewal.";}
+function s3733(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3734(v,0));}
+function s3735(v,k){return "\n                ";}
+function s3737(v,k){return "Promotional codes apply only to the subscription fee, for the stated period, on the plan they were issued against. If a payment fails we may retry, charge a backup card if you've added one, and suspend access if it stays unpaid.";}
+function s3736(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3737(v,0));}
+function s3738(v,k){return "\n\n                ";}
+function s3740(v,k){return "3 · Cancellation and refunds";}
+function s3739(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3740(v,0));}
+function s3741(v,k){return "\n                ";}
+function s3743(v,k){return "Cancel any time from your account; access continues to the end of the paid period. Fees already paid are not refunded except where the law requires it. We can suspend or close an account for non-payment, unlawful use, or a serious breach of this agreement.";}
+function s3742(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3743(v,0));}
+function s3744(v,k){return "\n\n                ";}
+function s3746(v,k){return "4 · Compliance stays yours";}
+function s3745(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3746(v,0));}
+function s3747(v,k){return "\n                ";}
+function s3749(v,k){return "This is the part that matters most. CurrencyDesk is software. It helps you watch thresholds, prepare reports and keep records — ";}
+function s3751(v,k){return "it does not file on your behalf and it is not compliance advice.";}
+function s3750(v,k){return h("b",{key:k,"style":style("color: var(--ink);")},s3751(v,0));}
+function s3752(v,k){return " You remain the registered money services business. You remain responsible for your registration, your reporting obligations, your record retention, and for reviewing and submitting anything the system prepares. Nothing here transfers a regulatory duty to us.";}
+function s3748(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3749(v,0),s3750(v,1),s3752(v,2));}
+function s3753(v,k){return "\n\n                ";}
+function s3755(v,k){return "5 · Your data and your clients' data";}
+function s3754(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3755(v,0));}
+function s3756(v,k){return "\n                ";}
+function s3758(v,k){return "Your records stay yours. You grant us the licence needed to host, process, back up and display them so the service works, and to have our processors do the same. We handle personal information under our Privacy Policy, which forms part of this agreement.";}
+function s3757(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3758(v,0));}
+function s3759(v,k){return "\n                ";}
+function s3761(v,k){return "You confirm you have the right to give us any client information you enter, and that you'll collect and use it lawfully in your jurisdiction. We may use aggregated and de-identified data — data that cannot identify you, your business or your clients — to operate, secure and improve the service.";}
+function s3760(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3761(v,0));}
+function s3762(v,k){return "\n\n                ";}
+function s3764(v,k){return "6 · Your account and your team";}
+function s3763(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3764(v,0));}
+function s3765(v,k){return "\n                ";}
+function s3767(v,k){return "You're responsible for your credentials and for everything done under accounts you create for your team, including what they can see and do. Tell us promptly if you think an account has been compromised.";}
+function s3766(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3767(v,0));}
+function s3768(v,k){return "\n\n                ";}
+function s3770(v,k){return "7 · Acceptable use";}
+function s3769(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3770(v,0));}
+function s3771(v,k){return "\n                ";}
+function s3773(v,k){return "Don't use the service to break the law, to launder money, to evade sanctions, to store someone else's data without the right to, or to attack, reverse-engineer or resell the platform. Don't misrepresent rates or records you produce with it.";}
+function s3772(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3773(v,0));}
+function s3774(v,k){return "\n\n                ";}
+function s3776(v,k){return "8 · Early access";}
+function s3775(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3776(v,0));}
+function s3777(v,k){return "\n                ";}
+function s3779(v,k){return "If you're on an early-access or founding plan, you understand the platform is still being built. Features may change, break, or be withdrawn. In exchange for preferential pricing you agree we may contact you for feedback, and that feedback you give us can be used to improve the product without obligation or payment. Any founding rate we've confirmed in writing is held for the life of that account.";}
+function s3778(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3779(v,0));}
+function s3780(v,k){return "\n\n                ";}
+function s3782(v,k){return "9 · Availability and warranties";}
+function s3781(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3782(v,0));}
+function s3783(v,k){return "\n                ";}
+function s3785(v,k){return "We work hard to keep the desk up, but the service is provided \"as is\" and \"as available\". To the fullest extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. We don't warrant that the service will be uninterrupted, error-free, or that it will make you compliant.";}
+function s3784(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3785(v,0));}
+function s3786(v,k){return "\n\n                ";}
+function s3788(v,k){return "10 · Limitation of liability";}
+function s3787(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3788(v,0));}
+function s3789(v,k){return "\n                ";}
+function s3791(v,k){return "To the fullest extent the law allows, neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, lost business, lost data or regulatory penalties. Our total liability for any claim is capped at the fees you paid us in the twelve months before the claim arose. Some jurisdictions don't allow these limits; where that's so, they apply to the extent permitted.";}
+function s3790(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3791(v,0));}
+function s3792(v,k){return "\n\n                ";}
+function s3794(v,k){return "11 · Indemnity";}
+function s3793(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3794(v,0));}
+function s3795(v,k){return "\n                ";}
+function s3797(v,k){return "You'll defend and indemnify us against claims arising from your use of the service, your records, your clients, or your breach of this agreement or of the law that applies to your business.";}
+function s3796(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3797(v,0));}
+function s3798(v,k){return "\n\n                ";}
+function s3800(v,k){return "12 · Third parties";}
+function s3799(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3800(v,0));}
+function s3801(v,k){return "\n                ";}
+function s3803(v,k){return "The desk relies on third-party providers for things like payments, verification and rate data. Their terms govern their part, and we're not responsible for their acts or omissions.";}
+function s3802(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3803(v,0));}
+function s3804(v,k){return "\n\n                ";}
+function s3806(v,k){return "13 · Intellectual property";}
+function s3805(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3806(v,0));}
+function s3807(v,k){return "\n                ";}
+function s3809(v,k){return "The platform, its design and everything in it stays ours. You get a limited, non-exclusive, non-transferable right to use it while your account is active.";}
+function s3808(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3809(v,0));}
+function s3810(v,k){return "\n\n                ";}
+function s3812(v,k){return "14 · Changes to this agreement";}
+function s3811(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3812(v,0));}
+function s3813(v,k){return "\n                ";}
+function s3815(v,k){return "We may update these terms. For material changes we'll email the address on your account before they take effect. Continuing to use the service after that date means you accept the new version.";}
+function s3814(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3815(v,0));}
+function s3816(v,k){return "\n\n                ";}
+function s3818(v,k){return "15 · Law and disputes";}
+function s3817(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3818(v,0));}
+function s3819(v,k){return "\n                ";}
+function s3821(v,k){return "This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada that apply there, and both parties submit to the exclusive jurisdiction of the courts of Ontario. Claims must be brought individually, not as part of a class action. Before filing anything, talk to us — most things are resolved with an email.";}
+function s3820(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3821(v,0));}
+function s3822(v,k){return "\n\n                ";}
+function s3824(v,k){return "16 · The rest";}
+function s3823(v,k){return h("div",{key:k,"style":style(v?.["termsH"])},s3824(v,0));}
+function s3825(v,k){return "\n                ";}
+function s3827(v,k){return "If a clause is unenforceable, the rest survives. Not enforcing something once doesn't waive it. You can't assign this agreement without our consent; we may assign it in a merger or sale. This agreement and the Privacy Policy are the whole understanding between us on this subject.";}
+function s3826(v,k){return h("p",{key:k,"style":style(v?.["termsP"])},s3827(v,0));}
+function s3828(v,k){return "\n\n                ";}
+function s3830(v,k){return "\n                  ";}
+function s3832(v,k){return "End of agreement";}
+function s3831(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--primary); font-weight: 700;")},s3832(v,0));}
+function s3833(v,k){return "\n                  ";}
+function s3835(v,k){return "Questions before you sign? ";}
+function s3837(v,k){return "Ask us";}
+function s3836(v,k){return h("a",{key:k,"href":"/contact","target":"_blank","style":style("color: var(--primary); font-weight: 600;")},s3837(v,0));}
+function s3838(v,k){return " — we'd rather answer now.";}
+function s3834(v,k){return h("div",{key:k,"style":style("font-size: 11.5px; color: var(--faint); margin-top: 5px;")},s3835(v,0),s3836(v,1),s3838(v,2));}
+function s3839(v,k){return "\n                ";}
+function s3829(v,k){return h("div",{key:k,"style":style("margin: 18px 0 0; padding-top: 13px; border-top: 1px solid var(--hair); text-align: center;")},s3830(v,0),s3831(v,1),s3833(v,2),s3834(v,3),s3839(v,4));}
+function s3840(v,k){return "\n              ";}
+function s3713(v,k){return h("div",{key:k,"data-terms-box":"true","onScroll":v?.["onTermsScroll"],"style":style(v?.["termsBoxStyle"])},s3714(v,0),s3715(v,1),s3717(v,2),s3718(v,3),s3720(v,4),s3721(v,5),s3723(v,6),s3724(v,7),s3726(v,8),s3727(v,9),s3729(v,10),s3730(v,11),s3732(v,12),s3733(v,13),s3735(v,14),s3736(v,15),s3738(v,16),s3739(v,17),s3741(v,18),s3742(v,19),s3744(v,20),s3745(v,21),s3747(v,22),s3748(v,23),s3753(v,24),s3754(v,25),s3756(v,26),s3757(v,27),s3759(v,28),s3760(v,29),s3762(v,30),s3763(v,31),s3765(v,32),s3766(v,33),s3768(v,34),s3769(v,35),s3771(v,36),s3772(v,37),s3774(v,38),s3775(v,39),s3777(v,40),s3778(v,41),s3780(v,42),s3781(v,43),s3783(v,44),s3784(v,45),s3786(v,46),s3787(v,47),s3789(v,48),s3790(v,49),s3792(v,50),s3793(v,51),s3795(v,52),s3796(v,53),s3798(v,54),s3799(v,55),s3801(v,56),s3802(v,57),s3804(v,58),s3805(v,59),s3807(v,60),s3808(v,61),s3810(v,62),s3811(v,63),s3813(v,64),s3814(v,65),s3816(v,66),s3817(v,67),s3819(v,68),s3820(v,69),s3822(v,70),s3823(v,71),s3825(v,72),s3826(v,73),s3828(v,74),s3829(v,75),s3840(v,76));}
+function s3841(v,k){return "\n\n              ";}
+function s3843(v,k){return "\n                ";}
+function s3847(v,k){return h("path",{key:k,"d":"M4 12.5l5 5L20 6.5"});}
+function s3846(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"#fff","strokeWidth":"3","strokeLinecap":"round","strokeLinejoin":"round"},s3847(v,0));}
+function s3845(v,k){return (v?.["termsRead"] ? h(React.Fragment,{key:k},s3846(v,0)) : null);}
+function s3844(v,k){return h("span",{key:k,"style":style(v?.["termsBoxIconStyle"])},s3845(v,0));}
+function s3848(v,k){return "\n                ";}
+function s3850(v,k){return h(React.Fragment,{key:k},"",text(v?.["termsLabel"],1),"");}
+function s3849(v,k){return h("span",{key:k,"style":style("flex: 1; min-width: 0; text-align: left; font-size: 12.5px; line-height: 1.45; color: var(--mute);")},s3850(v,0));}
+function s3851(v,k){return "\n              ";}
+function s3842(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onToggleTerms"],"style":style(v?.["termsRowStyle"])},s3843(v,0),s3844(v,1),s3848(v,2),s3849(v,3),s3851(v,4));}
+function s3852(v,k){return "\n            ";}
+function s3702(v,k){return h("div",{key:k},s3703(v,0),s3704(v,1),s3712(v,2),s3713(v,3),s3841(v,4),s3842(v,5),s3852(v,6));}
+function s3853(v,k){return "\n\n\n                  ";}
+function s3856(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3NextL"],1),"");}
+function s3855(v,k){return h("button",{key:k,"disabled":v?.["pf3Disabled"],"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3856(v,0));}
+function s3854(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3855(v,0));}
+function s3857(v,k){return "\n                ";}
+function s3700(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3701(v,0),s3702(v,1),s3853(v,2),s3854(v,3),s3857(v,4));}
+function s3858(v,k){return "\n              ";}
+function s3698(v,k){return (v?.["pf3Open"] ? h(React.Fragment,{key:k},s3699(v,0),s3700(v,1),s3858(v,2)) : null);}
+function s3859(v,k){return "\n            ";}
+function s3675(v,k){return h("div",{key:k,"style":style(v?.["pf3Box"])},s3676(v,0),s3677(v,1),s3697(v,2),s3698(v,3),s3859(v,4));}
+function s3860(v,k){return "\n            ";}
+function s3270(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; gap: 9px;")},s3271(v,0),s3396(v,1),s3397(v,2),s3555(v,3),s3556(v,4),s3674(v,5),s3675(v,6),s3860(v,7));}
+function s3861(v,k){return h("div",{key:k,"style":style("height: 4px;")});}
 function s3862(v,k){return "\n            ";}
-function s3712(v,k){return h("div",{key:k},s3713(v,0),s3714(v,1),s3722(v,2),s3723(v,3),s3851(v,4),s3852(v,5),s3862(v,6));}
-function s3863(v,k){return "\n\n\n                  ";}
-function s3866(v,k){return h(React.Fragment,{key:k},"",text(v?.["pf3NextL"],1),"");}
-function s3865(v,k){return h("button",{key:k,"disabled":v?.["pf3Disabled"],"onClick":v?.["pf3Next"],"style":style(v?.["pf3NextS"])},s3866(v,0));}
-function s3864(v,k){return h("div",{key:k,"style":style("display: flex; justify-content: flex-end; margin-top: 14px;")},s3865(v,0));}
-function s3867(v,k){return "\n                ";}
-function s3710(v,k){return h("div",{key:k,"style":style("padding: 0 15px 15px; animation: cdOpen 0.3s cubic-bezier(0.2,0.8,0.2,1) both;")},s3711(v,0),s3712(v,1),s3863(v,2),s3864(v,3),s3867(v,4));}
+function s3865(v,k){return "Try loading prices again";}
+function s3864(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryPrices"],"style":style("min-height:44px;padding:10px 16px;")},s3865(v,0));}
+function s3863(v,k){return (v?.["retryPricesVisible"] ? h(React.Fragment,{key:k},s3864(v,0)) : null);}
 function s3868(v,k){return "\n              ";}
-function s3708(v,k){return (v?.["pf3Open"] ? h(React.Fragment,{key:k},s3709(v,0),s3710(v,1),s3868(v,2)) : null);}
-function s3869(v,k){return "\n            ";}
-function s3685(v,k){return h("div",{key:k,"style":style(v?.["pf3Box"])},s3686(v,0),s3687(v,1),s3707(v,2),s3708(v,3),s3869(v,4));}
-function s3870(v,k){return "\n            ";}
-function s3270(v,k){return h("div",{key:k,"style":style("display: flex; flex-direction: column; gap: 9px;")},s3271(v,0),s3396(v,1),s3397(v,2),s3565(v,3),s3566(v,4),s3684(v,5),s3685(v,6),s3870(v,7));}
-function s3871(v,k){return h("div",{key:k,"style":style("height: 4px;")});}
-function s3872(v,k){return "\n            ";}
-function s3875(v,k){return "Try loading prices again";}
-function s3874(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onRetryPrices"],"style":style("min-height:44px;padding:10px 16px;")},s3875(v,0));}
-function s3873(v,k){return (v?.["retryPricesVisible"] ? h(React.Fragment,{key:k},s3874(v,0)) : null);}
-function s3878(v,k){return "\n              ";}
-function s3881(v,k){return h("path",{key:k,"d":"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.8A2 2 0 0 1 4.8 2.8H12a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8Z"});}
-function s3882(v,k){return h("path",{key:k,"d":"M7.5 7.5h.01"});}
-function s3880(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3881(v,0),s3882(v,1));}
-function s3883(v,k){return "Have a code?";}
-function s3879(v,k){return h("button",{key:k,"onClick":v?.["onTogglePromo"],"style":style("display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; padding: 0; background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;"),className:"signup-p47"},s3880(v,0),s3883(v,1));}
-function s3884(v,k){return "\n            ";}
-function s3877(v,k){return (v?.["promoClosed"] ? h(React.Fragment,{key:k},s3878(v,0),s3879(v,1),s3884(v,2)) : null);}
+function s3871(v,k){return h("path",{key:k,"d":"M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4.8A2 2 0 0 1 4.8 2.8H12a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8Z"});}
+function s3872(v,k){return h("path",{key:k,"d":"M7.5 7.5h.01"});}
+function s3870(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"currentColor","strokeWidth":"2","strokeLinecap":"round","strokeLinejoin":"round"},s3871(v,0),s3872(v,1));}
+function s3873(v,k){return "Have a code?";}
+function s3869(v,k){return h("button",{key:k,"onClick":v?.["onTogglePromo"],"style":style("display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; padding: 0; background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;"),className:"signup-p47"},s3870(v,0),s3873(v,1));}
+function s3874(v,k){return "\n            ";}
+function s3867(v,k){return (v?.["promoClosed"] ? h(React.Fragment,{key:k},s3868(v,0),s3869(v,1),s3874(v,2)) : null);}
+function s3875(v,k){return "\n            ";}
+function s3877(v,k){return "\n              ";}
+function s3879(v,k){return "\n                ";}
+function s3880(v,k){return h("input",{key:k,"value":(v?.["promoVal"] ?? ""),"onChange":v?.["onPromo"],"placeholder":"Promotional code","autoCapitalize":"characters","data-focus":"true","style":style(v?.["promoInputStyle"])});}
+function s3881(v,k){return "\n                ";}
+function s3883(v,k){return "Apply";}
+function s3882(v,k){return h("button",{key:k,"onClick":v?.["onApplyPromo"],"style":style(v?.["promoBtnStyle"])},s3883(v,0));}
+function s3884(v,k){return "\n              ";}
+function s3878(v,k){return h("div",{key:k,"style":style("display: flex; gap: 8px; margin-top: 16px;")},s3879(v,0),s3880(v,1),s3881(v,2),s3882(v,3),s3884(v,4));}
 function s3885(v,k){return "\n            ";}
-function s3887(v,k){return "\n              ";}
-function s3889(v,k){return "\n                ";}
-function s3890(v,k){return h("input",{key:k,"value":(v?.["promoVal"] ?? ""),"onChange":v?.["onPromo"],"placeholder":"Promotional code","autoCapitalize":"characters","data-focus":"true","style":style(v?.["promoInputStyle"])});}
-function s3891(v,k){return "\n                ";}
-function s3893(v,k){return "Apply";}
-function s3892(v,k){return h("button",{key:k,"onClick":v?.["onApplyPromo"],"style":style(v?.["promoBtnStyle"])},s3893(v,0));}
+function s3876(v,k){return (v?.["promoOpen"] ? h(React.Fragment,{key:k},s3877(v,0),s3878(v,1),s3885(v,2)) : null);}
+function s3886(v,k){return "\n            ";}
+function s3888(v,k){return "\n              ";}
+function s3890(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoMsg"],1),"");}
+function s3889(v,k){return h("div",{key:k,"style":style(v?.["promoMsgStyle"])},s3890(v,0));}
+function s3891(v,k){return "\n            ";}
+function s3887(v,k){return (v?.["promoMsgShow"] ? h(React.Fragment,{key:k},s3888(v,0),s3889(v,1),s3891(v,2)) : null);}
+function s3892(v,k){return "\n\n            ";}
 function s3894(v,k){return "\n              ";}
-function s3888(v,k){return h("div",{key:k,"style":style("display: flex; gap: 8px; margin-top: 16px;")},s3889(v,0),s3890(v,1),s3891(v,2),s3892(v,3),s3894(v,4));}
-function s3895(v,k){return "\n            ";}
-function s3886(v,k){return (v?.["promoOpen"] ? h(React.Fragment,{key:k},s3887(v,0),s3888(v,1),s3895(v,2)) : null);}
-function s3896(v,k){return "\n            ";}
-function s3898(v,k){return "\n              ";}
-function s3900(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoMsg"],1),"");}
-function s3899(v,k){return h("div",{key:k,"style":style(v?.["promoMsgStyle"])},s3900(v,0));}
-function s3901(v,k){return "\n            ";}
-function s3897(v,k){return (v?.["promoMsgShow"] ? h(React.Fragment,{key:k},s3898(v,0),s3899(v,1),s3901(v,2)) : null);}
-function s3902(v,k){return "\n\n            ";}
-function s3904(v,k){return "\n              ";}
-function s3907(v,k){return "Due today";}
-function s3906(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--primary-deep);")},s3907(v,0));}
-function s3909(v,k){return h(React.Fragment,{key:k},"",text(v?.["dueToday"],1),"");}
-function s3908(v,k){return h("span",{key:k,"style":style("font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--primary-deep);")},s3909(v,0));}
-function s3905(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed rgba(29,107,69,0.3);")},s3906(v,0),s3908(v,1));}
+function s3897(v,k){return "Due today";}
+function s3896(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; color: var(--primary-deep);")},s3897(v,0));}
+function s3899(v,k){return h(React.Fragment,{key:k},"",text(v?.["dueToday"],1),"");}
+function s3898(v,k){return h("span",{key:k,"style":style("font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--primary-deep);")},s3899(v,0));}
+function s3895(v,k){return h("div",{key:k,"style":style("display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed rgba(29,107,69,0.3);")},s3896(v,0),s3898(v,1));}
+function s3900(v,k){return "\n              ";}
+function s3904(v,k){return h("rect",{key:k,"x":"3","y":"8","width":"18","height":"13","rx":"2"});}
+function s3905(v,k){return h("path",{key:k,"d":"M12 8v13M3 12h18M12 8S10.5 3 7.5 3.8C5 4.5 6.5 8 12 8zM12 8s1.5-5 4.5-4.2C19 4.5 17.5 8 12 8z"});}
+function s3903(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"#fff","strokeWidth":"2.2","strokeLinecap":"round","strokeLinejoin":"round"},s3904(v,0),s3905(v,1));}
+function s3902(v,k){return h("span",{key:k,"style":style("flex: none; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,255,255,0.16); display: grid; place-items: center;")},s3903(v,0));}
+function s3908(v,k){return "Nothing is due until your first transaction.";}
+function s3907(v,k){return h("b",{key:k,"style":style("font-weight: 800;")},s3908(v,0));}
+function s3909(v,k){return " You’re part of the founding cohort: your plan starts the day your desk makes its first exchange.";}
+function s3906(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; line-height: 1.45;")},s3907(v,0),s3909(v,1));}
+function s3901(v,k){return h("div",{key:k,"style":style("display: flex; gap: 10px; align-items: center; margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: #1D6B45; color: #fff;")},s3902(v,0),s3906(v,1));}
 function s3910(v,k){return "\n              ";}
-function s3914(v,k){return h("rect",{key:k,"x":"3","y":"8","width":"18","height":"13","rx":"2"});}
-function s3915(v,k){return h("path",{key:k,"d":"M12 8v13M3 12h18M12 8S10.5 3 7.5 3.8C5 4.5 6.5 8 12 8zM12 8s1.5-5 4.5-4.2C19 4.5 17.5 8 12 8z"});}
-function s3913(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"14","height":"14","fill":"none","stroke":"#fff","strokeWidth":"2.2","strokeLinecap":"round","strokeLinejoin":"round"},s3914(v,0),s3915(v,1));}
-function s3912(v,k){return h("span",{key:k,"style":style("flex: none; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,255,255,0.16); display: grid; place-items: center;")},s3913(v,0));}
-function s3918(v,k){return "Nothing is due until your first transaction.";}
-function s3917(v,k){return h("b",{key:k,"style":style("font-weight: 800;")},s3918(v,0));}
-function s3919(v,k){return " You’re part of the founding cohort: your plan starts the day your desk makes its first exchange.";}
-function s3916(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; line-height: 1.45;")},s3917(v,0),s3919(v,1));}
-function s3911(v,k){return h("div",{key:k,"style":style("display: flex; gap: 10px; align-items: center; margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: #1D6B45; color: #fff;")},s3912(v,0),s3916(v,1));}
-function s3920(v,k){return "\n              ";}
-function s3922(v,k){return h(React.Fragment,{key:k},"",text(v?.["fromLive"],1),"");}
-function s3921(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px;")},s3922(v,0));}
-function s3923(v,k){return "\n              ";}
-function s3926(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderPlan"],1),"");}
-function s3925(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3926(v,0));}
-function s3928(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderRecur"],1),"");}
-function s3927(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 14px; font-weight: 700; color: var(--primary-deep);")},s3928(v,0));}
-function s3924(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between;")},s3925(v,0),s3927(v,1));}
-function s3929(v,k){return "\n              ";}
-function s3933(v,k){return "Rate website · reserved, billed from launch";}
-function s3932(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3933(v,0));}
-function s3935(v,k){return h(React.Fragment,{key:k},"",text(v?.["xWebPrice"],1),"");}
-function s3934(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3935(v,0));}
-function s3931(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3932(v,0),s3934(v,1));}
-function s3930(v,k){return (v?.["hasWeb"] ? h(React.Fragment,{key:k},s3931(v,0)) : null);}
-function s3936(v,k){return "\n              ";}
-function s3940(v,k){return h(React.Fragment,{key:k},"Included: ",text(v?.["freeLine"],1),"");}
-function s3939(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3940(v,0));}
-function s3942(v,k){return "Free";}
-function s3941(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; font-weight: 700; color: var(--primary);")},s3942(v,0));}
-function s3938(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3939(v,0),s3941(v,1));}
-function s3937(v,k){return (v?.["hasFree"] ? h(React.Fragment,{key:k},s3938(v,0)) : null);}
-function s3943(v,k){return "\n              ";}
-function s3947(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsLabel"],1),"");}
-function s3946(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3947(v,0));}
-function s3949(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsMath"],1),"");}
-function s3948(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3949(v,0));}
-function s3945(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3946(v,0),s3948(v,1));}
-function s3944(v,k){return (v?.["hasLocs"] ? h(React.Fragment,{key:k},s3945(v,0)) : null);}
-function s3950(v,k){return "\n              ";}
-function s3954(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowLabel"],1),"");}
-function s3953(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--primary-deep); font-weight: 700;")},s3954(v,0));}
-function s3956(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowValue"],1),"");}
-function s3955(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3956(v,0));}
-function s3952(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3953(v,0),s3955(v,1));}
-function s3951(v,k){return (v?.["promoOk"] ? h(React.Fragment,{key:k},s3952(v,0)) : null);}
-function s3957(v,k){return "\n              ";}
-function s3961(v,k){return h(React.Fragment,{key:k},"",text(v?.["onceLabel"],1),"");}
-function s3960(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3961(v,0));}
-function s3963(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderOnce"],1),"");}
-function s3962(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--ink);")},s3963(v,0));}
-function s3959(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3960(v,0),s3962(v,1));}
-function s3958(v,k){return (v?.["hasOnce"] ? h(React.Fragment,{key:k},s3959(v,0)) : null);}
-function s3964(v,k){return "\n              ";}
-function s3967(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualSaveStr"],1),"");}
-function s3966(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; font-weight: 700; color: var(--primary); margin-top: 8px;")},s3967(v,0));}
-function s3965(v,k){return (v?.["hasAnnualSave"] ? h(React.Fragment,{key:k},s3966(v,0)) : null);}
-function s3968(v,k){return "\n              ";}
-function s3971(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualNudge"],1),"");}
-function s3970(v,k){return h("button",{key:k,"onClick":v?.["onNudgeAnnual"],"style":style("display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--primary); text-decoration: underline; text-underline-offset: 3px;")},s3971(v,0));}
-function s3969(v,k){return (v?.["notAnnual"] ? h(React.Fragment,{key:k},s3970(v,0)) : null);}
-function s3972(v,k){return "\n            ";}
-function s3903(v,k){return h("div",{key:k,"style":style("margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(29,107,69,0.08); border: 1px solid rgba(29,107,69,0.22);")},s3904(v,0),s3905(v,1),s3910(v,2),s3911(v,3),s3920(v,4),s3921(v,5),s3923(v,6),s3924(v,7),s3929(v,8),s3930(v,9),s3936(v,10),s3937(v,11),s3943(v,12),s3944(v,13),s3950(v,14),s3951(v,15),s3957(v,16),s3958(v,17),s3964(v,18),s3965(v,19),s3968(v,20),s3969(v,21),s3972(v,22));}
-function s3973(v,k){return "\n            ";}
-function s3975(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveLabel"],1),"");}
-function s3977(v,k){return h("path",{key:k,"d":"M5 12h14M13 6l6 6-6 6"});}
-function s3976(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"17","height":"17","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round","style":style("margin-left: 9px;")},s3977(v,0));}
-function s3974(v,k){return h("button",{key:k,"onClick":v?.["onGoLive"],"disabled":v?.["payDisabled"],"style":style(v?.["goLiveStyle"]),className:"signup-p48 signup-p49"},s3975(v,0),s3976(v,1));}
-function s3978(v,k){return "\n            ";}
-function s3980(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveSub"],1),"");}
-function s3979(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 11px; color: var(--faint); text-align: center; margin-top: 9px; line-height: 1.5;")},s3980(v,0));}
-function s3983(v,k){return "Check again";}
-function s3982(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onCheckOpen"],"style":style("display:block;margin:12px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3983(v,0));}
-function s3981(v,k){return (v?.["checkOpenVisible"] ? h(React.Fragment,{key:k},s3982(v,0)) : null);}
-function s3984(v,k){return "\n\n            ";}
-function s3986(v,k){return "\n              ";}
-function s3989(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
-function s3990(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
-function s3988(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3989(v,0),s3990(v,1));}
-function s3987(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3988(v,0));}
-function s3991(v,k){return "\n              ";}
-function s3994(v,k){return "Cancel any time";}
-function s3993(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3994(v,0));}
-function s3996(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
-function s3995(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3996(v,0));}
-function s3992(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3993(v,0),s3995(v,1));}
-function s3997(v,k){return "\n            ";}
-function s3985(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3986(v,0),s3987(v,1),s3991(v,2),s3992(v,3),s3997(v,4));}
-function s3998(v,k){return "\n\n            ";}
-function s4001(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
-function s4002(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
-function s4000(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s4001(v,0),s4002(v,1));}
-function s4003(v,k){return " Encrypted connection ";}
-function s4005(v,k){return "← Back to review";}
-function s4004(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s4005(v,0));}
-function s3999(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s4000(v,0),s4003(v,1),s4004(v,2));}
-function s3876(v,k){return h("div",{key:k,"data-paysum":"true"},s3877(v,0),s3885(v,1),s3886(v,2),s3896(v,3),s3897(v,4),s3902(v,5),s3903(v,6),s3973(v,7),s3974(v,8),s3978(v,9),s3979(v,10),s3981(v,11),s3984(v,12),s3985(v,13),s3998(v,14),s3999(v,15));}
-function s4006(v,k){return "\n          ";}
-function s3257(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3258(v,0),s3259(v,1),s3261(v,2),s3262(v,3),s3264(v,4),s3265(v,5),s3269(v,6),s3270(v,7),s3871(v,8),s3872(v,9),s3873(v,10),s3876(v,11),s4006(v,12));}
-function s4007(v,k){return "\n        ";}
-function s3228(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3229(v,0),s3238(v,1),s3239(v,2),s3256(v,3),s3257(v,4),s4007(v,5));}
-function s4008(v,k){return "\n      ";}
-function s3226(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3227(v,0),s3228(v,1),s4008(v,2));}
-function s4009(v,k){return "\n    ";}
-function s3224(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3225(v,0),s3226(v,1),s4009(v,2)) : null);}
-function s4010(v,k){return "\n  ";}
-function s2927(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2928(v,0),s2929(v,1),s3221(v,2),s3223(v,3),s3224(v,4),s4010(v,5)) : null);}
+function s3912(v,k){return h(React.Fragment,{key:k},"",text(v?.["fromLive"],1),"");}
+function s3911(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin-bottom: 6px;")},s3912(v,0));}
+function s3913(v,k){return "\n              ";}
+function s3916(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderPlan"],1),"");}
+function s3915(v,k){return h("span",{key:k,"style":style("font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3916(v,0));}
+function s3918(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderRecur"],1),"");}
+function s3917(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 14px; font-weight: 700; color: var(--primary-deep);")},s3918(v,0));}
+function s3914(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between;")},s3915(v,0),s3917(v,1));}
+function s3919(v,k){return "\n              \n              ";}
+function s3923(v,k){return h(React.Fragment,{key:k},"Included: ",text(v?.["freeLine"],1),"");}
+function s3922(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3923(v,0));}
+function s3925(v,k){return "Free";}
+function s3924(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; font-weight: 700; color: var(--primary);")},s3925(v,0));}
+function s3921(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3922(v,0),s3924(v,1));}
+function s3920(v,k){return (v?.["hasFree"] ? h(React.Fragment,{key:k},s3921(v,0)) : null);}
+function s3926(v,k){return "\n              ";}
+function s3930(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsLabel"],1),"");}
+function s3929(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3930(v,0));}
+function s3932(v,k){return h(React.Fragment,{key:k},"",text(v?.["locsMath"],1),"");}
+function s3931(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12px; color: var(--mute);")},s3932(v,0));}
+function s3928(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 6px;")},s3929(v,0),s3931(v,1));}
+function s3927(v,k){return (v?.["hasLocs"] ? h(React.Fragment,{key:k},s3928(v,0)) : null);}
+function s3933(v,k){return "\n              ";}
+function s3937(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowLabel"],1),"");}
+function s3936(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--primary-deep); font-weight: 700;")},s3937(v,0));}
+function s3939(v,k){return h(React.Fragment,{key:k},"",text(v?.["promoRowValue"],1),"");}
+function s3938(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--primary-deep);")},s3939(v,0));}
+function s3935(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3936(v,0),s3938(v,1));}
+function s3934(v,k){return (v?.["promoOk"] ? h(React.Fragment,{key:k},s3935(v,0)) : null);}
+function s3940(v,k){return "\n              ";}
+function s3944(v,k){return h(React.Fragment,{key:k},"",text(v?.["onceLabel"],1),"");}
+function s3943(v,k){return h("span",{key:k,"style":style("font-size: 12px; color: var(--mute);")},s3944(v,0));}
+function s3946(v,k){return h(React.Fragment,{key:k},"",text(v?.["orderOnce"],1),"");}
+function s3945(v,k){return h("span",{key:k,"style":style("font-family: var(--m); font-size: 12.5px; font-weight: 700; color: var(--ink);")},s3946(v,0));}
+function s3942(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(29,107,69,0.28);")},s3943(v,0),s3945(v,1));}
+function s3941(v,k){return (v?.["hasOnce"] ? h(React.Fragment,{key:k},s3942(v,0)) : null);}
+function s3947(v,k){return "\n              ";}
+function s3950(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualSaveStr"],1),"");}
+function s3949(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 10.5px; font-weight: 700; color: var(--primary); margin-top: 8px;")},s3950(v,0));}
+function s3948(v,k){return (v?.["hasAnnualSave"] ? h(React.Fragment,{key:k},s3949(v,0)) : null);}
+function s3951(v,k){return "\n              ";}
+function s3954(v,k){return h(React.Fragment,{key:k},"",text(v?.["annualNudge"],1),"");}
+function s3953(v,k){return h("button",{key:k,"onClick":v?.["onNudgeAnnual"],"style":style("display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0; border: 0; background: none; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--primary); text-decoration: underline; text-underline-offset: 3px;")},s3954(v,0));}
+function s3952(v,k){return (v?.["notAnnual"] ? h(React.Fragment,{key:k},s3953(v,0)) : null);}
+function s3955(v,k){return "\n            ";}
+function s3893(v,k){return h("div",{key:k,"style":style("margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(29,107,69,0.08); border: 1px solid rgba(29,107,69,0.22);")},s3894(v,0),s3895(v,1),s3900(v,2),s3901(v,3),s3910(v,4),s3911(v,5),s3913(v,6),s3914(v,7),s3919(v,8),s3920(v,9),s3926(v,10),s3927(v,11),s3933(v,12),s3934(v,13),s3940(v,14),s3941(v,15),s3947(v,16),s3948(v,17),s3951(v,18),s3952(v,19),s3955(v,20));}
+function s3956(v,k){return "\n            ";}
+function s3958(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveLabel"],1),"");}
+function s3960(v,k){return h("path",{key:k,"d":"M5 12h14M13 6l6 6-6 6"});}
+function s3959(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"17","height":"17","fill":"none","stroke":"currentColor","strokeWidth":"2.4","strokeLinecap":"round","strokeLinejoin":"round","style":style("margin-left: 9px;")},s3960(v,0));}
+function s3957(v,k){return h("button",{key:k,"onClick":v?.["onGoLive"],"disabled":v?.["payDisabled"],"style":style(v?.["goLiveStyle"]),className:"signup-p48 signup-p49"},s3958(v,0),s3959(v,1));}
+function s3961(v,k){return "\n            ";}
+function s3963(v,k){return h(React.Fragment,{key:k},"",text(v?.["goLiveSub"],1),"");}
+function s3962(v,k){return h("div",{key:k,"style":style("font-family: var(--m); font-size: 11px; color: var(--faint); text-align: center; margin-top: 9px; line-height: 1.5;")},s3963(v,0));}
+function s3966(v,k){return "Check again";}
+function s3965(v,k){return h("button",{key:k,"type":"button","onClick":v?.["onCheckOpen"],"style":style("display:block;margin:12px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;")},s3966(v,0));}
+function s3964(v,k){return (v?.["checkOpenVisible"] ? h(React.Fragment,{key:k},s3965(v,0)) : null);}
+function s3967(v,k){return "\n\n            ";}
+function s3969(v,k){return "\n              ";}
+function s3972(v,k){return h("path",{key:k,"d":"M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"});}
+function s3973(v,k){return h("path",{key:k,"d":"M9 12l2 2 4-4"});}
+function s3971(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"18","height":"18","fill":"none","stroke":"#1D6B45","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3972(v,0),s3973(v,1));}
+function s3970(v,k){return h("span",{key:k,"style":style("flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--green-soft);")},s3971(v,0));}
+function s3974(v,k){return "\n              ";}
+function s3977(v,k){return "Cancel any time";}
+function s3976(v,k){return h("span",{key:k,"style":style("display: block; font-weight: 700; font-size: 13px;")},s3977(v,0));}
+function s3979(v,k){return "Cancel any time from your account. You keep access until the end of the time you paid for.";}
+function s3978(v,k){return h("span",{key:k,"style":style("display: block; font-size: 12px; color: var(--mute); margin-top: 1px; line-height: 1.4;")},s3979(v,0));}
+function s3975(v,k){return h("span",{key:k,"style":style("min-width: 0;")},s3976(v,0),s3978(v,1));}
+function s3980(v,k){return "\n            ";}
+function s3968(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; gap: 11px; margin-top: 16px; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.55);")},s3969(v,0),s3970(v,1),s3974(v,2),s3975(v,3),s3980(v,4));}
+function s3981(v,k){return "\n\n            ";}
+function s3984(v,k){return h("rect",{key:k,"x":"5","y":"11","width":"14","height":"9","rx":"2"});}
+function s3985(v,k){return h("path",{key:k,"d":"M8 11V8a4 4 0 0 1 8 0v3"});}
+function s3983(v,k){return h("svg",{key:k,"viewBox":"0 0 24 24","width":"12","height":"12","fill":"none","stroke":"currentColor","strokeWidth":"1.9","strokeLinecap":"round","strokeLinejoin":"round"},s3984(v,0),s3985(v,1));}
+function s3986(v,k){return " Encrypted connection ";}
+function s3988(v,k){return "← Back to review";}
+function s3987(v,k){return h("button",{key:k,"onClick":v?.["back"],"style":style("background: none; border: 0; color: var(--mute); font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; margin-left: 10px;"),className:"signup-p50"},s3988(v,0));}
+function s3982(v,k){return h("div",{key:k,"style":style("display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--faint);")},s3983(v,0),s3986(v,1),s3987(v,2));}
+function s3866(v,k){return h("div",{key:k,"data-paysum":"true"},s3867(v,0),s3875(v,1),s3876(v,2),s3886(v,3),s3887(v,4),s3892(v,5),s3893(v,6),s3956(v,7),s3957(v,8),s3961(v,9),s3962(v,10),s3964(v,11),s3967(v,12),s3968(v,13),s3981(v,14),s3982(v,15));}
+function s3989(v,k){return "\n          ";}
+function s3257(v,k){return h("div",{key:k,"style":style("padding: 18px 26px 24px;"),"data-paybody":"true"},s3258(v,0),s3259(v,1),s3261(v,2),s3262(v,3),s3264(v,4),s3265(v,5),s3269(v,6),s3270(v,7),s3861(v,8),s3862(v,9),s3863(v,10),s3866(v,11),s3989(v,12));}
+function s3990(v,k){return "\n        ";}
+function s3228(v,k){return h("div",{key:k,"onKeyDown":v?.["onKey"],"style":style(v?.["modalStyle"]),"data-paymodal":"true"},s3229(v,0),s3238(v,1),s3239(v,2),s3256(v,3),s3257(v,4),s3990(v,5));}
+function s3991(v,k){return "\n      ";}
+function s3226(v,k){return h("div",{key:k,"style":style(v?.["scrimStyle"])},s3227(v,0),s3228(v,1),s3991(v,2));}
+function s3992(v,k){return "\n    ";}
+function s3224(v,k){return (v?.["showPayment"] ? h(React.Fragment,{key:k},s3225(v,0),s3226(v,1),s3992(v,2)) : null);}
+function s3993(v,k){return "\n  ";}
+function s2927(v,k){return (v?.["appMode"] ? h(React.Fragment,{key:k},s2928(v,0),s2929(v,1),s3221(v,2),s3223(v,3),s3224(v,4),s3993(v,5)) : null);}
 function s361(v,k){return h("div",{key:k,"style":style("--f: 'Schibsted Grotesk', system-ui, sans-serif; --m: 'IBM Plex Mono', monospace; --serif: 'Instrument Serif', serif; --ink: #17140F; --panel: #FFFFFF; --line: rgba(23,20,15,0.12); --soft: rgba(23,20,15,0.07); --hair: rgba(23,20,15,0.07); --mute: #6E675E; --faint: #736C62; --primary: #1D6B45; --primary-deep: #17583A; --green-live: #1f8a4c; --green-soft: #E2EFE8; --amber: #9a6b1f; --amber-soft: #f5e8cf; --teal: #1F6F6B; --plum: #5E4B8B; --brass: #9a7406; --clay: #C2452D; --flag: #c0392b; --glass: saturate(180%) blur(30px); position: relative; min-height: 100vh; width: 100%; display: grid; place-items: center; overflow: hidden; font-family: var(--f); color: var(--ink); background-color: #e7e4dd; background-image: radial-gradient(130% 100% at 50% -10%, #f4f2ed 0%, #e4e1d9 55%, #d3cfc5 100%), radial-gradient(circle, rgba(23,20,15,0.05) 1px, transparent 1.4px); background-size: auto, 22px 22px;")},s362(v,0),s364(v,1),s365(v,2),s511(v,3),s513(v,4),s514(v,5),s2924(v,6),s2926(v,7),s2927(v,8));}
-function s4012(v,k){return "\n  ";}
-function s359(v,k){return h("div",{key:k,"data-product":"true","inert":v?.["tourInert"],"style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s361(v,0),s4012(v,1));}
+function s3995(v,k){return "\n  ";}
+function s359(v,k){return h("div",{key:k,"data-product":"true","inert":v?.["tourInert"],"style":style("position: relative; flex: 1; min-width: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; transform: translateZ(0);")},s361(v,0),s3995(v,1));}
 function s357(v,k){return h("div",{key:k,"style":style("display: flex; height: 100vh; width: 100%; overflow: hidden;")},s358(v,0),s359(v,1));}
 class Signup extends React.Component{constructor(p){super(p);this.state={revision:0};this.logic=new Component(p);this.logic.__host=this;}componentDidMount(){this.committed=this.logic.state;this.logic.componentDidMount?.();}componentDidUpdate(p){const previous=this.committed;this.committed=this.logic.state;this.logic.componentDidUpdate?.(p,previous);}componentWillUnmount(){this.logic.componentWillUnmount?.();}render(){const v={...this.props,...this.logic.renderVals()};return h('div',{className:'sc-host'},s3(v,0),s357(v,1));}}
 ReactDOM.createRoot(document.getElementById('dc-root')).render(h(Signup,{startStep:0,prefillDemo:false}));

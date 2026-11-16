@@ -21,7 +21,7 @@ import { registerSignupEmailRoutes } from "../src/routes/signup-email.js";
 import { registerSignupDeskRoutes } from "../src/routes/signup-desk.js";
 import { registerBillingRoutes } from "../src/routes/billing.js";
 import { loadAccount } from "../src/onboarding/signup-account.js";
-import { answersHash, declarationName, monthlyFor, openFromSetupIntent, type SignupStripe } from "../src/onboarding/signup-open.js";
+import { answersHash, declarationName, monthlyFor, openFromSetupIntent, priceList, type SignupStripe } from "../src/onboarding/signup-open.js";
 import { resolveSession } from "../src/auth/sessions.js";
 import { verifyPassword } from "../src/auth/password.js";
 import { moveTo } from "../src/onboarding/pipeline.js";
@@ -129,6 +129,20 @@ describe("the plan screen's arithmetic", () => {
     expect(monthlyFor({ plan: "ai", term: "annual", locations: 2, brief: true, call: true, website: false, setupWeek: false })).toEqual({ currency: "CAD", perLocationMinor: 67500, totalMinor: 135000, dueTodayMinor: 0, setupWeekMinor: 0 });
     expect(declarationName("York Foreign Exchange Inc.")).toBe("York Foreign Exchange Inc");
     expect(answersHash({ b: 1, a: [2, { d: 1, c: 2 }] })).toBe(answersHash({ a: [2, { c: 2, d: 1 }], b: 1 }));
+  });
+
+  it("a rate website does not change the plan total", () => {
+    const base = { plan: "ai" as const, term: "monthly" as const, locations: 1, brief: true, call: true, setupWeek: false };
+    const without = monthlyFor({ ...base, website: false });
+    const withSite = monthlyFor({ ...base, website: true });
+    expect(withSite).toEqual(without);
+    expect(withSite.totalMinor).toBe(75000);
+    const listed = priceList(1);
+    expect(listed.plans.ai.monthly.totalMinor).toBe(75000);
+    expect(listed).not.toHaveProperty("website");
+    const withWeek = monthlyFor({ ...base, website: true, setupWeek: true });
+    expect(withWeek.totalMinor).toBe(without.totalMinor);
+    expect(withWeek.setupWeekMinor).toBe(500_000);
   });
 });
 

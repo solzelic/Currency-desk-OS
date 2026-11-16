@@ -181,7 +181,7 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await expect(card(page).getByText("40,000 CAD").first()).toBeVisible();
     await press(page, /^Done · next USD/);
     await press(page, /^Continue/);
-    await expect(page.getByText("Your rates, online. Free.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your rates, online.", exact: true })).toBeVisible();
     await press(page, /^Good. Now my rules/);
 
     /* chapter 4: the rules */
@@ -399,7 +399,7 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await press(page, /^Continue/);
     await expect(page.getByText("Count the vault.")).toBeVisible();
     await press(page, /I’ll count it on day one/);
-    await expect(page.getByText("Your rates, online. Free.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your rates, online.", exact: true })).toBeVisible();
     await press(page, /^Good. Now my rules/);
     await press(page, /^Set my rules/);
     await press(page, /That’s me, Daniel Okafor/);

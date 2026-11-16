@@ -1,17 +1,14 @@
-## Signup v2.1 rate website refusal, 16 November 2026
+## Signup v2.1 rate website is coming soon only, 16 November 2026
 
-On Extras, "Your own rate website" (Coming soon) can be ticked, and the server
-refuses it when the card step asks for a SetupIntent (`409 website_coming_soon`):
-nothing reserves or bills the site yet. The refusal now carries its own line,
-"Your own rate website isn't open yet. Untick it to carry on. Nothing was
-charged.", and the page shows it beside the add-on with Extras open (and under
-Open and in the card box), not "Card payments aren't available just now". The
-owner's other choices stay as they were. The card retry is hidden, because it
-cannot help. Unticking clears the line, and Payment asks for the card afresh.
-Billing and what is charged are unchanged. To decide (Sol): the design reserves
-the site now ("Reserve it now and you're first in line", "Rate website ·
-reserved, billed from launch"); the server does not, and the page still shows
-those design lines. Not release, CTO or Compliance acceptance.
+Sol, 16 Nov 2026, 6:33 pm Israel: the rate website is just coming soon. No
+price, and no reserve or billing wording. The Rates online heading is "Your
+rates, online." and the own site line says "Coming soon." On Extras, "Your own
+rate website" is not a tick and shows no price. The order summary does not
+list it, and it is not added to a plan total or a charge. A request that still
+sends the add-on is refused (`409 website_coming_soon`): "Your own rate website
+isn't open yet. Untick it to carry on. Nothing was charged." The page shows
+that line beside the add-on. Other prices are unchanged. Not release, CTO or
+Compliance acceptance.
 
 ## Signup v2.1 coming back carries on, 16 November 2026
 
