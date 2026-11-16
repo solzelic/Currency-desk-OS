@@ -45,3 +45,26 @@ for (const [width, height] of [[1280, 760], [1440, 860], [1440, 900]]) test(`all
   await info.attach('scroll-evidence', { body: JSON.stringify({ width, height, evidence }), contentType: 'application/json' });
   expect(evidence.filter(e => e.documentScrolls || e.productScrolls || e.cardScrolls), 'No state scrolls the document, product viewport or card body').toEqual([]);
 });
+
+/* Linux CI draws this text about 0.3px per glyph wider than macOS, which once
+   wrapped the ID hint and overflowed fitted cards there only. Reproduce that
+   metric on any machine so a zero-slack card fails locally, not just in CI. */
+for (const [width, height] of [[1280, 760], [1440, 860]]) test(`all signup states fit with wider renderer text at ${width}x${height}`, async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width, height });
+  const evidence = [];
+  for (const [state, , step, act] of SIGNUP_STATES) {
+    await page.goto('/onboarding?step=' + step);
+    await page.waitForTimeout(2500);
+    if (act) await act(actions(page));
+    await page.evaluate(() => new Promise(done => {
+      document.querySelectorAll('[data-product] *').forEach(e => { if (getComputedStyle(e).letterSpacing === 'normal') (e as HTMLElement).style.letterSpacing = '0.3px'; });
+      requestAnimationFrame(() => requestAnimationFrame(done));
+    }));
+    const measured = await page.evaluate(measureSignup);
+    const cardScrolls = await page.locator('[data-stage]').evaluateAll(es => es.some(e => e.scrollHeight > e.clientHeight + 1));
+    evidence.push({ state, documentScrolls: measured.documentScrolls, productScrolls: measured.productScrolls, cardScrolls, scrollers: measured.scrollers });
+  }
+  await info.attach('wide-text-scroll-evidence', { body: JSON.stringify({ width, height, evidence }), contentType: 'application/json' });
+  expect(evidence.filter(e => e.documentScrolls || e.productScrolls || e.cardScrolls), 'No state scrolls the document, product viewport or card body with wider text').toEqual([]);
+});

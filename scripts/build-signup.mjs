@@ -170,6 +170,10 @@ patch("day one account sound control", '  <!-- ===================== THE DESK, F
 patch("account header wrapping", "</helmet>", '<style>[data-cardtop] { flex-wrap:wrap;z-index:4!important; } [data-cardtop] [data-signup-account] { align-self:flex-start; }</style>\n</helmet>');
 /* Desktop controls need 24px; preserve the header's height and the phone's 44px. */
 patch("desktop account target", "</helmet>", '<style>@media(min-width:721px) { [data-signup-account] summary { min-height:26px!important;padding:6px 14px!important;line-height:14px; } }</style>\n</helmet>');
+/* Fitted cards keep a line of slack for renderer text metrics (Linux CI wraps the
+   ID hint): short desktops may use the split card's 24px margin, not 92vh. */
+patch("short desktop card room", "cardMaxH: (type === 'explain' || M.formTop === 'lock') ? 'none' : type === 'pin' ? 'calc(100vh - 20px)' : 'min(92vh, 840px)',", "cardMaxH: (type === 'explain' || M.formTop === 'lock') ? 'none' : type === 'pin' ? 'calc(100vh - 20px)' : 'var(--cd-card-max, min(92vh, 840px))',");
+patch("short desktop card room css", "</helmet>", '<style>@media(min-width:1100px) and (max-height:900px) { [data-card] { --cd-card-max:min(calc(100vh - 24px), 840px); } }</style>\n</helmet>');
 patch("screen layout identity", '<div style="{{ stageWrap }}">', '<div data-signup-screen="{{ i }}" data-signup-explain="{{ t_explain }}" style="{{ stageWrap }}">');
 /* Keep complete chapter introductions and their actions inside desktop viewports. */
 patch("chapter desktop fit", "</helmet>", `<style>

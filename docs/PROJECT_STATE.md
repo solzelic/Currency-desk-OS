@@ -53,6 +53,11 @@ card header height; phones retain 44px. All-state desktop checks also reject
 card-body overflow, independently of the allowed payment-body scrolling.
 The header stacks above the phase bar so Back's padded target stays clickable
 where it extends below the shortened header; pointer checks cover this boundary.
+Linux CI renders the signup text slightly wider than macOS and failed the card
+check (ID resend 29px, confirm 16px). Short desktop cards may now grow to the
+viewport less 24px, the split card's existing margin, instead of 92vh; the
+review's Vault count row keeps the prototype's own count note instead of an
+always-on second line. macOS geometry is unchanged or back on the prototype.
 Address-provider failure logs retain only the operation and HTTP status, never
 the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
