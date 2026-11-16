@@ -540,10 +540,10 @@
   function kycStatus(rec) {
     if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
-    if (state === 'ok') return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', CD.green, CD.greenSoft];
+    if (state === 'ok') { const tone = window.CDOS.idBadgeTone('checked'); return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', tone.c, tone.bg]; }
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
     if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
-    if (rec && rec.idType && rec.idNum) return ['ID typed by hand, not checked', CD.mute, CD.lineSoft];
+    if (rec && rec.idType && rec.idNum) { const tone = window.CDOS.idBadgeTone('hand'); return ['ID typed by hand, not checked', tone.c, tone.bg]; }
     return [(rec && rec.idStanding && rec.idStanding.chip) || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
@@ -1110,8 +1110,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }
     if (standing) {
       const on = !!standing.onFile;
-      const tone = on ? CD.green : CD.flag;
-      const soft = on ? CD.greenSoft : CD.flagSoft;
+      const checked = window.CDOS.idBadgeTone('checked');
+      const tone = on ? checked.c : CD.flag;
+      const soft = on ? checked.bg : CD.flagSoft;
       return (<div data-tour="identification" data-testid="client-where" className="client-where mb-3 p-3.5 min-w-0 max-w-full" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
         <div className="flex items-start gap-2 min-w-0 max-w-full">
@@ -1125,8 +1126,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
     const line = (rec && rec.idStanding && rec.idStanding.line) || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
     const on = state === 'ok';
-    const tone = on ? CD.green : CD.flag;
-    const soft = on ? CD.greenSoft : CD.flagSoft;
+    const checked = window.CDOS.idBadgeTone('checked');
+    const tone = on ? checked.c : CD.flag;
+    const soft = on ? checked.bg : CD.flagSoft;
     return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
       <div className="flex items-start gap-2 min-w-0 max-w-full">
@@ -1263,8 +1265,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const failedRead = !!(readError || (rec && rec.idCheckError));
     const handTyped = !failedRead && !!(rec && rec.idType && rec.idNum) && !(standing && standing.onFile) && !(standing && standing.chip === 'ID expired') && !!standing;
     const stat = failedRead ? (readError || rec.idCheckError) : handTyped ? 'ID typed by hand, not checked' : (standing ? standing.chip : fallbackStat);
-    const col = failedRead || handTyped ? CD.mute : (standing ? (standing.onFile ? CD.green : CD.flag) : fallbackCol);
-    const bg = failedRead || handTyped ? CD.lineSoft : (standing ? (standing.onFile ? CD.greenSoft : CD.flagSoft) : fallbackBg);
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const col = failedRead || handTyped ? handTone.c : (standing ? (standing.onFile ? checkedTone.c : CD.flag) : fallbackCol);
+    const bg = failedRead || handTyped ? handTone.bg : (standing ? (standing.onFile ? checkedTone.bg : CD.flagSoft) : fallbackBg);
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);

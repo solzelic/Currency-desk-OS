@@ -811,6 +811,160 @@ test("counter screens for the other badge states", async ({ page, request }) => 
   }
 });
 
+test("a passed ID check badge never uses the green token", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await enableChecks(request);
+  const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
+  await db.connect();
+  const passedName = "Leah Navarro";
+  const handName = "Owen Blake";
+  const paints = async (locator: ReturnType<Page["locator"]>) => locator.evaluate((node) => {
+    const root = getComputedStyle(document.documentElement);
+    const swatch = (property: "color" | "backgroundColor", value: string) => {
+      const probe = document.createElement("span");
+      probe.style[property] = value;
+      document.body.appendChild(probe);
+      const painted = getComputedStyle(probe)[property];
+      probe.remove();
+      return painted;
+    };
+    const green = swatch("color", root.getPropertyValue("--cd-green").trim());
+    const soft = swatch("backgroundColor", root.getPropertyValue("--cd-green-soft").trim());
+    const style = getComputedStyle(node);
+    const icon = node.querySelector("svg");
+    return {
+      color: style.color,
+      background: style.backgroundColor,
+      green,
+      soft,
+      icon: icon ? icon.innerHTML : "",
+      stroke: icon ? (icon.getAttribute("stroke") || "") : "",
+    };
+  });
+  const offGreen = async (locator: ReturnType<Page["locator"]>) => {
+    const paint = await paints(locator);
+    expect(paint.color).not.toBe(paint.green);
+    expect(paint.background).not.toBe(paint.green);
+    expect(paint.color).not.toBe(paint.soft);
+    expect(paint.background).not.toBe(paint.soft);
+    expect(paint.stroke.toLowerCase()).not.toContain("green");
+    return paint;
+  };
+  try {
+    await db.query("DELETE FROM desk_clients WHERE display_name = ANY($1::text[])", [[passedName, handName]]);
+    await signInAtDesk(page, "m.costa");
+    const tone = await page.evaluate(() => {
+      const api = (window as unknown as { CDOS: { idBadgeTone: (kind: string) => { c: string; bg: string; icon: string } } }).CDOS.idBadgeTone;
+      return { checked: api("checked"), hand: api("hand") };
+    });
+    expect(tone.checked).toEqual({ c: "var(--cd-ink)", bg: "var(--cd-chip)", icon: "checkcircle" });
+    expect(tone.hand).toEqual({ c: "var(--cd-mute)", bg: "var(--cd-line-soft)", icon: "alert" });
+    expect(JSON.stringify(tone.checked)).not.toContain("green");
+    const made = async (legalName: string) => {
+      const created = await page.evaluate(async (name) => {
+        const res = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ legalName: name, kind: "individual" }),
+        });
+        return { status: res.status, body: await res.json() };
+      }, legalName);
+      expect(created.status).toBe(201);
+      return created.body.clientId as string;
+    };
+    const passedId = await made(passedName);
+    const handId = await made(handName);
+    await db.query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         verified_at, document_number_last4, number_unavailable, expiry_date, name_on_id)
+       VALUES ($1,'tnt-yorkfx','le-yorkfx-canada','br-yorkville',$2,'3','id_and_selfie','pass','m.costa', now(), '0001', false, '2030-04-01', $3)`,
+      [`idc_neutral_${passedId}`, passedId, passedName],
+    );
+    await db.query(
+      `INSERT INTO desk_client_identity_documents
+        (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
+       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', 'TEST000000016', true)`,
+      [`doc_${handId}`, handId],
+    );
+    await page.reload();
+    await landOnDesktop(page);
+    await page.locator('[data-app="clients"]').click();
+    const roster = page.locator("div.cursor-pointer", { hasText: passedName }).locator("span", { hasText: "ID on file" });
+    await expect(roster).toHaveCount(1, { timeout: 20_000 });
+    const themes = ["light", "dark"] as const;
+    const widths = [1280, 390] as const;
+    for (const theme of themes) {
+      await page.evaluate((value) => {
+        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
+      }, theme);
+      await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute("data-cdtheme"))).toBe(theme);
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await offGreen(roster);
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await roster.click();
+    const fileBadge = page.getByTestId("client-standing").locator("span").last();
+    const whereBadge = page.getByTestId("client-where").locator("span", { hasText: "Identified" });
+    await expect(fileBadge).toContainText("ID on file");
+    for (const theme of themes) {
+      await page.evaluate((value) => {
+        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
+      }, theme);
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await offGreen(fileBadge);
+        await offGreen(whereBadge);
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.locator(".client-file-actions button").last().click();
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    let deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    if (!(await deal.isEnabled())) {
+      await page.reload();
+      await landOnDesktop(page);
+      await page.evaluate(() => {
+        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+      });
+      await page.locator('[data-app="ledger"]').click();
+      await ensureTill(page);
+      deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    }
+    await deal.click();
+    await page.locator(".cd-tx-customer input").fill(passedName);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: passedName }).click();
+    const dealBadge = page.getByTestId("deal-id-badge");
+    await expect(dealBadge).toContainText("ID on file");
+    for (const theme of themes) {
+      await page.evaluate((value) => {
+        (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
+      }, theme);
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await offGreen(dealBadge);
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(() => {
+      (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+    });
+    const checked = await paints(dealBadge);
+    await page.locator(".cd-tx-customer input").fill(handName);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: handName }).click();
+    await expect(dealBadge).toContainText("ID typed by hand, not checked");
+    const hand = await paints(dealBadge);
+    expect(hand.icon).not.toBe(checked.icon);
+    expect(hand.color === checked.color && hand.background === checked.background).toBe(false);
+    expect(hand.stroke).not.toBe(checked.stroke);
+  } finally {
+    await db.end();
+  }
+});
+
 test("typed-by-hand and try-again frames", async ({ page, request }) => {
   test.skip(process.env.PR2B_SHOTS !== "1", "screenshot pass");
   test.setTimeout(180_000);

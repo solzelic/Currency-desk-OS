@@ -263,7 +263,7 @@
             <div className="cd-tx-suggest absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 30 }}>
               {shown.map(n => { const c = clients[n] || {}; const failed = !!c.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : (!c.idType || !c.idNum ? 'missing ID' : 'ok'); const st = failed ? c.idCheckError : state === 'ok' ? 'ID on file' : state; const ok = false; const onfile = !failed && st === 'ID on file'; return (
                 <button key={n} onMouseDown={e => e.preventDefault()} onClick={() => { onPick(n); setOpen(false); }} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }}>
-                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft, color: failed ? CD.mute : ok ? CD.green : onfile ? CD.amber : CD.flag }}>{st}</span>
+                  <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : (ok || onfile) ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft, color: failed ? CD.mute : (ok || onfile) ? window.CDOS.idBadgeTone('checked').c : CD.flag }}>{st}</span>
                 </button>); })}
               {shown.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
               <button onMouseDown={e => e.preventDefault()} onClick={() => { onAddNew(); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> {idRequired ? 'Scan ID & add new client' : 'Add new client'}{query ? ` “${query.trim()}”` : ''}</button>
@@ -315,16 +315,18 @@
     const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const handTyped = !unread && !idOk && kycState === 'missing ID' && !papersMissing;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
     const badge = unread
-      ? { t: readError || rec.idCheckError, c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
+      ? { t: readError || rec.idCheckError, c: handTone.c, bg: handTone.bg, ic: handTone.icon }
       : idOk
-      ? { t: (viewed.idStanding && viewed.idStanding.chip) || 'ID on file', c: CD.green, bg: CD.greenSoft, ic: 'checkcircle' }
+      ? { t: (viewed.idStanding && viewed.idStanding.chip) || 'ID on file', c: checkedTone.c, bg: checkedTone.bg, ic: checkedTone.icon }
       : kycState === 'ID expired'
       ? { t: 'ID expired', c: CD.flag, bg: CD.flagSoft, ic: 'alert' }
       : kycState === 'Checking ID'
-      ? { t: 'Checking ID', c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
+      ? { t: 'Checking ID', c: handTone.c, bg: handTone.bg, ic: handTone.icon }
       : handTyped
-      ? { t: 'ID typed by hand, not checked', c: CD.mute, bg: CD.lineSoft, ic: 'alert' }
+      ? { t: 'ID typed by hand, not checked', c: handTone.c, bg: handTone.bg, ic: handTone.icon }
       : { t: 'Missing ID', c: CD.flag, bg: CD.flagSoft, ic: 'alert' };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;

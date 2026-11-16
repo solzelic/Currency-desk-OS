@@ -202,7 +202,9 @@
     const unread = !!(readError || (rec && rec.idCheckError));
     const idOk = !unread && kycState === 'ok';
     const handTyped = !unread && !idOk && kycState === 'missing ID' && rec && rec.idType && rec.idNum;
-    const idTone = unread || handTyped || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
     const idLabel = unread ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
@@ -230,7 +232,7 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : (unread || handTyped || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? checkedTone.bg : (unread || handTyped || kycState === 'Checking ID' ? handTone.bg : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? checkedTone.icon : handTone.icon} s={12} c={idTone} /> {idLabel}</span>
           {unread && rec && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}
         </div>
 
@@ -540,7 +542,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
                     {shownNames.map(n => { const person = clients[n] || {}; const failed = !!person.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : (!person.idType || !person.idNum ? 'missing ID' : 'ok'); const st = failed ? person.idCheckError : state === 'ok' ? 'ID on file' : state; const ok = !failed && st === 'ID on file'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
-                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? CD.greenSoft : CD.flagSoft, color: failed ? CD.mute : ok ? CD.green : CD.flag }}>{st}</span>
+                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft, color: failed ? CD.mute : ok ? window.CDOS.idBadgeTone('checked').c : CD.flag }}>{st}</span>
                       </button>); })}
                     {shownNames.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
                     <button onClick={startNewClient} onMouseDown={e => e.preventDefault()} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> Create new client{custQuery ? ` "${custQuery.trim()}"` : ''}</button>
@@ -679,7 +681,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
                 {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmtHome(recentTotal)} with this deal.</div>}
-                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
+                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
               </div>
             )}
             {/* reportable — capture the FINTRAC info at the counter, pre-fills the filing */}

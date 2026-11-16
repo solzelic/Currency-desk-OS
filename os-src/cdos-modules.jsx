@@ -35,6 +35,14 @@
     if (standing.chip === "ID expired") return "ID expired";
     return "missing ID";
   }
+  /* A passed or paid check uses the neutral chip, the same family as
+     the other status chips. It does not use the green success token.
+     A hand-typed ID stays the grey mute chip, and it uses a different
+     icon, so the two chips are not the same colour with the same mark. */
+  function idBadgeTone(kind) {
+    if (kind === "checked") return { c: CD.ink, bg: CD.chip, icon: "checkcircle" };
+    return { c: CD.mute, bg: CD.lineSoft, icon: "alert" };
+  }
   function computeFlags(rows, clients, settings) {
     const map = {};
     const countsForLctr = window.CDOS.countsForLctr || function () { return true; };
@@ -507,6 +515,6 @@
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {
-    computeFlags, computeAlerts, idFileKyc, Audit, Calc, ReceiptModal, deskTime, Tag
+    computeFlags, computeAlerts, idFileKyc, idBadgeTone, Audit, Calc, ReceiptModal, deskTime, Tag
   });
 })();

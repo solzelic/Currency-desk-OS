@@ -4774,6 +4774,22 @@ if (typeof window !== "undefined") {
     if (standing.chip === "ID expired") return "ID expired";
     return "missing ID";
   }
+  /* A passed or paid check uses the neutral chip, the same family as
+     the other status chips. It does not use the green success token.
+     A hand-typed ID stays the grey mute chip, and it uses a different
+     icon, so the two chips are not the same colour with the same mark. */
+  function idBadgeTone(kind) {
+    if (kind === "checked") return {
+      c: CD.ink,
+      bg: CD.chip,
+      icon: "checkcircle"
+    };
+    return {
+      c: CD.mute,
+      bg: CD.lineSoft,
+      icon: "alert"
+    };
+  }
   function computeFlags(rows, clients, settings) {
     const map = {};
     const countsForLctr = window.CDOS.countsForLctr || function () {
@@ -6447,6 +6463,7 @@ if (typeof window !== "undefined") {
     computeFlags,
     computeAlerts,
     idFileKyc,
+    idBadgeTone,
     Audit,
     Calc,
     ReceiptModal,
@@ -25849,10 +25866,16 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   function kycStatus(rec) {
     if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
     const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
-    if (state === 'ok') return [rec.idStanding && rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
+    if (state === 'ok') {
+      const tone = window.CDOS.idBadgeTone('checked');
+      return [rec.idStanding && rec.idStanding.chip || 'ID on file', tone.c, tone.bg];
+    }
     if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
     if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
-    if (rec && rec.idType && rec.idNum) return ['ID typed by hand, not checked', CD.mute, CD.lineSoft];
+    if (rec && rec.idType && rec.idNum) {
+      const tone = window.CDOS.idBadgeTone('hand');
+      return ['ID typed by hand, not checked', tone.c, tone.bg];
+    }
     return [rec && rec.idStanding && rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = s => s === 'Verified' || s === 'Verified Plus';
@@ -27527,8 +27550,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }
     if (standing) {
       const on = !!standing.onFile;
-      const tone = on ? CD.green : CD.flag;
-      const soft = on ? CD.greenSoft : CD.flagSoft;
+      const checked = window.CDOS.idBadgeTone('checked');
+      const tone = on ? checked.c : CD.flag;
+      const soft = on ? checked.bg : CD.flagSoft;
       return /*#__PURE__*/React.createElement("div", {
         "data-tour": "identification",
         "data-testid": "client-where",
@@ -27567,8 +27591,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
     const line = rec && rec.idStanding && rec.idStanding.line || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
     const on = state === 'ok';
-    const tone = on ? CD.green : CD.flag;
-    const soft = on ? CD.greenSoft : CD.flagSoft;
+    const checked = window.CDOS.idBadgeTone('checked');
+    const tone = on ? checked.c : CD.flag;
+    const soft = on ? checked.bg : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
       "data-tour": "identification",
       "data-testid": "client-where",
@@ -27936,8 +27961,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const failedRead = !!(readError || rec && rec.idCheckError);
     const handTyped = !failedRead && !!(rec && rec.idType && rec.idNum) && !(standing && standing.onFile) && !(standing && standing.chip === 'ID expired') && !!standing;
     const stat = failedRead ? readError || rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.chip : fallbackStat;
-    const col = failedRead || handTyped ? CD.mute : standing ? standing.onFile ? CD.green : CD.flag : fallbackCol;
-    const bg = failedRead || handTyped ? CD.lineSoft : standing ? standing.onFile ? CD.greenSoft : CD.flagSoft : fallbackBg;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const col = failedRead || handTyped ? handTone.c : standing ? standing.onFile ? checkedTone.c : CD.flag : fallbackCol;
+    const bg = failedRead || handTyped ? handTone.bg : standing ? standing.onFile ? checkedTone.bg : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -30546,7 +30573,9 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const unread = !!(readError || rec && rec.idCheckError);
     const idOk = !unread && kycState === 'ok';
     const handTyped = !unread && !idOk && kycState === 'missing ID' && rec && rec.idType && rec.idNum;
-    const idTone = unread || handTyped || kycState === 'Checking ID' ? CD.mute : idOk ? CD.green : CD.flag;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
     const idLabel = unread ? readError || rec.idCheckError : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
@@ -30615,12 +30644,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       "data-testid": "ledger-id-badge",
       className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
-        background: idOk ? CD.greenSoft : unread || handTyped || kycState === 'Checking ID' ? CD.lineSoft : CD.flagSoft,
+        background: idOk ? checkedTone.bg : unread || handTyped || kycState === 'Checking ID' ? handTone.bg : CD.flagSoft,
         color: idTone,
         borderRadius: 999
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: idOk ? 'checkcircle' : 'alert',
+      n: idOk ? checkedTone.icon : handTone.icon,
       s: 12,
       c: idTone
     }), " ", idLabel), unread && rec && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
@@ -31344,8 +31373,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: failed ? CD.lineSoft : ok ? CD.greenSoft : CD.flagSoft,
-          color: failed ? CD.mute : ok ? CD.green : CD.flag
+          background: failed ? CD.lineSoft : ok ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft,
+          color: failed ? CD.mute : ok ? window.CDOS.idBadgeTone('checked').c : CD.flag
         }
       }, st));
     }), shownNames.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -31844,11 +31873,12 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     }, "Structuring watch \u2014 this client's ", settings.structuringDays, "-day total reaches ", fmtHome(recentTotal), " with this deal."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
-        color: kyc === 'ok' ? CD.green : CD.flag
+        color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
-      s: 13
+      s: 13,
+      c: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
     }), " ", kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`)), single && /*#__PURE__*/React.createElement("div", {
       className: "p-3 space-y-2.5",
       style: {
@@ -36669,8 +36699,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: failed ? CD.lineSoft : ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft,
-          color: failed ? CD.mute : ok ? CD.green : onfile ? CD.amber : CD.flag
+          background: failed ? CD.lineSoft : ok || onfile ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft,
+          color: failed ? CD.mute : ok || onfile ? window.CDOS.idBadgeTone('checked').c : CD.flag
         }
       }, st));
     }), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -36794,16 +36824,18 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const idOk = !unread && kycState === 'ok';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const handTyped = !unread && !idOk && kycState === 'missing ID' && !papersMissing;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
     const badge = unread ? {
       t: readError || rec.idCheckError,
-      c: CD.mute,
-      bg: CD.lineSoft,
-      ic: 'alert'
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
     } : idOk ? {
       t: viewed.idStanding && viewed.idStanding.chip || 'ID on file',
-      c: CD.green,
-      bg: CD.greenSoft,
-      ic: 'checkcircle'
+      c: checkedTone.c,
+      bg: checkedTone.bg,
+      ic: checkedTone.icon
     } : kycState === 'ID expired' ? {
       t: 'ID expired',
       c: CD.flag,
@@ -36811,14 +36843,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       ic: 'alert'
     } : kycState === 'Checking ID' ? {
       t: 'Checking ID',
-      c: CD.mute,
-      bg: CD.lineSoft,
-      ic: 'alert'
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
     } : handTyped ? {
       t: 'ID typed by hand, not checked',
-      c: CD.mute,
-      bg: CD.lineSoft,
-      ic: 'alert'
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
     } : {
       t: 'Missing ID',
       c: CD.flag,
@@ -41391,11 +41423,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
-        color: kyc === 'ok' ? CD.green : CD.flag
+        color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
-      s: 13
+      s: 13,
+      c: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
     }), " ", kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`), /*#__PURE__*/React.createElement(Field, {
       label: "Source of funds"
     }, /*#__PURE__*/React.createElement("input", {
@@ -57915,7 +57948,8 @@ ${snap}`;
           if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
           if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
           if (state !== 'ok') return ['missing ID', CD.flag, CD.flagSoft];
-          return ['ID on file', CD.green, CD.greenSoft];
+          const tone = window.CDOS.idBadgeTone('checked');
+          return ['ID on file', tone.c, tone.bg];
         };
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Client & KYC Register",
