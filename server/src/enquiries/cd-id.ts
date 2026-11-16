@@ -28,7 +28,7 @@
    is TOKY.
    ============================================================ */
 import { createHash } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 
 export const CD_ID_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -87,14 +87,20 @@ export function normalizeCdIdInput(raw: unknown): string | null {
 
 /* A fresh ID that no application and no staff member holds. Eight tries
    is far more than enough (31^4 = 923,521 per set of letters); running
-   out means something is wrong and says so. The unique indexes are the
-   last word if two requests race. */
+   out means something is wrong and says so. The enquiries unique index
+   refuses competing reservations of the same candidate. This helper is
+   not a cross-table reservation: staff creation must reject v2-shaped
+   usernames (CD221), and returning login must refuse existing ambiguity.
+   Compact aliases are not introduced here: that sign-in policy is pending. */
 export async function issueCdId(db: Db, sources: string | string[], random: RandomBytes = secureBytes): Promise<string> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const id = mintCdId(sources, random);
     const asApplication = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(eq(schema.enquiries.cdId, id)).limit(1);
     if (asApplication.length) continue;
-    const asStaff = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(eq(schema.staffUsers.cdId, id)).limit(1);
+    const asStaff = await db.select({ id: schema.staffUsers.id }).from(schema.staffUsers).where(or(
+      eq(schema.staffUsers.cdId, id),
+      sql`lower(${schema.staffUsers.staffId}) = ${id.toLowerCase()}`,
+    )).limit(1);
     if (asStaff.length) continue;
     const retired = createHash("sha256").update(id).digest("hex");
     const past = await db.select({ id: schema.enquiries.id }).from(schema.enquiries).where(sql`${schema.enquiries.details}->'retiredCdIdHashes' @> ${JSON.stringify([retired])}::jsonb`).limit(1);
