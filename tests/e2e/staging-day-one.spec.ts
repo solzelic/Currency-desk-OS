@@ -137,15 +137,22 @@ async function watchDayOne(page: Page) {
     if (location.pathname !== "/onboarding") return;
     const seen = { standIn: [] as string[], screens: [] as string[], homeShownEarly: 0 };
     (window as unknown as { __dayOne: typeof seen }).__dayOne = seen;
+    const mark = (name: string) => { if (seen.screens[seen.screens.length - 1] !== name) seen.screens.push(name); };
     const look = () => {
       const root = document.getElementById("dc-root");
       /* the prototype's stand-in shop and owner (SIGNUP-LOGIC section 13), the
-         plan screen's landing, its sample desk and the old hold */
+         plan screen's landing, its sample desk ("Sample rates", drawn upper
+         case by CSS) and the old hold. Each is really in the built page
+         (tests/signup-staging-client.test.mjs checks), so "never" means never. */
       const text = root?.textContent ?? "";
-      for (const s of ["York Currency Exchange", "Masri", "Daniel Osei", "yorkcurrency", "Your desk is set up", "SAMPLE RATES", "Opening a staging test shop"]) if (text.includes(s) && !seen.standIn.includes(s)) seen.standIn.push(s);
+      for (const s of ["York Currency Exchange", "Masri", "Daniel Osei", "yorkcurrency", "Your desk is set up", "Sample rates", "Opening a staging test shop"]) if (text.includes(s) && !seen.standIn.includes(s)) seen.standIn.push(s);
+      /* every screen: a wizard screen by number, the plan screen by its payment
+         panel, the prototype's own desk by its chrome, Day 1 by its desk */
       const screen = root?.querySelector("[data-signup-screen]")?.getAttribute("data-signup-screen");
-      if (screen && seen.screens[seen.screens.length - 1] !== screen) seen.screens.push(screen);
-      if (root?.querySelector("[data-desk]") && seen.screens[seen.screens.length - 1] !== "desk") seen.screens.push("desk");
+      if (screen) mark(screen);
+      if (root?.querySelector("[data-paymodal]")) mark("plan");
+      if (root?.querySelector("[data-deskapps], [data-deskcrumb], [data-desklogo]")) mark("prototype-desk");
+      if (root?.querySelector("[data-desk]")) mark("desk");
     };
     new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
     setInterval(() => {
@@ -216,13 +223,47 @@ test("an /open that takes a while keeps Day 1's welcome and says so there, then 
     return route.continue();
   });
   const body = await startOnDayOne(page);
-  const status = page.locator("[data-real-home-status]");
-  await expect(status).toHaveText("Still opening the desk. This can take a minute. Stay on this page.", { timeout: 60_000 });
-  await expect(page.locator("[data-build-my-desk]")).toBeDisabled();
   await expect(page.getByText(`Opening ${body.operatingName}.`)).toBeVisible();
+  /* the welcome's own sentence says it (a polite live region), and Build my desk stays busy */
+  await expect(page.getByRole("status").filter({ hasText: "Still opening the desk. This can take a minute. Stay on this page." })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("[data-build-my-desk]")).toBeDisabled();
+  await expect(page.locator("[data-build-my-desk]")).toHaveAttribute("aria-busy", "true");
   await page.screenshot({ path: test.info().outputPath("staging-day-one-still-opening-phone.png"), animations: "disabled" });
   await onDayOne(page, body);
   await expect(page.locator("[data-build-my-desk]")).toBeEnabled();
+  const seen = await watched(page);
+  expect(seen.standIn).toEqual([]);
+  expect(seen.screens).toEqual(["desk"]);
+  expect(seen.homeShownEarly).toBe(0);
+});
+
+test("on a short phone, an /open that refuses keeps the reason and Check again on the welcome, reachable by scrolling, and Check again opens it", async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 360, height: 640 });
+  await watchDayOne(page);
+  /* the first /open fails as a server error would; the next goes through */
+  let refused = 0;
+  await page.route("**/api/onboarding/*/open", async (route) => {
+    if (refused++ < 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable", detail: "The desk didn’t open just now." }) });
+    return route.continue();
+  });
+  const body = await startOnDayOne(page);
+  await expect(page.getByRole("status").filter({ hasText: "The desk didn’t open just now." })).toBeVisible({ timeout: 60_000 });
+  const build = page.locator("[data-build-my-desk]");
+  await expect(build).toBeDisabled();
+  await expect(build).toHaveText("Desk not open yet");
+  await expect(build).toHaveAttribute("aria-busy", "false");
+  const check = page.getByRole("button", { name: "Check again" });
+  /* reached the way a person would, with the wheel over the page, never scrollIntoView */
+  await page.mouse.move(180, 320);
+  for (let k = 0; k < 6; k++) await page.mouse.wheel(0, 400);
+  await expect.poll(async () => { const b = await check.boundingBox(); return !!b && b.y >= 0 && b.y + b.height <= 640; }).toBe(true);
+  const box = (await check.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: test.info().outputPath("staging-day-one-refused-short-phone.png"), animations: "disabled" });
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await onDayOne(page, body);
+  await expect(build).toBeEnabled();
   const seen = await watched(page);
   expect(seen.standIn).toEqual([]);
   expect(seen.screens).toEqual(["desk"]);
