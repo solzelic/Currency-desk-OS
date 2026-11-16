@@ -14,7 +14,8 @@ import { THROTTLE_KEYS, createIdDoor } from "../src/onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "../src/routes/signup-credential.js";
 import { advance, allowedFrom, loadAccount } from "../src/onboarding/signup-account.js";
 import { checkPassword, isBreached, lengthOf } from "../src/onboarding/password-rule.js";
-import { clearJwksCache, sameEmail, type FetchJson } from "../src/onboarding/sso.js";
+import { ProviderHttpError, clearJwksCache, providerConfig, sameEmail, type FetchJson } from "../src/onboarding/sso.js";
+import { relyingParty } from "../src/onboarding/passkey.js";
 import { verifyPassword } from "../src/auth/password.js";
 
 const ORIGIN = "https://www.currencydeskos.test";
@@ -34,6 +35,7 @@ let rangeDown = false;
 let idToken: (claims: Record<string, unknown>) => string;
 let nextClaims: Record<string, unknown> = {};
 let jwks: unknown;
+let tokenFailure: Error | null = null;
 
 /* ---- the fake provider ---------------------------------------------- */
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -46,7 +48,7 @@ idToken = (claims) => {
 jwks = { keys: [jwk] };
 const http: FetchJson = async (url, init) => {
   if (url.includes("certs") || url.includes("keys")) return jwks;
-  if (init.method === "POST") return { id_token: idToken(nextClaims) };
+  if (init.method === "POST") { if (tokenFailure) throw tokenFailure; return { id_token: idToken(nextClaims) }; }
   throw new Error(`unexpected ${url}`);
 };
 
@@ -117,7 +119,7 @@ beforeAll(async () => {
   await app.ready();
 });
 afterAll(async () => { await app.close(); await handle.close(); });
-beforeEach(() => { door.reset(); breached = new Set(); rangeDown = false; clearJwksCache(); });
+beforeEach(() => { door.reset(); breached = new Set(); rangeDown = false; tokenFailure = null; clearJwksCache(); });
 
 const sha1 = (s: string) => createHash("sha1").update(s).digest("hex").toUpperCase();
 
@@ -420,5 +422,108 @@ describe("review: external boundaries", () => {
     const secretOrigin = "https://private-name-and-token.invalid";
     await post(`/api/onboarding/${cdId}/passkey/verify`, { response: makePasskey(opt.json().options.challenge, { origin: secretOrigin }) }, cookieFrom(opt));
     expect(vi.mocked(console.warn).mock.calls.flat().join(" ")).not.toContain(secretOrigin);
+  });
+});
+
+/* Real-provider readiness: what Google, Microsoft and the browser actually
+   send, and configuration that cannot work refused before anybody tries. */
+describe("provider readiness", () => {
+  const now = () => Math.floor(Date.now() / 1000);
+  const start = async (cdId: string, provider: string) => {
+    const res = await app.inject({ method: "GET", url: `/api/onboarding/${cdId}/sso/${provider}/start`, remoteAddress: "198.51.100.9" });
+    expect(res.statusCode, res.body).toBe(200);
+    const url = new URL(res.json().url);
+    return { jar: cookieFrom(res), state: url.searchParams.get("state")!, nonce: url.searchParams.get("nonce")! };
+  };
+  const google = (s: { nonce: string }, email: string, extra: Record<string, unknown> = {}) =>
+    ({ iss: "https://accounts.google.com", aud: "google-client", exp: now() + 300, iat: now(), nonce: s.nonce, sub: "g-real", email, ...extra });
+  const callback = (cdId: string, provider: string, s: { state: string; jar: Record<string, string> }, ip = "198.51.100.9") =>
+    post(`/api/onboarding/${cdId}/sso/callback`, { provider, code: "c", state: s.state }, s.jar, ip);
+
+  it("accepts Google's email_verified sent as the string \"true\", and refuses the string \"false\"", async () => {
+    const { cdId, email } = await reserve();
+    let s = await start(cdId, "google");
+    nextClaims = google(s, email, { email_verified: "true" });
+    const ok = await callback(cdId, "google", s);
+    expect(ok.statusCode, ok.body).toBe(200);
+    const other = await reserve();
+    s = await start(other.cdId, "google");
+    nextClaims = google(s, other.email, { email_verified: "false" });
+    expect((await callback(other.cdId, "google", s)).json().error).toBe("email_unverified");
+  });
+
+  it("says an unconfirmed email is unconfirmed, not another account, and never names the email", async () => {
+    const { cdId, email } = await reserve();
+    const s = await start(cdId, "google");
+    nextClaims = google(s, email, { email_verified: false });
+    const res = await callback(cdId, "google", s);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: "email_unverified", detail: "Google hasn't confirmed that account's email, so it can't be used here. Use the account for the email you applied with, or choose another way." });
+    expect(res.body).not.toContain(email);
+  });
+
+  it("tells a refused authorization code apart from a provider that cannot be reached", async () => {
+    const { cdId, email } = await reserve();
+    let s = await start(cdId, "google");
+    nextClaims = google(s, email, { email_verified: true });
+    tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400);
+    const refusedCode = await callback(cdId, "google", s);
+    expect(refusedCode.statusCode).toBe(400);
+    expect(refusedCode.json().error).toBe("sso_not_saved");
+    s = await start(cdId, "google");
+    tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 503);
+    expect((await callback(cdId, "google", s)).statusCode).toBe(502);
+    s = await start(cdId, "google");
+    tokenFailure = Object.assign(new Error("timeout"), { name: "TimeoutError" });
+    expect((await callback(cdId, "google", s)).statusCode).toBe(502);
+  });
+
+  it("does not count a provider outage against the ID's 10-miss limit; a refused code still counts", async () => {
+    const { cdId, email } = await reserve();
+    const misses = vi.spyOn(door, "fail");
+    try {
+      let s = await start(cdId, "google");
+      nextClaims = google(s, email, { email_verified: true });
+      tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 503);
+      expect((await callback(cdId, "google", s)).statusCode).toBe(502);
+      expect(misses).not.toHaveBeenCalled();
+      s = await start(cdId, "google");
+      tokenFailure = new ProviderHttpError("oauth2.googleapis.com", 400);
+      expect((await callback(cdId, "google", s)).statusCode).toBe(400);
+      expect(misses).toHaveBeenCalledTimes(1);
+    } finally { misses.mockRestore(); }
+  });
+
+  it("refuses a redirect URI that cannot bring the person back to the sign-up page", () => {
+    const keys = { GOOGLE_CLIENT_ID: "g", GOOGLE_CLIENT_SECRET: "s" };
+    for (const SSO_REDIRECT_URI of [
+      "http://www.currencydeskos.test/onboarding/sso", "https://www.currencydeskos.test/onboarding",
+      "https://www.currencydeskos.test/onboarding/sso?x=1", "https://www.currencydeskos.test/onboarding/sso#x",
+      "https://user@www.currencydeskos.test/onboarding/sso", "not a url",
+    ]) expect(providerConfig("google", { ...keys, SSO_REDIRECT_URI } as NodeJS.ProcessEnv), SSO_REDIRECT_URI).toBeNull();
+    expect(providerConfig("google", { ...keys, SSO_REDIRECT_URI: "https://www.currencydeskos.test/onboarding/sso" } as NodeJS.ProcessEnv)).not.toBeNull();
+    expect(providerConfig("google", { ...keys, NODE_ENV: "development", SSO_REDIRECT_URI: "http://localhost:8787/onboarding/sso" } as NodeJS.ProcessEnv)).not.toBeNull();
+    expect(providerConfig("google", { ...keys, NODE_ENV: "production", SSO_REDIRECT_URI: "http://localhost:8787/onboarding/sso" } as NodeJS.ProcessEnv)).toBeNull();
+  });
+
+  it("refuses an RP ID a browser will not accept: one label, or a shared hosting suffix", () => {
+    for (const [id, origin] of [["com", "https://com"], ["onrender.com", "https://currencydesk-staging.onrender.com"], ["test", "https://test"]]) {
+      expect(relyingParty({ WEBAUTHN_RP_ID: id, WEBAUTHN_ORIGINS: origin } as NodeJS.ProcessEnv), id).toBeNull();
+    }
+    expect(relyingParty({ WEBAUTHN_RP_ID: "currencydesk-staging.onrender.com", WEBAUTHN_ORIGINS: "https://currencydesk-staging.onrender.com" } as NodeJS.ProcessEnv)).not.toBeNull();
+    expect(relyingParty({ WEBAUTHN_RP_ID: "localhost", WEBAUTHN_ORIGINS: "http://localhost:4173" } as NodeJS.ProcessEnv)).not.toBeNull();
+  });
+
+  it("says which ways in this server can finish, with no secret, client ID or email", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/onboarding/methods" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ password: true, passkey: true, passkeyOrigins: [ORIGIN], google: true, microsoft: true, ssoOrigin: ORIGIN });
+    for (const hidden of ["google-secret", "ms-secret", "google-client", "ms-client", "@"]) expect(res.body).not.toContain(hidden);
+    const bare = Fastify();
+    await bare.register(cookie);
+    registerCredentialRoutes(bare, handle.db, door, { env: { SSO_REDIRECT_URI: `${ORIGIN}/onboarding/sso`, GOOGLE_CLIENT_ID: "g" } as NodeJS.ProcessEnv });
+    expect((await bare.inject({ method: "GET", url: "/api/onboarding/methods" })).json())
+      .toEqual({ password: true, passkey: false, passkeyOrigins: [], google: false, microsoft: false, ssoOrigin: null });
+    await bare.close();
   });
 });

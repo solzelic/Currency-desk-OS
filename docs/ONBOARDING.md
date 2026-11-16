@@ -184,9 +184,69 @@ The v2.1 sign-up (Sol's pack, 14 Nov) is keyed on the owner's CurrencyDesk ID, n
 
 - `POST /api/onboarding/:id/passkey/options` then `…/passkey/verify`; `GET …/sso/:provider/start` (returns the provider URL) then `POST …/sso/callback { provider, code, state }`; `POST …/password { password, confirm }`.
 - Every one needs the browser's `cd_enrol_attempt` cookie for its second half, and saves a candidate credential (`verified_at` null). The email code (PR 3) verifies only the candidate whose attempt matches the browser that typed the code.
-- Configuration: `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS` (comma list); `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `SSO_REDIRECT_URI`. None are set on any service yet, so SSO answers 503 and the page hides those buttons.
-- Microsoft: the app registration must emit `email_verified` (optional claim) or every Microsoft account is refused.
-- Timeouts: OIDC token and keys 8 s, breach range 3 s.
+- Configuration: `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGINS` (comma list); `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `SSO_REDIRECT_URI`. Unset or unusable, that way in answers 503 and `GET /api/onboarding/methods` reports it unavailable (see "Real provider configuration" below).
+- Microsoft (corrected 16 Nov 2026): Microsoft's ID-token and optional-claims references list no `email_verified` claim, and say `email` is mutable and not for authorization. There is no optional claim to switch on. Under the pack's rule (`email_verified` true), every Microsoft account is refused, now as `409 email_unverified` with its own message rather than "isn't the email you applied with". Any other rule for Microsoft is a protected spec exception for CTO.
+- Timeouts: OIDC token and keys 8 s, breach range 3 s. A token-endpoint 4xx (a spent or foreign code) is `400 sso_not_saved`; a 5xx, timeout or network failure is `502 sso_unavailable` and does not count against the ID's 10 misses.
+
+## Real provider configuration (16 November 2026)
+
+Nothing here is a secret; the values below are names and public URLs. Secrets
+live only in the Render dashboard of the service they belong to.
+
+| Key | Staging (`currencydesk-staging`) | Production (`currencydesk`) |
+| --- | --- | --- |
+| `WEBAUTHN_RP_ID` | the staging page's own host, e.g. `staging.currencydeskos.com` (or `currencydesk-staging.onrender.com` if sign-up is served only there) | `currencydeskos.com` (CTO to confirm; permanent) |
+| `WEBAUTHN_ORIGINS` | the exact origin(s) the sign-up page is served from under that RP ID, e.g. `https://staging.currencydeskos.com` | e.g. `https://www.currencydeskos.com,https://currencydeskos.com` |
+| `SSO_REDIRECT_URI` | `https://<staging page origin>/onboarding/sso` | `https://<production page origin>/onboarding/sso` |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | a staging-only Google OAuth client (type Web application), authorized redirect URI exactly the staging `SSO_REDIRECT_URI` | a separate production client, its own redirect URI |
+| `MICROSOFT_CLIENT_ID` / `_SECRET` | a staging-only app registration: any organizational directory and personal Microsoft accounts (`common`), platform Web, redirect URI exactly the staging `SSO_REDIRECT_URI`, a client secret | a separate production registration |
+
+Rules the server enforces, so a mistake shows as "not offered" rather than a
+broken button:
+- The RP ID must have a dot (or be `localhost`) and must not be a shared
+  hosting suffix such as `onrender.com` (browsers refuse public suffixes).
+  Every origin must be `https://` on the RP ID or a subdomain of it (`http://`
+  only for `localhost` outside production).
+- `SSO_REDIRECT_URI` must be exactly `<origin>/onboarding/sso`: `https://`
+  (`http://localhost` outside production only), no user, query or fragment.
+- The page offers the passkey only when its own `location.origin` is in
+  `WEBAUTHN_ORIGINS`, and Google/Microsoft only when it is on the redirect's
+  origin. The popup and the phone return can hand back only to that origin.
+
+Separation: staging and production never share an RP ID, a Google client or
+a Microsoft registration. With RP ID `currencydeskos.com` on staging, staging
+passkeys would be offered on the live sign-in. Microsoft's `sub` is pairwise
+per application, so each registration yields different subjects for the same
+person; links made on staging never apply to production and must never be
+copied there. Google's `sub` is the same person everywhere; separate clients
+and databases keep staging links out of production.
+
+Safe presence check, after a deploy (no secret, client ID or email in the answer):
+
+```bash
+curl -s https://<origin>/api/onboarding/methods
+# {"password":true,"passkey":true,"passkeyOrigins":["https://…"],"google":true,"microsoft":true,"ssoOrigin":"https://…"}
+```
+
+`false` for a configured provider means its keys or `SSO_REDIRECT_URI` failed
+validation; `passkey:false` means the RP ID or an origin did. Real provider and
+hardware sign-ups remain unrun until these are set: a mocked provider is not a
+real Google or Microsoft success, and a synthetic `staging.invalid`
+reservation email cannot equal a real provider account's email, so a real
+provider test needs a reservation made with a real inbox the tester controls.
+
+## Stable credential contract for sign-in (CD-221)
+
+Sign-up writes; sign-in reads. Owned by sign-up: `server/src/onboarding/{signup-account,passkey,sso,email-code}.ts`, `server/src/routes/signup-credential.ts`, migration 075.
+
+- `signup_credentials` row per saved way in, `enquiry_id` → `enquiries` (the reservation: `cd_id`, `email`). Only rows with `verified_at` set are the owner's; candidates (`verified_at` null) are tied to one browser's `attempt_hash` and are deleted when another candidate is verified.
+- `kind = 'passkey'`: `passkey_id` (base64url credential ID, unique), `public_key` (base64url COSE key), `sign_count`, `transports`, `aaguid`, `backup_eligible`, `backup_state`, `device_label`. Registered with user verification required, ES256/RS256, discoverable, under the `WEBAUTHN_RP_ID` in force at registration (not stored per row: never change a deployment's RP ID). `signup_accounts.account_id` is the WebAuthn `user.id` (UTF-8 bytes); `user.name` is the CD ID.
+- `kind = 'google'`: `sso_subject` = the ID token's `sub`; `sso_tenant` null.
+- `kind = 'microsoft'`: `sso_subject` = the ID token's `sub` (pairwise for that client ID), `sso_tenant` = `tid`.
+- A verified `(kind, sso_subject)` is unique (partial index in 075).
+- `kind = 'password'`: `password_hash` (Argon2id, `verifyPassword` reads it); at activation it is also copied to the owner's staff row. Passkey and Google/Microsoft owners get a random unusable staff password.
+- `signup_accounts.state`: `reserved → enrolling → verified → active`. Activation (`signup-open.ts`) provisions the tenant and owner staff row and copies the CD ID and PIN hash to it.
+- Returning sign-in must identify a provider account only by verified `(kind, sso_subject[, sso_tenant])` from a freshly verified token (signature, issuer, audience, nonce, time), never by `email`, `preferred_username` or UPN, and must not create or link a new row; a passkey only by `passkey_id` plus an assertion verified against `public_key`, `sign_count` and UV. `saveCredential` and the email-code state machine are sign-up only.
 
 ## Sign-up v2.1: the email code and the enrolment session (PR 3 of 8)
 

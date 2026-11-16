@@ -1,3 +1,30 @@
+## Signup credential provider readiness, server (CD-206, 16 November 2026)
+
+The server half of making real Google, Microsoft, passkey and password sign-up
+work (`server/src/onboarding/{sso,passkey}.ts`, `routes/signup-credential.ts`).
+Google's own published example sends `email_verified` as the string `"true"`;
+that string and the boolean now mean the same, and the string `"false"` is
+refused. Before, the whole token was voided. An unconfirmed provider email is
+`409 email_unverified` with its own line instead of "isn't the email you
+applied with". A token-endpoint 4xx (spent or foreign code) is `400
+sso_not_saved`; a 5xx, timeout or network failure is `502 sso_unavailable` and
+no longer counts as a miss against the ID. `SSO_REDIRECT_URI` must be exactly
+`<origin>/onboarding/sso` over https; a WebAuthn RP ID with no dot (other than
+`localhost`) or a shared hosting suffix (`onrender.com`) is refused. New `GET
+/api/onboarding/methods` answers which ways in this server can finish, with
+public origins only (no secret, client ID, ID or email). It is also the safe
+presence check for real configuration. The configuration table, the
+staging/production separation and the stable `signup_credentials` contract for
+CD-221 are in `docs/ONBOARDING.md`.
+
+Microsoft, corrected: its ID-token and optional-claims references list no
+`email_verified` claim and say `email` is mutable and not for authorization,
+so the old note that it is an optional claim was wrong. Under the pack's
+literal rule, every Microsoft account is refused. Changing that is a protected
+spec exception for CTO and is not in this change. No migration, session, money,
+CD-221 sign-in or `app.ts` change. Real provider and hardware runs are unrun:
+nothing is configured on staging yet. Not release, CTO or provider acceptance.
+
 ## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
 
 The signup tour now reconciles the current reduced-motion preference on its own
