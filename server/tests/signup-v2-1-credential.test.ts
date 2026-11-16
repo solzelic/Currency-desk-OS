@@ -362,6 +362,42 @@ describe("who may choose", () => {
   });
 });
 
+/* A flood of well-shaped IDs nobody holds, from addresses in one IPv6 /64.
+   The door's tables remember 10,000 keys each; these floods go past that. */
+describe("a crowd of made-up IDs", () => {
+  const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+  const madeUp = (i: number) => `CD-QQQQ-${[0, 1, 2, 3].map((k) => alphabet[Math.floor(i / 31 ** k) % 31]).join("")}`;
+  const options = (cdId: string, ip: string) => post(`/api/onboarding/${cdId}/passkey/options`, {}, {}, ip);
+  const flood = async (addresses: number, idsEach: number) => {
+    const answers: Record<number, number> = {};
+    for (let a = 0; a < addresses; a++) {
+      for (let k = 0; k < idsEach; k++) {
+        const { statusCode } = await options(madeUp(a * idsEach + k), `2001:db8::${a.toString(16)}`);
+        answers[statusCode] = (answers[statusCode] ?? 0) + 1;
+      }
+    }
+    return answers;
+  };
+
+  it("does not refuse a real ID from a fresh address: 1,001 addresses, 10 made-up IDs each", async () => {
+    const { cdId } = await reserve();
+    const answers = await flood(1001, 10);
+    expect((await options(cdId, "198.51.100.77")).statusCode).toBe(200);
+    expect(answers).toEqual({ 404: 10_010 });
+  }, 120_000);
+
+  it("leaves a fresh address its room, and a real ID its own limit, past what the door remembers", async () => {
+    const busy = await reserve();
+    const quiet = await reserve();
+    const tries: number[] = [];
+    for (let i = 0; i < 13; i++) tries.push((await options(busy.cdId, `192.0.2.${i}`)).statusCode);
+    expect(tries).toEqual([...Array<number>(12).fill(200), 429]);
+    await flood(10_001, 1);
+    expect((await options(quiet.cdId, "198.51.100.78")).statusCode).toBe(200);
+    expect((await options(busy.cdId, "198.51.100.79")).statusCode).toBe(429);
+  }, 120_000);
+});
+
 
 describe("review: external boundaries", () => {
   it("does not choose a permanent relying party when configuration is absent", async () => {

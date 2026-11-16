@@ -246,6 +246,35 @@ describe("logs", () => {
   });
 });
 
+/* A throttle remembers 10,000 keys. Filling it must never refuse, or stop
+   counting, a key it has not seen: that let one crowd lock everyone out. */
+describe("a full throttle", () => {
+  const fill = (t: Throttle, count: (key: string) => unknown) => { for (let i = 0; i <= 10_000; i++) count(`k${i}`); };
+
+  it("forgets the key it saw longest ago, and still gives a new key its room", () => {
+    const t = new Throttle(1, 60_000, 0, () => 0);
+    fill(t, (k) => t.take(k));
+    expect(t.take("fresh")).toBe(true);
+    expect(t.take("fresh")).toBe(false);
+    expect(t.take("k10000")).toBe(false);
+    expect(t.take("k0")).toBe(true);
+  });
+
+  it("still counts a new key's misses and locks it at the limit", () => {
+    const t = new Throttle(3, 60_000, 60_000, () => 0);
+    fill(t, (k) => t.hit(k));
+    expect([t.hit("guess"), t.hit("guess"), t.hit("guess")]).toEqual([false, false, true]);
+    expect(t.locked("guess")).toBe(true);
+  });
+
+  it("keeps the lock on a key that keeps knocking while the crowd passes", () => {
+    const t = new Throttle(1, 60_000, 60_000, () => 0);
+    t.hit("guess");
+    fill(t, (k) => { t.hit(k); t.locked("guess"); });
+    expect(t.locked("guess")).toBe(true);
+  });
+});
+
 
 describe("issuance shares the returning-login namespace", () => {
   const fixed = (char: string) => (count: number) => new Uint8Array(count).fill(CD_ID_ALPHABET.indexOf(char));
