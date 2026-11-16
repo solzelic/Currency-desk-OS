@@ -1293,6 +1293,7 @@ html[data-cdtheme="dark"] .tenant-logo { background: rgba(255,255,255,0.03); }
 html[data-cdtheme="dark"] #appbar { background: rgba(29,28,25,0.41); }
 html[data-cdtheme="dark"] .app-btn:hover { background: rgba(255,255,255,0.06); }
 html[data-cdtheme="dark"] .app-btn.is-active { background: rgba(255,255,255,0.08); }
+html[data-cdtheme="dark"] .app-btn.is-active .al { color: #f4f1ea; }
 html[data-cdtheme="dark"] #appbar.editing .app-btn { background: rgba(255,255,255,0.05); }
 html[data-cdtheme="dark"] .app-btn.dragging { background: #2c2b26 !important; box-shadow: 0 10px 24px -6px rgba(0,0,0,0.6), 0 0 0 1px var(--hair); }
 html[data-cdtheme="dark"] .app-badge { border-color: var(--bar); }
@@ -3143,6 +3144,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     color: #fff !important;
     border: none !important;
   }
+  /* Dark ink flips to cream. A selected pill that keeps the light-theme
+     ink disappears on the night sheet. The words stay light. */
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on,
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on span {
+    color: #f6f4ef !important;
+  }
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on {
+    background: #3c3a34 !important;
+  }
   .cd-tx-types button svg { display: none; }
   .cd-tx-types button span {
     white-space: nowrap;
@@ -3541,6 +3551,23 @@ body[data-id-check="open"] .cd-tx-actions { display: none !important; }
   white-space: normal !important;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.id-check-attest {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+.id-check-attest input { flex: none; }
+.id-check-attest span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
 }
 .win.max,
 .win.max .win-body {

@@ -451,7 +451,7 @@
      Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
-  const NUDGE_CTA = { quick: { label: 'Run quick check', ic: 'search' }, verify: { label: 'Run verify check', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
+  const NUDGE_CTA = { verify: { label: 'Run verify check', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
   function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
@@ -461,8 +461,11 @@
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !id) { setStanding(null); return undefined; }
       let live = true;
-      api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {});
-      return () => { live = false; };
+      const pull = () => { api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
     if (!name) return null;
     const RECO_DAYS = (settings && +settings.recheckDays) || 180;      // periodic quick-screen cadence
@@ -496,10 +499,9 @@
     let level = null, tier = 'quick', title = '', reason = '';
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
-    else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
+    else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check — even on a verified profile.`; }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
     else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no ID on file.` : `${first} has an ID on file but has never been fully verified.`; }
-    else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
     else { return null; }
     // house rule: a high-risk subject escalates any identity check to the deepest tier
     // (owner-configurable in Settings → Compliance · Identity verification policy; on by default)

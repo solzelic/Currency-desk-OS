@@ -113,6 +113,14 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const actor = await who(req, reply);
     if (!actor) return;
     if (!hasBackendPermission(actor.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
+    const rawPep = req.body && typeof req.body === "object" ? (req.body as { pepAnswer?: unknown }).pepAnswer : undefined;
+    if (typeof rawPep === "boolean" || rawPep === "true" || rawPep === "false") {
+      return reply.code(409).send({
+        error: "pep_form_stale",
+        code: "pep_form_stale",
+        message: "This form is out of date. Reload the page and answer again.",
+      });
+    }
     const body = z.object({
       clientId: CLIENT_ID,
       noDoubts: z.boolean(),

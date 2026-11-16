@@ -74,6 +74,7 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
+        pep_form_stale: "This form is out of date. Reload the page and answer again.",
       };
       /* The teller sees this sentence for a duplicate already in progress,
          including when the response carries no message of its own. */

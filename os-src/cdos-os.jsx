@@ -822,6 +822,12 @@
     const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
     useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
+    const [standingPulse, setStandingPulse] = useState(0);
+    useEffect(() => {
+      const onStanding = () => setStandingPulse((n) => n + 1);
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => window.removeEventListener("cdos-id-standing", onStanding);
+    }, []);
     useEffect(() => {
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !api.checks) return undefined;
@@ -832,19 +838,23 @@
       });
       if (!ids.length) return undefined;
       let live = true;
-      Promise.all(ids.map((id) => api.checks(id).then((body) => [id, body && body.standing]).catch(() => [id, null]))).then((pairs) => {
+      Promise.all(ids.map((id) => api.checks(id).then((body) => [id, body]).catch(() => [id, null]))).then((pairs) => {
         if (!live) return;
         setClients((prev) => {
           let changed = false;
           const next = { ...prev };
-          pairs.forEach(([id, standing]) => {
+          pairs.forEach(([id, body]) => {
+            const standing = body && body.standing;
             if (!standing) return;
+            const pepReview = body && body.pepReview === "open" ? "open" : null;
             Object.keys(next).forEach((name) => {
               const rec = next[name];
               if (!rec || rec.clientId !== id) return;
               const cur = rec.idStanding;
-              if (cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap) return;
-              next[name] = { ...rec, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
+              const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
+              const samePep = (rec.pepReview || null) === pepReview;
+              if (sameStanding && samePep) return;
+              next[name] = { ...rec, pepReview, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
               changed = true;
             });
           });
@@ -852,7 +862,7 @@
         });
       });
       return () => { live = false; };
-    }, [clients]);
+    }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
       if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
@@ -2486,7 +2496,7 @@
           : <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig, serverBacked: !!srvUser, onTillChanged: syncTillFromServer, onRefreshCheques: refreshCheques }} />;
-        case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
+        case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, serverRole: srvUser && srvUser.role, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} subs={subs} beneficiaries={beneficiaries} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
         case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;

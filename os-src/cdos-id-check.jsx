@@ -85,7 +85,7 @@
     return "Link";
   }
   function linkedParts(part) {
-    const re = /https?:\/\/[^\s)]+/g;
+    const re = /https:\/\/[^\s)]+/g;
     const out = [];
     let last = 0;
     let match = re.exec(part);
@@ -94,6 +94,13 @@
       const raw = match[0];
       const url = raw.replace(/[.,]$/, "");
       const trail = raw.slice(url.length);
+      if (!url.startsWith("https://")) {
+        if (before) out.push(before);
+        out.push(raw);
+        last = match.index + raw.length;
+        match = re.exec(part);
+        continue;
+      }
       const label = linkLabel(url, before);
       if (label === "Privacy policy") before = before.replace(/Privacy policy:\s*$/, "");
       if (label === "Persona's privacy notice") before = before.replace(/Persona's privacy notice:\s*$/, "");
@@ -120,8 +127,8 @@
     </div>);
   }
 
-  function Flow({ clientId, dealId, onClose, onDone }) {
-    const [step, setStep] = useState("chooser");
+  function Flow({ clientId, dealId, onClose, onDone, initialStep }) {
+    const [step, setStep] = useState(initialStep || "chooser");
     const [copy, setCopy] = useState(null);
     const [pack, setPack] = useState(null);
     const [tier, setTier] = useState("");
@@ -136,6 +143,7 @@
     const [record, setRecord] = useState(null);
     const [form, setForm] = useState({ nameOnId: "", documentType: "", documentNumber: "", issuingJurisdiction: "", issuingCountry: "CA", expiryDate: "", attested: false });
     const [ret, setRet] = useState({ noDoubts: false, detailsChanged: false, doubtReason: "", pep: "" });
+    const [moreOpen, setMoreOpen] = useState(false);
 
     useEffect(() => holdSheet(), []);
     useEffect(() => {
@@ -312,24 +320,27 @@
         : { id: "3", label: "ID and selfie", note: "Document check and a selfie." };
       const more = [];
       if (!counter && primary.id !== "1") more.push({ id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." });
-      if (!counter && full) more.push({ id: "2", label: "Returning client", note: "This shop already holds a full ID check. No new provider check." });
+      if (!counter && full) more.push({ id: "2", label: "Returning client", note: "Reuse the check on file." });
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-3">
         {(counterLine || (counter && copy.counterLine)) && <div data-testid="id-check-counter-line" className="text-[13px]" style={{ color: CD.ink }}>{counterLine || copy.counterLine}</div>}
         <button data-testid="id-check-primary" type="button" onClick={() => pick(primary.id)} className="w-full text-left" style={{ ...btnStyle(false), flex: "none", minHeight: 72, padding: "14px 16px", borderRadius: 12 }}>
           <div className="text-[16px] font-semibold">{primary.label}</div>
           <div className="text-[13px] mt-1" style={{ color: "var(--cd-on-ink)", opacity: 0.82 }}>{primary.note}</div>
         </button>
-        {more.length > 0 && <details data-testid="id-check-more">
-          <summary className="text-[14px] font-medium" style={{ minHeight: 44, display: "flex", alignItems: "center", cursor: "pointer", color: CD.ink }}>More options</summary>
-          <div className="space-y-2 mt-2">
+        {more.length > 0 && <div data-testid="id-check-more">
+          <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)} className="w-full" style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: `1px solid ${CD.line}`, background: "transparent", color: CD.ink, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600 }}>
+            <span>More options</span>
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" style={{ flex: "none", transform: moreOpen ? "rotate(180deg)" : "none" }}><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {moreOpen && <div className="space-y-2 mt-2">
             {more.map((item) => (
               <button key={item.id} type="button" onClick={() => pick(item.id)} className="w-full text-left px-4" style={{ minHeight: 44, border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink }}>
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{item.note}</div>
               </button>
             ))}
-          </div>
-        </details>}
+          </div>}
+        </div>}
       </div>));
     }
     if (step === "notice") return shell("id-check-notice", "Before we check your ID", (<div>
@@ -401,7 +412,7 @@
         <label className="block text-[12px]" style={{ color: CD.mute }}>Country<input value={form.issuingCountry} onChange={(e) => setField("issuingCountry", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
       </div>
       <label className="block text-[12px]" style={{ color: CD.mute }}>Expiry<input value={form.expiryDate} onChange={(e) => setField("expiryDate", e.target.value)} placeholder="YYYY-MM-DD" className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
-      <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}><input type="checkbox" checked={form.attested} onChange={(e) => setField("attested", e.target.checked)} /><span className="min-w-0 flex-1">I inspected the original ID. It looked authentic, valid, and not expired, and the face matched.</span></label>
+      <label className="id-check-attest flex w-full min-w-0 max-w-full items-start gap-2 text-[13px]" style={{ color: CD.ink }}><input className="flex-none" type="checkbox" checked={form.attested} onChange={(e) => setField("attested", e.target.checked)} /><span className="min-w-0 flex-1" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>I inspected the original ID. It looked authentic, valid, and not expired, and the face matched.</span></label>
       <button type="button" disabled={busy || !form.attested} onClick={savePerson} style={btnStyle(busy || !form.attested)}>{busy ? "Saving" : "Save the ID record"}</button>
     </div>));
     const shown = record ? badgeOf(record) : { primary: "", secondary: "" };
@@ -481,6 +492,7 @@
     const [role, setRole] = useState("");
     const [loaded, setLoaded] = useState(false);
     const [open, setOpen] = useState(false);
+    const [startAt, setStartAt] = useState("chooser");
     const [reveal, setReveal] = useState(false);
     const [photo, setPhoto] = useState("");
     const [note, setNote] = useState("");
@@ -490,6 +502,15 @@
       fetch("/api/auth/me", { credentials: "same-origin" }).then((res) => res.json()).then((body) => { if (live) setRole((body && body.user && body.user.role) || ""); }).catch(() => {});
       return () => { live = false; };
     }, []);
+    useEffect(() => {
+      const onOpen = (event) => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        setStartAt("inperson");
+        setOpen(true);
+      };
+      window.addEventListener("cdos-open-in-person", onOpen);
+      return () => window.removeEventListener("cdos-open-in-person", onOpen);
+    }, [clientId]);
     useEffect(() => {
       setPhoto("");
       setReveal(false);
@@ -549,18 +570,18 @@
       {latest && latest.maskedNumber && <div data-testid="id-check-masked" className="text-[13px] mt-1.5" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{latest.maskedNumber}</div>}
       {latest && <div data-testid="id-check-photo-line" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{latest.photoOnFile ? "Photo from ID, for comparison by eye" : (latest.photoLine || "No photo on file")}</div>}
       {photo && <figure className="mt-2">
-        <img data-testid="id-check-photo" alt="Sample photo" src={photo} width={96} height={96} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, background: "#E4E1D8" }} />
-        <figcaption className="text-[11px] mt-1" style={{ color: CD.mute, fontFamily: '"Space Mono", monospace' }}>Sample photo</figcaption>
+        <img data-testid="id-check-photo" alt="Photo from ID, for comparison by eye" src={photo} width={96} height={96} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, background: "#E4E1D8" }} />
+        <figcaption className="text-[11px] mt-1" style={{ color: CD.mute, fontFamily: '"Space Mono", monospace' }}>Photo from ID, for comparison by eye</figcaption>
       </figure>}
       <div className="flex flex-wrap gap-2 mt-2">
-        {role !== "auditor" && !passed && <button type="button" data-testid="id-check-start" onClick={() => setOpen(true)} className="text-[12px] font-medium" style={quietBtn}>{checksOn ? "Check ID" : "Check ID in person"}</button>}
+        {role !== "auditor" && !passed && <button type="button" data-testid="id-check-start" onClick={() => { setStartAt("chooser"); setOpen(true); }} className="text-[12px] font-medium" style={quietBtn}>{checksOn ? "Check ID" : "Check ID in person"}</button>}
         {canReveal && latest && latest.maskedNumber && <button type="button" data-testid="id-check-reveal-open" onClick={() => setReveal(true)} className="text-[12px] font-medium" style={quietBtn}>Show number</button>}
         {CROP[role] && latest && latest.photoOnFile && <button type="button" onClick={showPhoto} className="text-[12px] font-medium" style={quietBtn}>Show the photo</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from a finished check are kept on the server. This screen shows the last 4 of the number.</div>
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye.</div>
-      {open && <Flow clientId={clientId} dealId={dealId} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={() => setTick((n) => n + 1)} />}
+      {latest && latest.photoOnFile && <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye.</div>}
+      {open && <Flow clientId={clientId} dealId={dealId} initialStep={startAt} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={() => { window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId } })); setTick((n) => n + 1); }} />}
       {reveal && latest && <Reveal record={latest} onClose={() => setReveal(false)} />}
     </div>);
   }
@@ -568,7 +589,17 @@
   function DealBar({ clientId, dealId, onLinked }) {
     const [pack, setPack] = useState(null);
     const [open, setOpen] = useState(false);
+    const [startAt, setStartAt] = useState("chooser");
     const [tick, setTick] = useState(0);
+    useEffect(() => {
+      const onOpen = (event) => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        setStartAt("inperson");
+        setOpen(true);
+      };
+      window.addEventListener("cdos-open-in-person", onOpen);
+      return () => window.removeEventListener("cdos-open-in-person", onOpen);
+    }, [clientId]);
     useEffect(() => {
       const client = api();
       if (!client || !clientId) return undefined;
@@ -581,8 +612,8 @@
     return (<div data-testid="deal-id-check" className="p-3.5" style={card}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: "Space Mono, monospace" }}>ID check</div>
       {badge ? <div data-testid="deal-id-link" className="text-[12.5px]" style={{ color: CD.ink }}>{badge.primary}{badge.secondary ? `. ${badge.secondary}` : ""}</div> : <div className="text-[12.5px]" style={{ color: CD.mute }}>No ID check linked to this deal.</div>}
-      <button type="button" data-testid="deal-check-id" onClick={() => setOpen(true)} className="text-[12px] font-medium mt-2" style={quietBtn}>Check ID for this deal</button>
-      {open && <Flow clientId={clientId} dealId={dealId} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={(record) => { if (onLinked) onLinked(record); setTick((n) => n + 1); }} />}
+      <button type="button" data-testid="deal-check-id" onClick={() => { setStartAt("chooser"); setOpen(true); }} className="text-[12px] font-medium mt-2" style={quietBtn}>Check ID for this deal</button>
+      {open && <Flow clientId={clientId} dealId={dealId} initialStep={startAt} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={(record) => { if (onLinked) onLinked(record); window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId } })); setTick((n) => n + 1); }} />}
     </div>);
   }
 
@@ -631,7 +662,6 @@
       <label className="block text-[12px] mt-2" style={{ color: CD.mute }}>Privacy email<input value={row.privacyEmail || ""} onChange={(e) => set("privacyEmail", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
       <label className="block text-[12px] mt-2" style={{ color: CD.mute }}>Privacy phone<input value={row.privacyPhone || ""} onChange={(e) => set("privacyPhone", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
       <label className="block text-[12px] mt-2" style={{ color: CD.mute }}>Privacy policy link<input value={row.privacyPolicyUrl || ""} onChange={(e) => set("privacyPolicyUrl", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
-      <label className="block text-[12px] mt-2" style={{ color: CD.mute }}>Template id<input value={row.templateId || ""} onChange={(e) => set("templateId", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} /></label>
       <button type="button" onClick={save} className="text-[12px] font-medium mt-3" style={quietBtn}>Save identity check settings</button>
       {saved && <div className="text-[12px] mt-1.5" style={{ color: CD.mute }}>Saved.</div>}
       {note && <div className="text-[12px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}

@@ -333,12 +333,22 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByRole("button", { name: "Returning client" })).toHaveCount(0);
     await expect(page.locator(".cd-tx-go")).toBeHidden();
     await themeShot(page, "chooser");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(() => {
+      (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
+    });
+    await page.getByRole("button", { name: "More options" }).click();
+    await expect(page.getByRole("button", { name: "More options" })).toHaveAttribute("aria-expanded", "true");
+    if (process.env.PR2B_SHOTS === "1") {
+      await page.screenshot({ path: path.join(ARTIFACTS, "pr2-chooser-1280-light.png") });
+    }
     await page.getByTestId("id-check-chooser").locator("button").filter({ hasText: /^ID and selfie/ }).click();
     await expect(page.getByTestId("id-check-notice")).toContainText("Your ID details are kept for at least 5 years because the law requires it.");
     await expect(page.getByTestId("id-check-notice")).toContainText("United States");
     await expect(page.getByTestId("id-check-notice")).toContainText("416-555-0100");
     await expect(page.getByTestId("id-check-notice")).not.toContainText("https://");
-    await expect(page.getByRole("link", { name: "Privacy policy" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", /^https:\/\//);
+    await expect(page.getByRole("link", { name: "Persona's privacy notice" })).toHaveAttribute("href", /^https:\/\//);
     await themeShot(page, "notice");
     await page.getByRole("button", { name: "Continue" }).click();
     const agree = page.getByRole("button", { name: "I agree" });
@@ -361,6 +371,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("id-check-done")).toContainText("•••• 8991");
     await page.getByRole("button", { name: "Done" }).click();
     await expect(page.getByTestId("deal-id-link")).toContainText("ID and selfie, Persona");
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file", { timeout: 20_000 });
     await themeShot(page, "deal-link");
     const linked = await page.evaluate(async (id) => {
       const res = await fetch(`/api/idv/clients/${id}/checks`);
@@ -385,6 +396,27 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await themeShot(page, "no-thanks");
     await page.getByRole("button", { name: "Enter the ID" }).click();
     await expect(page.getByTestId("id-check-in-person")).toBeVisible();
+    for (const width of [390, 360]) {
+      await page.setViewportSize({ width, height: 844 });
+      const attest = await page.locator(".id-check-attest").evaluate((el) => {
+        const label = el.getBoundingClientRect();
+        const card = el.closest("[data-testid='id-check-flow']")?.getBoundingClientRect();
+        const text = el.querySelector("span");
+        const box = text?.getBoundingClientRect();
+        return {
+          words: text?.textContent || "",
+          past: card && box ? box.right > card.right + 1 : true,
+          wraps: text ? text.getClientRects().length > 1 || (box ? box.width < (text.textContent || "").length * 6 : false) : false,
+          fits: text ? text.scrollWidth <= text.clientWidth : false,
+          labelWide: card ? label.right <= card.right + 1 : false,
+        };
+      });
+      expect(attest.words, `${width}`).toContain("face matched");
+      expect(attest.past, `${width}`).toBe(false);
+      expect(attest.fits, `${width}`).toBe(true);
+      expect(attest.labelWide, `${width}`).toBe(true);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await themeShot(page, "in-person");
     await page.route("**/api/idv/checks/in-person", (route) => route.fulfill({
       status: 503,
@@ -651,9 +683,19 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await signInAtDesk(page, "r.haddad");
     await landOnDesktop(page);
     await themeShot(page, "role-manager");
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(returningName, { exact: true }).click();
+    await expect(page.getByTestId("identity-check")).toBeVisible();
+    await themeShot(page, "file-manager");
+    await page.locator(".client-file-actions button").last().click();
     await signInAtDesk(page, "j.masri");
     await landOnDesktop(page);
     await themeShot(page, "role-owner");
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(returningName, { exact: true }).click();
+    await expect(page.getByTestId("identity-check")).toBeVisible();
+    await themeShot(page, "file-owner");
+    await page.locator(".client-file-actions button").last().click();
     const skip = page.locator(".cdos-tour-skip");
     if (await skip.isVisible().catch(() => false)) await skip.click();
     await expect(page.locator(".cdos-tour")).toHaveCount(0);
@@ -739,12 +781,57 @@ test("settings is one opaque window and the privacy phone is formatted", async (
       });
       await expect(settingsWin).toHaveClass(/max/);
       const shotPath = path.join(ARTIFACTS, `pr2-settings-crop-${width}-${theme}.png`);
-      await page.screenshot({ path: shotPath });
+      if (!existsSync(shotPath)) await page.screenshot({ path: shotPath });
       if (width === 390) {
         await settingsWin.locator(".win-body").evaluate((el) => { el.scrollTop = el.scrollHeight; });
         await page.screenshot({ path: path.join(ARTIFACTS, `pr2-settings-crop-390-${theme}-scrolled.png`) });
       }
     }
+  }
+});
+
+test("the notice comes back when the crop sentence changes before I agree", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await enableChecks(request);
+  try {
+    await signInAtDesk(page, "m.costa");
+    const name = `Crop Flip ${Date.now()}`;
+    const created = await page.evaluate(async (legalName) => {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legalName, kind: "individual" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, name);
+    expect(created.status).toBe(201);
+    await page.locator('[data-app="clients"]').click();
+    await page.getByText(name, { exact: true }).click();
+    await page.getByTestId("id-check-start").click();
+    await page.getByTestId("id-check-primary").click();
+    await expect(page.getByTestId("id-check-notice")).toContainText("small photo of your face");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByTestId("id-check-agree-box").check();
+    const flipped = await request.put("/api/settings/idv", {
+      data: {
+        checksEnabled: true,
+        apiKeyRef: "PERSONA_API_KEY",
+        templateId: "itmpl_seamfixture",
+        faceCropEnabled: false,
+        privacyContact: "Privacy officer",
+        privacyEmail: "privacy@yorkfx.example",
+        privacyPhone: "416-555-0100",
+        privacyPolicyUrl: "https://yorkfx.example/privacy",
+      },
+    });
+    expect(flipped.ok(), await flipped.text()).toBeTruthy();
+    await page.getByRole("button", { name: "I agree" }).click();
+    await expect(page.getByTestId("id-check-notice")).toBeVisible();
+    await expect(page.getByTestId("id-check-notice")).not.toContainText("small photo of your face");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByTestId("id-check-agree-box")).not.toBeChecked();
+  } finally {
+    await request.put("/api/settings/idv", { data: { checksEnabled: false, faceCropEnabled: true } }).catch(() => {});
   }
 });
 
@@ -794,12 +881,20 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
   await enableChecks(request);
   const db = new Client({ connectionString: process.env.SEAM_DATABASE_URL });
   await db.connect();
+  let tillClose: { status: string; sessionId: string; balanceGeneration: string; balances: Record<string, string> } | null = null;
   const stamp = Date.now();
   const names = {
     pass: `Agree Pass ${stamp}`,
     unavailable: `Agree Unavailable ${stamp}`,
     expired: `Agree Expired ${stamp}`,
     old: `Agree Old ${stamp}`,
+    typed: `Agree Typed ${stamp}`,
+    noStaff: `Agree No Staff ${stamp}`,
+    noDate: `Agree No Date ${stamp}`,
+    typedExpired: `Agree Typed Expired ${stamp}`,
+    otherShop: `Agree Other Shop ${stamp}`,
+    typedOld: `Agree Typed Old ${stamp}`,
+    typedUnavailable: `Agree Typed Unavailable ${stamp}`,
   };
   const made = async (legalName: string) => {
     const created = await page.evaluate(async (name) => {
@@ -820,6 +915,13 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
       unavailable: await made(names.unavailable),
       expired: await made(names.expired),
       old: await made(names.old),
+      typed: await made(names.typed),
+      noStaff: await made(names.noStaff),
+      noDate: await made(names.noDate),
+      typedExpired: await made(names.typedExpired),
+      otherShop: await made(names.otherShop),
+      typedOld: await made(names.typedOld),
+      typedUnavailable: await made(names.typedUnavailable),
     };
     const insert = async (clientId: string, extra: string) => {
       await db.query(
@@ -834,6 +936,37 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await insert(ids.unavailable, "now(), NULL, true, '2030-01-02', 'Agree Unavailable'");
     await insert(ids.expired, "now(), '1111', false, '2020-01-01', 'Agree Expired'");
     await insert(ids.old, "now() - interval '6 years', '2222', false, '2030-01-02', 'Agree Old'");
+    const typedRow = async (clientId: string, extra: string) => {
+      await db.query(
+        `INSERT INTO idv_check_records
+          (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+           inspector_staff_id, verified_at, document_type, document_number_ciphertext, document_number_last4,
+           number_unavailable, issuing_jurisdiction, issuing_country, expiry_date, name_on_id)
+         VALUES ($1,'tnt-yorkfx','le-yorkfx-canada','br-yorkville',$2,'1','in_person','pass','m.costa', ${extra})`,
+        [`idc_typed_${clientId}`, clientId],
+      );
+    };
+    const full = "'m.costa', now(), 'Passport', 'aes-256-gcm$seam', '4444', false, 'Canada', 'CA'";
+    await typedRow(ids.typed, `${full}, '2030-04-01', 'Typed Pass'`);
+    await typedRow(ids.noStaff, `NULL, now(), 'Passport', 'aes-256-gcm$seam', '5555', false, 'Canada', 'CA', '2030-04-01', 'Typed Staff'`);
+    await db.query(
+      `INSERT INTO desk_client_identity_documents
+        (document_id, client_id, tenant_id, legal_entity_id, doc_type, doc_number, is_primary)
+       VALUES ($1, $2, 'tnt-yorkfx', 'le-yorkfx-canada', 'Passport', 'PP1000', true)`,
+      [`doc_${ids.noDate}`, ids.noDate],
+    );
+    await typedRow(ids.typedExpired, `${full}, '2020-01-01', 'Typed Expired'`);
+    await db.query(
+      `INSERT INTO idv_check_records
+        (record_id, tenant_id, legal_entity_id, branch_id, client_id, tier, method, result, staff_id,
+         inspector_staff_id, verified_at, document_type, document_number_ciphertext, document_number_last4,
+         number_unavailable, issuing_jurisdiction, issuing_country, expiry_date, name_on_id)
+       VALUES ($1,'tnt-yorkfx','le-other-shop','br-yorkville',$2,'1','in_person','pass','m.costa',
+         'm.costa', now(), 'Passport', 'aes-256-gcm$seam', '8888', false, 'Canada', 'CA', '2030-04-01', 'Other Shop')`,
+      [`idc_other_${ids.otherShop}`, ids.otherShop],
+    );
+    await typedRow(ids.typedOld, `'m.costa', now() - interval '6 years', 'Passport', 'aes-256-gcm$seam', '2222', false, 'Canada', 'CA', '2030-04-01', 'Typed Old'`);
+    await typedRow(ids.typedUnavailable, `'m.costa', now(), 'Passport', 'aes-256-gcm$seam', '7777', true, 'Canada', 'CA', '2030-04-01', 'Typed Unavailable'`);
     await page.locator('[data-app="clients"]').click();
     await page.waitForFunction((id) => {
       const clients = JSON.parse(localStorage.getItem("cdos_clients_v1") || "{}") as Record<string, { clientId?: string; idStanding?: { onFile?: boolean } }>;
@@ -875,11 +1008,46 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).not.toContainText("ID checked");
     await closeFile();
+    await openName(names.typed);
+    await expect(page.getByTestId("client-standing")).toContainText("ID on file");
+    await expect(page.getByTestId("client-where")).toContainText("ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked");
+    await closeFile();
+    await openName(names.noStaff);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await closeFile();
+    await openName(names.noDate);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await closeFile();
+    await openName(names.typedExpired);
+    await expect(page.getByTestId("client-standing")).toContainText("ID expired");
+    await expect(page.getByTestId("client-where")).toContainText("Expired 1 Jan 2020. A new ID check is needed before the next deal of $3,000 or more.");
+    await closeFile();
+    await openName(names.otherShop);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
+    await closeFile();
+    await openName(names.typedOld);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
+    await closeFile();
+    await openName(names.typedUnavailable);
+    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
+    await closeFile();
 
     expect(await readFlags(ids.pass)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
     expect(await readFlags(ids.unavailable)).toMatchObject({ kyc: "missing ID", onFile: false });
     expect(await readFlags(ids.expired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.typed)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
+    expect(await readFlags(ids.noStaff)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.noDate)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.typedExpired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
+    expect(await readFlags(ids.otherShop)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.typedOld)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.typedUnavailable)).toMatchObject({ kyc: "missing ID", onFile: false });
 
     await page.locator('[data-app="clients"]').click();
     await page.getByTestId("client-filter-attention").click();
@@ -887,7 +1055,52 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByText(names.unavailable, { exact: true })).toBeVisible();
     await expect(page.getByText(names.expired, { exact: true })).toBeVisible();
     await expect(page.getByText(names.old, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.typed, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.noStaff, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.noDate, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.typedExpired, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.otherShop, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.typedOld, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.typedUnavailable, { exact: true })).toBeVisible();
+
+    await page.locator('[data-app="ledger"]').click();
+    await ensureTill(page);
+    tillClose = await readTillClose(page);
+    let deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    if (!(await deal.isEnabled())) {
+      await page.reload();
+      await landOnDesktop(page);
+      await page.locator('[data-app="ledger"]').click();
+      deal = page.getByRole("button", { name: /^New transaction$/i }).first();
+    }
+    await expect(deal).toBeEnabled({ timeout: 20_000 });
+    await deal.click();
+    await expect(page.locator(".cd-tx")).toBeVisible();
+    await page.locator(".cd-tx-customer input").fill(names.pass);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.pass }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file");
+    await page.locator(".cd-tx-customer input").fill(names.expired);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.expired }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID expired");
+    await page.locator(".cd-tx-customer input").fill(names.typed);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.typed }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file");
+    await page.locator(".cd-tx-customer input").fill(names.typedExpired);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.typedExpired }).click();
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID expired");
+    await page.locator(".cd-tx-customer input").fill(names.noStaff);
+    await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.noStaff }).click();
+    await expect(page.getByTestId("deal-id-badge")).not.toContainText("ID on file");
+    await page.locator(".cd-tx-x").click();
+    const held = tillClose;
+    tillClose = null;
+    await signInAtDesk(page, "a.singh");
+    expect(await closeHeldTill(page, held)).toBe("closed");
   } finally {
+    if (tillClose && tillClose.status === "open") {
+      await signInAtDesk(page, "a.singh").catch(() => {});
+      await closeHeldTill(page, tillClose);
+    }
     await db.end();
   }
 });

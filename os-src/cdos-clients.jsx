@@ -538,6 +538,11 @@
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
   function kycStatus(rec, settings, name) {
+    if (rec && rec.idStanding) {
+      if (rec.idStanding.onFile) return [rec.idStanding.chip || 'ID on file', CD.green, CD.greenSoft];
+      if (rec.idStanding.chip === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
+      return [rec.idStanding.chip || 'Missing ID', CD.flag, CD.flagSoft];
+    }
     const tier = kycTier(name);
     /* Has this document expired? A question about the calendar, so the
        WALL CLOCK — but read now rather than from the snapshot taken when
@@ -1242,8 +1247,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const clientId = rec && rec.clientId;
       if (!api || !clientId) return undefined;
       let live = true;
-      api.checks(clientId).then((body) => { if (live) setStanding(body && body.standing ? body.standing : null); }).catch(() => {});
-      return () => { live = false; };
+      const pull = () => { api.checks(clientId).then((body) => { if (live) setStanding(body && body.standing ? body.standing : null); }).catch(() => {}); };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
     const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(rec, settings, name);
     const stat = standing ? standing.chip : fallbackStat;
@@ -1306,7 +1314,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
-          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} standing={standing} />
+          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => { if (rec && rec.clientId) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: rec.clientId } })); }} standing={standing} />
           {/* Then the two things an operator came in for: where this
               customer is in identification, and the papers filed for them. */}
           <ProcessStanding rec={rec} settings={settings} standing={standing} />
@@ -1493,7 +1501,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const counts = useMemo(() => {
       let ind = 0, corp = 0, ver = 0, att = 0;
-      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (isVerified(s)) ver++; if (c.rec.idStanding ? !c.rec.idStanding.onFile : !isVerified(s)) att++; });
+      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (c.rec.idStanding ? c.rec.idStanding.onFile : isVerified(s)) ver++; if (c.rec.idStanding ? !c.rec.idStanding.onFile : !isVerified(s)) att++; });
       return { all: list.length, individual: ind, corporate: corp, verified: ver, attention: att };
     }, [list, settings]);
 
@@ -1502,7 +1510,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'individual' && (r.kind || 'individual') !== 'individual') return false;
       if (filter === 'corporate' && r.kind !== 'corporate') return false;
       const [s] = kycStatus(r, settings, c.name);
-      if (filter === 'verified' && !isVerified(s)) return false;
+      if (filter === 'verified' && !(r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
       if (filter === 'attention' && (r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');

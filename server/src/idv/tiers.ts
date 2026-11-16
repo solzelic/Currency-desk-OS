@@ -101,10 +101,24 @@ export function returningLine(originalDate: string, methodLabel: string): string
   return `Returning client, ID checked ${originalDate}, ${methodLabel}`;
 }
 
-export function expiredLine(isoDate: string): string {
+export function civilDateWords(isoDate: string): string {
   const [year, month, day] = isoDate.slice(0, 10).split("-");
   const name = MONTHS[Number(month) - 1] ?? month;
-  return `Expired ${Number(day)} ${name} ${year}`;
+  return `${Number(day)} ${name} ${year}`;
+}
+
+export function expiredLine(isoDate: string): string {
+  return `Expired ${civilDateWords(isoDate)}`;
+}
+
+export const TYPED_NOT_RECORDED = "ID typed in, check not recorded";
+
+export function seenInPersonLine(staff: string, type: string, expiry: string, checked: string): string {
+  return `ID seen in person by ${staff}, ${type}, expires ${expiry}, checked ${checked}`;
+}
+
+export function expiredNextDealLine(expiryWords: string): string {
+  return `Expired ${expiryWords}. A new ID check is needed before the next deal of $3,000 or more.`;
 }
 
 export function civilToday(timeZone: string, now = new Date()): string {

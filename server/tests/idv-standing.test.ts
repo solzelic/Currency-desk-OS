@@ -40,6 +40,49 @@ describe("ID on file from the check record", () => {
     };
     expect(idFileStanding(returning).onFile).toBe(false);
     expect(idFileStanding({ ...returning, original: pass }).onFile).toBe(true);
+    expect(idFileStanding({ ...returning, original: null }).onFile).toBe(false);
+    expect(idFileStanding({ ...returning, original: { ...pass, result: "" } }).onFile).toBe(false);
+    expect(idFileStanding({ ...returning, result: "needs_review", original: pass }).onFile).toBe(false);
+  });
+
+  it("counts an in-person photo ID only when the server has every fact", () => {
+    const seen = {
+      result: "pass",
+      method: "in_person",
+      line: "ID checked 16 Nov 2026, photo ID, in person",
+      maskedNumber: "•••• 4444",
+      numberUnavailable: false,
+      withinFiveYears: true,
+      documentExpired: false,
+      acceptedPhotoId: true,
+      numberStored: true,
+      issuingJurisdiction: "Canada",
+      issuingCountry: "CA",
+      staffSeen: "m.costa",
+      seenOn: "16 Nov 2026",
+      documentType: "Passport",
+      expiryIso: "2030-04-01",
+      sameShop: true,
+    };
+    expect(idFileStanding(seen)).toMatchObject({
+      onFile: true,
+      chip: "ID on file",
+      line: "ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked 16 Nov 2026",
+    });
+    expect(idFileStanding({ ...seen, staffSeen: null }).line).toBe("ID typed in, check not recorded");
+    expect(idFileStanding({ ...seen, seenOn: null }).line).toBe("ID typed in, check not recorded");
+    expect(idFileStanding({ typedOnly: true, method: "in_person" }).line).toBe("ID typed in, check not recorded");
+    expect(idFileStanding({ ...seen, documentExpired: true, expiryIso: "2020-01-01" })).toMatchObject({
+      onFile: false,
+      chip: "ID expired",
+      line: "Expired 1 Jan 2020. A new ID check is needed before the next deal of $3,000 or more.",
+    });
+    expect(idFileStanding({ ...seen, sameShop: false }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, withinFiveYears: false }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, numberUnavailable: true }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, result: "needs_review" }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, acceptedPhotoId: false }).onFile).toBe(false);
+    expect(idFileStanding({ ...seen, numberStored: false }).onFile).toBe(false);
   });
 
   it("keeps the gap for declined, review, and no record", () => {

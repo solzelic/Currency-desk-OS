@@ -295,8 +295,11 @@
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !id) { setStanding(null); return undefined; }
       let live = true;
-      api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {});
-      return () => { live = false; };
+      const pull = () => { api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
     const standingNow = standing || (rec && rec.idStanding) || null;
     /* A qualifying check, or an expired document on that check, replaces the
@@ -1198,7 +1201,7 @@
               )}
               {customer && clients[customer] && <CustomerCard name={customer} rec={clients[customer]} live={live} settings={settings} />}
               {customer && clients[customer] && clients[customer].clientId && window.CDOS.IdCheck &&
-                <window.CDOS.IdCheck.DealBar clientId={clients[customer].clientId} dealId={serverQuote && serverQuote.quoteId} />}
+                <window.CDOS.IdCheck.DealBar clientId={clients[customer].clientId} dealId={serverQuote && serverQuote.quoteId} onLinked={() => window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId: clients[customer].clientId } }))} />}
               {/* The customer's ID, where the teller actually is when the
                   question comes up. Covered until it is clicked, and the
                   click writes a server audit row — same component, same
@@ -1215,7 +1218,7 @@
               {idRequired && String(customer || '').trim() && !idOk && (
                 <div data-req-field="id" className={'cd-tx-id-need' + (missField === 'id' ? ' cd-tx-missing' : '')}>
                   <span className="cd-tx-id-need-label">ID needed for this amount</span>
-                  <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go">Record the ID</button>
+                  <button type="button" onClick={() => { const id = clients[customer] && clients[customer].clientId; if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: id } })); else setRecordId(true); }} className="cd-tx-id-need-go">Record the ID</button>
                 </div>
               )}
               {idRequired && idOk && (
@@ -1450,7 +1453,7 @@
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] uppercase tracking-wider font-semibold" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Before you post</span>
                     <span className="cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5" style={{ borderRadius: 999, background: allGreen ? CD.greenSoft : CD.lineSoft, color: allGreen ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{allGreen ? (phoneSheet ? 'Ready' : 'READY') : (phoneSheet ? `${remaining} left` : `${remaining} LEFT`)}</span>
                   </div>
-                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => setRecordId(true)} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
+                  {reqs.map(r => <Check key={r.key} ok={r.ok} warn={r.warn && !r.ok} label={r.label} sub={!r.ok ? r.sub : null} mark={phoneSheet && missKey === r.key} onActivate={phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined} action={phoneSheet && r.key === 'id' && !r.ok && customer ? <button type="button" onClick={() => { const id = clients[customer] && clients[customer].clientId; if (id) window.dispatchEvent(new CustomEvent("cdos-open-in-person", { detail: { clientId: id } })); else setRecordId(true); }} className="cd-tx-id-need-go mt-1">Record the ID</button> : null} />)}
                 </div>
 
                 {/* compliance note */}

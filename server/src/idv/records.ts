@@ -3,7 +3,7 @@
    audit insert in the same transaction. */
 import { randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
-import { normaliseForWrite } from "../clients/id-document-types.js";
+import { normaliseForWrite, resolveIdType } from "../clients/id-document-types.js";
 import { screenSubject } from "../screening/gate.js";
 import { CONSENT_VERSION, type ConsentFill } from "./consent-copy.js";
 import { decryptSecret, encryptSecret, KEY_VERSION, last4, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER, type SecretBind } from "./id-number.js";
@@ -14,7 +14,8 @@ import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine, notPassedLine, underReviewLine,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED,
+  branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
 } from "./tiers.js";
 
@@ -554,13 +555,17 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
   const test = await testLabel(db, actor, env);
   const found = await q.query(
     `SELECT r.record_id, r.tier, r.method, r.name_on_id, r.verified_at, r.document_type, r.persona_id_class,
-            r.document_number_last4, r.number_unavailable, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
-            r.provider_checks, r.persona_inquiry_id, r.staff_id, r.original_record_id, r.consent_id,
+            r.document_number_last4, (r.document_number_ciphertext IS NOT NULL) AS number_stored,
+            r.number_unavailable, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
+            r.provider_checks, r.persona_inquiry_id, r.staff_id, r.inspector_staff_id, r.original_record_id, r.consent_id,
             r.counter_check_chosen, r.deal_id, r.database_step,
             (r.face_crop_ciphertext IS NOT NULL AND r.face_crop_retained_until > now()) AS has_crop,
             r.verified_at > now() - interval '5 years' AS within_five_years,
             o.verified_at AS original_verified_at, o.method AS original_method, o.result AS original_result,
-            o.document_number_last4 AS original_last4, o.number_unavailable AS original_unavailable,
+            o.document_type AS original_document_type, o.document_number_last4 AS original_last4,
+            (o.document_number_ciphertext IS NOT NULL) AS original_number_stored,
+            o.number_unavailable AS original_unavailable, o.inspector_staff_id AS original_inspector,
+            o.issuing_jurisdiction AS original_jurisdiction, o.issuing_country AS original_country,
             o.expiry_date AS original_expiry,
             o.verified_at > now() - interval '5 years' AS original_within_five
        FROM idv_check_records r
@@ -600,6 +605,8 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       ? returningLine(branchStamp(originalWhen, facts.timeZone).date, METHOD_LABEL[originalMethod] ?? METHOD_LABEL.in_person)
       : null;
     const result = String(row.result);
+    const docType = str(row, "document_type");
+    const typeRow = resolveIdType(docType);
     const line = expiredStamp
       ?? (result === "declined" ? notPassedLine(stamp.date)
         : result === "needs_review" ? underReviewLine(stamp.date)
@@ -608,6 +615,9 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
               ? idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie")
               : PROGRESS_LINE));
     const originalExpiry = day(row.original_expiry);
+    const originalType = str(row, "original_document_type");
+    const originalTypeRow = resolveIdType(originalType);
+    const originalSeen = row.original_verified_at ? branchStamp(new Date(String(row.original_verified_at)), facts.timeZone).date : null;
     const standingInput = {
       result,
       method,
@@ -616,14 +626,32 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       numberUnavailable: row.number_unavailable === true,
       withinFiveYears: row.within_five_years === true,
       documentExpired: Boolean(expiredStamp),
+      acceptedPhotoId: !!(typeRow && typeRow.photo && typeRow.acceptedAsId),
+      numberStored: row.number_stored === true,
+      issuingJurisdiction: str(row, "issuing_jurisdiction"),
+      issuingCountry: str(row, "issuing_country"),
+      staffSeen: str(row, "inspector_staff_id"),
+      seenOn: stamp.date,
+      documentType: docType,
+      expiryIso,
+      sameShop: true,
       original: method === "returning_client" || result === "returning_confirmed" ? {
-        result: str(row, "original_result") ?? "pass",
+        result: str(row, "original_result") ?? "",
         method: originalMethod,
         line: "",
         maskedNumber: str(row, "original_last4") ? `•••• ${str(row, "original_last4")}` : null,
         numberUnavailable: row.original_unavailable === true,
         withinFiveYears: row.original_within_five === true,
         documentExpired: Boolean(originalExpiry && isPastExpiry(originalExpiry, facts.timeZone)),
+        acceptedPhotoId: !!(originalTypeRow && originalTypeRow.photo && originalTypeRow.acceptedAsId),
+        numberStored: row.original_number_stored === true,
+        issuingJurisdiction: str(row, "original_jurisdiction"),
+        issuingCountry: str(row, "original_country"),
+        staffSeen: str(row, "original_inspector"),
+        seenOn: originalSeen,
+        documentType: originalType,
+        expiryIso: originalExpiry,
+        sameShop: true,
         original: null,
       } : null,
     };
@@ -667,9 +695,42 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       due: earlier?.due ? DUE_LINE : null,
       records: records.map(({ standingInput: _standing, ...record }) => record),
       headline: records[0]?.statusLine ?? NONE_LINE,
-      standing: idFileStanding(records[0]?.standingInput ?? null),
+      standing: records.length
+        ? idFileStanding(records[0]?.standingInput ?? null)
+        : await typedGapStanding(q, actor, clientId),
+      pepReview: await openPepReview(q, actor, clientId),
     },
   };
+}
+
+async function typedGapStanding(q: Q, actor: DeskActor, clientId: string): Promise<IdFileStanding> {
+  try {
+    const found = await q.query(
+      `SELECT 1 FROM desk_client_identity_documents
+        WHERE client_id = $1 AND tenant_id = $2 AND legal_entity_id = $3
+          AND coalesce(btrim(doc_number), '') <> ''
+        LIMIT 1`,
+      [clientId, actor.tenantId, actor.legalEntityId],
+    );
+    if (found.rows.length) return idFileStanding({ typedOnly: true, method: "in_person" });
+  } catch {
+    /* The check database does not hold the client papers. No typed ID to prompt. */
+  }
+  return idFileStanding(null);
+}
+
+async function openPepReview(q: Q, actor: DeskActor, clientId: string): Promise<"open" | null> {
+  try {
+    const found = await q.query(
+      `SELECT 1 FROM client_pep_reviews
+        WHERE client_id = $1 AND tenant_id = $2 AND legal_entity_id = $3 AND status = 'open'
+        LIMIT 1`,
+      [clientId, actor.tenantId, actor.legalEntityId],
+    );
+    return found.rows.length ? "open" : null;
+  } catch {
+    return null;
+  }
 }
 
 const NOT_ON_FILE = "No identity-document number is on this file yet.";
@@ -693,17 +754,46 @@ export type StandingInput = {
   numberUnavailable?: boolean;
   withinFiveYears?: boolean;
   documentExpired?: boolean;
+  acceptedPhotoId?: boolean;
+  numberStored?: boolean;
+  issuingJurisdiction?: string | null;
+  issuingCountry?: string | null;
+  staffSeen?: string | null;
+  seenOn?: string | null;
+  documentType?: string | null;
+  expiryIso?: string | null;
+  sameShop?: boolean;
+  typedOnly?: boolean;
   original?: StandingInput | null;
 };
 
+/* An in-person record is the typed ID. It counts only with every fact
+   the desk can check. A missing fact is not a pass. */
+function inPersonReady(record: StandingInput): boolean {
+  return record.method === "in_person"
+    && record.result === "pass"
+    && record.acceptedPhotoId === true
+    && record.numberStored === true
+    && !!record.maskedNumber
+    && !!record.issuingJurisdiction
+    && !!record.issuingCountry
+    && !!record.staffSeen
+    && !!record.seenOn
+    && !!record.expiryIso
+    && record.sameShop !== false
+    && record.numberUnavailable !== true;
+}
+
 function qualifiesAsId(record: StandingInput | null | undefined): boolean {
-  if (!record) return false;
+  if (!record || record.typedOnly) return false;
   if (record.documentExpired) return false;
   if (record.withinFiveYears === false) return false;
   if (record.result === "expired" || (record.line || "").startsWith("Expired")) return false;
+  if (record.result === "needs_review") return false;
   if (record.method === "returning_client" || record.result === "returning_confirmed") {
     return qualifiesAsId(record.original ?? null);
   }
+  if (record.method === "in_person") return inPersonReady(record);
   if (record.result !== "pass") return false;
   if (record.numberUnavailable) return false;
   if (!record.maskedNumber) return false;
@@ -718,13 +808,27 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
   if (!latest) {
     return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
   }
+  if (latest.typedOnly || (latest.method === "in_person" && (!latest.staffSeen || !latest.seenOn))) {
+    return { onFile: false, chip: "Missing ID", title: "Not identified", line: TYPED_NOT_RECORDED, gap: "missing ID" };
+  }
   const line = latest.line || "";
   if (qualifiesAsId(latest)) {
-    return { onFile: true, chip: "ID on file", title: "Identified", line, gap: null };
+    const shown = latest.method === "in_person"
+      ? seenInPersonLine(
+        latest.staffSeen || "",
+        latest.documentType || "photo ID",
+        civilDateWords(latest.expiryIso || ""),
+        latest.seenOn || "",
+      )
+      : line;
+    return { onFile: true, chip: "ID on file", title: "Identified", line: shown, gap: null };
   }
   const expired = latest.documentExpired || latest.result === "expired" || line.startsWith("Expired");
   if (expired) {
-    return { onFile: false, chip: "ID expired", title: "ID expired", line: line || "Expired", gap: "expired ID" };
+    const shown = latest.method === "in_person" && latest.expiryIso
+      ? expiredNextDealLine(civilDateWords(latest.expiryIso))
+      : (line || "Expired");
+    return { onFile: false, chip: "ID expired", title: "ID expired", line: shown, gap: "expired ID" };
   }
   return { onFile: false, chip: "Missing ID", title: "Not identified", line: NOT_ON_FILE, gap: "missing ID" };
 }

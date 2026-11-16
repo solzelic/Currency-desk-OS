@@ -176,8 +176,11 @@
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
       if (!api || !id) { setStanding(null); return undefined; }
       let liveFlag = true;
-      api.checks(id).then((body) => { if (liveFlag) setStanding((body && body.standing) || null); }).catch(() => {});
-      return () => { liveFlag = false; };
+      const pull = () => { api.checks(id).then((body) => { if (liveFlag) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); };
     }, [rec && rec.clientId]);
     const standingNow = standing || (rec && rec.idStanding) || null;
     const checkSpeaks = !!(standingNow && (standingNow.onFile || standingNow.chip === "ID expired"));
@@ -1158,7 +1161,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
             {/* hero flow — what this transaction actually is, at a glance */}
             <TxFlow row={row} />
             {window.CDOS.IdCheck && (row.clientId || (clients[row.customer] && clients[row.customer].clientId)) &&
-              <window.CDOS.IdCheck.DealBar clientId={row.clientId || clients[row.customer].clientId} dealId={row.serverTransactionId || row.quoteRef || null} />}
+              <window.CDOS.IdCheck.DealBar clientId={row.clientId || clients[row.customer].clientId} dealId={row.serverTransactionId || row.quoteRef || null} onLinked={() => window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId: row.clientId || clients[row.customer].clientId } }))} />}
 
             {/* compliance */}
             <div>

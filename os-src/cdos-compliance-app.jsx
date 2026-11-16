@@ -789,7 +789,7 @@
   }
 
   /* ===================== ROOT ===================== */
-  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
+  function Compliance({ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, serverRole, log, baseline, receipts, day, station, branches, onOpenSettings, onOpenTransaction, onOpenClient, onOpenRefs, onOpenTransfers, fileSignal, subs: subsProp, setSubs: setSubsProp, initialTab }) {
     const [tab, setTab] = useState(initialTab || 'screening');
     const [screenTile, setScreenTile] = useState('Not screened');
     useEffect(() => {
@@ -924,6 +924,9 @@
     const draftN = useMemo(() => openReportables(rows, clients, settings, beneficiaries, subs).length, [rows, clients, settings, beneficiaries, subs]);
 
     const strN = useMemo(() => { const flags = computeFlags(rows, clients, settings); const s = new Set(); rows.forEach(r => { const f = flags[r.id] || {}; if (f.str && !f.void && !r.ackStr) s.add(r.customer); }); return s.size; }, [rows, clients, settings]);
+    const pepNames = (serverRole === "compliance_officer" || serverRole === "administrator")
+      ? Object.keys(clients || {}).filter((name) => clients[name] && clients[name].pepReview === "open")
+      : [];
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : (regime.aggregate === false ? 'Threshold reports' : (regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation')), 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
 
     return (<div className="flex flex-col" style={{ height: '100%', background: CD.paper }}>
@@ -944,6 +947,10 @@
               <div className="text-[10.5px]" style={{ color: CD.mute }}>{sub}</div>
             </button>); })}
         </div></div>
+        {pepNames.length > 0 && <div data-testid="pep-review-list" className="mt-3 mb-1">
+          <div className="text-[12px] font-semibold mb-1" style={{ color: CD.ink }}>PEP review</div>
+          {pepNames.map((name) => <button key={name} type="button" onClick={() => onOpenClient && onOpenClient(name)} className="block text-left text-[12.5px] py-1" style={{ color: CD.ink }}>{name}</button>)}
+        </div>}
         <div className="fld-bar" style={{ margin: '2px -16px 0', padding: '0 16px' }}>
           {TABS.map(([id, label, ic, badge]) => (
             <button key={id} onClick={() => setTab(id)} className={'fld-tab' + (tab === id ? ' on' : '')}>

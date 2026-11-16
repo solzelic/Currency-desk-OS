@@ -579,6 +579,16 @@ describe("id check records", () => {
     );
     expect(answers.rows.map((row) => row.answer)).toEqual(["yes", "not_asked"]);
     expect(answers.rows.every((row) => row.staff_id === "m.costa")).toBe(true);
+    await expect(dbQuery(handle.db).query("UPDATE client_pep_answer_events SET answer = 'no' WHERE client_id = $1", [clientId])).rejects.toThrow(/append-only/);
+    await expect(dbQuery(handle.db).query("DELETE FROM client_pep_answer_events WHERE client_id = $1", [clientId])).rejects.toThrow(/append-only/);
+    const kept = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM client_pep_answer_events WHERE client_id = $1", [clientId]);
+    expect(kept.rows[0]?.n).toBe(2);
+    const stale = await app.inject({
+      method: "POST", url: "/api/idv/checks/returning", cookies: cookies.teller,
+      payload: { clientId, noDoubts: true, detailsChanged: false, pepAnswer: true },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().message).toBe("This form is out of date. Reload the page and answer again.");
     const reviews = await dbQuery(handle.db).query(
       "SELECT status FROM client_pep_reviews WHERE client_id = $1",
       [clientId],
@@ -632,6 +642,39 @@ describe("id check records", () => {
     expect(mismatch.json().code).toBe("consent_copy_changed");
     const after = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_consents WHERE client_id = $1", [clientId]);
     expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+  });
+
+  it("refuses consent when the crop sentence changes after the notice was read", async () => {
+    const clientId = await client("Crop Both");
+    const count = async () => {
+      const rows = await dbQuery(handle.db).query("SELECT count(*)::int AS n FROM idv_consents WHERE client_id = $1", [clientId]);
+      return rows.rows[0]?.n;
+    };
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
+    const seenOn = await app.inject({ method: "GET", url: "/api/idv/consent-copy", cookies: cookies.teller });
+    expect(seenOn.statusCode).toBe(200);
+    expect(seenOn.json().faceCrop).toBe(true);
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: false } });
+    const beforeOff = await count();
+    const turnedOff = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: seenOn.json().version, faceCropShown: true },
+    });
+    expect(turnedOff.statusCode).toBe(409);
+    expect(turnedOff.json().code).toBe("consent_copy_changed");
+    expect(await count()).toBe(beforeOff);
+
+    const seenOff = await app.inject({ method: "GET", url: "/api/idv/consent-copy", cookies: cookies.teller });
+    expect(seenOff.json().faceCrop).toBe(false);
+    await app.inject({ method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { faceCropEnabled: true } });
+    const beforeOn = await count();
+    const turnedOn = await app.inject({
+      method: "POST", url: "/api/idv/consents", cookies: cookies.teller,
+      payload: { clientId, choice: "agreed", language: "en", copyVersion: seenOff.json().version, faceCropShown: false },
+    });
+    expect(turnedOn.statusCode).toBe(409);
+    expect(turnedOn.json().code).toBe("consent_copy_changed");
+    expect(await count()).toBe(beforeOn);
   });
 
   it("requires consent for the link, refuses Quebec, and runs tier 4 as ID and selfie", async () => {
