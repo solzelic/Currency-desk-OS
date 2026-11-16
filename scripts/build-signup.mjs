@@ -112,6 +112,13 @@ patch("continue", "  next() { if (this.state.i === 11 && !this.state.seal)",
   "  next() { if (window.__cdOnb.beforeNext(this) === false) return; if (this.state.i === 11 && !this.state.seal)");
 patch("skip", "  go(n) { this._dir =", "  go(n) { if (window.__cdOnb.beforeGo(this, n) === false) return; this._dir =");
 
+/* Invalidate pending navigation even when Back returns to the same screen. */
+patch("back cancels advance", "  back() {", "  back() { window.__cdOnb.navigation();");
+/* Keep invalid input visible for validation; never turn -10 into 10 or 1.5 notes into 15. */
+patch("note input exact", "String(q).replace(/[^0-9]/g, '')", "String(q)");
+patch("coin input exact", "String(q).replace(/[^0-9.]/g, '')", "String(q)");
+patch("total input exact", "v.replace(/[^0-9.]/g, '')", "String(v)");
+
 /* ---- How will you sign in: the device's and the provider's own windows ---- */
 patch("passkey", "this.set('lockMode', 'passkey'); this.setState({ pkPhase: 'asking', lockErr: '' }); }",
   "this.set('lockMode', 'passkey'); window.__cdOnb.passkey(this); }");

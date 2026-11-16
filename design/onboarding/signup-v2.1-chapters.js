@@ -14,11 +14,13 @@
   Object.assign(CD, {
     /* Continue on a chapter screen (called from the core's beforeNext) */
     chapterNext: function (c, go, stop) {
-      var i = c.state.i, d = c.state.data;
+      var i = c.state.i, d = c.state.data, id = CD.code, nav = CD._nav || 0;
+      var current = function () { return i === c.state.i && id === CD.code && nav === (CD._nav || 0); };
       if (i === 13) {
         if (!d.signed) return true; /* the prototype refuses on its own */
         CD._busy = true;
         api("POST", "/confirm", { signed: true, name: d.ownerName }).then(function (r) {
+          if (!current()) { CD._busy = false; return; }
           if (r.status === 200) { CD.declaration = r.body.declaration || ""; return go(); }
           if (r.status === 401) { CD._busy = false; return CD.signInAgain(c, why(r)); }
           c.set("signed", false); stop(why(r, NET));
@@ -28,6 +30,7 @@
       if (SAVES[i]) {
         CD._busy = true;
         CD.save(c, i, d).then(function (r) {
+          if (!current()) { CD._busy = false; return; }
           if (r.status === 200) return go();
           if (r.status === 401) { CD._busy = false; return CD.signInAgain(c, why(r)); }
           stop(why(r, NET));
@@ -44,7 +47,12 @@
         : (i === 11 && n === 24) ? { step: "20-team", answers: { team: [] }, to: 13 }
         : null;
       if (!skip) return true;
+      if (CD._busy) return false;
+      CD._busy = true;
+      var id = CD.code, nav = CD._nav || 0;
       api("PUT", "/answers", { step: skip.step, answers: skip.answers }).then(function (r) {
+        CD._busy = false;
+        if (CD.code !== id || c.state.i !== i || (CD._nav || 0) !== nav) return;
         if (r.status === 200) { CD.savedAnswers(); CD._goPass = true; c.go(skip.to != null ? skip.to : n); return; }
         if (r.status === 401) return CD.signInAgain(c, why(r));
         CD.err = why(r, NET); c.forceUpdate();
@@ -52,7 +60,9 @@
       return false;
     },
     save: function (c, i, d) {
-      return api("PUT", "/answers", { step: STEP_OF[i], answers: toServer(c, i, d) }).then(function (r) { if (r.status === 200) CD.savedAnswers(); return r; });
+      var answers;
+      try { answers = toServer(c, i, d); } catch (e) { return Promise.resolve({ status: 422, body: { detail: e.message } }); }
+      return api("PUT", "/answers", { step: STEP_OF[i], answers: answers }).then(function (r) { if (r.status === 200) CD.savedAnswers(); return r; });
     },
     savedAnswers: function () {
       CD._answersRevision = (CD._answersRevision || 0) + 1;
@@ -93,8 +103,11 @@
   });
 
   /* ---- answers: the prototype's names ⇄ the server's (signup-answers.ts) */
-  function digits(v) { return String(v == null ? "" : v).replace(/[^0-9.]/g, ""); }
-  function amount(v) { var s = digits(v); return /^\d{1,12}(\.\d{1,2})?$/.test(s) ? s : ""; }
+  function amount(v) {
+    var s = String(v == null ? "" : v).trim();
+    if (s && !/^\d{1,12}(\.\d{1,2})?$/.test(s)) throw new Error("Enter a non-negative amount with up to two decimal places.");
+    return s;
+  }
   function member(t) {
     var parts = String(t.name || "").trim().split(/\s+/);
     var first = (t.first || parts[0] || "").trim(), last = (t.last || parts.slice(1).join(" ") || "").trim();
@@ -116,12 +129,24 @@
       case 8: {
         var out = {}, home = c.jurisOf(d.country).home, all = [home].concat(d.currencies.filter(function (x) { return x !== home; }));
         all.forEach(function (cc) {
-          var k = (d.count || {})[cc] || {}, den = k.den || {}, notes = {}, any = false;
-          Object.keys(den).forEach(function (v) { var n = parseInt(den[v], 10); if (n > 0) { notes[v] = n; any = true; } });
-          var coins = amount(k.coins), total = amount((d.float || {})[cc]);
-          if (any) out[cc] = { mode: "notes", notes: notes, coins: coins || undefined, done: !!k.done };
-          else if (total) out[cc] = { mode: "total", total: total, done: !!k.done };
+          var k = (d.count || {})[cc] || {}, den = k.den || {}, notes = {};
+          var mode = (c.state.cntMode || {})[cc] || (Object.values(den).some(Boolean) || k.coins ? "notes" : ((d.float || {})[cc] ? "total" : "notes"));
+          if (mode === "total") {
+            var total = amount((d.float || {})[cc]);
+            if (total) out[cc] = { mode: "total", total: total, done: !!k.done };
+            else if (k.done) out[cc] = { mode: "none", done: true };
+            return;
+          }
+          Object.keys(den).forEach(function (v) {
+            var q = String(den[v] == null ? "" : den[v]).trim();
+            if (!q) return;
+            if (!/^\d+$/.test(q) || Number(q) > 1000000) throw new Error("Enter a whole number of notes, up to 1,000,000.");
+            if (Number(q) > 0) notes[v] = Number(q);
+          });
+          var coins = amount(k.coins);
+          if (Object.keys(notes).length || coins) out[cc] = { mode: "notes", notes: notes, coins: coins || undefined, done: !!k.done };
           else if (k.done) out[cc] = { mode: "none", done: true };
+
         });
         return { count: out, countLater: false };
       }
@@ -132,8 +157,8 @@
       }
       case 10: {
         var j = c.jurisOf(d.country);
-        var over = d.idOver === "" || d.idOver == null ? String(c.idRec(j)) : String(d.idOver).replace(/\D/g, "");
-        return { idOver: over || "0", idCustom: String(d.idCustom || "").replace(/\D/g, "") };
+        var over = d.idOver === "" || d.idOver == null ? String(c.idRec(j)) : String(d.idOver).trim();
+        return { idOver: over || "0", idCustom: String(d.idCustom || "").trim() };
       }
       case 11: return { team: d.team.map(member) };
       case 31: {
@@ -145,12 +170,13 @@
   }
   function fromServer(a) {
     var d = {};
-    ["operatingName", "bizName", "nameOk", "legalOk", "street", "unit", "city", "region", "postal", "country_addr", "addrVerified", "addrManual", "msbNumber", "compName", "compEmail", "idCustom"].forEach(function (k) { if (a[k] !== undefined) d[k] = a[k]; });
-    if (a.shopCount) d.shopCount = a.shopCount;
+    ["operatingName", "bizName", "nameOk", "legalOk", "street", "unit", "city", "region", "postal", "country_addr", "addrVerified", "addrManual", "msbNumber", "regSkipped", "countLater", "compName", "compEmail", "idCustom"].forEach(function (k) { if (a[k] !== undefined) d[k] = a[k]; });
+    if (a.shops === "one") d.shopCount = 1;
+    else if (a.shopCount) d.shopCount = a.shopCount;
     if (Array.isArray(a.currencies)) d.currencies = a.currencies;
     if (a.complianceMode) d.complianceMode = a.complianceMode === "else" ? "other" : "me";
     if (a.idOver !== undefined) d.idOver = String(a.idOver);
-    if (Array.isArray(a.team)) d.team = a.team.map(function (t) { return { name: t.name || (t.first + " " + t.last).trim(), first: t.first, last: t.last, role: t.role, email: t.email || "", phone: t.phone || "", mode: "email" }; });
+    if (Array.isArray(a.team)) d.team = a.team.map(function (t) { return { name: t.name || (t.first + " " + t.last).trim(), first: t.first, last: t.last, role: t.role, email: t.email || "", phone: t.phone || "", mode: t.mode || (t.email ? "email" : "noemail") }; });
     if (a.count && typeof a.count === "object") {
       d.count = {}; d.float = {};
       Object.keys(a.count).forEach(function (cc) {

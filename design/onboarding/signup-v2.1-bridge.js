@@ -63,15 +63,15 @@
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctl ? ctl.signal : undefined,
     }).then(function (r) {
-      if (timer) clearTimeout(timer);
-      return r.json().then(function (j) { return { status: r.status, body: j || {} }; },
-        function () { return { status: r.status, body: {} }; });
-    }, function (err) {
-      if (timer) clearTimeout(timer);
-      /* the network, not the server: say so in the screen's own words */
-      return { status: 0, body: { error: "network", detail: "We couldn’t reach CurrencyDesk just now. Check your connection and try again." }, err: err };
-    });
+      return r.json().then(function (j) {
+        if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("invalid response");
+        return { status: r.status, body: j };
+      });
+    }).catch(function () {
+      return { status: 0, body: { error: "network", detail: NET } };
+    }).finally(function () { if (timer) clearTimeout(timer); });
   }
+
   function api(method, suffix, body, ms) {
     return call(method, "/api/onboarding/" + encodeURIComponent(CD.code || "") + suffix, body, ms);
   }
@@ -82,6 +82,7 @@
     code: "",
     known: {},
     names: {},
+    states: {},
     checking: "",
     throttled: false,
     err: "",
@@ -120,19 +121,32 @@
     checkRef: function (v, done) {
       var id = String(v || "").toUpperCase();
       clearTimeout(CD._rt);
-      if (!ID.test(id) || CD.known[id] === true || CD.known[id] === false) return;
+      var request = CD._refRequest = (CD._refRequest || 0) + 1;
+      CD.checking = ""; CD.throttled = false; CD.err = "";
+      if (CD.code && CD.code !== id) {
+        CD.navigation(); CD.pack = null; CD.pinSet = false; CD._resumeTo = null;
+        if (CD.comp && CD.comp.fresh) CD.comp.setState({ data: Object.assign(CD.comp.fresh(), { cdId: id }) });
+      }
+      CD.code = ""; CD.alreadyOpen = false; tabSet("");
+      if (CD.comp) CD.comp.set("operatingName", "");
+      function select() {
+        CD.code = id; CD.alreadyOpen = CD.states[id] === "active"; tabSet(id);
+        if (CD.comp) CD.comp.set("operatingName", CD.names[id]);
+      }
+      if (!ID.test(id)) return;
+      if (CD.known[id] === true) { select(); return; }
+      if (CD.known[id] === false) return;
       CD._rt = setTimeout(function () {
         CD.checking = id; done();
         call("GET", "/api/onboarding/" + encodeURIComponent(id) + "/state").then(function (r) {
+          if (request !== CD._refRequest) return;
           CD.checking = "";
           if (r.status === 429) { CD.throttled = true; done(); return; }
-          CD.throttled = false;
           if (r.status === 200 && r.body.valid) {
             CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
-            CD.code = id; tabSet(id);
-            if (CD.comp) CD.comp.set("operatingName", CD.names[id]);
-            if (r.body.state === "active") CD.alreadyOpen = true;
+            CD.states[id] = r.body.state; select();
           } else if (r.status === 404) CD.known[id] = false;
+          else CD.err = NET;
           done();
         });
       }, 450);
@@ -247,8 +261,9 @@
 
     /* ---- after the code: the server's copy of everything ------------------ */
     loadResume: function (fresh) {
+      var id = CD.code, nav = CD._nav || 0;
       return api("GET", "/resume").then(function (r) {
-        if (r.status !== 200) return false;
+        if (CD.code !== id || (CD._nav || 0) !== nav || r.status !== 200) return false;
         var c = CD.comp, b = r.body;
         CD.pack = b.pack || null;
         CD.applyPack(c, CD.pack);
@@ -257,14 +272,16 @@
         data.ownerName = you.name || ""; data.ownerEmail = you.email || ""; data.phone = you.mobile || "";
         data.cdId = CD.code;
         if (CD.pack) data.country = CD.pack.code;
-        c.setState(function (s) { return { data: Object.assign({}, s.data, data) }; });
+        var modes = {};
+        Object.keys((b.answers || {}).count || {}).forEach(function (cc) { modes[cc] = b.answers.count[cc].mode; });
         CD.pinSet = !!b.pinSet;
-        var to = SCREEN_OF[b.lastStep];
-        /* a finished screen reopens on the one after it (the prototype's own order, so the one-shop branch skips "more than one") */
-        if (to != null && b.saved && b.lastStep !== "22-confirm") to = c._after(to);
-        if (to != null) CD._resumeTo = fresh ? to : null;
-        if (!fresh && to != null) { c._dir = 1; c.setState({ i: to }); }
-        return true;
+        return new Promise(function (resolve) { c.setState(function (s) { return { data: Object.assign({}, s.data, data), cntMode: modes }; }, function () {
+          var to = SCREEN_OF[b.lastStep];
+          if (to != null && b.saved && b.lastStep !== "22-confirm") to = c._after(to);
+          if (to != null) CD._resumeTo = fresh ? to : null;
+          if (!fresh && to != null) { c._dir = 1; c.setState({ i: to }); }
+          resolve(true);
+        }); });
       });
     },
     applyPack: function (c, p) {
@@ -287,8 +304,10 @@
       if (CD._pass === i) { CD._pass = null; return true; }
       if (CD.seeded) return true;
       if (CD._busy) return false;
-      var go = function () { CD._busy = false; CD._pass = i; c.next(); };
-      var stop = function (msg) { CD._busy = false; CD.err = msg || ""; c.forceUpdate(); };
+      var id = CD.code, nav = CD._nav || 0;
+      var current = function () { return c.state.i === i && CD.code === id && (CD._nav || 0) === nav; };
+      var go = function () { CD._busy = false; if (!current()) return; CD._pass = i; c.next(); };
+      var stop = function (msg) { CD._busy = false; if (current()) { CD.err = msg || ""; c.forceUpdate(); } };
       if (i === 0) {
         if (CD.alreadyOpen) { CD.err = "This desk is already open. Sign in."; location.assign("/login"); return false; }
         return true;
@@ -306,7 +325,8 @@
       if (i === 18) {
         CD._busy = true;
         api("POST", "/pin", { pin: d.pin, confirm: d.pin2 }).then(function (r) {
-          if (r.status === 200) { CD._busy = false; CD._pass = i; c.next(); return; }
+          if (r.status === 200) return go();
+          if (!current()) { CD._busy = false; return; }
           CD._busy = false;
           if (r.status === 401) return CD.signInAgain(c, why(r));
           c._pinFail(why(r, r.status === 0 ? NET : "That PIN wasn’t saved. Try again."));
@@ -317,7 +337,8 @@
       return true;
     },
     /* Skip links ("I'll add this later" and the like): chapters decide (signup-v2.1-chapters.js). */
-    beforeGo: function (c, n) { return CD.chapterGo ? CD.chapterGo(c, n) : true; },
+    beforeGo: function (c, n) { CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
+    navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; },
     signInAgain: function (c, msg) {
       /* The enrolment session lapsed (24 hours idle) or was opened in another
          browser. Resuming with the credential belongs to the Sign-in pack;
@@ -362,9 +383,12 @@
       var id = (ret && ret.id) || tabGet();
       if (!ID.test(id)) return;
       CD.code = id;
+      var bootRequest = CD._refRequest || 0;
       call("GET", "/api/onboarding/" + encodeURIComponent(id) + "/state").then(function (r) {
+        if ((CD._refRequest || 0) !== bootRequest) return;
         if (r.status !== 200 || !r.body.valid) { tabSet(""); return; }
         CD.known[id] = true; CD.names[id] = String(r.body.operatingName || "");
+        CD.states[id] = r.body.state; CD.alreadyOpen = r.body.state === "active";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
         if (r.body.state === "active") { CD.alreadyOpen = true; c.setState({ i: 0 }); return; }
         if (back && ret) { c.set("lockMode", ret.provider); c.setState({ i: 5 }); history.replaceState(null, "", "/onboarding"); CD.ssoFinish(c, ret.provider, back.code, back.state); return; }
