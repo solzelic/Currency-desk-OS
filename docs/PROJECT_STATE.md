@@ -1,3 +1,42 @@
+## Start on Day 1 goes straight to Day 1, 16 November 2026
+
+Staging's Start on Day 1 no longer shows a holding screen (Sol, 16 Nov: "not the
+pop-up, not the other stuff... the second animation on the desk is the right one").
+A recording of hosted staging after the press showed four things: the hold for about
+14 seconds, a second of the plan screen's landing ("Your desk is set up, Staging." over
+the sample desk), a blank frame, then Day 1's welcome while the real Home's frame
+showed its sign-in page behind it. Now the press goes straight to Day 1 (screen 16):
+the welcome card plays its own entrance at once, its sentence says the shop is opening
+("Signing up a new staging test shop…", then "Opening {shop}."), Build my desk waits
+("Opening your desk…", disabled, aria-busy) and no confetti plays. Once `/open`
+answers, the sentence becomes the design's own ("{shop} is open. You're a Founding
+Operator…"), the confetti plays, Build my desk works and the staging line appears. No
+other screen is drawn on the way: not the welcome screen, not the plan screen, its
+landing or its sample desk, and not the prototype's desk chrome. The real Home's frame
+stays transparent until it has drawn itself (its existing ready message), so the
+sign-in page it starts on never shows, for an ordinary launch too.
+
+A slow `/open` (still 202 after ten tries) says "Still opening the desk. This can take a
+minute. Stay on this page." under Build my desk; after sixty tries, or if `/open`
+refuses, the welcome keeps its place with the reason and a Check again button (the
+existing `checkOpen`). This replaces #785's behaviour, where a pending `/open` held a
+full-page cover for about 160 seconds with card copy and then lifted onto the plan
+screen. A staging Open from the plan screen (Start a fresh shop) no longer says "Your
+card is saved" while it waits or stalls: no card is taken there.
+
+Files: `design/onboarding/signup-v2.1-open.js` (`dayOne`, `holding`, `priced`,
+`waitOpen`), `scripts/build-signup.mjs` (the hold and its inert root removed; Build my
+desk's waiting state, the sentence as a polite status, Check again, the Home frame's
+fade), built `web/signup.html` and `web/app/signup.js`. The ordinary paid flow still
+plays the plan screen's landing before Day 1, as the prototype draws it. Server, auth,
+the frozen design file, `os-src` and deployment configuration are unchanged.
+
+Evidence: the client tests (22 in `tests/signup-staging-client.test.mjs`) failed first
+against staging 8b62f503 (8 of them), then pass; `tests/e2e/staging-day-one.spec.ts`
+now records every screen the press draws (only Day 1), every stand-in, landing or hold
+text (none), and any moment the Home frame is visible before it has drawn itself
+(none), and walks a slow `/open` on a phone-sized page.
+
 ## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
 
 The signup tour now reconciles the current reduced-motion preference on its own
@@ -40,11 +79,10 @@ staging owner stands before Open and answers once with the CD ID and the owner's
 sign-in, plus the ordinary enrolment cookie. The sign-up page then asks the existing
 `/resume`, `/staging-open` and `/open`, and Day 1 shows over the real Home with one
 staging line giving the PIN and the sign-in. Every press is a new test shop. Nothing
-calls Stripe, a mailer or the network, and nothing posts to the ledger. From the press
-until the desk opens, the page holds on a neutral status ("Opening a staging test
-shop…", then the shop's name) over a page that cannot be pressed: the prototype's
-stand-in shop never shows, and nothing can drop the server's answer. If `/open` then
-refuses, the hold lifts onto the plan screen, named, with the reason.
+calls Stripe, a mailer or the network, and nothing posts to the ledger. The press goes
+straight to Day 1 (see "Start on Day 1 goes straight to Day 1" above): its welcome says
+the shop is opening until the desk has opened, and nothing can move the page off it or
+drop the server's answer.
 
 Gates: the route exists only with `STAGING` exactly 1; each request needs the staging
 raw Host (forwarded hosts ignored), the `db_environment` staging marker before any

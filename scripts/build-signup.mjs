@@ -287,7 +287,7 @@ patch("call consent status", '<div style="font-family: var(--m); font-size: 9.5p
 /* ---- Day 1: the real desk behind the welcome --------------------------- */
 /* The real session's Home is a React child, never an imperative insertion race. */
 patch("day one real frame", '<div data-desk="true" style="min-height:', '<div data-desk="true" data-real="{{ realHome }}" style="position:relative;min-height:');
-patch("day one prototype chrome begins", '      <div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; background: #F6F2EA;', `      <sc-if value="{{ realHome }}"><iframe data-real-home="true" src="/app?onboarding=welcome" title="Your desk Home" aria-hidden="true" tabindex="-1" inert="{{ realInert }}" style="position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;filter:saturate(0.85) brightness(0.92);"></iframe></sc-if>
+patch("day one prototype chrome begins", '      <div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; background: #F6F2EA;', `      <sc-if value="{{ realHome }}"><iframe data-real-home="true" src="/app?onboarding=welcome" title="Your desk Home" aria-hidden="true" tabindex="-1" inert="{{ realInert }}" style="position:absolute;inset:0;width:100%;height:100%;border:0;pointer-events:none;filter:saturate(0.85) brightness(0.92);opacity:{{ homeOpacity }};transition:opacity 0.45s ease;"></iframe></sc-if>
       <sc-if value="{{ prototypeHome }}"><div style="display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; background: #F6F2EA;`);
 patch("day one prototype chrome ends", '      <div style="position: relative; max-width: 780px; margin: 0 auto; padding: 38px 18px 60px;">', '      </sc-if><div style="{{ welcomeWrap }}"><sc-if value="{{ prototypeHome }}">');
 patch("day one prototype cards end", '        <sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">', '        </sc-if><sc-if value="{{ dkOn }}" hint-placeholder-val="{{ false }}">');
@@ -297,18 +297,16 @@ patch("day one prototype cards end", '        <sc-if value="{{ dkOn }}" hint-pla
 patch("home loading status", '{{ dkCta }}</button>', '{{ dkCta }}</button><sc-if value="{{ homeStatus }}"><p data-real-home-status="true" role="status" style="font-size:12px;color:var(--mute)">{{ homeStatus }}</p></sc-if>'
   + '<sc-if value="{{ stagingDayOne }}"><p data-staging-day-one="true" role="note" style="max-width:520px;margin:14px auto 0;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;line-height:1.55;color:var(--ink);text-align:left;white-space:pre-line;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text">{{ stagingDayOne }}</p></sc-if>');
 patch("build my desk", "R.onDkWalk = ", "R.onDkWalk = window.__cdOnb.launched ? (() => { this._tone('next'); window.__cdOnb.walk(); }) : ");
-/* Staging Start on Day 1's hold (signup-v2.1-open.js dayOne): while the press
-   answers, a neutral status covers the whole page and the page under it is
-   inert, so no screen can be pressed and no stand-in shop is seen. */
-const DAY_ONE_HOLD = '<sc-if value="{{ dayOneHold }}"><div data-staging-day-one-hold="true" role="status" aria-live="polite" style="position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:24px 16px;box-sizing:border-box;text-align:center;background:#F6F2EA;color:#17140F;font-family:\'Schibsted Grotesk\',system-ui,sans-serif;">'
-  + '<div style="max-width:480px;animation:cdFadeUp 0.5s ease both;">'
-  + '<svg viewBox="0 0 200 140" width="54" height="38" aria-hidden="true"><circle cx="60" cy="70" r="48" fill="#17140F"></circle><path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F"></path><rect x="60" y="64.5" width="92" height="11" fill="#fff"></rect><circle cx="112" cy="70" r="6.5" fill="#1D6B45"></circle></svg>'
-  + '<p style="margin:18px 0 0;font-family:\'IBM Plex Mono\',monospace;font-size:10px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#6E675E;">Staging · Start on Day 1</p>'
-  + '<p style="margin:10px 0 0;font-family:\'Instrument Serif\',serif;font-size:34px;line-height:1.1;overflow-wrap:anywhere;">{{ dayOneHoldTitle }}</p>'
-  + '<p style="margin:10px 0 0;font-size:14px;line-height:1.5;color:#6E675E;text-wrap:balance;">Signing up a new test shop and opening its desk. This takes a few seconds.</p>'
-  + '</div></div></sc-if>';
-patch("day one hold", '<div style="display: flex; height: 100vh; width: 100%; overflow: hidden;">',
-  DAY_ONE_HOLD + '<div data-signup-root="true" inert="{{ holdInert }}" style="display: flex; height: 100vh; width: 100%; overflow: hidden;">');
+/* Staging Start on Day 1 (signup-v2.1-open.js dayOne) is on Day 1 from the
+   press: until the desk opens, Build my desk waits (dkWaiting), the welcome's
+   sentence says the shop is opening and speaks as it changes, and a slow or
+   refused /open puts its reason under the button with Check again. */
+patch("build my desk waits", '<button onClick="{{ onDkWalk }}" style="width: 100%; margin-top: 24px;',
+  '<button onClick="{{ onDkWalk }}" disabled="{{ dkWaiting }}" aria-busy="{{ dkWaiting }}" data-build-my-desk="true" style="{{ dkCtaLook }}width: 100%; margin-top: 24px;');
+patch("day one sentence speaks", '<div style="font-size: 15px; color: #6B6459; margin-top: 14px; line-height: 1.55; animation: cdFadeUp 0.7s ease 0.6s both;">{{ dkSub }}</div>',
+  '<div role="status" aria-live="polite" style="font-size: 15px; color: #6B6459; margin-top: 14px; line-height: 1.55; animation: cdFadeUp 0.7s ease 0.6s both;">{{ dkSub }}</div>');
+patch("day one check again", '<sc-if value="{{ stagingDayOne }}">',
+  '<sc-if value="{{ dayOneCheckVisible }}"><button type="button" onClick="{{ onDayOneCheck }}" style="display:block;margin:10px auto 0;min-height:44px;padding:10px 16px;border:1px solid #DDD5C6;border-radius:10px;background:#fff;color:#17140F;font:inherit;cursor:pointer;">Check again</button></sc-if><sc-if value="{{ stagingDayOne }}">');
 
 /* ======== END OF SECTIONS ======== */
 /* ---- nothing review-only survived ------------------------------------- */

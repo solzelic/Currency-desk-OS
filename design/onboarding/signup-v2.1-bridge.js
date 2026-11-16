@@ -408,7 +408,7 @@
       return true;
     },
     /* Skip links ("I'll add this later" and the like): chapters decide (signup-v2.1-chapters.js). */
-    /* Continue, the skips and Back (build patch) ask Start on Day 1's hold first (open.js holding) */
+    /* Continue, the skips and Back (build patch) ask Start on Day 1 first (open.js holding) */
     beforeGo: function (c, n) { if (CD.holding && CD.holding()) return false; CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
     navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; },
     signInAgain: function (c, msg) {

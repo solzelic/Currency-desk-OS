@@ -408,7 +408,7 @@ test('the built page has no hold: Build my desk waits on dkWaiting, the welcome 
   assert.equal(page.includes('data-staging-day-one-hold'), false);
   assert.equal(page.includes('holdInert'), false);
   assert.equal(page.includes('Signing up a new test shop and opening its desk. This takes a few seconds.'), false);
-  assert.equal(page.split('"disabled":v?.["dkWaiting"],"aria-busy":v?.["dkWaiting"],"data-build-my-desk":"true","style":style((v?.["dkCtaLook"] ?? "") + "width: 100%;').length - 1, 1);
+  assert.equal(page.split('"disabled":v?.["dkWaiting"],"aria-busy":v?.["dkWaiting"],"data-build-my-desk":"true","style":style("" + (v?.["dkCtaLook"] ?? "") + "width: 100%;').length - 1, 1);
   assert.equal(page.split('"role":"status","aria-live":"polite","style":style("font-size: 15px; color: #6B6459;').length - 1, 1);
   assert.match(page, /v\?\.\["dayOneCheckVisible"\] \?/);
   assert.equal(page.split('"onClick":v?.["onDayOneCheck"]').length - 1, 1);

@@ -12,6 +12,11 @@
   var DAY_ONE_PASSWORD = /^[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{5}-[a-hjkmnp-z2-9]{4}$/;
   var DAY_ONE_FAILED = "The staging door didn’t open a shop. Try again.";
   var DAY_ONE_SLOW = "Too many new staging shops just now. Try again in a little while.";
+  /* Day 1's welcome while the desk opens (priced, waitOpen) */
+  var DAY_ONE_SIGNING = "Signing up a new staging test shop and opening its desk. This takes a few seconds.";
+  var DAY_ONE_STILL = "Still opening the desk. This can take a minute. Stay on this page.";
+  var DAY_ONE_STALLED = "The desk hasn’t opened yet. Check again in a minute.";
+  var DAY_ONE_REFUSED = "The desk didn’t open. Check again in a minute.";
   /* One item a line (the page draws it pre-line), so a password never wraps at its hyphens. */
   function dayOneLine(s) {
     return ["Staging test shop. Note these now: they are not shown again.",
@@ -22,6 +27,11 @@
   }
   /* ---- money, as the server sent it ------------------------------------ */
   var STAGING_NOTE = "Staging test shop. No card is taken, nothing on this form is sent and nothing is charged: Open finishes the desk as a test shop.";
+  /* while /open waits: a staging Open took no card, so its lines never say one was saved */
+  var CARD_STILL = "Your card is saved. The desk is still opening; this can take a minute. Stay on this page.";
+  var STAGING_STILL = "The desk is still opening; this can take a minute. Stay on this page.";
+  var CARD_STALLED = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Check again in a minute. If you leave, come back to this page in this browser; once it has opened, we’ll pick up from here.";
+  var STAGING_STALLED = "Nothing was charged, but the desk hasn’t opened yet. Check again in a minute. If you leave, come back to this page in this browser; once it has opened, we’ll pick up from here.";
   /* the server's own line is preferred; this is for a server that sends none */
   var WEBSITE_SOON = "Your own rate website isn’t open yet. Untick it to carry on. Nothing was charged.";
   var SYMBOL = { CAD: "$", USD: "$", AUD: "$", NZD: "$", EUR: "€", GBP: "£" };
@@ -64,18 +74,33 @@
        drew from its own numbers, and the screen says why when the server said no. */
     priced: function (c, R) {
       var i = c.state.i;
+      /* Start on Day 1 (dayOne) is on Day 1 from the press: until the desk opens
+         there is no Home behind the welcome, and never the prototype's desk */
+      var waiting = CD.holding();
       R.homeStatus = CD.launched && !CD.homeReady ? (CD.homeError || "Loading your desk…") : "";
-      R.realHome = CD.launched === true; R.prototypeHome = !R.realHome; R.realInert = "";
-      R.welcomeWrap = "position:relative;max-width:780px;margin:" + (R.realHome ? "158px auto 0" : "0 auto") + ";padding:38px 18px 60px;";
+      R.realHome = CD.launched === true; R.prototypeHome = !R.realHome && !waiting; R.realInert = "";
+      /* the real Home shows once it has drawn itself (its ready message below),
+         never the sign-in page it starts on; until then the desk's own background */
+      R.homeOpacity = CD.homeReady ? "1" : "0";
+      R.welcomeWrap = "position:relative;max-width:780px;margin:" + (R.realHome || waiting ? "158px auto 0" : "0 auto") + ";padding:38px 18px 60px;";
       if (CD._errAt !== i) { CD._errAt = i; if (CD.err && i !== 0) CD.err = ""; }
       if (CD.err && i !== 14 && i !== 0) R.help = CD.err;
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       /* Start on Day 1's one staging line: on Day 1 only, after that launch */
       R.stagingDayOne = i === 16 && CD.launched === true && CD._dayOneLine ? CD._dayOneLine : "";
-      /* and its hold: a neutral status over the page, which is inert beneath it ("" sets the attribute) */
-      var hold = CD.holding();
-      R.dayOneHold = hold; R.holdInert = hold ? "" : null;
-      R.dayOneHoldTitle = hold ? "Opening " + (CD._dayOneName || "a staging test shop") + "…" : "";
+      /* and, until the desk opens, its welcome says so: the shop's name once the
+         server has given it, Build my desk waiting, no confetti yet, and why if
+         /open is slow or refuses, with Check again (the same /open, once more) */
+      R.dkWaiting = i === 16 && waiting; /* a filter, not opacity: the button's entrance (cdFadeUp, fill both) holds opacity at 1 */
+      R.dkCtaLook = R.dkWaiting ? "filter: saturate(0.35) brightness(1.18); cursor: progress; " : "";
+      R.dayOneCheckVisible = false;
+      if (R.dkWaiting) {
+        R.dkSub = CD._dayOneName ? "Opening " + CD._dayOneName + ". This takes a few seconds." : DAY_ONE_SIGNING;
+        R.dkCta = "Opening your desk…"; R.dkConf = [];
+        R.homeStatus = CD._dayOneNote || "";
+        R.dayOneCheckVisible = !!CD._openStalled && !CD._paying;
+        R.onDayOneCheck = function () { CD.checkOpen(c); };
+      }
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
       /* The website refusal stands while it is ticked. Unticking clears it,
@@ -241,7 +266,7 @@
     checkOpen: function (c) {
       var was = CD._openStalled;
       if (!was || CD._paying || was.id !== CD.code) return;
-      CD._openStalled = null; CD._paying = true; CD.payErr = ""; c.forceUpdate();
+      CD._openStalled = null; CD._paying = true; CD.payErr = ""; CD._dayOneNote = ""; c.forceUpdate();
       CD.waitOpen(c, 0, { id: CD.code, nav: CD._nav || 0, active: was.active });
     },
     waitOpen: function (c, n, attempt) {
@@ -251,7 +276,7 @@
       api("POST", "/open", {}).then(function (r) {
         if (!current()) return;
         if (r.status === 200 && r.body.ok) {
-          CD._paying = false; CD.launched = true; CD.tenantId = r.body.tenantId; tabSet("");
+          CD._paying = false; CD._dayOneWait = false; CD._dayOneNote = ""; CD.launched = true; CD.tenantId = r.body.tenantId; tabSet("");
           c.set("cdId", r.body.cdId || CD.code); if (r.body.operatingName) c.set("operatingName", r.body.operatingName);
           c.setState({ paid: true, landKey: c.state.landKey + 1 });
           setTimeout(function () {
@@ -260,11 +285,16 @@
           setTimeout(function () { c.setState({ i: 16 }); }, 1000);
           return;
         }
+        /* Start on Day 1 says it on Day 1's welcome; an Open, beside Open */
+        var dayOne = !!CD._dayOneWait;
         if (r.status === 202 || r.status === 0) {
-          if (n === 10) { CD.payErr = "Your card is saved. The desk is still opening; this can take a minute. Stay on this page."; c.forceUpdate(); }
+          if (n === 10) {
+            if (dayOne) CD._dayOneNote = DAY_ONE_STILL; else CD.payErr = CD._staging ? STAGING_STILL : CARD_STILL;
+            c.forceUpdate();
+          }
           if (n < 60) { setTimeout(function () { CD.waitOpen(c, n + 1, attempt); }, n < 10 ? 1000 : 3000); return; }
           CD._paying = false; CD._openStalled = attempt;
-          CD.payErr = "Your card is saved and nothing was charged, but the desk hasn’t opened yet. Check again in a minute. If you leave, come back to this page in this browser; once it has opened, we’ll pick up from here.";
+          if (dayOne) CD._dayOneNote = DAY_ONE_STALLED; else CD.payErr = CD._staging ? STAGING_STALLED : CARD_STALLED;
           c.forceUpdate(); return;
         }
         if (attempt.active && (r.status === 401 || r.status === 409)) {
@@ -272,39 +302,42 @@
           CD._paying = false; CD.signups[CD.code] = ""; CD.alreadyOpen = true; CD.err = "This desk is already open. Sign in.";
           c._dir = -1; c.setState({ i: 0 }); return;
         }
-        CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
+        CD._paying = false;
+        /* Start on Day 1 keeps its welcome, with the reason and Check again */
+        if (dayOne) { CD._openStalled = attempt; CD._dayOneNote = why(r, DAY_ONE_REFUSED); }
+        else CD.payErr = why(r, "The desk didn’t open. Nothing was charged.");
+        c.forceUpdate();
       });
     },
     walk: function () { CD._dayOneLine = ""; location.assign("/app"); },
 
     /* ---- Start on Day 1 (staging only) ----------------------------------- */
     /* The bridge's mount() calls this for /onboarding#day1 with this tab's
-       fresh mark. The server signs up a new test shop and answers once with
-       its ID and the owner's sign-in; the page's own calls then open it, as
-       after a staging Open: /resume, /staging-open, /open. The sign-in stays
-       in page memory, for the one line on Day 1, and is never stored. The ID
-       goes into this tab only once the desk is opening, so a reload before
-       then starts afresh instead of half-way through.
-       The page holds (holding(), the build's hold over an inert page) from
-       the press until the desk opens or the press fails. The welcome stays
-       under it, then the plan screen once the server has named the shop:
-       never a shop screen without that name, where the prototype draws its
-       stand-in shop (SIGNUP-LOGIC §13). Nothing under the hold can move the
-       page, so a 201 is always carried on, never dropped. */
-    /* Is the page held? Continue, the skips and Back ask first (the bridge,
-       the build's back()). The hold ends when the press stops paying. */
-    holding: function () {
-      if (CD._dayOneHold && !CD._paying) CD._dayOneHold = false;
-      return !!CD._dayOneHold;
-    },
+       fresh mark. The page goes straight to Day 1 (screen 16), whose welcome
+       says the shop is opening while the server signs up a new test shop and
+       answers once with its ID and the owner's sign-in. The page's own calls
+       then open it, as after a staging Open: /resume, /staging-open, /open.
+       No other screen is drawn on the way: not the welcome screen, not the
+       plan screen with its landing and sample desk, and never a shop screen
+       without the server's name for the shop, where the prototype draws its
+       stand-in (SIGNUP-LOGIC §13). The sign-in stays in page memory, for the
+       one line on Day 1, and is never stored. The ID goes into this tab only
+       once the desk is opening, so a reload before then starts afresh. */
+    /* Is Start on Day 1 still opening its desk? Continue, the skips and Back
+       ask first (the bridge, the build's back()), so nothing moves the page off
+       Day 1 meanwhile and a 201 is always carried on, never dropped. It ends
+       when the desk opens or the press fails; a slow or refused /open keeps
+       it, with Check again on the welcome. */
+    holding: function () { return !!CD._dayOneWait; },
     dayOne: function (c) {
       var fail = function (r) {
-        CD._paying = false; CD._dayOneHold = false; CD._dayOneLine = ""; CD._dayOneName = ""; CD.code = ""; tabSet("");
+        CD._paying = false; CD._dayOneWait = false; CD._dayOneNote = ""; CD._openStalled = null;
+        CD._dayOneLine = ""; CD._dayOneName = ""; CD.code = ""; tabSet("");
         CD.err = r && r.status === 429 ? DAY_ONE_SLOW : why(r, DAY_ONE_FAILED);
         c._dir = -1; c.setState({ i: 0 });
       };
-      tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._dayOneName = "";
-      CD._paying = true; CD._dayOneHold = true; c.forceUpdate();
+      tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._dayOneName = ""; CD._dayOneNote = ""; CD._openStalled = null;
+      CD._paying = true; CD._dayOneWait = true; c._dir = 1; c.setState({ i: 16 });
       call("POST", "/api/staging/day-one", {}, 60000).then(function (r) {
         var b = r.body || {}, s = b.signIn && typeof b.signIn === "object" ? b.signIn : {};
         if (r.status !== 201 || b.ok !== true || typeof b.cdId !== "string" || !h.ID.test(b.cdId) || typeof b.operatingName !== "string" || !b.operatingName.trim()
@@ -312,14 +345,13 @@
         var id = b.cdId;
         CD.code = id; CD.known[id] = true; CD.names[id] = b.operatingName.trim(); CD.states[id] = "reserved"; CD.signups[id] = "verified";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
-        CD._dayOneName = CD.names[id]; CD._dayOneLine = dayOneLine(s);
+        CD._dayOneName = CD.names[id]; CD._dayOneLine = dayOneLine(s); c.forceUpdate();
         return CD.loadResume(true).then(function (res) {
-          /* false: the tab moved, which the hold rules out; say so rather than strand it */
+          /* false: the tab moved, which holding() rules out; say so rather than strand it */
           if (res !== true) return fail(res === false ? null : res);
           return api("POST", "/staging-open", { termsSourceHash: window.__cdAgreementHash, agreed: true }).then(function (o) {
             if (CD.code !== id || !((o.status === 200 && o.body.ok) || (o.status === 409 && o.body.error === "already_open"))) return fail(CD.code !== id ? null : o);
-            /* the named plan screen under the hold: if /open does not open, the hold lifts onto it with the reason */
-            tabSet(id); c._dir = 1; c.setState({ i: 15 });
+            tabSet(id);
             CD.waitOpen(c, 0, { id: id, nav: CD._nav || 0 });
           });
         });

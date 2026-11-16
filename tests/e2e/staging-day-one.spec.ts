@@ -178,7 +178,8 @@ test("the press goes straight to Day 1: its welcome says the shop is opening, Bu
   await expect(page.getByText("Welcome to CurrencyDesk.")).toBeVisible();
   await expect(page.getByText("Signing up a new staging test shop and opening its desk.")).toBeVisible();
   await expect(page.locator("[data-staging-day-one-hold]")).toHaveCount(0);
-  await expect(page.locator("[data-signup-root]")).not.toHaveAttribute("inert", /.*/);
+  /* nothing is covered or made inert (the real Home's frame is always inert: it is a backdrop) */
+  await expect(page.locator("#dc-root [inert]:not(iframe[data-real-home])")).toHaveCount(0);
   await expect(page.locator("[data-paymodal]")).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath("staging-day-one-opening.png"), animations: "disabled" });
   /* a click, Tab and Enter, and Escape change nothing */
