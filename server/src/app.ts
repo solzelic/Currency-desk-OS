@@ -35,7 +35,7 @@ import { registerWorkspaceRoutes } from "./routes/workspaces.js";
 import { registerPinRoutes } from "./routes/pin.js";
 import { registerRatesRoutes } from "./routes/rates.js";
 import { registerRatePageRoutes } from "./routes/rate-pages.js";
-import { registerLedgerRoutes } from "./ledger/routes.js";
+import { ledgerPoolFor, registerLedgerRoutes } from "./ledger/routes.js";
 import { refreshSiteDomains, registerSiteRoutes, rewriteHostToSite } from "./sites.js";
 import { registerQuoteRoutes } from "./quotes/routes.js";
 import { registerBillingRoutes } from "./routes/billing.js";
@@ -44,6 +44,7 @@ import { registerClientRoutes } from "./clients/routes.js";
 import { registerIdvCreditRoutes } from "./idv/credit-routes.js";
 import { registerGrowthRoutes, type GrowthDependencies } from "./growth/routes.js";
 import { registerIdvRoutes, type IdvRouteOptions } from "./idv/routes.js";
+import { readOnlyClientLookup } from "./idv/store.js";
 import { registerScreeningRoutes } from "./screening/routes.js";
 
 /* Standalone pages of the marketing site, beyond the front door. Each is
@@ -279,7 +280,7 @@ export async function buildApp(
   registerAdminRoutes(app, db);
   registerAdminMfaRoutes(app, db);
   registerGrowthRoutes(app, db, growth);
-  registerIdvRoutes(app, db, idv);
+  const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   /* There used to be a second, staff-side copy of the whole setup flow —
      sixteen steps an operator could fill in on somebody's behalf. It is
      gone. Setting a desk up is the customer's job on the link we email
@@ -292,7 +293,6 @@ export async function buildApp(
   registerBillingRoutes(app, db);
   /* Per-shop identity-verification settings. Off until an owner turns them on. */
   registerIdvShopConfigRoutes(app, db);
-  const ledgerDatabaseUrl = process.env.LEDGER_DATABASE_URL ?? process.env.DATABASE_URL;
   if (ledgerDatabaseUrl) {
     registerLedgerRoutes(app, db, ledgerDatabaseUrl);
     registerQuoteRoutes(app, db, ledgerDatabaseUrl);
@@ -305,6 +305,12 @@ export async function buildApp(
     registerScreeningRoutes(app, db, ledgerDatabaseUrl);
     registerIdvCreditRoutes(app, db, ledgerDatabaseUrl);
   }
+  /* One ledger pool. Client lookup is a read on that pool, not a second connection. */
+  const shared = ledgerPoolFor(app);
+  registerIdvRoutes(app, db, {
+    ...idv,
+    clients: idv?.clients ?? (shared ? readOnlyClientLookup(shared) : undefined),
+  });
 
   // serve the frontend from STATIC_DIR (compiled web/app shells, else the buildless OS) when configured
   const staticDir = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : null;

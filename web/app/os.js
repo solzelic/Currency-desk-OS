@@ -4380,6 +4380,10 @@
     fromDeskFields: fromDeskFields,
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
+    idvStatus: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId)); },
+    startIdv: function (clientId) {
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId }) });
+    },
     /* Settings → Accepted IDs. The read is anybody's; `canChange` says
        whether this person may switch types. The write takes catalogue
        codes, or null to follow the pack, and is the owner's. */
@@ -27425,6 +27429,130 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      The number is the desk's own line — the pack, then what the desk
      set — never a figure typed into this screen. A utility bill in the
      folder below does not move this. */
+  /* The check Persona is running for this client. The words are the
+     status the server stored. The ID image and the name Persona read
+     are not on this desk. */
+  function IdentityCheck({
+    clientId,
+    canEdit
+  }) {
+    const [status, setStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
+    const [note, setNote] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const [tick, setTick] = useState(0);
+    const labels = {
+      starting: 'Starting',
+      'in progress': 'In progress',
+      'needs review': 'Needs review',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
+      declined: 'Declined',
+      failed: 'Failed',
+      expired: 'Expired'
+    };
+    useEffect(() => {
+      if (!clientId) return undefined;
+      let live = true;
+      setLoaded(false);
+      setStatus('');
+      let timer = 0;
+      const open = value => value === 'starting' || value === 'in progress' || value === 'needs review';
+      const pull = () => {
+        const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+        if (!api || !api.idvStatus) return;
+        api.idvStatus(clientId).then(body => {
+          if (!live) return;
+          const next = body && typeof body.status === 'string' ? body.status : '';
+          setStatus(next);
+          setChecksOn(!!(body && body.checksEnabled));
+          setLoaded(true);
+          if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
+        }).catch(() => {
+          if (live) {
+            setLoaded(true);
+            setNote('The identity check status could not be read.');
+          }
+        });
+      };
+      pull();
+      return () => {
+        live = false;
+        window.clearTimeout(timer);
+      };
+    }, [clientId, tick]);
+    const start = () => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (!api || !api.startIdv || busy) return;
+      setBusy(true);
+      setNote('');
+      api.startIdv(clientId).then(body => {
+        if (body && body.connected === false) {
+          setNote(body.message || 'Identity checks are not connected.');
+          setBusy(false);
+          return;
+        }
+        setStatus('starting');
+        setTick(n => n + 1);
+        setBusy(false);
+      }).catch(err => {
+        setNote(err && err.message || 'The identity check could not be started.');
+        setBusy(false);
+      });
+    };
+    const label = status === 'approved' ? 'Check passed' : labels[status] || (status ? 'Recorded' : '');
+    const passed = label === 'Check passed' || label === 'Check passed (test)';
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "identity-check",
+      className: "mb-3 p-3.5",
+      style: {
+        background: CD.panel,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1.5",
+      style: {
+        color: CD.faint,
+        fontFamily: 'Space Mono, monospace'
+      }
+    }, "Identity check"), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center gap-2 flex-wrap"
+    }, /*#__PURE__*/React.createElement("span", {
+      "data-testid": "identity-check-status",
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, loaded ? label || 'No check has been started for this client.' : 'Reading the identity check.'), canEdit && checksOn && !passed && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: start,
+      disabled: busy,
+      className: "text-[12px] font-medium px-2.5 py-1",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: 'transparent'
+      }
+    }, busy ? 'Starting' : 'Start identity check')), note && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.flag
+      }
+    }, note), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "ID details from this check are not saved on the desk. Enter the ID with Fix ID."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "Persona's ID photo and selfie are not copied to this desk."));
+  }
   function ProcessStanding({
     rec,
     settings
@@ -27540,7 +27668,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.mute,
         maxWidth: 420
       }
-    }, "Proof of address, source of funds, corporate filings \u2014 kept with this customer, not in this browser.")), canEdit && /*#__PURE__*/React.createElement("label", {
+    }, "Proof of address, source of funds, corporate filings, kept with this customer, not in this browser.")), canEdit && /*#__PURE__*/React.createElement("label", {
       className: "flex items-center gap-1 text-[12px] font-medium cursor-pointer flex-none",
       style: {
         color: CD.ink
@@ -27968,7 +28096,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }), /*#__PURE__*/React.createElement(ProcessStanding, {
       rec: rec,
       settings: settings
-    }), /*#__PURE__*/React.createElement(FileFolder, {
+    }), rec && rec.clientId ? /*#__PURE__*/React.createElement(IdentityCheck, {
+      clientId: rec.clientId,
+      canEdit: canEdit
+    }) : null, /*#__PURE__*/React.createElement(FileFolder, {
       rec: rec,
       canEdit: canEdit,
       writer: writer,
@@ -28079,6 +28210,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       name: name,
       kind: rec.kind || 'individual',
       rec: rec,
+      clientId: rec && rec.clientId,
       by: me && me.name,
       setClients: setClients,
       settings: settings
@@ -51568,12 +51700,41 @@ ${(filing.map || []).map(blockHTML).join('')}
     rec,
     by,
     setClients,
-    settings
+    settings,
+    clientId
   }) {
     useStore();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
+    const [idvStatus, setIdvStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
+    useEffect(() => {
+      if (!clientId) return undefined;
+      let live = true;
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (!api || !api.idvStatus) return undefined;
+      api.idvStatus(clientId).then(body => {
+        if (!live || !body) return;
+        setIdvStatus(typeof body.status === 'string' ? body.status : '');
+        setChecksOn(!!body.checksEnabled);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [clientId]);
+    const idvWords = {
+      starting: 'Starting',
+      'in progress': 'In progress',
+      'needs review': 'Needs review',
+      approved: 'Check passed',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
+      declined: 'Declined',
+      failed: 'Failed',
+      expired: 'Expired'
+    }[idvStatus] || '';
+    const configured = checksOn || !!idvStatus;
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -51625,14 +51786,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: "Persona is not connected yet, so this desk does not run a background check or an ID verification. Not screened."
+      body: configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
-      "data-testid": "persona-not-connected",
+      "data-testid": configured ? 'persona-connection' : 'persona-not-connected',
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
+    }, configured ? checks.length ? idvWords || 'Identity checks are on for this shop.' : 'Identity checks are on for this shop.' : 'Persona is not connected yet.'), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       "data-testid": "client-not-screened",
       style: {
@@ -51706,7 +51867,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "No verifications on file. Persona is not connected yet."));
+    }, configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'));
   }
 
   /* ====================================================================

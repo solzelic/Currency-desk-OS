@@ -1,5 +1,9 @@
 /* Field rules for the persona provider. apiKeyRef is an environment
-   variable name. The value is read here, from that name, and nowhere else. */
+   variable name. The value is read here, from that name, and nowhere else.
+   Sandbox and production are the key prefix Persona documents
+   (persona_sandbox, persona_production). A key with neither prefix
+   follows the runtime: staging is sandbox. */
+import { isProductionRuntime, isStagingRuntime } from "../../auth/staging-runtime.js";
 import type { IdvSettingsProvider } from "../provider.js";
 
 const TEMPLATE = /^(itmpl|itmplv|tmpl)_[A-Za-z0-9_-]{1,80}$/;
@@ -25,6 +29,49 @@ function looksLikeKey(name: string): boolean {
 export function personaRefIssue(name: string, shopCode: string): "key" | "name" | null {
   if (personaKeyAllowed(name, shopCode)) return null;
   return looksLikeKey(name) ? "key" : "name";
+}
+
+/* The shared key, read here and nowhere else. */
+export function personaSharedKey(env: NodeJS.ProcessEnv): string {
+  return (env[SHARED] ?? "").trim();
+}
+
+/* A live key is refused on every runtime. Staging allows only a sandbox
+   key. A live host refuses every key until go-live (CD-219). Any other
+   persona_ prefix is refused. A key with no persona_ prefix is not a
+   Persona key, so the fixture key still runs off those hosts. */
+export function personaKeyMatchesRuntime(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = key.trim();
+  const sandbox = value.startsWith("persona_sandbox");
+  const production = value.startsWith("persona_production");
+  if (production) return false;
+  if (value.startsWith("persona_") && !sandbox) return false;
+  if (isStagingRuntime(undefined, env)) return sandbox;
+  if (isProductionRuntime(env)) return false;
+  return !sandbox;
+}
+
+/* True only for a sandbox key, or a key with no Persona prefix on a staging runtime. */
+export function personaKeyIsSandbox(key: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = key.trim();
+  if (value.startsWith("persona_sandbox")) return true;
+  if (value.startsWith("persona_production")) return false;
+  return isStagingRuntime(undefined, env);
+}
+
+export const PASS_LABEL = "Check passed";
+export const PASS_LABEL_TEST = "Check passed (test)";
+
+/* The words on the client file. Never "Approved". */
+export function personaPassLabel(
+  env: NodeJS.ProcessEnv,
+  apiKeyRef: string | null | undefined,
+  shopCode: string,
+): typeof PASS_LABEL | typeof PASS_LABEL_TEST {
+  const requested = (apiKeyRef ?? "").trim();
+  const name = requested === "" ? SHARED : requested;
+  const key = personaKeyAllowed(name, shopCode) ? (env[name] ?? "").trim() : "";
+  return personaKeyIsSandbox(key, env) ? PASS_LABEL_TEST : PASS_LABEL;
 }
 
 export function personaConnection(

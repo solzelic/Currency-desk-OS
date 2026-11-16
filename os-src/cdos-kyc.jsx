@@ -529,11 +529,37 @@
     const open = rec && Number(rec.screeningOpenReviews) > 0 ? Number(rec.screeningOpenReviews) : 0;
     return open ? word + " · " + open + " to review" : word;
   }
-  function SubjectPanel({ name, kind, rec, by, setClients, settings }) {
+  function SubjectPanel({ name, kind, rec, by, setClients, settings, clientId }) {
     useStore();
     const applied = useRef({});
     const checks = checksFor(name);
     const latest = checks[0];
+    const [idvStatus, setIdvStatus] = useState('');
+    const [checksOn, setChecksOn] = useState(false);
+    useEffect(() => {
+      if (!clientId) return undefined;
+      let live = true;
+      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (!api || !api.idvStatus) return undefined;
+      api.idvStatus(clientId).then(body => {
+        if (!live || !body) return;
+        setIdvStatus(typeof body.status === 'string' ? body.status : '');
+        setChecksOn(!!body.checksEnabled);
+      }).catch(() => {});
+      return () => { live = false; };
+    }, [clientId]);
+    const idvWords = {
+      starting: 'Starting',
+      'in progress': 'In progress',
+      'needs review': 'Needs review',
+      approved: 'Check passed',
+      'Check passed': 'Check passed',
+      'Check passed (test)': 'Check passed (test)',
+      declined: 'Declined',
+      failed: 'Failed',
+      expired: 'Expired',
+    }[idvStatus] || '';
+    const configured = checksOn || !!idvStatus;
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -552,8 +578,8 @@
       <div className="flex items-center gap-2.5 mb-3">
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body="Persona is not connected yet, so this desk does not run a background check or an ID verification. Not screened." /></div>
-          <div className="text-[11px]" data-testid="persona-not-connected" style={{ color: CD.mute }}>Persona is not connected yet.</div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."} /></div>
+          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (checks.length ? (idvWords || 'Identity checks are on for this shop.') : 'Identity checks are on for this shop.') : 'Persona is not connected yet.'}</div>
           <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>{clientScreenLine(rec)}</div>
         </div>
       </div>
@@ -569,7 +595,7 @@
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>No verifications on file. Persona is not connected yet.</div>}
+        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>{configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'}</div>}
     </div>);
   }
 

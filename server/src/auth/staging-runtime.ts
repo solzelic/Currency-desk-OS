@@ -29,6 +29,12 @@ export function isStagingHost(host: string, env: NodeJS.ProcessEnv = process.env
   return env.IS_PULL_REQUEST === "true" && PREVIEW_HOST.test(host);
 }
 
+/** The live hosts, and STAGING is not "1". Anything else is unset. */
+export function isProductionRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.STAGING === "1") return false;
+  return LIVE_HOSTS.has(requestHost(env.RENDER_EXTERNAL_HOSTNAME));
+}
+
 /** STAGING is exactly "1", and RENDER_EXTERNAL_HOSTNAME is a
     staging host. A request Host, when passed, must be one too. */
 export function isStagingRuntime(

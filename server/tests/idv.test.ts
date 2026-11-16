@@ -9,6 +9,7 @@ vi.mock("node:crypto", async () => {
   return { ...actual, timingSafeEqual: equalSpy };
 });
 import type { FastifyInstance } from "fastify";
+import { sql } from "drizzle-orm";
 import { createDb, type DbHandle } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
 import { createPersonaProvider } from "../src/idv/providers/persona/index.js";
@@ -47,6 +48,7 @@ describe("persona webhook signature", () => {
     expect(check(signed(SECRET, raw, t).replace(/.$/, (c) => (c === "a" ? "b" : "a")))).toBe(false);
   });
   it("rejects an expired signature", () => { expect(check(signed(SECRET, raw, t - 301))).toBe(false); });
+  it("rejects a future timestamp outside the window", () => { expect(check(signed(SECRET, raw, t + 301))).toBe(false); });
   it("accepts either secret during rotation", () => {
     const header = `t=${t - 301},v1=${"ab".repeat(32)} t=${t},v1=${mac(PREVIOUS, raw, t)}`;
     expect(check(header)).toBe(true);
@@ -54,6 +56,10 @@ describe("persona webhook signature", () => {
   it("is absent when the keys are blank", () => {
     expect(createPersonaProvider({})).toBeNull();
     expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET: "  " })).toBeNull();
+    expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS })).toBeNull();
+  });
+  it("accepts the previous secret only beside the current one", () => {
+    expect(createPersonaProvider({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS })).not.toBeNull();
   });
   it("verifies the exact raw bytes, not the re-serialized payload", () => {
     const pretty = Buffer.from('{\n  "a": 1\n}');
@@ -87,6 +93,10 @@ describe("idv webhook", () => {
     const persona = withSecrets({ PERSONA_WEBHOOK_SECRET: SECRET, PERSONA_WEBHOOK_SECRET_PREVIOUS: PREVIOUS });
     app = await buildApp(handle.db, {}, undefined, { persona });
     off = await buildApp(handle.db, {}, undefined, { persona: createPersonaProvider({}) });
+    await handle.db.execute(sql`INSERT INTO tenants (id, name) VALUES ('tnt-a', 'Shop A'), ('tnt-b', 'Shop B')`);
+    await handle.db.execute(sql`
+      INSERT INTO legal_entities (id, tenant_id, name) VALUES ('shop-a', 'tnt-a', 'Shop A'), ('shop-b', 'tnt-b', 'Shop B')
+    `);
     await insertIdvInquiry(handle.db, { referenceId: "ref-a", shopId: "shop-a", branchId: "br-a", tellerId: "teller-a", provider: "persona", providerRef: "inq_a" });
     await insertIdvInquiry(handle.db, { referenceId: "ref-b", shopId: "shop-b", branchId: "br-b", tellerId: "teller-b", provider: "persona", providerRef: "inq_b" });
   });
@@ -135,11 +145,71 @@ describe("idv webhook", () => {
     expect(JSON.stringify(a)).not.toContain("not-stored");
   });
 
+  it("accepts an event with no reference-id and keeps the stored row", async () => {
+    await insertIdvInquiry(handle.db, { referenceId: "ref-noref", shopId: "shop-a", branchId: "br-a", tellerId: "teller-a", provider: "persona", providerRef: "inq_noref" });
+    const raw = JSON.stringify({
+      data: { id: "evt_noref", attributes: { name: "inquiry.approved", payload: { data: {
+        id: "inq_noref", attributes: { status: "approved" },
+      } } } },
+    });
+    const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true, duplicate: false });
+    const events = await listIdvEvents(handle.db, "shop-a");
+    expect(events).toContainEqual({ eventId: "evt_noref", referenceId: "ref-noref", shopId: "shop-a", providerRef: "inq_noref" });
+    const status = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE reference_id = 'ref-noref'`);
+    expect((status.rows[0] as { status: string }).status).toBe("approved");
+  });
+
+  it("rejects a reference-id that disagrees with the stored inquiry", async () => {
+    const before = await countIdvEvents(handle.db);
+    const raw = JSON.stringify({
+      data: { id: "evt_mismatch", attributes: { name: "inquiry.declined", payload: { data: {
+        id: "inq_noref", attributes: { status: "declined", "reference-id": "ref-other" },
+      } } } },
+    });
+    const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "invalid_webhook" });
+    expect(await countIdvEvents(handle.db)).toBe(before);
+    const status = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE reference_id = 'ref-noref'`);
+    expect((status.rows[0] as { status: string }).status).toBe("approved");
+  });
+
+  it("ignores a watchlist event and stores nothing from it", async () => {
+    const before = await countIdvEvents(handle.db);
+    const raw = JSON.stringify({
+      data: {
+        id: "evt_watch",
+        attributes: {
+          name: "report/watchlist.matched",
+          payload: { data: { id: "rep_1", attributes: { "name-first": "Secret", "name-last": "Person", birthdate: "1990-01-01" } } },
+        },
+      },
+    });
+    const res = await post(app, raw, signed(SECRET, Buffer.from(raw)));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true, dropped: true });
+    expect(res.body).not.toContain("Secret");
+    expect(res.body).not.toContain("1990-01-01");
+    expect(await countIdvEvents(handle.db)).toBe(before);
+  });
+
   it("rejects a bad signature on the route and writes nothing", async () => {
     const before = await countIdvEvents(handle.db);
     const raw = rawFor("evt_bad", "ref-a", "inq_a", "shop-b");
     const res = await post(app, raw, signed("other-secret", Buffer.from(raw)));
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "invalid_signature" });
     expect(await countIdvEvents(handle.db)).toBe(before);
+  });
+
+  it("refuses a webhook body over 256 KiB", async () => {
+    const raw = "x".repeat(256 * 1024 + 1);
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/persona", payload: raw,
+      headers: { "content-type": "application/json", "persona-signature": "t=1,v1=ab" },
+    });
+    expect(res.statusCode).toBe(413);
   });
 });

@@ -990,6 +990,10 @@
     fromDeskFields: fromDeskFields,
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
+    idvStatus: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId)); },
+    startIdv: function (clientId) {
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId }) });
+    },
     /* Settings → Accepted IDs. The read is anybody's; `canChange` says
        whether this person may switch types. The write takes catalogue
        codes, or null to follow the pack, and is the owner's. */
