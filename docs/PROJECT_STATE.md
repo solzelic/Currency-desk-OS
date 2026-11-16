@@ -1924,6 +1924,15 @@ React production URLs in its bundler template. Neither is a product-route
 regression. Review this stamp — and every section above — whenever a PR
 changes what is true.
 
+### CD-206 deterministic local password seam (16 Nov 2026)
+The browser seam no longer depends on external HIBP uptime: its local-only
+entry installs exact range-response fixtures while running the real password
+rules, parser and refusal path. Production and hosted staging checking is
+unchanged and remains fail-closed. Tests cover leaked/unavailable refusals,
+runtime boundaries, abort handling, and browser recovery with a clean phrase.
+The earlier CD221 55912b2e full-browser timeout and tour-motion failure remain
+retained evidence; this bounded fixture does not establish full acceptance.
+
 ### CD-206 hosted walkthrough display corrections (16 Nov 2026)
 Hosted staging 900cfaa completed fresh synthetic signup through a real owner workspace and logout. Returning login still needs the coordinated CD221 integration. The walkthrough found a duplicate registration skip hint and a prototype `yorkfx` desk-record title: the page now consumes the verified resume workspace and the complete pack hint, with the operating name as the title fallback. No server, auth, schema, legal wording or billing changes. CD206 remains In progress.
 

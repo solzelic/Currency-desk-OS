@@ -27,6 +27,18 @@ SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # browser↔ledger s
 **Use a fresh disposable database per full run** — several suites
 deliberately leave ledger state behind (an append-only book is the point).
 
+The local browser seam replaces only HIBP's exact range GET through
+`server/src/seam-breach-range.ts`, installed by `seam-server.ts`. The real
+password validator and range parser still run. Synthetic fixture phrases
+exercise breached and unavailable responses; other ranges return a padded
+zero-count record. Production `index.ts` never imports the fixture, and its
+runtime guard refuses production, hosted staging, Render and non-local databases.
+The dedicated localhost staging simulation can set
+`CD_TEST_BREACH_RANGE=local-staging` with its exact
+`staging.currencydeskos.com` test hostname; this relaxes only the simulated
+staging markers, never the deployment or loopback/database checks.
+Hosted provider checks remain real and fail closed on provider failure.
+
 ## Browser screenshot output
 
 `staff-switch-seam.spec.ts` and `till-handover.spec.ts` save their named

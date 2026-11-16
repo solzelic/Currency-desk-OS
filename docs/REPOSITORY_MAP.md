@@ -312,6 +312,12 @@ whole list; everything else is source.
 
 ### Local signup test facilities
 
+`server/src/seam-breach-range.ts` supplies deterministic HIBP range responses
+only through the local `seam-server.ts` entry. It wraps the exact provider GET
+and delegates other fetches unchanged; `localTestRuntime` is checked on every
+request. The production entry never imports it. Clean, breached, unavailable,
+aborted and deployment-refusal cases retain the real password checker.
+
 `server/src/local-test-runtime.ts` gates signup screenshot seeding and the
 seam-only code mailbox. Both require explicit test/development mode, loopback
 bind and database hosts, no deployment/staging marker, and loopback request
