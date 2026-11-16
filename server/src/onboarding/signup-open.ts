@@ -278,7 +278,13 @@ export async function openFromSetupIntent(db: Db, intent: { id: string; metadata
   await advance(db, enquiryId, "active");
   await db.update(schema.enquiries).set({ status: "accepted", tenantId: made.tenantId, decidedAt: new Date(), decidedBy: "signup-v2.1" }).where(eq(schema.enquiries.id, enquiryId));
   // v2.1 explicitly offers zero = every exchange; legacy zero meant blank.
-  if (values.idOver === "0") await db.update(schema.legalEntities).set({ idThreshold: "0.00" }).where(eq(schema.legalEntities.id, made.legalEntityId));
+  if (values.idOver === "0") {
+    await db.update(schema.legalEntities).set({ idThreshold: "0.00" }).where(eq(schema.legalEntities.id, made.legalEntityId));
+    // The legacy provisioner defaults zero to 3000. Preserve the explicit v2.1
+    // choice in both authorities, inside this same activation transaction.
+    spec.setup.idThreshold = 0;
+    await db.update(schema.tenants).set({ setup: spec.setup }).where(eq(schema.tenants.id, made.tenantId));
+  }
   await audit(db, {
     tenantId: made.tenantId, legalEntityId: made.legalEntityId, branchId: made.branchId, actorId: made.ownerId,
     action: "signup.completed", detail: { enquiryId, plan: account.planChoice ?? null, via: "signup-v2.1" },

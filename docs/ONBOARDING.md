@@ -281,3 +281,14 @@ The existing Early Access booking route shares that lock and rechecks the latest
 permission, so a queued booking cannot restore a schedule after an opt-out.
 Reconsent does not schedule or place a call. Calling-service integration, holiday
 hours, sales permission and Compliance's wording approval remain separate gates.
+
+### v2.1 setup fidelity (review in progress)
+
+An explicit `idOver: "0"` means every exchange. Activation stores zero in both
+legal-entity policy and tenant setup in its existing transaction; the OS retains
+zero even when the policy currency differs (zero needs no conversion). Positive
+foreign-currency policy still requires the authoritative conversion path.
+Opening counts remain draft amounts by currency, not posted cash. The page shows
+“Not posted” and the review says “Count saved by currency”; it does not value the
+count using prototype sample rates. The authoritative opening-position handoff
+and its PIN/declaration contract remain open with CTO.

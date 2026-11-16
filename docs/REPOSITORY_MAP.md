@@ -316,3 +316,6 @@ readiness message is accepted only from that iframe, origin and activated tenant
 `signup-v2.1-open.js` renders the iframe declaratively after `/open` succeeds;
 prototype chrome remains only for local review seeds. Build my desk hands off to
 the normal `/app` entry. The subsequent walkthrough remains separate work.
+
+The signup `signup-v2.1-setup.js` view adapter labels opening counts as draft
+amounts by currency; it never supplies a converted cash valuation.

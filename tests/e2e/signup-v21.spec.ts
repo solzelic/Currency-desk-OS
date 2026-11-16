@@ -190,6 +190,7 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await press(page, /That’s me, Daniel Okafor/);
     await press(page, /^Continue/);
     await expect(page.getByText("When should the desk ask for ID?")).toBeVisible();
+    await press(page, /^Every deal/);
     await press(page, /^Use this line/);
     await expect(page.getByText("Who else works the counter?")).toBeVisible();
     await press(page, /It’s just me for now/);
@@ -271,7 +272,9 @@ test.describe("sign-up v2.1, the visitor's path", () => {
       const me = await page.request.get("/api/auth/me"); expect(me.status()).toBe(200);
       expect((await me.json()).user.tenantId).toBe(activated.tenantId);
       const own = await page.request.get("/api/tenant?tenantId=tnt-yorkfx");
-      expect((await own.json()).tenant.id).toBe(activated.tenantId);
+      const ownTenant = (await own.json()).tenant;
+      expect(ownTenant.id).toBe(activated.tenantId); expect(ownTenant.setup.idThreshold).toBe(0);
+      expect(await frame.locator("#os").evaluate(() => JSON.parse(localStorage.getItem("cdos_settings") || "{}").idRequiredOver)).toBe(0);
       expect((await page.request.get(`/api/onboarding/${cdId}/resume`)).status()).toBe(401);
       await page.screenshot({ path: test.info().outputPath("day-one-real-home.png"), animations: "disabled" });
     }
