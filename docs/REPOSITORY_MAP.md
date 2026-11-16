@@ -340,6 +340,10 @@ makes that same reservation and walks it, in process, through the same services 
 page calls, up to Open. The page (`signup-v2.1-open.js`, `CD.dayOne`) then makes the
 usual `/resume`, `/staging-open` and `/open` calls on the enrolment cookie, so the desk
 opens through the same assent row, activation and session upgrade as any staging Open.
+From the press until the desk opens, the page holds: a neutral status (the build's
+`data-staging-day-one-hold`) over a page made inert, with `CD.holding()` stopping
+Continue, the skips and Back, so no shop screen shows before the server has named the
+shop and nothing can drop its answer.
 The server signs the declaration as "Staging Owner" for that fixture only and audits
 `staging.day_one`. Shared pieces it uses: `freshStagingIdentity`, `allowFreshShop` and
 `allowDayOne` (routes/staging-fresh-shop.ts) and `saveSignupAnswers`

@@ -86,8 +86,9 @@ This output change does not alter their financial fixtures or assertions.
   for the emailed code as usual. Ordinary reservations never get a code in a response.
 - **Staging Start on Day 1**: to try the onboarding after payment without walking the
   sign-up, open `https://staging.currencydeskos.com/app` and press **Start on Day 1**
-  (beside Start a fresh shop, both tagged Staging). A few seconds on "Opening your
-  desk…" later, the same tab is on Day 1 of a brand-new test shop, signed in as its
+  (beside Start a fresh shop, both tagged Staging). A few seconds on a holding screen
+  ("Opening a staging test shop…", then the new shop's name; nothing under it can be
+  pressed) later, the same tab is on Day 1 of a brand-new test shop, signed in as its
   owner, over the real Home: Build my desk, the tour and the first apps from there.
   Every press is a new shop. The boxed line under Build my desk gives the counter PIN
   (needed to take a drawer; it becomes 0000 when staging next restarts) and the owner's

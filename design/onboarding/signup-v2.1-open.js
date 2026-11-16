@@ -72,6 +72,10 @@
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
       /* Start on Day 1's one staging line: on Day 1 only, after that launch */
       R.stagingDayOne = i === 16 && CD.launched === true && CD._dayOneLine ? CD._dayOneLine : "";
+      /* and its hold: a neutral status over the page, which is inert beneath it ("" sets the attribute) */
+      var hold = CD.holding();
+      R.dayOneHold = hold; R.holdInert = hold ? "" : null;
+      R.dayOneHoldTitle = hold ? "Opening " + (CD._dayOneName || "a staging test shop") + "…" : "";
       if (i !== 15) return R;
       var d = c.state.data, an = (d.term || "monthly") === "annual";
       /* The website refusal stands while it is ticked. Unticking clears it,
@@ -280,33 +284,43 @@
        after a staging Open: /resume, /staging-open, /open. The sign-in stays
        in page memory, for the one line on Day 1, and is never stored. The ID
        goes into this tab only once the desk is opening, so a reload before
-       then starts afresh instead of half-way through. */
+       then starts afresh instead of half-way through.
+       The page holds (holding(), the build's hold over an inert page) from
+       the press until the desk opens or the press fails. The welcome stays
+       under it, then the plan screen once the server has named the shop:
+       never a shop screen without that name, where the prototype draws its
+       stand-in shop (SIGNUP-LOGIC §13). Nothing under the hold can move the
+       page, so a 201 is always carried on, never dropped. */
+    /* Is the page held? Continue, the skips and Back ask first (the bridge,
+       the build's back()). The hold ends when the press stops paying. */
+    holding: function () {
+      if (CD._dayOneHold && !CD._paying) CD._dayOneHold = false;
+      return !!CD._dayOneHold;
+    },
     dayOne: function (c) {
       var fail = function (r) {
-        CD._paying = false; CD._dayOneLine = ""; CD.code = ""; tabSet("");
+        CD._paying = false; CD._dayOneHold = false; CD._dayOneLine = ""; CD._dayOneName = ""; CD.code = ""; tabSet("");
         CD.err = r && r.status === 429 ? DAY_ONE_SLOW : why(r, DAY_ONE_FAILED);
         c._dir = -1; c.setState({ i: 0 });
       };
-      tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._paying = true;
-      var nav = CD._nav || 0;
-      var moved = function () { return (CD._nav || 0) !== nav; };
-      c._dir = 1; c.setState({ i: 15 });
+      tabSet(""); CD.navigation(); CD.code = ""; CD.err = ""; CD._dayOneLine = ""; CD._dayOneName = "";
+      CD._paying = true; CD._dayOneHold = true; c.forceUpdate();
       call("POST", "/api/staging/day-one", {}, 60000).then(function (r) {
-        if (moved()) { CD._paying = false; return; }
         var b = r.body || {}, s = b.signIn && typeof b.signIn === "object" ? b.signIn : {};
-        if (r.status !== 201 || b.ok !== true || typeof b.cdId !== "string" || !h.ID.test(b.cdId) || !DAY_ONE_EMAIL.test(String(s.email))
-          || !/^[0-9]{4}$/.test(String(s.pin)) || !DAY_ONE_PASSWORD.test(String(s.password))) return fail(r);
+        if (r.status !== 201 || b.ok !== true || typeof b.cdId !== "string" || !h.ID.test(b.cdId) || typeof b.operatingName !== "string" || !b.operatingName.trim()
+          || !DAY_ONE_EMAIL.test(String(s.email)) || !/^[0-9]{4}$/.test(String(s.pin)) || !DAY_ONE_PASSWORD.test(String(s.password))) return fail(r);
         var id = b.cdId;
-        CD.code = id; CD.known[id] = true; CD.names[id] = String(b.operatingName || ""); CD.states[id] = "reserved"; CD.signups[id] = "verified";
+        CD.code = id; CD.known[id] = true; CD.names[id] = b.operatingName.trim(); CD.states[id] = "reserved"; CD.signups[id] = "verified";
         c.set("cdId", id); c.set("operatingName", CD.names[id]);
-        CD._dayOneLine = dayOneLine(s);
+        CD._dayOneName = CD.names[id]; CD._dayOneLine = dayOneLine(s);
         return CD.loadResume(true).then(function (res) {
-          if (res === false) { CD._paying = false; CD._dayOneLine = ""; return; }
-          if (res !== true) return fail(res);
+          /* false: the tab moved, which the hold rules out; say so rather than strand it */
+          if (res !== true) return fail(res === false ? null : res);
           return api("POST", "/staging-open", { termsSourceHash: window.__cdAgreementHash, agreed: true }).then(function (o) {
-            if (CD.code !== id || moved()) { CD._paying = false; CD._dayOneLine = ""; return; }
-            if ((o.status === 200 && o.body.ok) || (o.status === 409 && o.body.error === "already_open")) { tabSet(id); CD.waitOpen(c, 0, { id: id, nav: nav }); return; }
-            fail(o);
+            if (CD.code !== id || !((o.status === 200 && o.body.ok) || (o.status === 409 && o.body.error === "already_open"))) return fail(CD.code !== id ? null : o);
+            /* the named plan screen under the hold: if /open does not open, the hold lifts onto it with the reason */
+            tabSet(id); c._dir = 1; c.setState({ i: 15 });
+            CD.waitOpen(c, 0, { id: id, nav: CD._nav || 0 });
           });
         });
       });

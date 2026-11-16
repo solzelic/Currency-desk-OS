@@ -16,7 +16,11 @@ staging owner stands before Open and answers once with the CD ID and the owner's
 sign-in, plus the ordinary enrolment cookie. The sign-up page then asks the existing
 `/resume`, `/staging-open` and `/open`, and Day 1 shows over the real Home with one
 staging line giving the PIN and the sign-in. Every press is a new test shop. Nothing
-calls Stripe, a mailer or the network, and nothing posts to the ledger.
+calls Stripe, a mailer or the network, and nothing posts to the ledger. From the press
+until the desk opens, the page holds on a neutral status ("Opening a staging test
+shop…", then the shop's name) over a page that cannot be pressed: the prototype's
+stand-in shop never shows, and nothing can drop the server's answer. If `/open` then
+refuses, the hold lifts onto the plan screen, named, with the reason.
 
 Gates: the route exists only with `STAGING` exactly 1; each request needs the staging
 raw Host (forwarded hosts ignored), the `db_environment` staging marker before any

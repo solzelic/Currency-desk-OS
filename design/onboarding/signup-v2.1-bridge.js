@@ -355,6 +355,7 @@
     /* ---- Continue on each screen (patched into the prototype's next()) --- */
     beforeNext: function (c) {
       var i = c.state.i, d = c.state.data;
+      if (CD.holding && CD.holding()) return false;
       if (CD._pass === i) { CD._pass = null; return true; }
       if (CD.seeded) return true;
       if (CD._busy) return false;
@@ -407,7 +408,8 @@
       return true;
     },
     /* Skip links ("I'll add this later" and the like): chapters decide (signup-v2.1-chapters.js). */
-    beforeGo: function (c, n) { CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
+    /* Continue, the skips and Back (build patch) ask Start on Day 1's hold first (open.js holding) */
+    beforeGo: function (c, n) { if (CD.holding && CD.holding()) return false; CD.navigation(); return CD.chapterGo ? CD.chapterGo(c, n) : true; },
     navigation: function () { CD._nav = (CD._nav || 0) + 1; CD._pass = null; },
     signInAgain: function (c, msg) {
       /* The enrolment session lapsed (24 hours idle) or was opened in another
