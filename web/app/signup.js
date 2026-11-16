@@ -1195,7 +1195,7 @@ class Component extends DCLogic {
             onTap: () => { if (busy) return; this._tone('tap'); this.set('lockMode', 'password'); this.setState({ lockErr: '' }); setTimeout(() => this.focusStage(), 60); } },
             tag('', 'plain'))
         ];
-        R.authBtns = R.authBtns.filter((b) => b.id !== 'passkey' || window.__cdOnb.pkAvailable !== false);
+        R.authBtns = R.authBtns.filter((b) => window.__cdOnb.offers(b.id));
         R.authBtns = R.authBtns.map(b => Object.assign({}, b, { disabled: busy || ok(b.id) }));
         R.authNote = mode === 'password' ? 'At least 12 characters. No symbols needed; a few words together works well. Passwords found in known leaks are refused. You can add a passkey inside any time.'
           : 'A passkey uses ' + dev.how + ' on this ' + dev.device + ' and never leaves it. Use the Google or Microsoft account for the email you applied with.';

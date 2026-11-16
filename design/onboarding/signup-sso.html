@@ -9,19 +9,37 @@
 <p role="status">Taking you back to CurrencyDesk&hellip;</p>
 <script>
 /* Google or Microsoft send the person here (SSO_REDIRECT_URI = <origin>/onboarding/sso)
-   with ?code and ?state. Nothing is checked here: the sign-up page posts both to
-   POST /api/onboarding/:id/sso/callback, which checks the state, the token and the email.
-   In a popup, hand them to the page that opened it (same origin only) and close.
-   On a phone, where the page itself went to the provider, go back to it. */
+   with ?code and ?state, or ?error and ?state. Nothing is checked here: the sign-up
+   page posts code and state to POST /api/onboarding/:id/sso/callback, which checks the
+   state, the token and the email.
+   In a popup: hand them to the page that opened it (same origin only) and close. A
+   provider page with Cross-Origin-Opener-Policy cuts the popup off from its opener, so
+   then the sign-up tab that started this round trip answers on a same-origin
+   BroadcastChannel. On a phone, where the page itself went to the provider, nobody
+   answers, so go back to the sign-up page with them. */
 (function () {
   var q = new URLSearchParams(location.search);
   var code = q.get("code") || "", state = q.get("state") || "";
-  if (window.opener && window.opener !== window) {
-    try { window.opener.postMessage({ type: "cd-sso", code: code, state: state }, location.origin); } catch (e) { /* the opener went away; nothing to hand back */ }
+  var error = /^[a-z_]{1,40}$/.test(q.get("error") || "") ? q.get("error") : (code ? "" : "no_code");
+  var msg = { type: "cd-sso", code: code, state: state, error: error };
+  var back = function () {
+    location.replace("/onboarding?sso=1&" + (code ? "code=" + encodeURIComponent(code) : "error=" + encodeURIComponent(error)) + "&state=" + encodeURIComponent(state));
+  };
+  var done = function () {
     window.close();
-    return;
+    document.querySelector("p").textContent = "You're signed in. Close this window to carry on.";
+  };
+  if (window.opener && window.opener !== window) {
+    try { window.opener.postMessage(msg, location.origin); done(); return; } catch (e) { /* the opener went away; try the channel */ }
   }
-  location.replace("/onboarding?sso=1&code=" + encodeURIComponent(code) + "&state=" + encodeURIComponent(state));
+  if (typeof BroadcastChannel !== "function" || !state) { back(); return; }
+  var channel = new BroadcastChannel("cd-sso");
+  var timer = setTimeout(function () { channel.close(); back(); }, 800);
+  channel.onmessage = function (e) {
+    if (!e.data || e.data.type !== "cd-sso-ack" || e.data.state !== state) return;
+    clearTimeout(timer); channel.close(); done();
+  };
+  channel.postMessage(msg);
 })();
 </script>
 </body></html>

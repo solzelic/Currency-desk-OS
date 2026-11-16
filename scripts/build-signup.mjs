@@ -147,9 +147,11 @@ patch("no email before the code", "'Signed in as ' + (d.ownerEmail || '')", "'Ac
 patch("no simulated window", "        R.sheetOn = pk === 'asking' || sso === 'choose' || sso === 'busy';",
   "        R._sheetBusy = pk === 'asking' || sso === 'choose' || sso === 'busy'; R.sheetOn = false;");
 patch("room for the real window", "        R.sheetFlag = R.sheetOn ? '1' : '0';", "        R.sheetFlag = R._sheetBusy ? '1' : '0';");
-/* no passkey button where the device cannot make one (SIGNUP-LOGIC §3.1 A.1) */
-patch("passkey only where it works", "        R.authNote = mode === 'password'",
-  "        R.authBtns = R.authBtns.filter((b) => b.id !== 'passkey' || window.__cdOnb.pkAvailable !== false);\n        R.authNote = mode === 'password'");
+/* only the ways in this browser and this server can finish: no passkey
+   where the device cannot make one (SIGNUP-LOGIC §3.1 A.1), no Google or
+   Microsoft the server is not configured for (GET /api/onboarding/methods) */
+patch("only ways in that can finish", "        R.authNote = mode === 'password'",
+  "        R.authBtns = R.authBtns.filter((b) => window.__cdOnb.offers(b.id));\n        R.authNote = mode === 'password'");
 
 /* ---- the ID resend goes to the server (always 202) -------------------- */
 patch("send my ID",
