@@ -202,7 +202,11 @@ proof row, atomically increments wrong guesses up to five, and requires an
 exclusive guarded deletion before creating a session. Expiry is checked with
 `clock_timestamp()` at the write, including after lock waits. Proof consumption,
 session and login audit commit together; cookies follow commit. Active staff
-and tenant suspension are checked under share locks. A transaction-local five-second
+with matching password proof receive remaining guesses 4/3/2/1 only after a
+wrong-attempt commit. The fifth wrong guess commits its increment and proof
+deletion together, returns terminal 429 and clears the cookie; later replay is
+generic 401. Failed writes/commit return safe 503 with no count or cookie change.
+Staff authority and tenant suspension are checked under share locks. A transaction-local five-second
 lock timeout bounds each acquisition; contention returns safe 503 after rollback.
 It is not a total transaction or delivery deadline. Confirmed rollback cannot
 leave an orphan session. Lost response/commit acknowledgement remains a delivery
@@ -240,9 +244,10 @@ closed on a switch and on a handover.
 route answers identically for a stranger and a customer, in the same words —
 and the rate limit answers identically too, because a throttle that only
 fires for real accounts is a slower way of asking the same question. The
-emailed-code step does the same: an unknown staff id and a wrong code are
-one answer, and the code is not compared unless this browser already proved
-the password. Shop sign-in counts ten wrong passwords per account and
+emailed-code step keeps missing/unknown proof and mismatched identities generic,
+without attempt information. Only a password-proven matching active identity
+may receive the committed remaining count for its usable challenge. Shop sign-in
+counts ten wrong passwords per account and
 ten per connection in a 15-minute window, in Postgres (`server/src/auth/signin-guard.ts`), and
 locks both the real id and the unknown one with the same sentence. A valid `CF-Connecting-IP`, including IPv6, is the client when the
 socket is a published Cloudflare address, or when the socket is a

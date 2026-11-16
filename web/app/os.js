@@ -68825,6 +68825,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [pw, setPw] = useState('');
     const [showPw, setShowPw] = useState(false);
     const [code, setCode] = useState('');
+    const [stagingCode, setStagingCode] = useState('');
+    const [stagingDelivery, setStagingDelivery] = useState(false);
     const [err, setErr] = useState('');
     const [busy, setBusy] = useState(false);
     const [verifying, setVerifying] = useState(false);
@@ -68853,6 +68855,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [quick, setQuick] = useState(stagingOpen === true);
     const [night, setNight] = useState(() => document.documentElement.getAttribute('data-cdtheme') === 'dark');
     const sending = useRef(false);
+    const attempt = useRef(0),
+      mounted = useRef(true),
+      doorCheck = useRef(Promise.resolve(false));
+    useEffect(() => () => {
+      mounted.current = false;
+      attempt.current++;
+      authRef.current = {};
+    }, []);
     useEffect(() => {
       const sync = () => setNight(document.documentElement.getAttribute('data-cdtheme') === 'dark');
       window.addEventListener('cdos-theme', sync);
@@ -68883,14 +68893,17 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
        staging check passed. Anything else leaves the buttons off. */
     useEffect(() => {
       let live = true;
-      fetch('/api/staging/signin', {
-        credentials: 'same-origin'
+      doorCheck.current = fetch('/api/staging/signin', {
+        credentials: 'same-origin',
+        redirect: 'error'
       }).then(r => r.ok ? r.json() : null).then(d => {
-        if (live && d && d.enabled === true) {
+        const enabled = !!(live && d && d.enabled === true);
+        if (enabled) {
           setQuick(true);
           document.dispatchEvent(new Event("cdos-staging-door"));
         }
-      }).catch(() => {});
+        return enabled;
+      }).catch(() => false);
       return () => {
         live = false;
       };
@@ -68937,7 +68950,60 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       srvPlan: null,
       srvUser: null
     });
+
+    // Never carry a reply or displayed code across navigation or identity changes.
+    // Keep the pending latch until the request settles: overlapping issuers can
+    // replace each other's proof cookie even when a stale UI reply is ignored.
+    const invalidate = () => {
+      attempt.current++;
+      authRef.current = {};
+      setStagingCode('');
+      setStagingDelivery(false);
+      setCode('');
+      setNote('');
+      setVerifying(false);
+    };
+    const current = epoch => mounted.current && attempt.current === epoch;
+    // Ignoring a callback does not undo an HttpOnly session cookie. If the
+    // component has gone away, revoke a late session-creating success only.
+    // Both confirmed and uncertain cleanup reload the session-aware app, not a false
+    // signed-out screen. This is not a timeout for the original login request.
+    async function retireLateSession() {
+      const controller = new AbortController();
+      let timer;
+      try {
+        await Promise.race([(async () => {
+          const opts = {
+            credentials: 'same-origin',
+            redirect: 'error',
+            signal: controller.signal
+          };
+          const logout = await fetch('/api/auth/logout', {
+            ...opts,
+            method: 'POST'
+          });
+          if (!logout.ok) throw new Error('logout unavailable');
+          const me = await fetch('/api/auth/me', {
+            ...opts,
+            cache: 'no-store'
+          });
+          if (me.status !== 401) throw new Error('session unresolved');
+        })(), new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('cleanup deadline')), 10000);
+        })]);
+      } catch (_) {/* Bootstrap below resolves the uncertain session visibly. */} finally {
+        clearTimeout(timer);
+        controller.abort();
+      }
+      window.location.replace('/app');
+    }
+    const validIssue = d => d && d.ok === true && typeof d.needsCode === 'boolean' && d.user && typeof d.user.id === 'string';
+    const displayedCode = async d => {
+      if (d.code === undefined || !/^owner\+[0-9a-f]{8}@staging\.invalid$/.test(d.user.id)) return '';
+      return d.needsCode === true && typeof d.user.tenantId === 'string' && typeof d.code === 'string' && /^\d{6}$/.test(d.code) && (await doorCheck.current) ? d.code : null;
+    };
     const goPassword = () => {
+      if (sending.current) return;
       if (idInput.trim().length < 3) {
         setErr('Enter your CurrencyDesk ID.');
         return;
@@ -69054,6 +69120,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       // set before the first await, or a double-click gets through
       if (sending.current) return;
       sending.current = true;
+      invalidate();
+      const epoch = attempt.current;
       let rec = known;
       const staffId = rec ? rec.code || rec.name : idInput.trim().toLowerCase();
       setBusy(true);
@@ -69068,8 +69136,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           body: JSON.stringify({
             staffId,
             password: pw
-          })
+          }),
+          redirect: 'error'
         });
+        if (!res.ok && !current(epoch)) return;
         if (res && res.status === 401) {
           sending.current = false;
           setBusy(false);
@@ -69079,6 +69149,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
         if (res && res.status === 429) {
           const d = await res.json().catch(() => null);
+          if (!current(epoch)) return;
           sending.current = false;
           setBusy(false);
           if (applyLock(d)) return;
@@ -69099,7 +69170,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           return;
         }
         const data = await res.json().catch(() => null);
-        const u = data && data.user || null;
+        if (!current(epoch)) {
+          if (res.ok && data && data.needsCode === false) await retireLateSession();
+          return;
+        }
+        if (!validIssue(data)) {
+          setErr('Sign-in returned an incomplete reply. Try again.');
+          return;
+        }
+        const shown = await displayedCode(data);
+        if (!current(epoch)) {
+          if (data.needsCode === false) await retireLateSession();
+          return;
+        }
+        if (shown === null) {
+          setErr('The staging test code is unavailable. Try again.');
+          return;
+        }
+        const u = data.user;
         const srvPlan = u && u.plan || null;
         if (!rec && u) rec = adopt(u, null);
         sending.current = false;
@@ -69123,10 +69211,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           onComplete(rec, srvPlan, u);
           return;
         } // password-only (no email on file)
+        setStagingCode(shown);
+        setStagingDelivery(!!shown);
         setCode('');
         setStep('code');
         startCooldown(120);
       } catch (_) {
+        if (!current(epoch)) return;
         // A static local prototype can still demonstrate the flow. A deployed
         // desk must fail closed and wait for the authentication service.
         sending.current = false;
@@ -69148,6 +69239,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         };
         setCode('');
         setStep('code');
+      } finally {
+        sending.current = false;
+        if (mounted.current) setBusy(false);
       }
     }
 
@@ -69253,13 +69347,19 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 
     // Step 2: the emailed code grants the session.
     async function verifyCode(codeVal) {
-      const a = authRef.current;
+      const a = authRef.current,
+        epoch = attempt.current;
+      if (sending.current || !a.staffId) return;
+      sending.current = true;
       setVerifying(true);
       setErr('');
-      if (a.demo || !a.staffId) {
-        setTimeout(() => onComplete(a.rec, a.srvPlan, a.srvUser), 900);
+      if (a.demo) {
+        setTimeout(() => {
+          sending.current = false;
+          if (current(epoch)) onComplete(a.rec, a.srvPlan, a.srvUser);
+        }, 900);
         return;
-      } // offline demo
+      }
       try {
         const res = await fetch('/api/auth/login/verify', {
           method: 'POST',
@@ -69267,35 +69367,62 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             'content-type': 'application/json'
           },
           credentials: 'same-origin',
+          redirect: 'error',
           body: JSON.stringify({
             staffId: a.staffId,
             tenantId: a.tenantId,
             code: codeVal
           })
         });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          setVerifying(false);
-          setCode('');
-          setErr(data && data.detail || 'That code isn\'t right. Check your email.');
+        if (!current(epoch)) {
+          if (res.ok) await retireLateSession();
           return;
         }
+        const data = await res.json().catch(() => null);
+        if (!current(epoch)) {
+          if (res.ok) await retireLateSession();
+          return;
+        }
+        if (!res.ok) {
+          if (res.status >= 500) {
+            setCode('');
+            setErr('Sign-in is having trouble. Try this code again in a moment.');
+            return;
+          }
+          if (!(res.status === 401 && data && data.error === 'wrong_code' && data.remainingAttempts > 0)) setStagingCode('');
+          setCode('');
+          setErr(data && data.detail || (stagingDelivery ? 'Sign-in could not be confirmed. Try again.' : 'That code isn\'t right. Check your email.'));
+          return;
+        }
+        setStagingCode('');
         const u = data && data.user || a.srvUser;
+        invalidate();
         onComplete(a.rec, u && u.plan || a.srvPlan, u);
       } catch (_) {
-        setVerifying(false);
-        setErr('Network error — try again.');
+        if (current(epoch)) {
+          setCode('');
+          setErr('Network error — try this code again.');
+        }
+      } finally {
+        sending.current = false;
+        if (mounted.current) setVerifying(false);
       }
     }
     async function resendCode() {
-      const a = authRef.current;
+      const resendFailure = 'Couldn’t resend — try again.';
+      const a = authRef.current,
+        epoch = attempt.current;
       if (!a.staffId || a.demo) {
         setCode('');
         return;
       }
       if (sending.current || cool > 0) return; // the latch, before any await
       sending.current = true;
-      setNote('Sending a new code…');
+      setBusy(true);
+      setStagingCode('');
+      setCode('');
+      setErr('');
+      setNote('Requesting a new code…');
       try {
         const res = await fetch('/api/auth/login/start', {
           method: 'POST',
@@ -69306,9 +69433,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           body: JSON.stringify({
             staffId: a.staffId,
             password: pw
-          })
+          }),
+          redirect: 'error'
         });
         const d = await res.json().catch(() => null);
+        if (!current(epoch)) return;
         if (res.status === 429) {
           if (d && d.error === 'too_many_attempts') {
             setNote(d && d.until ? 'Too many tries. Try again at ' + d.until + '.' : 'Too many tries. Try again in a few minutes.');
@@ -69318,23 +69447,35 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           setNote(d && d.detail || 'A code went out moments ago.');
           return;
         }
-        setNote('A new code is on its way.');
-        setCode('');
+        if (!res.ok || !validIssue(d) || d.needsCode !== true || d.user.id !== a.srvUser.id || d.user.tenantId !== a.tenantId) {
+          setNote(resendFailure);
+          return;
+        }
+        const shown = await displayedCode(d);
+        if (!current(epoch)) return;
+        if (shown === null) {
+          setNote('The staging test code is unavailable. Try again.');
+          return;
+        }
+        setStagingCode(shown);
+        setStagingDelivery(!!shown);
+        setNote(shown ? 'Use the new staging test code above.' : 'A new code is on its way.');
         startCooldown(120);
       } catch (_) {
-        setNote('Couldn’t resend — try again.');
+        if (current(epoch)) setNote(resendFailure);
       } finally {
         sending.current = false;
+        if (mounted.current) setBusy(false);
       }
     }
     const pushDigit = d => {
-      if (verifying || code.length >= 6) return;
+      if (sending.current || verifying || code.length >= 6) return;
       const next = (code + d).slice(0, 6);
       setCode(next);
       if (next.length === 6) verifyCode(next);
     };
     const backDigit = () => {
-      if (!verifying) setCode(code.slice(0, -1));
+      if (!sending.current && !verifying) setCode(code.slice(0, -1));
     };
     const maskedEmail = (() => {
       if (authRef.current.maskedEmail) return authRef.current.maskedEmail;
@@ -69453,7 +69594,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "CURRENCYDESK ID"), /*#__PURE__*/React.createElement("input", {
       value: idInput,
+      disabled: busy || verifying,
       onChange: e => {
+        if (sending.current) return;
+        invalidate();
         setIdInput(e.target.value);
         setErr('');
       },
@@ -69537,7 +69681,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, "ON THIS DESK"), examples.map(ex => /*#__PURE__*/React.createElement("button", {
       key: ex.code || ex.name,
       type: "button",
+      disabled: busy || verifying,
       onClick: () => {
+        if (sending.current) return;
+        invalidate();
         setIdInput(ex.code || ex.name);
         setErr('');
       },
@@ -69648,7 +69795,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "on the record"), ".", ' ', /*#__PURE__*/React.createElement("button", {
       type: "button",
+      disabled: busy || verifying,
       onClick: () => {
+        if (sending.current) return;
+        invalidate();
         setResetEmail(idInput.indexOf('@') >= 0 ? idInput : '');
         setErr('');
         setStep('forgot');
@@ -69671,7 +69821,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, "New to CurrencyDesk? ", /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: onSignup,
+      disabled: busy || verifying,
+      onClick: () => {
+        if (sending.current) return;
+        invalidate();
+        onSignup();
+      },
       style: {
         background: 'none',
         border: 'none',
@@ -69749,7 +69904,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, idInput), " \xB7 ", /*#__PURE__*/React.createElement("button", {
         type: "button",
+        disabled: busy || verifying,
         onClick: () => {
+          if (sending.current) return;
+          invalidate();
           setStep('id');
           setPw('');
           setErr('');
@@ -69836,7 +69994,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         }
       }, "Forgot it?", ' ', /*#__PURE__*/React.createElement("button", {
         type: "button",
+        disabled: busy || verifying,
         onClick: () => {
+          if (sending.current) return;
+          invalidate();
           setResetEmail(idInput.indexOf('@') >= 0 ? idInput : '');
           setErr('');
           setNote('');
@@ -70173,17 +70334,38 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         letterSpacing: '-0.01em',
         margin: '0 0 4px'
       }
-    }, "Check your email"), /*#__PURE__*/React.createElement("div", {
+    }, stagingDelivery ? 'Enter your test code' : 'Check your email'), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13.5,
         color: 'var(--si-mute)',
         marginBottom: 16
       }
-    }, "A fresh 6-digit code just went to ", /*#__PURE__*/React.createElement("b", {
+    }, stagingDelivery ? stagingCode ? 'This staging code is shown here, not emailed. Enter it using the keypad.' : 'Request a new staging test code to continue. Codes are not emailed.' : /*#__PURE__*/React.createElement(React.Fragment, null, "A fresh 6-digit code just went to ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: 'var(--si-ink)'
       }
-    }, maskedEmail), "."), /*#__PURE__*/React.createElement("div", {
+    }, maskedEmail), ".")), stagingCode && /*#__PURE__*/React.createElement("div", {
+      role: "status",
+      "aria-label": "Staging test code",
+      style: {
+        border: '2px solid var(--si-primary)',
+        borderRadius: 12,
+        padding: '8px 12px',
+        marginBottom: 12,
+        color: 'var(--si-ink)'
+      }
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        display: 'block',
+        fontSize: 13
+      }
+    }, "Staging test code"), /*#__PURE__*/React.createElement("output", {
+      style: {
+        fontFamily: MONO,
+        fontSize: 24,
+        letterSpacing: '.15em'
+      }
+    }, stagingCode)), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -70223,7 +70405,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onBack: backDigit,
       leftLabel: cool > 0 ? cool + 's' : 'Resend',
       onLeft: cool > 0 ? null : resendCode,
-      verifying: verifying
+      verifying: verifying || busy
     }), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: note && note.indexOf('Too many tries.') === 0 ? 22 : 11,
@@ -70234,9 +70416,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }
     }, note || 'Code expires in 10 minutes · prefer a text? Method choice coming soon.'), /*#__PURE__*/React.createElement("button", {
       type: "button",
+      disabled: busy || verifying,
       onClick: () => {
+        if (sending.current) return;
+        invalidate();
         setStep('password');
-        setCode('');
       },
       style: {
         background: 'none',

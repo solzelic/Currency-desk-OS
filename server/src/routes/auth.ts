@@ -12,9 +12,9 @@
    Password guesses are counted in Postgres (see auth/signin-guard.ts):
    ten on the account or ten from one address, then the same
    "Too many tries" sentence for a real id and an unknown one.
-   The emailed-code step uses that same sentence for an unknown id
-   and a wrong code, and it will not compare a code until this browser
-   has a server-side marker that the password step passed.
+   The emailed-code step keeps unproven or mismatched identities generic.
+   Only a password-proven matching identity receives remaining guesses,
+   after the wrong-attempt transaction commits.
    Platform-operator TOTP is a different door (/api/admin/login). This
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
@@ -445,18 +445,25 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       if (!tenant) return { state: "absent" } as const;
       if (tenant.suspended) return { state: "suspended" } as const;
       const correct = codeMatches(code, proof.codeHash);
-      const written = correct ? await consumeLoginProof(tx, proof.tokenHash) : await noteWrongCode(tx, proof.tokenHash);
-      if (!written) {
-        // This transaction owns the row: only wall-clock expiry can change
-        // eligibility since the locked read. Delete the terminal proof too.
-        await deleteLoginProof(tx, proof.tokenHash);
-        return { state: "expired" } as const;
+      if (!correct) {
+        const remainingAttempts = await noteWrongCode(tx, proof.tokenHash);
+        if (remainingAttempts !== null) {
+          if (remainingAttempts === 0) {
+            await deleteLoginProof(tx, proof.tokenHash);
+            return { state: "exhausted" } as const;
+          }
+          return { state: "wrong", remainingAttempts } as const;
+        }
+      } else if (await consumeLoginProof(tx, proof.tokenHash)) {
+        const session = await createSession(tx, user.id);
+        await audit(tx, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
+        const payload = await userPayload(user, tx);
+        return { state: "accepted", session, payload } as const;
       }
-      if (!correct) return { state: "absent" } as const;
-      const session = await createSession(tx, user.id);
-      await audit(tx, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
-      const payload = await userPayload(user, tx);
-      return { state: "accepted", session, payload } as const;
+      // This transaction owns the row: only wall-clock expiry can change
+      // eligibility since the locked read. Delete the terminal proof too.
+      await deleteLoginProof(tx, proof.tokenHash);
+      return { state: "expired" } as const;
     });
     // No cookie mutation before COMMIT: dependency failure rolls everything
     // back and authErrors returns the bounded 503 without SQL or secrets.
@@ -469,6 +476,11 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries. Sign in again." });
     }
     if (outcome.state === "suspended") return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
+    if (outcome.state === "wrong") return reply.code(401).send({
+      error: "wrong_code",
+      detail: `That code didn’t match. ${outcome.remainingAttempts} ${outcome.remainingAttempts === 1 ? "try" : "tries"} left.`,
+      remainingAttempts: outcome.remainingAttempts,
+    });
     if (outcome.state !== "accepted") return reply.code(401).send(CODE_REFUSAL);
     reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
     reply.setCookie(SESSION_COOKIE, outcome.session.token, { ...cookieOpts, expires: outcome.session.expiresAt });

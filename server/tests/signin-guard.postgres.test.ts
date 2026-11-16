@@ -344,7 +344,7 @@ postgres("shop sign-in against Postgres", () => {
     for (let n = 0; n < 4; n++) expect((await guess("r.limit", "wrong-password")).statusCode).toBe(401);
   });
 
-  it("returns the same words and the same time for an unknown id and a wrong code", async () => {
+  it("reports proven wrong-code counts while keeping unproven identities generic with comparable timing", async () => {
     forgetCooldown();
     const logged: string[] = [];
     const spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => { logged.push(args.map(String).join(" ")); });
@@ -382,9 +382,9 @@ postgres("shop sign-in against Postgres", () => {
         payload: { staffId: "not-a-person@example.com", code: "000000", tenantId: TENANT },
       });
       expect(wrong.statusCode).toBe(401);
-      expect(wrong.json()).toEqual(CODE_REFUSAL);
-      expect(bare.json()).toEqual(wrong.json());
-      expect(unknown.json()).toEqual(wrong.json());
+      expect(wrong.json()).toEqual({ error: "wrong_code", detail: "That code didn’t match. 4 tries left.", remainingAttempts: 4 });
+      expect(bare.json()).toEqual(CODE_REFUSAL);
+      expect(unknown.json()).toEqual(CODE_REFUSAL);
       expect(bare.statusCode).toBe(wrong.statusCode);
       expect(unknown.statusCode).toBe(wrong.statusCode);
 

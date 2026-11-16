@@ -112,7 +112,7 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
   it("conditional proof writes reject an exhausted row even without the route's locked read", async () => {
     await pool.query("UPDATE login_challenges SET attempts = 5 WHERE token_hash = $1", [proof.tokenHash]);
     await handle.db.transaction(async tx => {
-      expect(await noteWrongCode(tx, proof.tokenHash)).toBe(false);
+      expect(await noteWrongCode(tx, proof.tokenHash)).toBeNull();
       expect(await consumeLoginProof(tx, proof.tokenHash)).toBe(false);
     });
     expect((await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash])).rows).toEqual([{ attempts: 5 }]);
@@ -132,15 +132,58 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
     expect((await verify()).statusCode).toBe(401);
   });
 
-  it("accounts for exactly five wrong guesses in a burst", async () => {
-    const gate = await barrier("table");
-    const pending = Array.from({ length: 5 }, () => verify("000000"));
-    try { await waiting(5); } finally { await gate.release(); }
-    expect((await Promise.all(pending)).map(r => r.statusCode)).toEqual([401, 401, 401, 401, 401]);
-    const row = await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash]);
-    expect(row.rows[0].attempts).toBe(5);
-    expect((await verify()).statusCode).toBe(429);
-    expect(await sessions()).toBe(0);
+  it("reports unique committed counts and exactly five consumed guesses in a larger burst", async () => {
+    await pool.query("CREATE TABLE feedback_test_counts (attempts integer NOT NULL)");
+    await pool.query("CREATE FUNCTION feedback_test_count() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO feedback_test_counts VALUES (NEW.attempts); RETURN NEW; END $$");
+    await pool.query("CREATE TRIGGER feedback_test_count AFTER UPDATE ON login_challenges FOR EACH ROW EXECUTE FUNCTION feedback_test_count()");
+    try {
+      const gate = await barrier("table");
+      const pending = Array.from({ length: 8 }, () => verify("000000"));
+      try { await waiting(8); } finally { await gate.release(); }
+      const responses = await Promise.all(pending);
+      expect(responses.map(r => r.statusCode).sort()).toEqual([401, 401, 401, 401, 401, 401, 401, 429]);
+      const counts = responses.map(r => r.json().remainingAttempts).filter(n => n !== undefined);
+      expect(counts.sort()).toEqual([1, 2, 3, 4]);
+      for (const response of responses) {
+        const remaining = response.json().remainingAttempts;
+        if (remaining !== undefined) expect(response.json()).toEqual({ error: "wrong_code", remainingAttempts: remaining,
+          detail: `That code didn’t match. ${remaining} ${remaining === 1 ? "try" : "tries"} left.` });
+        else expect(response.json()).toEqual(response.statusCode === 429
+          ? { error: "too_many_attempts", detail: "Too many tries. Sign in again." } : CODE_REFUSAL);
+        expect(!!cookie(response, "cdos_session")).toBe(false);
+      }
+      expect((await pool.query("SELECT attempts FROM feedback_test_counts ORDER BY attempts")).rows).toEqual([1, 2, 3, 4, 5].map(attempts => ({ attempts })));
+      expect((await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash])).rows).toEqual([]);
+      expect((await verify()).statusCode).toBe(401);
+      expect(await sessions()).toBe(0);
+    } finally {
+      await pool.query("DROP TRIGGER feedback_test_count ON login_challenges");
+      await pool.query("DROP FUNCTION feedback_test_count()");
+      await pool.query("DROP TABLE feedback_test_counts");
+    }
+  });
+
+  it("does not send remaining guesses while the attempt transaction is still committing", async () => {
+    const client = await pool.connect();
+    await client.query("SELECT pg_advisory_lock(221, 914)");
+    await pool.query("CREATE FUNCTION feedback_commit_gate() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(221,914); RETURN NEW; END $$");
+    await pool.query("CREATE CONSTRAINT TRIGGER feedback_commit_gate AFTER UPDATE ON login_challenges DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION feedback_commit_gate()");
+    let settled = false;
+    const pending = verify("000000").then(r => { settled = true; return r; });
+    try {
+      await waiting(1, "commit");
+      expect(settled).toBe(false);
+      expect((await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash])).rows).toEqual([{ attempts: 0 }]);
+    } finally {
+      await client.query("SELECT pg_advisory_unlock(221,914)"); client.release();
+      await pending;
+      await pool.query("DROP TRIGGER feedback_commit_gate ON login_challenges");
+      await pool.query("DROP FUNCTION feedback_commit_gate()");
+    }
+    const response = await pending;
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "wrong_code", detail: "That code didn’t match. 4 tries left.", remainingAttempts: 4 });
+    expect((await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash])).rows).toEqual([{ attempts: 1 }]);
   });
 
   it("a correct code queued behind the fifth wrong guess cannot win through a stale read", async () => {
@@ -149,8 +192,10 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
     const wrong = verify("000000");
     let right: ReturnType<typeof verify> | undefined;
     try { await waiting(1); right = verify(); await waiting(2); } finally { await gate.release(); }
-    expect((await wrong).statusCode).toBe(401);
-    expect((await right!).statusCode).toBe(429);
+    expect((await wrong).statusCode).toBe(429);
+    const refused = await right!;
+    expect(refused.statusCode).toBe(401);
+    expect(refused.json()).toEqual(CODE_REFUSAL);
     expect(await sessions()).toBe(0);
   });
 
@@ -210,7 +255,9 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
         await setImmediate();
       }
     } finally { await client.query("COMMIT"); client.release(); }
-    expect((await pending).statusCode).toBe(410);
+    const expired = await pending;
+    expect(expired.statusCode).toBe(410);
+    expect(expired.json()).toEqual({ error: "expired", detail: "That code expired. Sign in again." });
     expect(await sessions()).toBe(0);
   });
 
@@ -236,12 +283,17 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
     const unknown = await verify(CODE, "stranger@example.test", "unissued");
     expect(absent.statusCode).toBe(401); expect(absent.json()).toEqual(CODE_REFUSAL);
     expect(unknown.statusCode).toBe(401); expect(unknown.json()).toEqual(CODE_REFUSAL);
-    expect((await verify(CODE, "stranger@example.test")).statusCode).toBe(401);
+    const mismatched = await verify("000000", "stranger@example.test");
+    expect(mismatched.statusCode).toBe(401); expect(mismatched.json()).toEqual(CODE_REFUSAL);
     await pool.query("UPDATE staff_users SET active = false WHERE id = $1", [USER]);
-    expect((await verify()).statusCode).toBe(401);
+    const inactive = await verify("000000");
+    expect(inactive.statusCode).toBe(401); expect(inactive.json()).toEqual(CODE_REFUSAL);
     await pool.query("UPDATE staff_users SET active = true WHERE id = $1", [USER]);
     await pool.query("UPDATE tenants SET suspended = true WHERE id = $1", [DEMO.tenantId]);
-    expect((await verify()).statusCode).toBe(403);
+    const suspended = await verify("000000");
+    expect(suspended.statusCode).toBe(403);
+    expect(suspended.json()).toEqual({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
+    expect((await pool.query("SELECT attempts FROM login_challenges WHERE token_hash = $1", [proof.tokenHash])).rows).toEqual([{ attempts: 0 }]);
     expect(await sessions()).toBe(0);
   });
 
@@ -276,6 +328,13 @@ describe.skipIf(!url)("emailed login proof consumption on PostgreSQL", () => {
       const generated = delivered.match(/\b\d{6}\b/)?.[0];
       const proofCookie = responseCookie(start, LOGIN_PROOF_COOKIE);
       if (!generated || !proofCookie) throw new Error("No generated email/proof");
+      for (const remaining of [4, 3, 2, 1]) {
+        const wrong = await post("/verify", { staffId: EMAIL, code: generated === "000000" ? "111111" : "000000" }, proofCookie);
+        expect(wrong.status).toBe(401);
+        expect(await wrong.json()).toEqual({ error: "wrong_code", remainingAttempts: remaining,
+          detail: `That code didn’t match. ${remaining} ${remaining === 1 ? "try" : "tries"} left.` });
+        expect(responseCookie(wrong, "cdos_session") !== undefined).toBe(false);
+      }
       const signed = await post("/verify", { staffId: EMAIL, code: generated, tenantId: "untrusted-other-tenant" }, proofCookie);
       expect(signed.status).toBe(200);
       expect(await signed.json()).toMatchObject({ user: { tenantId: DEMO.tenantId } });

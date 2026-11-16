@@ -57,7 +57,13 @@ if (files.size === 0) {
 }
 
 let failed = false;
-const GATE = "a-day-at-the-desk.spec.ts";
+// The staging-host suite has its own database/config. Never replace the default
+// financial deployment gate unless this explicit, fixed mode is selected.
+if (process.argv[3] && process.argv[3] !== '--staging-signin') {
+  console.error('seam-check: unknown mode');
+  process.exit(2);
+}
+const GATE = process.argv[3] === '--staging-signin' ? 'code.spec.ts' : 'a-day-at-the-desk.spec.ts';
 let gateSeen = false;
 
 for (const [file, { executed, skipped, skippedTitles }] of [...files.entries()].sort()) {
