@@ -686,6 +686,9 @@
        drew from its own numbers, and the screen says why when the server said no. */
     priced: function (c, R) {
       var i = c.state.i;
+      R.homeStatus = CD.launched && !CD.homeReady ? (CD.homeError || "Loading your desk…") : "";
+      R.realHome = CD.launched === true; R.prototypeHome = !R.realHome; R.realInert = "";
+      R.welcomeWrap = "position:relative;max-width:780px;margin:" + (R.realHome ? "158px auto 0" : "0 auto") + ";padding:38px 18px 60px;";
       if (CD._errAt !== i) { CD._errAt = i; if (CD.err && i !== 0) CD.err = ""; }
       if (CD.err && i !== 14 && i !== 0) R.help = CD.err;
       if (i === 0 && CD.err) R.cdIdHint = CD.err;
@@ -798,10 +801,13 @@
     waitOpen: function (c, n) {
       api("POST", "/open", {}).then(function (r) {
         if (r.status === 200 && r.body.ok) {
-          CD._paying = false; CD.launched = true; tabSet("");
+          CD._paying = false; CD.launched = true; CD.tenantId = r.body.tenantId; tabSet("");
           c.set("cdId", r.body.cdId || CD.code); if (r.body.operatingName) c.set("operatingName", r.body.operatingName);
           c.setState({ paid: true, landKey: c.state.landKey + 1 });
-          setTimeout(function () { c.setState({ i: 16 }); CD.realHome(); }, 1000);
+          setTimeout(function () {
+            if (!CD.homeReady && c.state.i === 16) { CD.homeError = "Your desk is taking longer to load. Open it to try again."; c.forceUpdate(); }
+          }, 10000);
+          setTimeout(function () { c.setState({ i: 16 }); }, 1000);
           return;
         }
         if (r.status === 202 || r.status === 0) {
@@ -812,20 +818,14 @@
         CD._paying = false; CD.payErr = why(r, "The desk didn’t open. Nothing was charged."); c.forceUpdate();
       });
     },
-    /* Day 1: the real Home, signed in, dimmed behind the welcome. */
-    realHome: function () {
-      var host = document.querySelector("[data-desk]");
-      if (!host || host.querySelector("iframe[data-real-home]")) return;
-      var f = document.createElement("iframe");
-      f.src = "/app"; f.title = "Your desk"; f.setAttribute("data-real-home", "1"); f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
-      f.setAttribute("inert", "");
-      f.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0;z-index:0;pointer-events:none;filter:saturate(0.85) brightness(0.92);";
-      host.style.position = "relative";
-      host.insertBefore(f, host.firstChild);
-      host.setAttribute("data-real", "1");
-    },
     walk: function () { location.assign("/app"); },
 
+  });
+
+  window.addEventListener("message", function (e) {
+    var frame = document.querySelector("iframe[data-real-home]");
+    if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data || e.data.type !== "cd-signup-home-ready" || e.data.tenantId !== CD.tenantId) return;
+    CD.homeReady = true; if (CD.comp) CD.comp.forceUpdate();
   });
 
   var stripeLoading = null;

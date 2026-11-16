@@ -303,3 +303,16 @@ the account-menu mute preference. Pointer/key press only wakes the context;
 action or fallback sound runs on a frame within 180ms, once per click. It drops
 late async/timer tones and suppresses generic taps within 80ms. The frozen
 waveforms remain the source; no sound plays on page load.
+
+### Signup Day 1 inside the OS
+
+`os-src/cdos-signup-home.js` reads the signed-in administrator's own `/api/tenant`
+record for embedded `/app?onboarding=welcome`, and requires its signup v2.1 marker.
+The existing OS shell renders an inert Home with actual identity/setup status,
+locked apps and no till selection or automatic first-run tour. Missing proof,
+other roles, mismatched tenants and ordinary `/app` use normal routing. This
+welcome stage never enters the desktop effects that claim/open a till. Its
+readiness message is accepted only from that iframe, origin and activated tenant.
+`signup-v2.1-open.js` renders the iframe declaratively after `/open` succeeds;
+prototype chrome remains only for local review seeds. Build my desk hands off to
+the normal `/app` entry. The subsequent walkthrough remains separate work.
