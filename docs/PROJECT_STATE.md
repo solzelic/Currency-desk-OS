@@ -39,6 +39,8 @@ Visual comparison now retains every difference and excludes only capture-proven
 aria-hidden cdRise glyphs; monetary symbols are never blanket-filtered. The
 reviewer-owned capture tool preserves full text and fails on missing captures.
 The final 38-state × five-size comparison and complete browser run are pending.
+Address-provider failure logs retain only the operation and HTTP status, never
+the provider body or transport exception that can echo applicant data.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
