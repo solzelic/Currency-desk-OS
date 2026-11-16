@@ -10,7 +10,7 @@ import cookie from "@fastify/cookie";
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign as signData } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
-import { createIdDoor } from "../src/onboarding/cd-id-door.js";
+import { THROTTLE_KEYS, createIdDoor } from "../src/onboarding/cd-id-door.js";
 import { registerCredentialRoutes } from "../src/routes/signup-credential.js";
 import { advance, allowedFrom, loadAccount } from "../src/onboarding/signup-account.js";
 import { checkPassword, isBreached, lengthOf } from "../src/onboarding/password-rule.js";
@@ -363,7 +363,8 @@ describe("who may choose", () => {
 });
 
 /* A flood of well-shaped IDs nobody holds, from addresses in one IPv6 /64.
-   The door's tables remember 10,000 keys each; these floods go past that. */
+   The door's tables remember THROTTLE_KEYS (10,000) keys each; these
+   floods go past that. */
 describe("a crowd of made-up IDs", () => {
   const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
   const madeUp = (i: number) => `CD-QQQQ-${[0, 1, 2, 3].map((k) => alphabet[Math.floor(i / 31 ** k) % 31]).join("")}`;
@@ -392,7 +393,7 @@ describe("a crowd of made-up IDs", () => {
     const tries: number[] = [];
     for (let i = 0; i < 13; i++) tries.push((await options(busy.cdId, `192.0.2.${i}`)).statusCode);
     expect(tries).toEqual([...Array<number>(12).fill(200), 429]);
-    await flood(10_001, 1);
+    await flood(THROTTLE_KEYS + 1, 1);
     expect((await options(quiet.cdId, "198.51.100.78")).statusCode).toBe(200);
     expect((await options(busy.cdId, "198.51.100.79")).statusCode).toBe(429);
   }, 120_000);
