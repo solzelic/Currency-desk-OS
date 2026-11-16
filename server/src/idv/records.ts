@@ -10,6 +10,8 @@ import { decryptSecret, encryptSecret, KEY_VERSION, last4, maskDocumentNumber, P
 import { isSmallCrop } from "./face-crop.js";
 import { personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
+import type { ClientLookup } from "./provider.js";
+import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
   NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, branchStamp, expiredLine, idCheckedLine,
@@ -519,9 +521,12 @@ async function testLabel(db: Db, actor: DeskActor, env: NodeJS.ProcessEnv): Prom
   return personaPassLabel(env, shop.apiKeyRef, code) === "Check passed (test)";
 }
 
-export async function readClientChecks(db: Db, actor: DeskActor, clientId: string, env: NodeJS.ProcessEnv) {
+export async function readClientChecks(db: Db, actor: DeskActor, clientId: string, env: NodeJS.ProcessEnv, clients?: ClientLookup) {
   const q = dbQuery(db);
-  if (!await clientOwned(q, actor, clientId)) return fail(404, "not_found", "That client is not on this shop.");
+  /* Client files can live on the ledger connection. A missing check is an empty list, not a 404. */
+  if (!await clientOnShop(db, actor.legalEntityId, actor.tenantId, clientId, clients)) {
+    return fail(404, "not_found", "That client is not on this shop.");
+  }
   const shop = await loadShopIdv(db, actor.legalEntityId);
   const facts = await branchFacts(q, actor);
   const test = await testLabel(db, actor, env);

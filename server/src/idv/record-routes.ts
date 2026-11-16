@@ -154,7 +154,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
   app.get<{ Params: { clientId: string } }>("/api/idv/clients/:clientId/checks", async (req, reply) => {
     const actor = await who(req, reply);
     if (!actor) return;
-    const read = await readClientChecks(db, actor, req.params.clientId.trim(), env());
+    const read = await readClientChecks(db, actor, req.params.clientId.trim(), env(), options?.clients);
     if (!read.ok) return reply.code(read.status).send({ error: read.error, message: read.message });
     return read.body;
   });
