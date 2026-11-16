@@ -712,7 +712,10 @@ test("counter screens for the other badge states", async ({ page, request }) => 
       const fileHead = page.locator(".client-file-actions");
       if (await fileHead.isVisible().catch(() => false)) await fileHead.locator("button").last().click();
       await page.locator('[data-app="clients"]').click();
-      await page.getByText(name, { exact: true }).click();
+      await page.getByPlaceholder(/Search name/).fill(name);
+      const card = page.locator("div.cursor-pointer", { hasText: name }).first();
+      await expect(card).toBeVisible();
+      await card.click();
       await expect(page.getByTestId("identity-check")).toBeVisible();
     };
     const startCheck = async () => {
@@ -1005,7 +1008,8 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await page.reload();
     await landOnDesktop(page);
     await page.locator('[data-app="clients"]').click();
-    await page.getByText(typedName, { exact: true }).click();
+    await page.getByPlaceholder(/Search name/).fill(typedName);
+    await page.locator("div.cursor-pointer", { hasText: typedName }).first().click();
     await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked", { timeout: 20_000 });
     await lightShot(page, "badge-typed-file");
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -1055,12 +1059,13 @@ test("typed-by-hand and try-again frames", async ({ page, request }) => {
     await form.getByPlaceholder("Type a name").click();
     await form.getByPlaceholder("Type a name").fill("Maya Cohen");
     await form.getByRole("button", { name: "Maya Cohen", exact: true }).click();
-    await form.getByPlaceholder("0.00").first().fill("100");
+    await form.getByPlaceholder("0.00").first().fill("5000");
     await expect(form.getByTestId("transfer-sender-id")).toContainText("ID typed by hand, not checked");
     await lightShot(page, "transfer-sender-typed", [1280]);
     await page.keyboard.press("Escape");
     await page.locator('[data-app="clients"]').click();
-    await page.getByText(failName, { exact: true }).click();
+    await page.getByPlaceholder(/Search name/).fill(failName);
+    await page.locator("div.cursor-pointer", { hasText: failName }).first().click();
     await expect(page.getByTestId("id-check-try-again")).toBeVisible({ timeout: 20_000 });
     await lightShot(page, "try-again", [1280]);
   } finally {
