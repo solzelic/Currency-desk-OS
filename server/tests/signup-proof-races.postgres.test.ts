@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mintCdId } from "../src/enquiries/cd-id.js";
+import { issueCdId, mintCdId } from "../src/enquiries/cd-id.js";
 import { buildApp } from "../src/app.js";
 import { backendRolePermissions } from "../src/auth/permissions.js";
 import { randomUUID } from "node:crypto";
@@ -20,6 +20,20 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("signup proof under real Postgre
     finally { if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous; }
   });
   afterAll(async () => { await handle?.close(); });
+  it("competing reservations cannot commit the same freshly issued ID", async () => {
+    // Both lookups deliberately finish before either insert: exercise the
+    // database backstop, rather than relying on random collision odds.
+    const ids = await Promise.all([issueCdId(handle.db, "Race", n => new Uint8Array(n)), issueCdId(handle.db, "Race", n => new Uint8Array(n))]);
+    expect(ids[0]).toBe(ids[1]);
+    const results = await Promise.allSettled(ids.map(cdId => {
+      const id = randomUUID();
+      return handle.db.insert(schema.enquiries).values({ id, reference: id, kind: "early_access", email: "synthetic@example.test", cdId }).returning();
+    }));
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(r => r.status === "rejected")).toHaveLength(1);
+    expect(await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.cdId, ids[0]!))).toHaveLength(1);
+    await handle.db.delete(schema.enquiries).where(eq(schema.enquiries.cdId, ids[0]!));
+  });
   async function candidate() {
     const id = `proof-${randomUUID()}`;
     const row = (await handle.db.insert(schema.enquiries).values({ id, reference: id, kind: "early_access", status: "invited", email: `${id}@example.test`, name: "Synthetic", details: {} }).returning())[0]!;

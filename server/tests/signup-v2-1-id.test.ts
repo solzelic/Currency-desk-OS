@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
+import { reissueSignupId } from "../src/onboarding/reissue-id.js";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { issueCdId, CD_ID_ALPHABET } from "../src/enquiries/cd-id.js";
 import { loadAccount, saveCredential } from "../src/onboarding/signup-account.js";
@@ -242,5 +243,39 @@ describe("logs", () => {
     expect([t.take("k"), t.take("k"), t.take("k"), t.take("k")]).toEqual([true, true, true, false]);
     now = 1001;
     expect(t.take("k")).toBe(true);
+  });
+});
+
+
+describe("issuance shares the returning-login namespace", () => {
+  const fixed = (char: string) => (count: number) => new Uint8Array(count).fill(CD_ID_ALPHABET.indexOf(char));
+  async function legacyUsername(staffId: string) {
+    const template = (await handle.db.select().from(schema.staffUsers).limit(1))[0]!;
+    const id = `issuance-${staffId}`;
+    await handle.db.insert(schema.staffUsers).values({ ...template, id, staffId, cdId: null, active: false });
+    return id;
+  }
+  it.each(["CD-NAME-2222", "cd-name-2222", "Cd-NaMe-2222"])("refuses an existing username %s, including inactive staff", async (staffId) => {
+    const id = await legacyUsername(staffId);
+    try { await expect(issueCdId(handle.db, "Name", fixed("2"))).rejects.toThrow("No free CurrencyDesk ID"); }
+    finally { await handle.db.delete(schema.staffUsers).where(eq(schema.staffUsers.id, id)); }
+  });
+  it("retries a collision instead of discarding a free next candidate", async () => {
+    const id = await legacyUsername("cd-next-2222");
+    let attempt = 0;
+    try { expect(await issueCdId(handle.db, "Next", count => fixed(attempt++ ? "3" : "2")(count))).toBe("CD-NEXT-3333"); }
+    finally { await handle.db.delete(schema.staffUsers).where(eq(schema.staffUsers.id, id)); }
+  });
+  it("support reissue applies the same exclusion and preserves the old ID on exhaustion", async () => {
+    const { reference, cdId } = await apply("collision.reissue@example.test", { shopName: "Reissue" });
+    const row = (await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.reference, reference)))[0]!;
+    const id = await legacyUsername("cd-reis-2222");
+    const random = vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(array => {
+      (array as Uint8Array).fill(0); return array;
+    });
+    try {
+      await expect(reissueSignupId(handle.db, row.id, "synthetic-reviewer")).rejects.toThrow("No free CurrencyDesk ID");
+      expect((await handle.db.select().from(schema.enquiries).where(eq(schema.enquiries.id, row.id)))[0]!.cdId).toBe(cdId);
+    } finally { random.mockRestore(); await handle.db.delete(schema.staffUsers).where(eq(schema.staffUsers.id, id)); }
   });
 });
