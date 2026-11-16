@@ -28,6 +28,13 @@ forced update cannot replay chapter focus; new-password autofill is enabled.
 New v2.1 desks publish starting rates only from valid market snapshot entries for
 selected currencies, with snapshot provenance. Missing rates remain absent; the
 legacy provisioning fallback is unchanged. Snapshot-age policy still needs CTO.
+The tour uses eight real /app recordings from an authenticated synthetic shop,
+with explicit provenance and silent WebM/PNG assets. Reduced motion uses stills,
+manual navigation and static HTML scenes; modal focus is trapped/restored and
+background controls are inert. Tour currency, regulator, report and ID/officer
+labels come from the reservation pack or an explicitly public Canadian example
+pack. The prototype's remaining compliance/filing captions are not approval of
+live submission capability and remain Compliance/Sol/CD156 review items.
 Full integrated acceptance, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 

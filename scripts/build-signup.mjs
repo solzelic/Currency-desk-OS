@@ -34,13 +34,14 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileSignup } from "./signup-aot.mjs";
+import { patchSignupTour } from "./signup-tour.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIR = path.join(ROOT, "design/onboarding/signup-v2.1");
 const SRC = path.join(DIR, "CurrencyDesk Sign-up v2.1.dc.html");
 /* The bridge, in the order it must load: the core (ID, credential, code, PIN,
    boot), then the chapters, then Open (plan, card, Day 1). */
-const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js", "signup-v2.1-audio.js", "signup-v2.1-setup.js"]
+const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1-open.js", "signup-v2.1-consent.js", "signup-v2.1-audio.js", "signup-v2.1-setup.js", "signup-v2.1-tour.js"]
   .map((f) => path.join(ROOT, "design/onboarding", f));
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
@@ -188,6 +189,8 @@ patch("accessible control targets", "</helmet>", `<style>
 }
 </style>\n</helmet>`);
 
+patchSignupTour(patch, patchRegion);
+
 /* ======== CHAPTERS (signup-v2.1-chapters.js) ======== */
 /* ---- the address: Google Places through our server, by hand otherwise ---- */
 patch("places list", "const list = ql.length < 3 ? [] : this.ADDR.filter(", "const list = window.__cdOnb ? window.__cdOnb.places(this, ql) : this.ADDR.filter(");
@@ -234,13 +237,6 @@ patch("call consent accessibility", '<button onClick="{{ onXCall }}" style="{{ x
 patch("call consent words", 'SAM will call you to set up your desk. No call, thanks? Tap to switch it off.', '{{ samText }}');
 patch("call consent status", '<div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 16px 0 8px;">Add if you like</div>', '<div role="status" style="font-size:12px;line-height:1.45;color:var(--mute);margin-top:8px">{{ samStatus }}</div><div style="font-family: var(--m); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 16px 0 8px;">Add if you like</div>');
 
-/* ---- the tour follows the pack ---------------------------------------- */
-patch("tour values", "tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',",
-  "tourHome: this.jurisOf(this.state.data.country).home, tourReport: this.jurisOf(this.state.data.country).report || 'cash report', tourOfficer: (this.state.data.complianceMode === 'other' ? this.state.data.compName : this.state.data.ownerName) || 'your compliance officer', tourSceneDeal: st.kind === 'scene' && st.scene === 'deal',");
-patchRegion("tour currency", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", " CAD", " {{ tourHome }}", 5);
-patchRegion("tour officer", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", "Checked by Daniel Osei", "Checked by {{ tourOfficer }}");
-patchRegion("tour report", '<sc-if value="{{ tourSceneDeal }}"', "{{ tourEyebrow }}", ">Large Cash Transaction Report<", ">{{ tourReport }}<");
-
 /* ---- Day 1: the real desk behind the welcome --------------------------- */
 /* The real session's Home is a React child, never an imperative insertion race. */
 patch("day one real frame", '<div data-desk="true" style="min-height:', '<div data-desk="true" data-real="{{ realHome }}" style="position:relative;min-height:');
@@ -269,5 +265,10 @@ writeFileSync(path.join(ROOT, "web/signup-sso.html"), readFileSync(SSO, "utf8"))
 for (const sub of ["flags", "shots"]) {
   mkdirSync(path.join(ASSETS, sub), { recursive: true });
   for (const f of readdirSync(path.join(DIR, sub))) copyFileSync(path.join(DIR, sub, f), path.join(ASSETS, sub, f));
+}
+const recordings = path.join(ROOT, "design/onboarding/signup-recordings");
+mkdirSync(path.join(ASSETS, "recordings"), { recursive: true });
+for (const name of ["home", "rates", "online", "vault", "settings", "dashboard", "currencies", "vaultset"]) {
+  for (const suffix of [".webm", "-poster.png"]) copyFileSync(path.join(recordings, name + suffix), path.join(ASSETS, "recordings", name + suffix));
 }
 console.log(`build-signup: web/signup.html (${(html.length / 1024).toFixed(0)} KB), web/signup-sso.html, web/signup/`);

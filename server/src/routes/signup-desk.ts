@@ -75,6 +75,8 @@ export function registerSignupDeskRoutes(app: FastifyInstance, db: Db, door: IdD
     return config ? signupStripeClient(config) : null;
   });
   const enrolled = enrolledGuard(db, door);
+  // Public illustrative configuration, never a reservation lookup or a person's data.
+  app.get("/api/signup/tour-pack", async () => ({ example: true, pack: signupPack("CA") }));
 
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/pin", async (req, reply) => {
     const r = await enrolled(req, reply);
