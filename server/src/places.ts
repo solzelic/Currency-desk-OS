@@ -47,12 +47,13 @@ async function call(path: string, body: unknown, fields: string): Promise<Record
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
-      console.error(`[places] ${path} ${res.status} ${await res.text().catch(() => "")}`);
+      // Provider bodies may echo addresses, session tokens or credentials.
+      console.error(`[places] ${path} provider status ${res.status}`);
       return null;
     }
     return (await res.json()) as Record<string, unknown>;
-  } catch (err) {
-    console.error("[places] failed", err);
+  } catch {
+    console.error("[places] autocomplete request failed");
     return null;
   }
 }
@@ -127,12 +128,12 @@ async function getDetails(placeId: string, session: string): Promise<Record<stri
       signal: AbortSignal.timeout(6000),
     });
     if (!res.ok) {
-      console.error(`[places] details ${res.status} ${await res.text().catch(() => "")}`);
+      console.error(`[places] details provider status ${res.status}`);
       return null;
     }
     return (await res.json()) as Record<string, unknown>;
-  } catch (err) {
-    console.error("[places] details failed", err);
+  } catch {
+    console.error("[places] details request failed");
     return null;
   }
 }

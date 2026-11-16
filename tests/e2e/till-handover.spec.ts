@@ -1,14 +1,12 @@
 /* A second teller takes a till the first one still holds.
    The till offers Take over till. The sheet asks for a count
    and does not show the book. Saving the count is the handover. */
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Page, TestInfo } from "@playwright/test";
 import { test, expect, hasLedger, signInAtDesk } from "./fixtures";
+import { screenshotPath } from "./screenshot-path";
 
 test.skip(!hasLedger, "needs SEAM_DATABASE_URL");
 
-const SHOTS = "/opt/cursor/artifacts/screenshots/till-handover/gate";
 const WIDTHS = [360, 390, 430, 600, 1280] as const;
 const DARK = [390, 1280] as const;
 const MISMATCH = "The count does not match. A supervisor must approve this takeover.";
@@ -76,14 +74,14 @@ async function heldBySingh(page: Page): Promise<void> {
   expect(result, "singh holds the till").toBe("held");
 }
 
-async function shoot(page: Page, name: string, focus?: ReturnType<Page["locator"]>): Promise<void> {
+async function shoot(page: Page, name: string, testInfo: TestInfo, focus?: ReturnType<Page["locator"]>): Promise<void> {
   await page.evaluate(() => {
     (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
   });
   for (const width of WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
     if (focus) await focus.scrollIntoViewIfNeeded().catch(() => undefined);
-    await page.screenshot({ path: path.join(SHOTS, `${name}-${width}.png`) });
+    await page.screenshot({ path: screenshotPath(testInfo, `${name}-${width}.png`) });
   }
   await page.evaluate(() => {
     (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("dark");
@@ -91,16 +89,15 @@ async function shoot(page: Page, name: string, focus?: ReturnType<Page["locator"
   for (const width of DARK) {
     await page.setViewportSize({ width, height: 900 });
     if (focus) await focus.scrollIntoViewIfNeeded().catch(() => undefined);
-    await page.screenshot({ path: path.join(SHOTS, `${name}-dark-${width}.png`) });
+    await page.screenshot({ path: screenshotPath(testInfo, `${name}-dark-${width}.png`) });
   }
   await page.evaluate(() => {
     (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set("light");
   });
 }
 
-test("a second teller takes over a held till from the deal form", async ({ page, request }) => {
+test("a second teller takes over a held till from the deal form", async ({ page, request }, testInfo) => {
   test.setTimeout(240_000);
-  mkdirSync(SHOTS, { recursive: true });
   await ensureApproverPin(request);
   await page.setViewportSize({ width: 1280, height: 900 });
   await signInAtDesk(page, "a.singh");
@@ -149,5 +146,5 @@ test("a second teller takes over a held till from the deal form", async ({ page,
   });
   expect(openedBy.endsWith("a.singh")).toBe(true);
   await expect(page.locator(".till-sessionline")).toContainText("opened by a.singh");
-  await shoot(page, "takeover-403", alert);
+  await shoot(page, "takeover-403", testInfo, alert);
 });

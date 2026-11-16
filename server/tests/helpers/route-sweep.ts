@@ -87,6 +87,9 @@ export function fillRoute(route: string, ids: SweepIds): string {
     /* A window screen token. No screen holds this one, so the public
        screen route answers 404, which is all a sweep needs from it. */
     ["token", "sweep".padEnd(32, "0")],
+    /* Sign-up v2.1's sign-in providers; the sweep's ref is not a
+       CurrencyDesk ID, so the route answers 404 or 503. */
+    ["provider", "google"],
   ]);
   if (route.startsWith("/api/admin/enquiries/")) params.set("id", ids.enquiryId);
   else if (route.startsWith("/api/admin/staff/")) params.set("id", ids.staffId);

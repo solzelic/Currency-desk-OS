@@ -293,3 +293,5 @@ side of it. A server test proving the gate uses the resolved number and a
 browser test proving the control writes something cannot, between them,
 prove they are the same number — and that is where every defect in this
 project has lived.
+
+Signup v2.1 (migration 079) explicitly offers identification on every exchange. A zero `legal_entities.id_threshold` now means that stricter policy, and resolves to `0.00` on the real posting path; NULL continues to follow the pack. Historical pack zero semantics are unchanged. No existing positive threshold is rewritten. CTO review is required; rollback must not silently discard zero policies.

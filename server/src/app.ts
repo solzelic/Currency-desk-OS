@@ -26,6 +26,7 @@ import { registerTenantStateRoutes } from "./routes/tenantState.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAdminMfaRoutes } from "./routes/admin-mfa.js";
 import { registerPublicOnboardingRoutes } from "./routes/onboarding-public.js";
+import { LEGACY_ONBOARDING_PAGE, SIGNUP_PAGE, SIGNUP_SSO_PAGE, registerSignupPages } from "./routes/signup-page.js";
 import { registerPublicSiteRoutes } from "./routes/public-site.js";
 import { registerSignupRoutes } from "./routes/signup.js";
 import { registerEnquiryRoutes } from "./routes/enquiries.js";
@@ -65,8 +66,8 @@ const SITE_PAGES = {
   // site links to as "Get early access", and /early-access is the same page.
   "/signup": "web/early-access-v2.html",
   "/early-access": "web/early-access-v2.html",
-  // where the invite email lands: type your code, walk the setup
-  "/onboarding": "web/onboarding.html",
+  // "/onboarding" is sign-up v2.1 and the older setup page by reference:
+  // routes/signup-page.ts decides which, so it is not listed here.
 } as const satisfies Record<string, string>;
 
 /* Phones and small tablets get the phone design. Deliberately coarse: the
@@ -181,6 +182,11 @@ const wantsPage = (req: { headers: Record<string, unknown> }): boolean => {
   return accept.includes("text/html");
 };
 
+/** A CurrencyDesk ID anywhere in a string, typed with or without hyphens,
+    reduced to its last four characters. */
+export const maskCdIds = (text: string): string =>
+  String(text ?? "").replace(/CD(?:-|\s|%20)*[A-Z]{4}(?:-|\s|%20)*[2-9A-HJKMNP-Z]{4}(?![A-Z0-9])/gi, (m) => `CD-…${m.slice(-4)}`);
+
 /* logStream lets a test read app.log. Production omits it, and Fastify
    keeps the logger it uses for every other warning. */
 export async function buildApp(
@@ -190,9 +196,50 @@ export async function buildApp(
   idv?: IdvRouteOptions,
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: logStream ? { stream: logStream } : process.env.NODE_ENV !== "test",
+    logger: process.env.NODE_ENV === "test" && !logStream ? false : {
+      ...(logStream ? { stream: logStream } : {}),
+      /* The request line carries a typed CurrencyDesk ID in its path
+         (/api/onboarding/CD-YORK-7K42/state). Logs keep its last four
+         characters only (standards §6, sign-up build doc §9.8). */
+      serializers: {
+        req: (req: { method: string; url: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) => ({
+          method: req.method,
+          // split always returns at least one string, including for an empty URL.
+          url: req.url.startsWith("/api/onboarding/")
+            ? maskCdIds(req.url.split("?")[0]!.replace(/^(\/api\/onboarding\/)[^/]+/, "$1[identifier]"))
+            : maskCdIds(/^\/onboarding(?:[/?]|$)/.test(req.url) ? req.url.split("?")[0]! : req.url),
+          host: req.hostname,
+          remoteAddress: req.ip,
+          remotePort: req.socket?.remotePort,
+        }),
+      },
+    },
     // a customer domain pointed at us serves that customer's hosted site
     rewriteUrl: (req) => rewriteHostToSite(req.headers.host, req.url ?? "/"),
+  });
+  const defaultErrorHandler = app.errorHandler;
+  app.setErrorHandler((error, req, reply) => {
+    if (!req.url.startsWith("/api/onboarding/")) return defaultErrorHandler.call(app, error, req, reply);
+    // Database/provider error messages can contain bound secrets or PII.
+    const code = error && typeof error === "object" && "statusCode" in error ? error.statusCode : undefined;
+    const status = typeof code === "number" && Number.isInteger(code) && code >= 400 && code < 500 ? code : 500;
+    req.log.error({ reason: "onboarding_request_failed", status }, "onboarding request failed");
+    return reply.code(status).send({ error: status === 500 ? "temporarily_unavailable" : "invalid_request" });
+  });
+  app.addHook("onSend", async (req, reply, payload) => {
+    if (!req.url.startsWith("/api/onboarding/") || ![409, 410, 423, 429].includes(reply.statusCode)) return payload;
+    // Only the bounded machine reason is logged, never response detail/input.
+    let reason = "refused";
+    if (typeof payload === "string") {
+      try {
+        const body: unknown = JSON.parse(payload);
+        if (body && typeof body === "object" && "error" in body && typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error)) reason = body.error;
+      } catch {
+        // A non-JSON refusal still produces the generic reason and status.
+      }
+    }
+    req.log.warn({ reason, status: reply.statusCode }, "signup.refused");
+    return payload;
   });
   await app.register(cookie);
   await app.register(rawBody, { global: false, encoding: false, runFirst: true });
@@ -421,12 +468,13 @@ export async function buildApp(
           app.get(route, (_req, reply) => reply.sendFile(file));
         }
       }
-      /* The invite link reads like an address rather than a query string:
-         currencydeskos.com/onboarding/CD-A3V5ZE. The page pulls the code off
-         the path itself, so every one of these serves the same file. */
-      if (existsSync(path.join(staticDir, SITE_PAGES["/onboarding"]))) {
-        app.get("/onboarding/:code", (_req, reply) => reply.sendFile(SITE_PAGES["/onboarding"]));
-      }
+      /* Sign-up v2.1 at /onboarding, the older setup page for an invitation
+         that carries a setup reference (routes/signup-page.ts). */
+      registerSignupPages(app, db, staticDir, {
+        signup: existsSync(path.join(staticDir, SIGNUP_PAGE)),
+        legacy: existsSync(path.join(staticDir, LEGACY_ONBOARDING_PAGE)),
+        sso: existsSync(path.join(staticDir, SIGNUP_SSO_PAGE)),
+      });
     }
     // the platform control panel — the compiled web/app/admin.html, else the
     // hand-written admin.html in the static dir (repo root)

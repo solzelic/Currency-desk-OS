@@ -4,7 +4,7 @@
 
      · registered or in progress with FINTRAC, in Canada → Invited at
        once, and A2 goes straight away carrying the CurrencyDesk ID and
-       the setup link. No A1: there is nothing left to review.
+       the plain sign-up link (no token). No A1: there is nothing left to review.
      · in Canada, not registered → On hold, with "Your address is held":
        the address they reserved, the FINTRAC page, what FINTRAC asks for.
      · outside Canada → On hold, with "Your place is held": their place
@@ -89,7 +89,9 @@ describe("accepted at once", () => {
     expect(mail).toHaveLength(1);
     expect(mail[0]!.subject).toBe("Your CurrencyDesk ID is inside");
     expect(mail[0]!.text).toContain(cdId);
-    expect(mail[0]!.text).toContain(`/onboarding/${reference}`);
+    /* sign-up v2.1: a plain door, no token; the ID is typed there (SIGNUP-LOGIC §2.1) */
+    expect(mail[0]!.text).toMatch(/\/onboarding(\s|$)/m);
+    expect(mail[0]!.text).not.toContain(`/onboarding/${reference}`);
     expect(mail[0]!.text).toContain("You're in, Daniel.");
   });
 

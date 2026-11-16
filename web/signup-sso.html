@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Back to CurrencyDesk</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F4F1EA;color:#17140F;font:15px/1.5 "Schibsted Grotesk",system-ui,sans-serif}p{max-width:320px;text-align:center;padding:0 16px}</style>
+</head><body>
+<p role="status">Taking you back to CurrencyDesk&hellip;</p>
+<script>
+/* Google or Microsoft send the person here (SSO_REDIRECT_URI = <origin>/onboarding/sso)
+   with ?code and ?state. Nothing is checked here: the sign-up page posts both to
+   POST /api/onboarding/:id/sso/callback, which checks the state, the token and the email.
+   In a popup, hand them to the page that opened it (same origin only) and close.
+   On a phone, where the page itself went to the provider, go back to it. */
+(function () {
+  var q = new URLSearchParams(location.search);
+  var code = q.get("code") || "", state = q.get("state") || "";
+  if (window.opener && window.opener !== window) {
+    try { window.opener.postMessage({ type: "cd-sso", code: code, state: state }, location.origin); } catch (e) { /* the opener went away; nothing to hand back */ }
+    window.close();
+    return;
+  }
+  location.replace("/onboarding?sso=1&code=" + encodeURIComponent(code) + "&state=" + encodeURIComponent(state));
+})();
+</script>
+</body></html>
