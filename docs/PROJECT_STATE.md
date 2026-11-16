@@ -5,6 +5,8 @@ visitor’s browser. Forward corrections exclude existing case-folded staff user
 issuance (the global allocator contract remains coordinated with CD221), separate card preparation from explicit version-bound agreement assent, and
 guard stale client replies and exact count inputs. SAM opt-in/stop/reconsent now
 uses attributable append-only evidence; payment cannot revive a later opt-out.
+Test seed and in-memory code mailbox now require a local runtime, loopback
+database/bind configuration and loopback request; deployment markers fail closed.
 Full integrated acceptance, Day 1 Home, staff/cash/billing handoffs, telephony and
 protected CTO review remain open.
 
