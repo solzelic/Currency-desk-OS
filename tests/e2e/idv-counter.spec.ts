@@ -730,6 +730,8 @@ test("counter screens for the other badge states", async ({ page, request }) => 
     await expect(page.getByTestId("id-check-quebec")).toContainText("Face match is off for this branch. Inspect the original ID.");
     await themeShot(page, "quebec");
     await page.getByTestId("id-check-flow").getByRole("button", { name: "Close" }).click();
+    const fileHead = page.locator(".client-file-actions");
+    if (await fileHead.isVisible().catch(() => false)) await fileHead.locator("button").last().click();
 
     const skip = page.locator(".cdos-tour-skip");
     if (await skip.isVisible().catch(() => false)) await skip.click();
