@@ -17,6 +17,12 @@
   }
 
   Object.assign(CD, {
+    paymentChoice: function (c) {
+      var d = c.state.data;
+      return { plan: d.plan || "ai", term: d.term || "monthly",
+        extras: { brief: d.brief !== false, call: d.call !== false, website: !!(d.addons || {}).website, setupWeek: !!(d.addons || {}).onsite } };
+    },
+    paymentKey: function (c) { return JSON.stringify({ choice: CD.paymentChoice(c), locations: c.locCount(), answers: CD._answersRevision || 0 }); },
     /* ---- the plan and the card (screen 24) ------------------------------- */
     loadPrices: function (c) {
       if (CD._pricing || CD._priceFailed) return;
@@ -83,18 +89,20 @@
        It needs a SetupIntent, which needs the plan the person chose, so it
        starts when the Payment section opens and restarts if that changes. */
     card: function (c) {
-      var d = c.state.data;
-      var choice = { plan: d.plan || "ai", term: d.term || "monthly",
-        extras: { brief: d.brief !== false, call: d.call !== false, website: !!(d.addons || {}).website, setupWeek: !!(d.addons || {}).onsite }, agreed: true };
-      var key = JSON.stringify(choice);
+      var choice = CD.paymentChoice(c), key = CD.paymentKey(c);
       if (CD._cardKey === key && (CD._cardBusy || CD._elements || CD.payErr)) return;
       if (CD._pe) { try { CD._pe.destroy(); } catch (e) { /* already gone with its box */ } CD._pe = null; CD._elements = null; }
       CD._cardKey = key; CD._cardBusy = true; CD.cardComplete = false; CD.payErr = "";
-      api("POST", "/plan", choice, 20000).then(function (r) {
+      var sequence = CD._cardRequest = (CD._cardRequest || 0) + 1;
+      api("POST", "/payment", choice, 20000).then(function (r) {
+        if (CD._cardKey !== key || sequence !== CD._cardRequest) return;
         CD._cardBusy = false;
         if (r.status !== 200 || !r.body.clientSecret) { CD.payErr = why(r, "Card payments aren’t available just now. Nothing was charged."); c.forceUpdate(); return; }
+        if (!r.body.setupIntentId || r.body.termsSourceHash !== window.__cdAgreementHash) { CD.payErr = "The agreement has changed. Reload this page to review it before opening your desk."; c.forceUpdate(); return; }
         CD._secret = r.body.clientSecret;
+        CD._intent = r.body.setupIntentId;
         return stripeJs().then(function () {
+          if (CD._cardKey !== key || sequence !== CD._cardRequest) return;
           var pk = r.body.publishableKey;
           if (!window.Stripe || !pk) { CD.payErr = "Card payments aren’t switched on here yet. Nothing was charged."; c.forceUpdate(); return; }
           CD._stripe = CD._stripe || window.Stripe(pk);
@@ -102,7 +110,7 @@
           CD._pe = CD._elements.create("payment", { layout: "tabs", fields: { billingDetails: { name: "never", address: "never" } }, wallets: { applePay: "never", googlePay: "never" } });
           CD._pe.on("change", function (e) { CD.cardComplete = !!e.complete; c.forceUpdate(); });
           CD.mountCard();
-        }, function () { CD.payErr = "The card form didn’t load. Check your connection and try again. Nothing was charged."; c.forceUpdate(); });
+        }, function () { if (sequence !== CD._cardRequest) return; CD.payErr = "The card form didn’t load. Check your connection and try again. Nothing was charged."; c.forceUpdate(); });
       });
     },
     /* No card form (Stripe off, or unreachable): say why where the card would be. */
@@ -126,17 +134,25 @@
        webhook has told the server, and only then; the page asks until it
        has, and says so if it is taking a while. */
     pay: function (c) {
-      if (!CD._stripe || !CD._elements || CD._paying) return;
+      if (!CD._stripe || !CD._elements || CD._paying || !c.state.termsRead) return;
+      if (CD._cardKey !== CD.paymentKey(c)) { CD.payErr = "Your plan changed. Open Payment again to update the card form."; CD.cardComplete = false; c.forceUpdate(); return; }
       var d = c.state.data;
+      var key = CD._cardKey, elements = CD._elements;
       CD._paying = true; CD.payErr = ""; c.forceUpdate();
       var billing = d.billSame !== false
         ? { name: d.cardName || d.ownerName, address: { line1: d.street, line2: d.unit || undefined, city: d.city, state: d.region, postal_code: d.postal, country: (CD.pack && CD.pack.code) || undefined } }
         : { name: d.cardName || d.ownerName, address: { line1: d.billStreet, city: d.billCity, state: d.billRegion, postal_code: d.billPostal } };
-      CD._stripe.confirmSetup({ elements: CD._elements, redirect: "if_required", confirmParams: { payment_method_data: { billing_details: billing }, return_url: location.origin + "/onboarding" } })
+      api("POST", "/agreement", { setupIntentId: CD._intent, termsSourceHash: window.__cdAgreementHash, agreed: true }).then(function (r) {
+        if (r.status !== 200 || key !== CD.paymentKey(c)) {
+          if (r.status === 409) CD._cardKey = null;
+          CD._paying = false; CD.payErr = why(r, "Your desk or plan changed. Review it before opening your desk."); c.forceUpdate(); return;
+        }
+        return CD._stripe.confirmSetup({ elements: elements, redirect: "if_required", confirmParams: { payment_method_data: { billing_details: billing }, return_url: location.origin + "/onboarding" } })
         .then(function (res) {
           if (res.error) { CD._paying = false; CD.payErr = res.error.message || "The card wasn’t accepted. Nothing was charged."; c.forceUpdate(); return; }
           CD.waitOpen(c, 0);
         }, function () { CD._paying = false; CD.payErr = NET; c.forceUpdate(); });
+      });
     },
     waitOpen: function (c, n) {
       api("POST", "/open", {}).then(function (r) {

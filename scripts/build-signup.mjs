@@ -44,7 +44,10 @@ const BRIDGE = ["signup-v2.1-bridge.js", "signup-v2.1-chapters.js", "signup-v2.1
 const SSO = path.join(ROOT, "design/onboarding/signup-sso.html");
 const OUT = path.join(ROOT, "web/signup.html");
 const ASSETS = path.join(ROOT, "web/signup");
-const AGREEMENT_HASH = "28138735125317dc4817bcb5f105b93856b8060842e505be8831a1b9064fe1af";
+const agreementSource = readFileSync(path.join(ROOT, "server/src/onboarding/signup-open.ts"), "utf8");
+const agreementVersions = [...agreementSource.matchAll(/export const SERVICE_AGREEMENT_SOURCE_HASH = "([a-f0-9]{64})";/g)];
+if (agreementVersions.length !== 1) throw new Error("build-signup: server agreement version missing or ambiguous");
+const AGREEMENT_HASH = agreementVersions[0][1];
 const AGREEMENT_START = "CurrencyDesk Service Agreement</div>";
 const AGREEMENT_END = "are the whole understanding between us on this subject.";
 
@@ -82,7 +85,7 @@ patch("demo server", '<script src="coded/demo-mode.js"></script>\n', "");
 patch("react from web/vendor", '"coded/web/vendor/react.production.min.js"', '"/web/vendor/react.production.min.js"');
 patch("react-dom from web/vendor", '"coded/web/vendor/react-dom.production.min.js"', '"/web/vendor/react-dom.production.min.js"');
 cut("old setup bridge", '<script>\n(function () {\n  "use strict";\n  var KEY = "cdos_onb_v2";', '})();\n</script>\n');
-patch("runtime", '<script src="./support.js"></script>', BRIDGE.map((f) => `<script>\n${readFileSync(f, "utf8")}</script>\n`).join("") + '<script src="/web/support.js"></script>');
+patch("runtime", '<script src="./support.js"></script>', `<script>window.__cdAgreementHash=${JSON.stringify(AGREEMENT_HASH)};</script>\n` + BRIDGE.map((f) => `<script>\n${readFileSync(f, "utf8")}</script>\n`).join("") + '<script src="/web/support.js"></script>');
 cut("review switch", "<script>/* reference build: ?bare=1 hides the review panel", "</script>");
 patch("fonts", 'href="coded/web/fonts/fonts.css"', 'href="/web/fonts/fonts.css"');
 patch("no google fonts (1)", '<link rel="preconnect" href="https://fonts.googleapis.com">', "");

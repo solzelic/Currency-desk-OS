@@ -45,14 +45,19 @@
         : null;
       if (!skip) return true;
       api("PUT", "/answers", { step: skip.step, answers: skip.answers }).then(function (r) {
-        if (r.status === 200) { CD._goPass = true; c.go(skip.to != null ? skip.to : n); return; }
+        if (r.status === 200) { CD.savedAnswers(); CD._goPass = true; c.go(skip.to != null ? skip.to : n); return; }
         if (r.status === 401) return CD.signInAgain(c, why(r));
         CD.err = why(r, NET); c.forceUpdate();
       });
       return false;
     },
     save: function (c, i, d) {
-      return api("PUT", "/answers", { step: STEP_OF[i], answers: toServer(c, i, d) });
+      return api("PUT", "/answers", { step: STEP_OF[i], answers: toServer(c, i, d) }).then(function (r) { if (r.status === 200) CD.savedAnswers(); return r; });
+    },
+    savedAnswers: function () {
+      CD._answersRevision = (CD._answersRevision || 0) + 1;
+      CD._cardKey = null; CD.cardComplete = false;
+      CD.prices = null; CD._priceFailed = false;
     },
     /* ---- the address (screen 9): Google Places through our server -------- */
     places: function (c, q) {
