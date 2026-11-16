@@ -78,6 +78,11 @@ afterAll(async () => {
   if (handle) await handle.close();
 });
 
+const EXTRA = {
+  templateIdTier3: null, templateIdTier4: null, privacyContact: null, privacyEmail: null,
+  privacyPhone: null, privacyPolicyUrl: null, faceCropEnabled: true,
+};
+
 describe("per-shop identity verification settings", () => {
   it("is off until the owner saves, and a non-owner is refused", async () => {
     expect(PROVIDER).toBe("persona");
@@ -85,6 +90,7 @@ describe("per-shop identity verification settings", () => {
     expect(fresh.statusCode).toBe(200);
     expect(fresh.json()).toEqual({
       shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: null, templateId: null, retentionDays: null, checksEnabled: false,
+      ...EXTRA,
     });
     expect(await stored(DEMO.legalEntityId)).toBeNull();
     for (const who of ["manager", "teller"]) {
@@ -112,6 +118,7 @@ describe("per-shop identity verification settings", () => {
     });
     expect(savedA.json()).toEqual({
       shopId: DEMO.legalEntityId, provider: PROVIDER, apiKeyRef: "PERSONA_API_KEY_YORKFX", templateId: "itmpl_shop_a", retentionDays: 1825, checksEnabled: false,
+      ...EXTRA,
     });
     expect((await read("owner", `?shopId=${B.legalEntityId}`)).json()).toMatchObject({
       shopId: DEMO.legalEntityId, apiKeyRef: "PERSONA_API_KEY_YORKFX",
@@ -181,7 +188,10 @@ describe("per-shop identity verification settings", () => {
     const saved = await write("owner", { apiKeyRef: own, templateId: "itmpl_shop_a", checksEnabled: false });
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json().apiKeyRef).toBe(own);
-    expect(Object.keys(saved.json()).sort()).toEqual(["apiKeyRef", "checksEnabled", "provider", "retentionDays", "shopId", "templateId"]);
+    expect(Object.keys(saved.json()).sort()).toEqual([
+      "apiKeyRef", "checksEnabled", "faceCropEnabled", "privacyContact", "privacyEmail", "privacyPhone",
+      "privacyPolicyUrl", "provider", "retentionDays", "shopId", "templateId", "templateIdTier3", "templateIdTier4",
+    ]);
     expect((await read("owner")).json().apiKeyRef).toBe(own);
     const sharedSave = await write("owner", { apiKeyRef: shared });
     expect(sharedSave.statusCode, sharedSave.body).toBe(200);

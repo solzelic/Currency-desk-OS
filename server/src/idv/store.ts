@@ -47,7 +47,34 @@ export async function latestClientIdvStatus(db: Db, shopId: string, clientId: st
 
 type MapRow = {
   shop_id: string; branch_id: string; teller_id: string; provider_ref: string; reference_id: string; tenant_id: string;
+  client_id?: string | null; requested_tier?: string | null;
 };
+
+export type LocatedInquiry = {
+  shopId: string; branchId: string; tellerId: string; providerRef: string; referenceId: string; tenantId: string;
+  clientId: string | null; requestedTier: string | null;
+};
+
+/* Same match as recordIdvEvent, without writing. */
+export async function locateIdvInquiry(db: Db, result: IdvResult): Promise<LocatedInquiry | "unknown" | "conflict"> {
+  const found = await db.execute(sql`
+    SELECT i.shop_id, i.branch_id, i.teller_id, i.provider_ref, i.reference_id, i.client_id, i.requested_tier, e.tenant_id
+      FROM idv_inquiries i
+      JOIN legal_entities e ON e.id = i.shop_id
+     WHERE i.provider = ${result.provider} AND i.provider_ref = ${result.providerRef}
+     LIMIT 1
+  `);
+  const row = found.rows[0] as MapRow | undefined;
+  if (!row || !row.tenant_id) return "unknown";
+  const named = result.referenceId.trim();
+  if (named && named !== row.reference_id) return "conflict";
+  return {
+    shopId: row.shop_id, branchId: row.branch_id, tellerId: row.teller_id, providerRef: row.provider_ref,
+    referenceId: row.reference_id, tenantId: row.tenant_id,
+    clientId: typeof row.client_id === "string" && row.client_id ? row.client_id : null,
+    requestedTier: typeof row.requested_tier === "string" ? row.requested_tier : null,
+  };
+}
 
 /* unknown: this provider has no stored inquiry with that id.
    conflict: the event names a reference id that is not the stored one.

@@ -9,12 +9,13 @@ import { z } from "zod";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import type { Db } from "../db/index.js";
 import { LPEPR_TASK, mayReviewScreening, NAME_OFFICER_MESSAGE, screenSubject, TELLER_HOLD_MESSAGE } from "./gate.js";
+import { PEP_TIERS, TIER_NUMBER } from "../idv/tiers.js";
 import type { ScreeningProvider } from "./provider.js";
 import { SCORE_THRESHOLD_PLACEHOLDER, THRESHOLD_SIGNOFF } from "./names.js";
 
 const idCheckBody = z.object({
   clientId: z.string().trim().min(1).max(80),
-  tier: z.enum(["1", "2", "3", "quick", "verify", "plus"]),
+  tier: z.enum(["1", "2", "3", "4", "quick", "verify", "plus"]),
   pepAnswer: z.boolean().optional(),
 }).strict();
 
@@ -22,9 +23,7 @@ const decisionBody = z.object({
   reason: z.string().trim().min(3).max(500),
 }).strict();
 
-const TIER_NUMBER: Record<string, "1" | "2" | "3"> = {
-  "1": "1", quick: "1", "2": "2", verify: "2", "3": "3", plus: "3",
-};
+export { TIER_NUMBER, PEP_TIERS };
 
 export type ScreeningRouteOptions = {
   provider?: ScreeningProvider;
@@ -62,8 +61,9 @@ export function registerScreeningRoutes(
     if (!who) return reply.code(401).send({ error: "unauthenticated" });
     const body = idCheckBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
-    const tier = TIER_NUMBER[body.data.tier] ?? "1";
-    if ((tier === "1" || tier === "2") && typeof body.data.pepAnswer !== "boolean") {
+    const tier = TIER_NUMBER[body.data.tier];
+    if (!tier) return reply.code(400).send({ error: "invalid_request" });
+    if (PEP_TIERS.has(tier) && typeof body.data.pepAnswer !== "boolean") {
       return reply.code(400).send({
         error: "pep_answer_required",
         message: "Ask the client whether they are a politically exposed person, and record the answer.",
@@ -78,7 +78,7 @@ export function registerScreeningRoutes(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      if (tier === "1" || tier === "2") {
+      if (PEP_TIERS.has(tier)) {
         await client.query(
           `INSERT INTO client_pep_answers (client_id, tier, is_pep, answered_at, answered_by)
            VALUES ($1,$2,$3,now(),$4)

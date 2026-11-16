@@ -282,6 +282,13 @@ export const idvShopConfig = pgTable("idv_shop_config", {
   provider: text("provider").notNull().default("persona"),
   apiKeyRef: text("api_key_ref"),
   templateId: text("template_id"),
+  templateIdTier3: text("template_id_tier3"),
+  templateIdTier4: text("template_id_tier4"),
+  privacyContact: text("privacy_contact"),
+  privacyEmail: text("privacy_email"),
+  privacyPhone: text("privacy_phone"),
+  privacyPolicyUrl: text("privacy_policy_url"),
+  faceCropEnabled: boolean("face_crop_enabled").notNull().default(true),
   retentionDays: integer("retention_days"),
   checksEnabled: boolean("checks_enabled").notNull().default(false),
 });
@@ -308,6 +315,8 @@ export const branches = pgTable(
        unlocked. Who locked it is a staff id, for the screen and the log. */
     ratesLockedAt: timestamp("rates_locked_at", { withTimezone: true }),
     ratesLockedBy: text("rates_locked_by"),
+    /* Branch province. Unknown means the counter path only. Quebec is counter only. Migration 081. */
+    province: text("province"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("branches_entity_idx").on(t.legalEntityId)],

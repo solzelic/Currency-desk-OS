@@ -15,7 +15,10 @@ import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
 import { personaConnection, personaKeyMatchesRuntime, personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
-import { clientOnShop, failStarting, latestClientIdvStatus, markInquiry, recordIdvEvent, reserveIdvSlot, setProviderRef } from "./store.js";
+import { clientOnShop, failStarting, latestClientIdvStatus, reserveIdvSlot, setProviderRef } from "./store.js";
+import { finishIdvWebhook } from "./webhook-record.js";
+import { loadShopIdv, templateForTier } from "./records.js";
+import { counterOnly, faceMatchTier, resolveTier } from "./tiers.js";
 
 export const IDV_SHOP_CAP = 5;
 export const IDV_WEBHOOK_BODY_LIMIT = 256 * 1024;
@@ -75,11 +78,10 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     if (!result || result.provider !== provider.name) return reply.code(400).send({ error: "invalid_webhook" });
     if (result.ignore) return { received: true, dropped: true };
     try {
-      const saved = await recordIdvEvent(db, result);
+      const saved = await finishIdvWebhook(db, result, { env: options?.env ?? process.env, fetchImpl: options?.fetch });
       if (saved === "unknown") return { received: true, dropped: true };
       if (saved === "conflict") return reply.code(400).send({ error: "invalid_webhook" });
       if (saved === "duplicate") return { received: true, duplicate: true };
-      await markInquiry(db, result);
       return { received: true, duplicate: false };
     } catch (err) {
       req.log.error({ reason: "record_failed", name: err instanceof Error ? err.name : "Error" }, "idv webhook failed");
@@ -97,6 +99,18 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     if (namedClient && typeof clientValue !== "string") return reply.code(400).send({ error: "invalid_client", message: BAD_CLIENT });
     const clientId = typeof clientValue === "string" ? clientValue.trim() : "";
     if (clientId.length > CLIENT_ID_MAX) return reply.code(400).send({ error: "invalid_client", message: BAD_CLIENT });
+    const tierRaw = typeof rawBody === "object" && rawBody !== null && "tier" in rawBody ? (rawBody as { tier?: unknown }).tier : undefined;
+    const tier = typeof tierRaw === "string" ? resolveTier(tierRaw.trim()) : null;
+    if (typeof tierRaw === "string" && !tier) return reply.code(400).send({ error: "invalid_request", message: "That ID check tier is not valid." });
+    if (tier === "1") return reply.code(409).send({ code: "COUNTER_PATH", message: "In person is recorded at the counter. No identity provider is called." });
+    if (tier === "2") return reply.code(409).send({ code: "RETURNING", message: "Returning client does not start an identity provider check." });
+    const shop = await loadShopIdv(db, who.legalEntityId);
+    const province = await db.execute(sql`SELECT province FROM branches WHERE id = ${who.branchId} AND legal_entity_id = ${who.legalEntityId} LIMIT 1`);
+    const gate = counterOnly((province.rows[0] as { province?: string | null } | undefined)?.province ?? null);
+    const gateTier = tier ?? "3";
+    if (gate.quebec || (faceMatchTier(gateTier) && gate.counter)) {
+      return reply.code(409).send({ code: "COUNTER_ONLY", message: gate.line });
+    }
     const found = await db.execute(sql`
       SELECT provider, checks_enabled, api_key_ref, template_id
         FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
@@ -111,7 +125,8 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     if (!provider) return { connected: false, message: NOT_CONNECTED };
     const spec = {
       referenceId: "", shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
-      apiKeyRef: row.api_key_ref ?? null, templateId: row.template_id ?? null,
+      apiKeyRef: row.api_key_ref ?? null,
+      templateId: templateForTier(shop, tier) ?? row.template_id ?? null,
       shopCode: await shopEnvCodeFor(db, who.tenantId),
     };
     if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
@@ -133,8 +148,16 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     }, options?.cap ?? IDV_SHOP_CAP);
     if (reserved.kind === "capped") return reply.code(409).send({ code: "IDV_CAP", message: CAP });
     const activeId = reserved.referenceId;
+    const tierFields = tier === "4"
+      ? { tier: "4" as const, databaseStep: "off" as const, message: "The database step is not on yet. This check runs ID and selfie." }
+      : tier === "3"
+        ? { tier: "3" as const, method: "ID and selfie" }
+        : {};
+    if (tier) {
+      await db.execute(sql`UPDATE idv_inquiries SET requested_tier = ${tier} WHERE reference_id = ${activeId}`);
+    }
     if (reserved.kind === "reused" && reserved.providerRef !== reserved.referenceId) {
-      return { connected: true, referenceId: activeId, providerRef: reserved.providerRef, reused: true };
+      return { connected: true, referenceId: activeId, providerRef: reserved.providerRef, reused: true, ...tierFields };
     }
     /* No credit ledger in this repo. Do not invent one, and do not settle. */
     reserveIdvCredit(activeId);
@@ -148,7 +171,10 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
           detail: { referenceId: activeId, clientId: clientId || null, provider: provider.name },
         });
       }
-      return { connected: true, referenceId: activeId, providerRef: started.providerRef, reused: reserved.kind === "reused" };
+      return {
+        connected: true, referenceId: activeId, providerRef: started.providerRef, reused: reserved.kind === "reused",
+        ...tierFields,
+      };
     } catch (err) {
       await failStarting(db, activeId);
       if (err instanceof Error && err.message === "not_connected") return { connected: false, message: NOT_CONNECTED };

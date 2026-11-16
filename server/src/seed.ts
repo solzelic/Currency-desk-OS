@@ -47,7 +47,7 @@ export async function seed(db: Awaited<ReturnType<typeof createDb>>["db"]) {
     .onConflictDoNothing();
   await db
     .insert(schema.branches)
-    .values({ id: DEMO.branchId, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, name: "Yorkville Desk" })
+    .values({ id: DEMO.branchId, tenantId: DEMO.tenantId, legalEntityId: DEMO.legalEntityId, name: "Yorkville Desk", province: "ON" })
     .onConflictDoNothing();
   await db
     .insert(schema.workspaces)

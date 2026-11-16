@@ -34,7 +34,7 @@ postgres("start-check cap on postgres", () => {
     const owner = await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.staffId, "j.masri")).limit(1);
     await handle.db.insert(schema.tenants).values({ id: "tnt-idv-cap", name: "Cap Shop" }).onConflictDoNothing();
     await handle.db.insert(schema.legalEntities).values({ id: SHOP, tenantId: "tnt-idv-cap", name: "Cap Shop", jurisdiction: "FINTRAC" }).onConflictDoNothing();
-    await handle.db.insert(schema.branches).values({ id: "br-idv-cap", tenantId: "tnt-idv-cap", legalEntityId: SHOP, name: "Cap counter" }).onConflictDoNothing();
+    await handle.db.insert(schema.branches).values({ id: "br-idv-cap", tenantId: "tnt-idv-cap", legalEntityId: SHOP, name: "Cap counter", province: "ON" }).onConflictDoNothing();
     await handle.db.insert(schema.staffUsers).values({
       id: "tnt-idv-cap:c.owner", tenantId: "tnt-idv-cap", legalEntityId: SHOP, branchId: "br-idv-cap",
       staffId: "c.owner", name: "Cap Owner", role: "administrator", authorizedBranchIds: ["br-idv-cap"], passwordHash: owner[0]!.passwordHash,
