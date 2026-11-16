@@ -6,6 +6,7 @@
      GET  /api/onboarding/:id/sso/:provider/start
      POST /api/onboarding/:id/sso/callback
      POST /api/onboarding/:id/password
+     GET  /api/onboarding/methods        which of the four this server can finish
 
    Each saves a CANDIDATE credential for this browser's attempt and moves
    the account reserved → enrolling (onboarding/signup-account.ts). None of
@@ -30,7 +31,7 @@ import { idTail, operatingNameOf, type IdDoor } from "../onboarding/cd-id-door.j
 import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredential, withSignupAccount, signupReservationMatches, type Account } from "../onboarding/signup-account.js";
 import { passkeyOptions, relyingParty, verifyPasskey } from "../onboarding/passkey.js";
 import { checkPassword, pwnedRange, type RangeFetch } from "../onboarding/password-rule.js";
-import { PROVIDERS, fetchJson, finishSso, providerConfig, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
+import { PROVIDERS, fetchJson, finishSso, providerConfig, ssoOrigin, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
 import { sendSignupCode, type Mailer } from "../onboarding/email-code.js";
 import { sendEmail } from "../email.js";
 import { stagingSignupFixture } from "../onboarding/signup-staging.js";
@@ -106,6 +107,21 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     return { cdId, row, account, connection };
   }
 
+  /* The page offers only what can finish here (no ID, nothing personal, no
+     client ID or secret). The passkey needs the page's own origin to be one
+     the RP takes, and Google/Microsoft need the page on the redirect's
+     origin, or the hand-back cannot reach it: the page compares both. */
+  app.get("/api/onboarding/methods", async () => {
+    const rp = relyingParty(env);
+    const sso = ssoOrigin(env);
+    return {
+      password: true,
+      passkey: !!rp, passkeyOrigins: rp?.origins ?? [],
+      google: !!providerConfig("google", env), microsoft: !!providerConfig("microsoft", env),
+      ssoOrigin: sso && PROVIDERS.some((p) => providerConfig(p, env)) ? sso : null,
+    };
+  });
+
   app.post<{ Params: { ref: string } }>("/api/onboarding/:ref/passkey/options", async (req, reply) => {
     const r = await reservation(req, reply);
     if (!r) return;
@@ -164,6 +180,11 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     if (!attempt) return reply.code(400).send({ error: "invalid_request" });
     const result = await finishSso(db, cfg, { enquiryId: r.row.id, attemptHash: attempt, code: parsed.data.code, state: parsed.data.state, ownerEmail: r.row.email }, http);
     if (!result.ok) {
+      /* a provider outage is not a guess at this ID */
+      if (result.reason === "provider_unavailable") {
+        door.logRefusal({ reason: "sso_provider_unavailable", id: idTail(r.cdId), connection: r.connection });
+        return reply.code(502).send({ error: "sso_unavailable", detail: "We couldn't reach that sign-in just now. Try again, or choose another way." });
+      }
       door.fail(r.cdId, r.connection, `sso_${result.reason}`);
       if (result.reason === "email_mismatch" || result.reason === "email_unverified") {
         await audit(db, {
@@ -171,10 +192,10 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
           action: "sso.refused_mismatch", detail: { enquiryId: r.row.id, provider, reason: result.reason },
         });
         const label = provider === "google" ? "Google" : "Microsoft";
+        if (result.reason === "email_unverified") {
+          return reply.code(409).send({ error: "email_unverified", detail: `${label} hasn't confirmed that account's email, so it can't be used here. Use the account for the email you applied with, or choose another way.` });
+        }
         return reply.code(409).send({ error: "email_mismatch", detail: `That ${label} account isn't the email you applied with. Use the account for that email.` });
-      }
-      if (result.reason === "provider_unavailable") {
-        return reply.code(502).send({ error: "sso_unavailable", detail: "We couldn't reach that sign-in just now. Try again, or choose another way." });
       }
       return reply.code(400).send({ error: "sso_not_saved", detail: "That sign-in didn't finish. Nothing was saved. Try again, or choose another way." });
     }

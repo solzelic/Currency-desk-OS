@@ -1,3 +1,142 @@
+## Provider validation dependency composition (CD206, 17 November 2026)
+
+PR800's exact `964beadf` full fresh PostgreSQL run completed with 2323 passed,
+6 failed and 1 skipped. All failures were in the shared screening fixture
+(inherited till/session state and consequential screening expectations). The
+unchanged suite passed 14/14 alone on another fresh database. The failed full
+result is retained; no ledger/browser phase ran on that head.
+
+This composition incorporates reviewed PR801 exact `73dcf02e` unchanged: its
+screening suite owns a migrated disposable database and drops it on teardown.
+All financial assertions, signup production code and CD221 returning-auth
+production files are unchanged by this composition. Both sides of the state
+document are preserved. CD206 now holds the released heavy-run lease, owns
+PG16 port58461 and browser4173, and will run the required final combined gates
+on fresh databases. No integration, provider enablement or hosted approval.
+
+## Signup provider failure and navigation recovery (CD-206, 17 November 2026)
+
+Astra review of #795/#798 reproduced readiness-request retry loops and late
+provider replies surviving Back. The additive correction keeps readiness lookup
+one-shot per page load (including failure), parses its public response shape,
+retires popup callbacks/watchers and device prompts on navigation, another method
+or unmount, and ignores responses/advance timers from the abandoned attempt.
+The callback window no longer claims a successful sign-in before server proof.
+A response already committed by the server is not rolled back by browser Back;
+the existing same-browser email-proof and resume rules remain authoritative.
+
+Provider HTTP 408/429, client configuration errors and key-discovery errors are
+unavailable responses, not guesses at an applicant ID. Only a token-endpoint
+400 carrying the parsed OAuth `invalid_grant` code counts as a refused code.
+No provider descriptions or token bodies are kept in errors/logs. Existing
+request throttles, single-use state, email matching and proof are unchanged.
+
+Validation: five client regression cases failed before the relevant correction;
+all 79 signup client tests now pass. Four server refusal-classification cases
+failed before correction; focused credential suite passes 36/36 with synthetic
+signed tokens and local in-memory PGlite. Added browser regressions are pending,
+as are full local PostgreSQL/browser final-head gates: CD221 owns the sequential
+heavy-run lease. No new provider registrations, deployment or real provider /
+hardware success. #799's Microsoft proof exception is not part of this correction
+and remains a separate decision; current credential identity contracts and
+CD221-owned auth/session/OS SignIn files are unchanged. CD206 remains In progress.
+
+## Signup credential browser lifecycle (CD-206, 16 November 2026)
+
+The page half of real Google, Microsoft and passkey sign-up
+(`design/onboarding/signup-v2.1-bridge.js`, `design/onboarding/signup-sso.html`,
+one build patch). "How will you sign in?" now draws only the ways in the server
+can finish from this page's origin. It asks `GET /api/onboarding/methods` once,
+the first time that screen draws; until it answers, all four show, as before.
+The passkey shows wherever the browser can make one: a platform authenticator,
+or a phone by QR (`getClientCapabilities`' hybrid transport), not only where a
+fingerprint or face reader exists. A security key alone is not detectable, so
+it is not offered on its own (pack §3.1 A.1); the browser's sheet still lists
+one. Google and Microsoft: the return page hands code and state to its opener.
+Where a provider page has cut the opener off (Cross-Origin-Opener-Policy;
+Google already sends it report-only), it answers on a same-origin
+`BroadcastChannel` and closes once the tab that started that exact round trip
+(its state) acknowledges. Otherwise it goes back to `/onboarding` as on a phone.
+The opener counts the popup as closed only after it has had the focus back for
+a moment, and a late answer still finishes. A provider error (`?error=`,
+e.g. cancelled) is one red line on the sign-in screen, in the popup and on the
+phone return alike, and sends nothing; before, the phone landed on the ID
+screen. The provider's code leaves the address bar as soon as the page loads.
+
+For Sol (copy, not changed): the footnote "A passkey uses your fingerprint or
+face on this device and never leaves it" is not true of a passkey made on a
+phone by QR. Browser coverage: Chromium only, with a virtual authenticator and
+a stand-in provider at `provider.invalid` that only redirects. That is not a
+real Google or Microsoft sign-in, not Safari or Firefox, and not real hardware.
+No server, session, money or CD-221 change. Not release, CTO or provider
+acceptance.
+
+## Signup credential provider readiness, server (CD-206, 16 November 2026)
+
+The server half of making real Google, Microsoft, passkey and password sign-up
+work (`server/src/onboarding/{sso,passkey}.ts`, `routes/signup-credential.ts`).
+Google's own published example sends `email_verified` as the string `"true"`;
+that string and the boolean now mean the same, and the string `"false"` is
+refused. Before, the whole token was voided. An unconfirmed provider email is
+`409 email_unverified` with its own line instead of "isn't the email you
+applied with". A token-endpoint 4xx (spent or foreign code) is `400
+sso_not_saved`; a 5xx, timeout or network failure is `502 sso_unavailable` and
+no longer counts as a miss against the ID. `SSO_REDIRECT_URI` must be exactly
+`<origin>/onboarding/sso` over https; a WebAuthn RP ID with no dot (other than
+`localhost`) or a shared hosting suffix (`onrender.com`) is refused. New `GET
+/api/onboarding/methods` answers which ways in this server can finish, with
+public origins only (no secret, client ID, ID or email). It is also the safe
+presence check for real configuration. The configuration table, the
+staging/production separation and the stable `signup_credentials` contract for
+CD-221 are in `docs/ONBOARDING.md`.
+
+Microsoft, corrected: its ID-token and optional-claims references list no
+`email_verified` claim and say `email` is mutable and not for authorization,
+so the old note that it is an optional claim was wrong. Under the pack's
+literal rule, every Microsoft account is refused. Changing that is a protected
+spec exception for CTO and is not in this change. No migration, session, money,
+CD-221 sign-in or `app.ts` change. Real provider and hardware runs are unrun:
+nothing is configured on staging yet. Not release, CTO or provider acceptance.
+
+## Current staging and tour-recovery composition — 16 November 2026
+
+This delivery composition preserves staging `b18d4a56` (including Start on Day 1)
+and exact PR793 dependency `f188f688`. The prior fixture `08965383` and server
+`9853116e` passed their full local gates. Client `b88a9fcc` passed server, ledger,
+dedicated staging and civil checks but failed the existing signup-tour motion
+transition in the ordinary browser suite; that run remains failed under #792.
+PR793 adds playback-driven recovery when a motion notification is delayed;
+it does not establish the precise cause of the historical intermittent failure.
+All original test assertions and timeouts remain. This composition keeps both
+teams' documentation and the stricter sign-in provenance alongside the new
+Day 1 route. Fresh exact-head review, full gates, Linux CI and protected-surface
+CTO review remain pending; no hosted-returning or release approval is claimed.
+Issues #769/#771 and the full-pack activation holds remain unchanged.
+
+## Signup tour motion reconciliation (CD-206 / #792, 16 November 2026)
+
+The signup tour now reconciles the current reduced-motion preference on its own
+video playback events as well as the media-query change notification. Manual Next
+stops the tour clock; previously a delayed notification could leave the clip moving
+indefinitely. A changed preference pauses the video before React replaces it with
+the poster and full captions. Normal playback does not schedule renders or another
+timer. The capture listener is removed on component unmount. Frozen design, server,
+auth, deployment configuration and sign-in ownership are unchanged.
+
+Evidence: a browser regression withholding only notification delivery (preserving
+the browser's real media-query state) failed at the unchanged 15-second visibility
+limit before the fix, then passed. Original tour assertions/timeouts are intact.
+The four tour tests pass three repetitions (12/12, no retries/skips) on the built
+page and local PGlite seam; signup client tests pass 69/69, including listener/timer
+cleanup and pause-before-render behavior. Full build, parse/public claims and
+sanctions checks pass. The original intermittent full-suite trigger was not
+reproduced in 25 instrumented isolated runs or 10 CPU-throttled runs; this closes a
+confirmed missed-notification recovery gap, not proof of the historical browser
+trigger. The failed CD206 integration, CD221 11834f2e and b88a9fcc full runs remain
+retained. New full integrated/CI and hosted/hardware checks are pending. CD-206
+remains In progress; CD-221 will consume the published additive dependency on
+staging b18d4a56 for its returning-login delivery.
+
 ## Staging Start on Day 1, 16 November 2026
 
 Staging's sign-in page has a second staging-only button beside "Start a fresh shop":
@@ -51,6 +190,30 @@ Known limits, recorded rather than hidden:
 
 Protected surfaces (sessions, provisioning): CTO review owed. Not release, CTO or
 Compliance acceptance.
+## Deterministic local signup dependency — 16 November 2026
+
+The returning-login delivery stack includes PR791 at `63fb07a6` beneath the
+sanctions fixture, server and client layers. Its seam-only HIBP transport
+substitution preserves the production password parser, deadline and refusal
+behavior; production entrypoints and hosted configuration are unchanged.
+The previous `55912b2e` full run passed server, ledger and civil checks but
+failed the signup reload browser case when the real breach service timed out.
+That failure remains recorded under #789. Fresh exact-head gates and Linux CI
+are pending on this composition; earlier results are not promoted to it.
+The fixture failure/timeout-cleanup evidence limitation is retained: a failed
+migration may leave its own disposable database behind with a loud cleanup
+error. No shared ledger cleanup or financial assertion is weakened.
+
+## Sanctions-hold fixture isolation, 16 November 2026
+
+Issue #786 records six order-dependent PostgreSQL test failures reproduced on
+unchanged staging: the sanctions-hold suite passes alone, but a preceding
+earnings suite leaves a different holder on the shared demo till. The hold
+suite now owns a uniquely named migrated disposable database and drops it
+after closing its connections. All fourteen cases, financial assertions and
+production ownership/screening rules remain unchanged. No shared ledger rows
+are cleared to make the assertions pass. Final validation and review remain
+pending; the original failed full run remains failed.
 
 ## Signup v2.1 rate website refusal, 16 November 2026
 
@@ -1986,7 +2149,7 @@ entry installs exact range-response fixtures while running the real password
 rules, parser and refusal path. Production and hosted staging checking is
 unchanged and remains fail-closed. Tests cover leaked/unavailable refusals,
 runtime boundaries, abort handling, and browser recovery with a clean phrase.
-The earlier CD221 55912b2e full-browser timeout and tour-motion failure remain
+The earlier CD221 55912b2e breach-provider timeout and 11834f2e tour-motion failure remain
 retained evidence; this bounded fixture does not establish full acceptance.
 
 ### CD-206 hosted walkthrough display corrections (16 Nov 2026)

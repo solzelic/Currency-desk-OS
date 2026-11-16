@@ -1,6 +1,7 @@
 /* The deal hold is the server's. A teller response carries the neutral
    sentence and nothing about the list. A list change re-screens clients. */
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,6 +20,9 @@ postgres("sanctions hold and review", () => {
   let pool: pg.Pool;
   let handle: DbHandle;
   let app: FastifyInstance;
+  let maintenance: pg.Pool;
+  let created = false;
+  const databaseName = `cdos_screening_${randomUUID().replaceAll("-", "")}`;
 
   const cookie = async (staffId: string) => {
     const login = await app.inject({
@@ -31,13 +35,21 @@ postgres("sanctions hold and review", () => {
   };
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = url;
+    // Earlier suites deliberately retain their book. This suite needs its own
+    // migrated database, not a shared demo till with an inherited holder.
+    maintenance = new pg.Pool({ connectionString: url });
+    await maintenance.query(`CREATE DATABASE ${databaseName}`);
+    created = true;
+    const isolated = new URL(url!);
+    isolated.pathname = `/${databaseName}`;
+    const isolatedUrl = isolated.toString();
+    process.env.DATABASE_URL = isolatedUrl;
     const real = await createDb();
     await real.close();
     delete process.env.DATABASE_URL;
     process.env.PGLITE_MEMORY = "1";
-    process.env.LEDGER_DATABASE_URL = url;
-    pool = new pg.Pool({ connectionString: url });
+    process.env.LEDGER_DATABASE_URL = isolatedUrl;
+    pool = new pg.Pool({ connectionString: isolatedUrl });
     handle = await createDb();
     await seed(handle.db);
     app = await buildApp(handle.db);
@@ -45,14 +57,20 @@ postgres("sanctions hold and review", () => {
   });
 
   afterAll(async () => {
-    await pool.query("DELETE FROM sanctions_screenings");
-    await pool.query("DELETE FROM sanctions_list_entries");
-    await pool.query("DELETE FROM sanctions_list_snapshots");
-    await pool.query("DELETE FROM client_pep_answers");
-    await app.close();
-    await handle.close();
-    await pool.end();
-    delete process.env.LEDGER_DATABASE_URL;
+    const failures: unknown[] = [];
+    for (const close of [() => app?.close(), () => handle?.close(), () => pool?.end()]) {
+      try { await close(); } catch (error) { failures.push(error); }
+    }
+    try {
+      if (created) await maintenance.query(`DROP DATABASE ${databaseName}`);
+    } catch (error) { failures.push(error); }
+    finally {
+      await maintenance?.end();
+      delete process.env.DATABASE_URL;
+      delete process.env.LEDGER_DATABASE_URL;
+      delete process.env.PGLITE_MEMORY;
+    }
+    if (failures.length) throw new AggregateError(failures, "Screening test database cleanup failed");
   });
 
   async function desk() {

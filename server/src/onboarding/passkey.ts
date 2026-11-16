@@ -28,11 +28,18 @@ export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 export type RelyingParty = { id: string; name: string; origins: string[] };
 
+/* Browsers refuse an RP ID that is a public suffix (the Public Suffix List
+   is theirs, not ours). These are the shared hosts this deployment can sit
+   under; a desk on Render needs its own name, e.g.
+   currencydesk-staging.onrender.com, never onrender.com. */
+const SHARED_SUFFIXES = new Set(["onrender.com"]);
+
 /** RP binding is permanent. Missing or invalid deployment config fails closed. */
 export function relyingParty(env: NodeJS.ProcessEnv = process.env): RelyingParty | null {
   const id = env.WEBAUTHN_RP_ID?.trim().toLowerCase();
   const origins = (env.WEBAUTHN_ORIGINS ?? "").split(",").map(o => o.trim()).filter(Boolean);
   if (!id || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(id) || !origins.length) return null;
+  if (SHARED_SUFFIXES.has(id) || (id !== "localhost" && !id.includes("."))) return null;
   for (const origin of origins) {
     let url: URL;
     try { url = new URL(origin); } catch { return null; }
