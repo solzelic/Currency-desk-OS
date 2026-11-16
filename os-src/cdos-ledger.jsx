@@ -205,7 +205,7 @@
     const checkedTone = window.CDOS.idBadgeTone('checked');
     const handTone = window.CDOS.idBadgeTone('hand');
     const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
-    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
+    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? ((viewed.idStanding && viewed.idStanding.chip) || 'ID on file') : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
     const papersMissing = !rec || !rec.idType || !rec.idNum;
     const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
@@ -540,7 +540,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const person = clients[n] || {}; const failed = !!person.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : (!person.idType || !person.idNum ? 'missing ID' : 'ok'); const st = failed ? person.idCheckError : state === 'ok' ? 'ID on file' : state; const ok = !failed && st === 'ID on file'; return (
+                    {shownNames.map(n => { const person = clients[n] || {}; const failed = !!person.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : (!person.idType || !person.idNum ? 'missing ID' : 'ok'); const st = failed ? person.idCheckError : state === 'ok' ? ((person.idStanding && person.idStanding.chip) || 'ID on file') : state; const ok = !failed && state === 'ok'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
                         <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft, color: failed ? CD.mute : ok ? window.CDOS.idBadgeTone('checked').c : CD.flag }}>{st}</span>
                       </button>); })}

@@ -572,7 +572,7 @@
     let secondary = badge.secondary;
     /* A sandbox key says "Check passed (test)". Any other pass says "Check passed".
        The record line stays underneath either way. */
-    if (latest && latest.result === "pass" && (fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0) {
+    if (latest && latest.result === "pass" && (fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0 && String(badge.primary).indexOf("ID checked") === 0) {
       secondary = badge.secondary || badge.primary;
       primary = fromInquiry;
     }

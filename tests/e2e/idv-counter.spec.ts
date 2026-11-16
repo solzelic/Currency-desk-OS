@@ -453,7 +453,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await expect(page.getByTestId("id-check-done")).toContainText("•••• 0001");
     await page.getByRole("button", { name: "Done" }).click();
     await expect(page.getByTestId("deal-id-link")).toContainText("ID and selfie, Persona");
-    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file", { timeout: 20_000 });
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID verified, scan and selfie", { timeout: 20_000 });
     await themeShot(page, "deal-link");
     const linked = await page.evaluate(async (id) => {
       const res = await fetch(`/api/idv/clients/${id}/checks`);
@@ -464,7 +464,7 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     expect(record.maskedNumber).toBe("•••• 0001");
     expect(record.photoOnFile).toBe(true);
     expect(linkedStanding.standing.onFile).toBe(true);
-    expect(linkedStanding.standing.chip).toBe("ID on file");
+    expect(linkedStanding.standing.chip).toMatch(/^ID verified, scan and selfie, /);
     expect(linkedStanding.standing.line).toContain("ID and selfie");
     expect(linkedStanding.standing.line).not.toContain("0001");
     expect(record.deals && record.deals.length).toBeGreaterThan(0);
@@ -519,16 +519,19 @@ test("a staged deal runs the sandbox check, then the counter path", async ({ pag
     await page.locator(".cd-tx-x").click();
 
     await page.locator('[data-app="clients"]').click();
-    await page.getByText(legalName, { exact: true }).click();
+    const card = page.locator("div.cursor-pointer", { hasText: legalName }).first();
+    await card.evaluate((node) => node.scrollIntoView({ block: "center" }));
+    await card.click();
     const file = page.getByTestId("identity-check");
-    await expect(file).toContainText("Check passed");
+    await expect(file.getByTestId("id-check-badge")).toContainText("ID verified, scan and selfie");
+    await expect(file).toContainText("Not a guarantee of identity");
     await expect(file).toContainText(/ID checked /);
     await expect(file).toContainText("ID and selfie, Persona");
     await expect(file.getByTestId("id-check-masked")).toHaveText("•••• 0001");
     await expect(file.getByTestId("id-check-reveal-open")).toHaveCount(0);
     await expect(file).not.toContainText("Approved");
     const profile = page.locator(".client-file");
-    await expect(page.getByTestId("client-standing")).toHaveText("ID on file");
+    await expect(page.getByTestId("client-standing")).toContainText("ID verified, scan and selfie");
     await expect(page.getByTestId("client-standing")).not.toContainText("Missing ID");
     await expect(page.getByTestId("client-where")).toContainText("Identified");
     await expect(page.getByTestId("client-where")).toContainText("ID and selfie");
@@ -730,12 +733,14 @@ test("counter screens for the other badge states", async ({ page, request }) => 
 
     await openFile(progressName);
     await expect(page.getByTestId("id-check-badge")).toContainText("ID check in progress");
+    await expect(page.getByTestId("identity-check")).not.toContainText("ID verified, scan and selfie");
     await themeShot(page, "badge-progress");
     await openFile(reviewName);
     await expect(page.getByTestId("id-check-badge")).toContainText("Under review since");
     await themeShot(page, "badge-review");
     await openFile(declinedName);
     await expect(page.getByTestId("id-check-badge")).toContainText("Not passed");
+    await expect(page.getByTestId("identity-check")).not.toContainText("ID verified, scan and selfie");
     await themeShot(page, "badge-declined");
     await openFile(incompleteName);
     await expect(page.getByTestId("id-check-badge")).toContainText("Method not completed. Check the ID at the counter.");
@@ -890,7 +895,7 @@ test("a passed ID check badge never uses the green token", async ({ page, reques
     await page.reload();
     await landOnDesktop(page);
     await page.locator('[data-app="clients"]').click();
-    const roster = page.locator("div.cursor-pointer", { hasText: passedName }).locator("span", { hasText: "ID on file" });
+    const roster = page.locator("div.cursor-pointer", { hasText: passedName }).locator("span", { hasText: "ID verified, scan and selfie" });
     await expect(roster).toHaveCount(1, { timeout: 20_000 });
     const themes = ["light", "dark"] as const;
     const widths = [1280, 390] as const;
@@ -908,7 +913,7 @@ test("a passed ID check badge never uses the green token", async ({ page, reques
     await roster.click();
     const fileBadge = page.getByTestId("client-standing").locator("span").last();
     const whereBadge = page.getByTestId("client-where").locator("span", { hasText: "Identified" });
-    await expect(fileBadge).toContainText("ID on file");
+    await expect(fileBadge).toContainText("ID verified, scan and selfie");
     for (const theme of themes) {
       await page.evaluate((value) => {
         (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
@@ -938,7 +943,7 @@ test("a passed ID check badge never uses the green token", async ({ page, reques
     await page.locator(".cd-tx-customer input").fill(passedName);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: passedName }).click();
     const dealBadge = page.getByTestId("deal-id-badge");
-    await expect(dealBadge).toContainText("ID on file");
+    await expect(dealBadge).toContainText("ID verified, scan and selfie");
     for (const theme of themes) {
       await page.evaluate((value) => {
         (window as unknown as { CDOS: { theme: { set: (v: string) => void } } }).CDOS.theme.set(value);
@@ -1581,7 +1586,8 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     };
 
     await openName(names.pass);
-    await expect(page.getByTestId("client-standing")).toContainText("ID on file");
+    await expect(page.getByTestId("client-standing")).toContainText("ID verified, scan and selfie");
+    await expect(page.getByTestId("identity-check")).toContainText("Not a guarantee of identity");
     await expect(page.getByTestId("client-where")).toContainText("Identified");
     await closeFile();
     await openName(names.unavailable);
@@ -1616,6 +1622,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await closeFile();
     await openName(names.otherShop);
     await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
+    await expect(page.locator(".client-file")).not.toContainText("ID verified, scan and selfie");
     await expect(page.getByTestId("client-where")).not.toContainText("ID seen in person");
     await closeFile();
     await openName(names.typedOld);
@@ -1644,7 +1651,9 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.locator(".client-file").getByText("No open flags. Reportables filed, ID on file")).toHaveCount(0);
     await closeFile();
 
-    expect(await readFlags(ids.pass)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
+    const passFlags = await readFlags(ids.pass);
+    expect(passFlags).toMatchObject({ kyc: "ok", onFile: true });
+    expect(passFlags.chip).toMatch(/^ID verified, scan and selfie, /);
     expect(await readFlags(ids.unavailable)).toMatchObject({ kyc: "missing ID", onFile: false });
     expect(await readFlags(ids.expired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
@@ -1685,7 +1694,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.locator(".cd-tx")).toBeVisible();
     await page.locator(".cd-tx-customer input").fill(names.pass);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.pass }).click();
-    await expect(page.getByTestId("deal-id-badge")).toContainText("ID on file");
+    await expect(page.getByTestId("deal-id-badge")).toContainText("ID verified, scan and selfie");
     await page.locator(".cd-tx-customer input").fill(names.expired);
     await page.locator(".cd-tx-suggest button.justify-between").filter({ hasText: names.expired }).click();
     await expect(page.getByTestId("deal-id-badge")).toContainText("ID expired");

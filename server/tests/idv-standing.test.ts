@@ -12,12 +12,15 @@ const pass = {
   numberUnavailable: false,
   withinFiveYears: true,
   documentExpired: false,
+  seenOn: "16 Nov 2026",
+  sameShop: true,
   original: null,
 };
+const verified = "ID verified, scan and selfie, 16 Nov 2026";
 
 describe("ID on file from the check record", () => {
   it("counts a fresh pass with the last 4, and not a number that was unavailable", () => {
-    expect(idFileStanding(pass)).toMatchObject({ onFile: true, chip: "ID on file", line: pass.line, gap: null });
+    expect(idFileStanding(pass)).toMatchObject({ onFile: true, chip: verified, line: pass.line, gap: null });
     expect(idFileStanding(pass).line).not.toContain("8991");
     expect(idFileStanding({ ...pass, numberUnavailable: true }).onFile).toBe(false);
     expect(idFileStanding({ ...pass, maskedNumber: null }).onFile).toBe(false);
@@ -93,6 +96,17 @@ describe("ID on file from the check record", () => {
     expect(idFileStanding({ ...pass, result: "declined", line: "Not passed 16 Nov 2026" }).onFile).toBe(false);
     expect(idFileStanding({ ...pass, result: "needs_review", line: "Under review since 16 Nov 2026" }).onFile).toBe(false);
     expect(idFileStanding({ ...pass, result: "method_not_completed", line: "Method not completed. Check the ID at the counter." }).onFile).toBe(false);
+  });
+
+  it("uses the scan-and-selfie badge only after a pass on this shop", () => {
+    expect(idFileStanding(pass).chip).toBe(verified);
+    const pending = { ...pass, result: "in_progress", line: "ID check in progress" };
+    const failed = { ...pass, result: "declined", line: "Not passed 16 Nov 2026" };
+    const otherShop = { ...pass, sameShop: false };
+    for (const row of [pending, failed, otherShop]) {
+      expect(idFileStanding(row).chip).not.toContain("ID verified, scan and selfie");
+    }
+    expect(idFileStanding({ ...pass, seenOn: "" }).chip).toBe("ID on file");
   });
 });
 

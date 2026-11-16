@@ -16,6 +16,7 @@ import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
   NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED, TOO_OLD_LINE,
   branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
+  verifiedScanChip,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
 } from "./tiers.js";
 
@@ -765,7 +766,7 @@ const NOT_ON_FILE = "No identity-document number is on this file yet.";
 
 export type IdFileStanding = {
   onFile: boolean;
-  chip: "ID on file" | "Missing ID" | "ID expired";
+  chip: string;
   title: "Identified" | "Not identified" | "ID expired";
   line: string;
   gap: "missing ID" | "expired ID" | null;
@@ -813,6 +814,16 @@ function inPersonReady(record: StandingInput): boolean {
     && record.numberUnavailable !== true;
 }
 
+/* The passed scan-and-selfie badge. Pending, a failure, a returning
+   client, and a check from another shop do not use this sentence. */
+function scanVerifiedChip(record: StandingInput): string | null {
+  if (record.sameShop === false) return null;
+  if (record.method !== "id_and_selfie" || record.result !== "pass") return null;
+  const date = (record.seenOn || "").trim();
+  if (!date || !qualifiesAsId(record)) return null;
+  return verifiedScanChip(date);
+}
+
 function qualifiesAsId(record: StandingInput | null | undefined): boolean {
   if (!record || record.typedOnly) return false;
   if (record.documentExpired) return false;
@@ -850,7 +861,7 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
         latest.seenOn || "",
       )
       : line;
-    return { onFile: true, chip: "ID on file", title: "Identified", line: shown, gap: null };
+    return { onFile: true, chip: scanVerifiedChip(latest) || "ID on file", title: "Identified", line: shown, gap: null };
   }
   const expired = latest.documentExpired || latest.result === "expired" || line.startsWith("Expired");
   if (expired) {
@@ -866,7 +877,7 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
 }
 
 function statusLine(
-  result: string, method: CheckMethod, date: string, test: boolean,
+  result: string, method: CheckMethod, date: string, _test: boolean,
   extra: { expiredStamp: string | null; returningStamp: string | null },
 ): string {
   if (extra.expiredStamp) return extra.expiredStamp;
@@ -876,9 +887,7 @@ function statusLine(
   if (result === "expired") return extra.expiredStamp ?? "Expired";
   if (result === "returning_confirmed" || method === "returning_client") return extra.returningStamp ?? "Returning client";
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
-  if (result === "pass" && method === "id_and_selfie") {
-    return test ? `Check passed (test)` : idCheckedLine(date, METHOD_LABEL.id_and_selfie, false);
-  }
+  if (result === "pass" && method === "id_and_selfie") return verifiedScanChip(date);
   return PROGRESS_LINE;
 }
 

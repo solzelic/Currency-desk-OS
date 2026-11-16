@@ -44,6 +44,11 @@ export const INCOMPLETE_LINE = "Method not completed. Check the ID at the counte
 export const NONE_LINE = "No ID check on file";
 export const PROGRESS_LINE = "ID check in progress";
 export const PASSED_TEST_LINE = "Check passed (test)";
+export const VERIFIED_SCAN_BADGE = "ID verified, scan and selfie";
+
+export function verifiedScanChip(date: string): string {
+  return `${VERIFIED_SCAN_BADGE}, ${date}`;
+}
 
 export function resolveTier(input: string): TierNumber | null {
   return TIER_NUMBER[input] ?? null;
