@@ -27,6 +27,22 @@ SEAM_DATABASE_URL=postgres://…/freshdb npm run test:e2e   # browser↔ledger s
 **Use a fresh disposable database per full run** — several suites
 deliberately leave ledger state behind (an append-only book is the point).
 
+## Browser screenshot output
+
+`staff-switch-seam.spec.ts` and `till-handover.spec.ts` save their named
+screenshots through `tests/e2e/screenshot-path.ts`. By default each file goes
+into Playwright's per-test output directory (`testInfo.outputPath`), including
+its retry isolation. Set `CDOS_E2E_SHOTS_DIR` to collect them in an explicit
+directory instead; missing parent directories are created recursively.
+An unset or exactly empty value uses the default. Whitespace is preserved;
+relative paths resolve from the runner's working directory. An unwritable
+path fails the test rather than silently dropping evidence. Give concurrent
+runs different override directories, because the fixed filenames can collide.
+
+When both specs finish, they produce fourteen named PNGs. They no longer require
+`/opt/cursor` paths or copy files automatically to `/cursor/stores/self/pr163`.
+This output change does not alter their financial fixtures or assertions.
+
 ## Testing rules that were learned the expensive way
 
 - **Assert deltas, not absolutes.** A test that asserts a global total
