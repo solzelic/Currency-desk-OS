@@ -1,3 +1,23 @@
+## Signup Microsoft email proof exception, proposed (CD-206, 16 November 2026; CTO decision)
+
+A protected spec exception, off unless `SIGNUP_MICROSOFT_EMAIL_PROOF=signup_code`
+is set (`server/src/onboarding/sso.ts`). The pack (SIGNUP-LOGIC §3.1 B/C step 2)
+requires `email_verified = true`. Microsoft's ID-token and optional-claims
+references list no such claim, and say `email` is mutable and not for
+authorization. So under the pack's rule no Microsoft account can ever sign up,
+and Microsoft is now not offered at all while the switch is off. With it on, a
+Microsoft identity is saved under the exact checks every provider gets
+(signature, issuer for its `tid`, audience, azp, nonce, time, `oid` and `tid`),
+and only when its `email` equals the reservation email. It is saved as a
+candidate: the 6-digit code to the reservation email, typed in the same browser,
+is the email proof, so nothing becomes the owner's without it. Refused either
+way: `email_verified` or `xms_edov` explicitly false, another email
+(`email_mismatch`), or no email (`409 email_missing`, a new honest message).
+`preferred_username` and UPN are never read. Nothing links an existing identity.
+The stored link stays `(microsoft, sub, tid)`. Google keeps its strict verified
+claim. Decision owed: CTO, whether to accept the exception, and the missing-email
+policy (refused here). Not set on any service; not CTO acceptance.
+
 ## Signup credential provider readiness, server (CD-206, 16 November 2026)
 
 The server half of making real Google, Microsoft, passkey and password sign-up

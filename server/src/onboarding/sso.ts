@@ -20,9 +20,18 @@
    email_verified claim at all, and say `email` is mutable and never for
    authorization (checked 16 Nov 2026; discovery's claims_supported has no
    email_verified either). So under this rule every Microsoft account is
-   refused, honestly as email_unverified, which is the safe failure. Any
-   other rule for Microsoft is a protected spec exception for CTO, not
-   something this file assumes. preferred_username / UPN is never used.
+   refused, honestly as email_unverified, which is the safe failure.
+
+   PROTECTED SPEC EXCEPTION (CTO), off unless
+   SIGNUP_MICROSOFT_EMAIL_PROOF=signup_code: a Microsoft identity whose
+   signed token passes every check above, with oid and tid, and whose
+   `email` equals the one applied with, is saved as a CANDIDATE, like every
+   sign-up credential. The 6-digit code to the reservation email, typed in
+   this same browser, is the email proof (email-code.ts); nothing becomes
+   the owner's without it. Still refused: email_verified or xms_edov
+   explicitly false, another email, or no email at all (email_missing). The
+   link stays (provider, sub[, tid]), never the email. preferred_username
+   and UPN are never read (the schema below drops them).
 
    Google: its published example sends email_verified as the string
    "true"; the boolean and that string mean the same and nothing else does.
@@ -46,6 +55,9 @@ export const SSO_TIMEOUT_MS = 8_000;
 
 export type ProviderConfig = {
   provider: Provider; clientId: string; clientSecret: string; redirectUri: string;
+  /* how the applied-with email is proven: the provider's verified claim, or
+     (Microsoft, exception) the sign-up code alone */
+  emailProof: "verified_claim" | "signup_code";
   authorize: string; token: string; jwks: string;
   issuerOk: (iss: string, claims: Record<string, unknown>) => boolean;
 };
@@ -59,7 +71,7 @@ export function providerConfig(provider: Provider, env: NodeJS.ProcessEnv = proc
   switch (provider) {
     case "google":
       return {
-        provider, clientId, clientSecret, redirectUri,
+        provider, clientId, clientSecret, redirectUri, emailProof: "verified_claim",
         authorize: "https://accounts.google.com/o/oauth2/v2/auth",
         token: "https://oauth2.googleapis.com/token",
         jwks: "https://www.googleapis.com/oauth2/v3/certs",
@@ -67,7 +79,7 @@ export function providerConfig(provider: Provider, env: NodeJS.ProcessEnv = proc
       };
     case "microsoft":
       return {
-        provider, clientId, clientSecret, redirectUri,
+        provider, clientId, clientSecret, redirectUri, emailProof: microsoftEmailProof(env),
         authorize: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
         token: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
         jwks: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
@@ -75,6 +87,10 @@ export function providerConfig(provider: Provider, env: NodeJS.ProcessEnv = proc
       };
   }
 }
+
+/** The Microsoft exception, when CTO has switched it on for this deployment. */
+export const microsoftEmailProof = (env: NodeJS.ProcessEnv = process.env): ProviderConfig["emailProof"] =>
+  env.SIGNUP_MICROSOFT_EMAIL_PROOF?.trim() === "signup_code" ? "signup_code" : "verified_claim";
 
 /** The one redirect the sign-up page can take back (web/signup-sso.html), or null. */
 function ssoRedirect(env: NodeJS.ProcessEnv): URL | null {
@@ -135,11 +151,12 @@ const jwkSchema = z.object({
   kty: z.literal("RSA"), kid: z.string().min(1), n: z.string().min(1), e: z.string().min(1),
   alg: z.literal("RS256").optional(), use: z.literal("sig").optional(),
 });
+const flag = z.union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")]).optional();
 const tokenClaims = z.object({
   iss: z.string(), sub: z.string().min(1), aud: z.union([z.string(), z.array(z.string()).min(1)]),
   exp: z.number().finite(), iat: z.number().finite().optional(), nbf: z.number().finite().optional(),
   azp: z.string().optional(), nonce: z.string(), email: z.string().optional(),
-  email_verified: z.union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")]).optional(), oid: z.string().min(1).optional(), tid: z.string().min(1).optional(),
+  email_verified: flag, xms_edov: flag, oid: z.string().min(1).optional(), tid: z.string().min(1).optional(),
 });
 const jwksCache = new Map<string, { at: number; keys: z.infer<typeof jwkSchema>[] }>();
 const JWKS_TTL_MS = 60 * 60 * 1000;
@@ -183,7 +200,7 @@ export const sameEmail = (a: string, b: string): boolean =>
 
 export type SsoResult =
   | { ok: true; subject: string; tenant: string | null }
-  | { ok: false; status: 400 | 409 | 502; reason: "no_state" | "bad_token" | "code_refused" | "email_unverified" | "email_mismatch" | "provider_unavailable" };
+  | { ok: false; status: 400 | 409 | 502; reason: "no_state" | "bad_token" | "code_refused" | "email_unverified" | "email_mismatch" | "email_missing" | "provider_unavailable" };
 
 export async function finishSso(
   db: Db,
@@ -235,7 +252,10 @@ export async function finishSso(
   if (cfg.provider === "microsoft" && (typeof claims.oid !== "string" || typeof claims.tid !== "string")) {
     return { ok: false, status: 400, reason: "bad_token" };
   }
-  if (claims.email_verified !== true) return { ok: false, status: 409, reason: "email_unverified" };
+  if (claims.email_verified === false || claims.xms_edov === false) return { ok: false, status: 409, reason: "email_unverified" };
+  if (cfg.emailProof === "signup_code") {
+    if (typeof claims.email !== "string" || !claims.email.trim()) return { ok: false, status: 409, reason: "email_missing" };
+  } else if (claims.email_verified !== true) return { ok: false, status: 409, reason: "email_unverified" };
   if (typeof claims.email !== "string" || !sameEmail(claims.email, o.ownerEmail)) {
     return { ok: false, status: 409, reason: "email_mismatch" };
   }

@@ -31,7 +31,7 @@ import { idTail, operatingNameOf, type IdDoor } from "../onboarding/cd-id-door.j
 import { attemptOf, existingAttempt, loadAccount, saveCredential, takesCredential, withSignupAccount, signupReservationMatches, type Account } from "../onboarding/signup-account.js";
 import { passkeyOptions, relyingParty, verifyPasskey } from "../onboarding/passkey.js";
 import { checkPassword, pwnedRange, type RangeFetch } from "../onboarding/password-rule.js";
-import { PROVIDERS, fetchJson, finishSso, providerConfig, ssoOrigin, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
+import { PROVIDERS, fetchJson, finishSso, microsoftEmailProof, providerConfig, ssoOrigin, startSso, type FetchJson, type Provider } from "../onboarding/sso.js";
 import { sendSignupCode, type Mailer } from "../onboarding/email-code.js";
 import { sendEmail } from "../email.js";
 import { stagingSignupFixture } from "../onboarding/signup-staging.js";
@@ -117,7 +117,9 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
     return {
       password: true,
       passkey: !!rp, passkeyOrigins: rp?.origins ?? [],
-      google: !!providerConfig("google", env), microsoft: !!providerConfig("microsoft", env),
+      google: !!providerConfig("google", env),
+      /* Microsoft sends no email_verified, so under the pack's rule it can never finish: offered only with the exception on */
+      microsoft: !!providerConfig("microsoft", env) && microsoftEmailProof(env) === "signup_code",
       ssoOrigin: sso && PROVIDERS.some((p) => providerConfig(p, env)) ? sso : null,
     };
   });
@@ -186,7 +188,7 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
         return reply.code(502).send({ error: "sso_unavailable", detail: "We couldn't reach that sign-in just now. Try again, or choose another way." });
       }
       door.fail(r.cdId, r.connection, `sso_${result.reason}`);
-      if (result.reason === "email_mismatch" || result.reason === "email_unverified") {
+      if (result.reason === "email_mismatch" || result.reason === "email_unverified" || result.reason === "email_missing") {
         await audit(db, {
           tenantId: PLATFORM_TENANT, legalEntityId: "-", branchId: "-",
           action: "sso.refused_mismatch", detail: { enquiryId: r.row.id, provider, reason: result.reason },
@@ -194,6 +196,9 @@ export function registerCredentialRoutes(app: FastifyInstance, db: Db, door: IdD
         const label = provider === "google" ? "Google" : "Microsoft";
         if (result.reason === "email_unverified") {
           return reply.code(409).send({ error: "email_unverified", detail: `${label} hasn't confirmed that account's email, so it can't be used here. Use the account for the email you applied with, or choose another way.` });
+        }
+        if (result.reason === "email_missing") {
+          return reply.code(409).send({ error: "email_missing", detail: `That ${label} account doesn't share an email address, so it can't be matched to your application. Use the account for the email you applied with, or choose another way.` });
         }
         return reply.code(409).send({ error: "email_mismatch", detail: `That ${label} account isn't the email you applied with. Use the account for that email.` });
       }
