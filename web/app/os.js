@@ -41422,12 +41422,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
-        color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
+        color: kyc === 'ok' ? CD.ink : CD.flag
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
       s: 13,
-      c: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
+      c: kyc === 'ok' ? CD.ink : CD.flag
     }), " ", kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`), /*#__PURE__*/React.createElement(Field, {
       label: "Source of funds"
     }, /*#__PURE__*/React.createElement("input", {

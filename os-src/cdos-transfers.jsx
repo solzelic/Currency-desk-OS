@@ -676,7 +676,7 @@
             <div className="p-3 space-y-2" style={{ background: reportable ? CD.flagSoft : CD.lineSoft, borderRadius: 10, border: `1px solid ${reportable ? CD.flag : CD.line}` }}>
               <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: reportable ? CD.flag : CD.ink }}><Ic n="shield" s={13} /> Cross-border compliance</div>
               {reportable && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable EFT — {fmt(homeAmount, home)} (≥ {limit.label}). An international EFT report will be required.</div>}
-              {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
+              {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.ink : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? CD.ink : CD.flag} /> {kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`}</div>}
               <Field label="Source of funds"><input value={sourceOfFunds} onChange={e => setSourceOfFunds(e.target.value)} placeholder="Salary, savings, property sale…" className={inputCls} style={inputSty} /></Field>
             </div>
           )}
