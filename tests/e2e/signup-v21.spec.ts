@@ -408,8 +408,8 @@ test.describe("sign-up v2.1, the visitor's path", () => {
     await press(page, /^Use this line/);
     await expect(page.getByText("Who else works the counter?")).toBeVisible();
     await press(page, /^Add someone/);
-    await card(page).getByPlaceholder("Samira").fill("Amara");
-    await card(page).getByPlaceholder("Haddad").fill("Synthetic");
+    await card(page).getByPlaceholder("Samira", { exact: true }).fill("Amara");
+    await card(page).getByPlaceholder("Haddad", { exact: true }).fill("Synthetic");
     const added = saved();
     await press(page, /^Add Amara/);
     expect((await added).status()).toBe(200);
