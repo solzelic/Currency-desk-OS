@@ -116,7 +116,6 @@ export function expiredLine(isoDate: string): string {
   return `Expired ${civilDateWords(isoDate)}`;
 }
 
-export const TYPED_NOT_RECORDED = "ID typed in, check not recorded";
 export const HAND_TYPED_LINE = "ID typed by hand, not checked";
 export const TOO_OLD_LINE = "This check is too old. A new ID check is needed.";
 

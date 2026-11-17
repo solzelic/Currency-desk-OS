@@ -1682,8 +1682,9 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     await expect(page.getByTestId("client-where")).toContainText("ID seen in person by M. Costa, Passport, expires 1 Apr 2030, checked");
     await closeFile();
     await openName(names.noStaff);
-    await expect(page.getByTestId("client-standing")).toContainText("Missing ID");
-    await expect(page.getByTestId("client-where")).toContainText("ID typed in, check not recorded");
+    await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
+    await expect(page.getByTestId("client-where")).toContainText("ID typed by hand, not checked");
+    await expect(page.locator(".client-file")).not.toContainText("typed in, check not recorded");
     await closeFile();
     await openName(names.noDate);
     await expect(page.getByTestId("client-standing")).toContainText("ID typed by hand, not checked");
@@ -1735,7 +1736,7 @@ test("ID on file agrees on the chip, the file, the deal, the flags, and Needs at
     expect(await readFlags(ids.expired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.old)).toMatchObject({ kyc: "missing ID", onFile: false });
     expect(await readFlags(ids.typed)).toMatchObject({ kyc: "ok", chip: "ID on file", onFile: true });
-    expect(await readFlags(ids.noStaff)).toMatchObject({ kyc: "missing ID", onFile: false });
+    expect(await readFlags(ids.noStaff)).toMatchObject({ kyc: "ID typed by hand, not checked", onFile: false });
     expect(await readFlags(ids.noDate)).toMatchObject({ kyc: "ID typed by hand, not checked", onFile: false });
     expect(await readFlags(ids.typedExpired)).toMatchObject({ kyc: "ID expired", chip: "ID expired", onFile: false });
     expect(await readFlags(ids.otherShop)).toMatchObject({ kyc: "missing ID", onFile: false });

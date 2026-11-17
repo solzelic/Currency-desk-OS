@@ -14,7 +14,7 @@ import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
   ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
-  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, TYPED_NOT_RECORDED, HAND_TYPED_LINE, TOO_OLD_LINE,
+  NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, HAND_TYPED_LINE, TOO_OLD_LINE,
   branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
   verifiedScanChip,
   isPastExpiry, returningLine, tierMethod, type CheckMethod, type CheckResult, type TierNumber,
@@ -854,7 +854,7 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
     return { onFile: false, chip: HAND_TYPED_LINE, title: "Not identified", line: HAND_TYPED_LINE, gap: "missing ID" };
   }
   if (latest.method === "in_person" && (!latest.staffSeen || !latest.seenOn)) {
-    return { onFile: false, chip: "Missing ID", title: "Not identified", line: TYPED_NOT_RECORDED, gap: "missing ID" };
+    return { onFile: false, chip: HAND_TYPED_LINE, title: "Not identified", line: HAND_TYPED_LINE, gap: "missing ID" };
   }
   const line = latest.line || "";
   if (qualifiesAsId(latest)) {

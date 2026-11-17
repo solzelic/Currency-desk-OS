@@ -31901,7 +31901,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
       s: 13,
       c: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
-    }), " ", kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`)), single && /*#__PURE__*/React.createElement("div", {
+    }), " ", kyc === 'ok' ? 'Customer ID on file. OK to proceed.' : `ID required at this amount. Customer ID is ${kyc}.`)), single && /*#__PURE__*/React.createElement("div", {
       className: "p-3 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',

@@ -1,5 +1,6 @@
 /* What counts as ID on file, and which one-time links may be opened. */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { day, idFileStanding } from "../src/idv/records.js";
 import { verifiedScanChip } from "../src/idv/tiers.js";
@@ -74,8 +75,14 @@ describe("ID on file from the check record", () => {
       chip: "ID on file",
       line: "ID seen in person by m.costa, Passport, expires 1 Apr 2030, checked 16 Nov 2026",
     });
-    expect(idFileStanding({ ...seen, staffSeen: null }).line).toBe("ID typed in, check not recorded");
-    expect(idFileStanding({ ...seen, seenOn: null }).line).toBe("ID typed in, check not recorded");
+    expect(idFileStanding({ ...seen, staffSeen: null })).toMatchObject({
+      chip: "ID typed by hand, not checked",
+      line: "ID typed by hand, not checked",
+    });
+    expect(idFileStanding({ ...seen, seenOn: null })).toMatchObject({
+      chip: "ID typed by hand, not checked",
+      line: "ID typed by hand, not checked",
+    });
     expect(idFileStanding({ typedOnly: true, method: "in_person" })).toMatchObject({
       chip: "ID typed by hand, not checked",
       line: "ID typed by hand, not checked",
@@ -133,6 +140,24 @@ describe("calendar day", () => {
   it("keeps 1 Apr 2030 on a clock east of UTC", () => {
     expect(day(new Date(2030, 3, 1))).toBe("2030-04-01");
     expect(day("2030-04-01T00:00:00.000Z")).toBe("2030-04-01");
+  });
+});
+
+describe("retired typed wording", () => {
+  function files(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) files(path, out);
+      else out.push(path);
+    }
+    return out;
+  }
+  it("is gone from the desk, the built app, and the server", () => {
+    const root = join(import.meta.dirname, "../..");
+    const hits = ["os-src", "web/app", "server/src"].flatMap((dir) =>
+      files(join(root, dir)).filter((path) => readFileSync(path, "utf8").includes("typed in, check not recorded")),
+    );
+    expect(hits).toEqual([]);
   });
 });
 
