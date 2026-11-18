@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild the overview contact sheet from the latest stills.
 
-Keeps the original composition (A, D, G at 1280 plus A at 390) and redraws
-the date larger and darker so 2026 cannot be misread as 2024.
+Overview: A, A2 and D at 1280, plus A at 390. Date is 18 Nov 2026.
 """
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -23,8 +22,8 @@ FAINT = (156, 148, 138)
 W, H = 1962, 548
 FRAMES = [
     (PNG / "A-signin-1280.png", (56, 120, 592, 455), "A  Sign-in  ·  1280"),
-    (PNG / "D-owner-confirm-1280.png", (621, 120, 1157, 455), "D  Owner confirm  ·  1280"),
-    (PNG / "G-passkey-setup-1280.png", (1186, 120, 1722, 455), "G  Passkey setup  ·  1280"),
+    (PNG / "A2-email-password-1280.png", (621, 120, 1157, 455), "A2  After email  ·  1280"),
+    (PNG / "D-owner-confirm-1280.png", (1186, 120, 1722, 455), "D  Owner confirm  ·  1280"),
     (PNG / "A-signin-390.png", (1751, 120, 1905, 455), "A  Sign-in  ·  390"),
 ]
 
@@ -78,8 +77,8 @@ def main():
     # Use the original wording, measured left edges ~56, 621, 1186, 1751
     captions = [
         (56, "A   Sign-in  ·  1280"),
-        (621, "D   Owner confirm  ·  1280"),
-        (1186, "G   Passkey setup  ·  1280"),
+        (621, "A2  After email  ·  1280"),
+        (1186, "D   Owner confirm  ·  1280"),
         (1751, "A   Sign-in  ·  390"),
     ]
     for x, text in captions:

@@ -10,6 +10,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 FRAMES = [
     ("A", "A-signin"),
+    ("A2", "A2-email-password"),
     ("B", "B-passkey-waiting"),
     ("C", "C-no-passkey"),
     ("D", "D-owner-confirm"),
@@ -24,7 +25,7 @@ SIZES = [("1280", 1280, 800), ("390", 390, 844)]
 def main():
     uri = HTML.resolve().as_uri()
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, executable_path="/usr/bin/google-chrome")
         for key, name in FRAMES:
             for dev, w, h in SIZES:
                 url = f"{uri}?f={key}&d={dev}"

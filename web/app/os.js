@@ -70713,9 +70713,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 /* ---- os-src/cdos-signin-methods.jsx ---- */
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* Sign-in methods (CD-277). Passkey, Google, Microsoft, and states B to H.
-   The email block is a two-step placeholder until the redrawn A and A2
-   frames land. It opens the password for every non-empty address and
-   does not ask whether that address exists.
+   A and C show the email field and Continue with email. A2 opens the
+   password under that field for every non-empty address, with no lookup.
    Drawn only when a sign-in flag is on. The preview gallery draws it
    with fake data and does not call the adapter. */
 (function () {
@@ -70774,25 +70773,33 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .btn.primary{background:var(--ink);color:var(--paper)}
 .cd-si .btn.primary .lbl{flex:1}
 .cd-si .tag{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8FD3AE;border:1px solid rgba(143,211,174,.4);border-radius:999px;padding:5px 9px 4px}
-.cd-si .row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.cd-si .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
 .cd-si .btn.sec{background:var(--white);border:1px solid var(--hair);color:var(--ink);justify-content:center;font-size:13.5px;box-shadow:0 1px 0 rgba(23,20,15,.04);gap:8px;padding:0 12px}
-.cd-si .or{display:flex;align-items:center;gap:16px;margin:14px 0 12px}
+.cd-si .btn.sec.wide{width:100%;font-size:16px;padding:0 20px}
+.cd-si .or{display:flex;align-items:center;gap:16px;margin:24px 0}
 .cd-si .or i{flex:1;height:1px;background:var(--hair)}
-.cd-si .or span{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute)}
+.cd-si .or span{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute);text-transform:uppercase}
 .cd-si label.eyebrow{display:block;margin:0 0 8px}
-.cd-si .field{min-height:52px;border-radius:12px;background:var(--white);border:1px solid var(--field);display:flex;align-items:center;padding:0 8px 0 18px;margin-bottom:8px}
-.cd-si .field input{flex:1;border:0;background:transparent;font-size:16px;outline:none;min-width:0;height:44px}
+.cd-si .field{height:56px;border-radius:12px;background:var(--white);border:1px solid var(--field);display:flex;align-items:center;padding:0 8px 0 18px}
+.cd-si .field input{flex:1;border:0;background:transparent;font:inherit;font-size:16px;color:var(--ink);outline:none;width:100%;min-width:0}
 .cd-si .field input::placeholder{color:var(--faint)}
-.cd-si .go,.cd-si .eye{width:44px;height:44px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;background:transparent;border:0;color:var(--graph)}
-.cd-si .go{background:var(--paper);border:1px solid var(--hair)}
-.cd-si .email-note{margin:4px 0 0;font-size:12px;line-height:1.35;color:var(--warn-text)}
-.cd-si .links{display:flex;flex-direction:column;align-items:flex-start;gap:0;margin-top:4px;font-size:14px}
-.cd-si .links button,.cd-si .textlink{color:var(--ink);font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:2px 0;min-height:32px;cursor:pointer}
-.cd-si.is-phone .links button,.cd-si.is-phone .textlink{min-height:44px;padding:8px 0}
+.cd-si .field.focus,.cd-si .field:focus-within{border-color:var(--forest);box-shadow:0 0 0 1px var(--forest)}
+.cd-si .eye{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;color:var(--graph);background:transparent;border:0;padding:0}
+.cd-si .signin-inline{font-size:14px;font-weight:600;color:var(--ink);padding:0 14px;height:40px;display:flex;align-items:center;flex:none;border:0;border-left:1px solid var(--hair);margin-left:4px;background:transparent;cursor:pointer}
+.cd-si .foot{display:flex;flex-direction:column;gap:8px;margin-top:16px;font-size:14px}
+.cd-si .foot.recover{margin-top:8px}
+.cd-si .foot button{color:var(--ink);font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer;font-size:14px}
+.cd-si .email-continue,.cd-si .pw-reveal{display:grid;transition:grid-template-rows 240ms cubic-bezier(0.22,1,0.32,1),opacity 240ms cubic-bezier(0.22,1,0.32,1)}
+.cd-si .email-continue{grid-template-rows:1fr;opacity:1}
+.cd-si .email-continue.hide{grid-template-rows:0fr;opacity:0;pointer-events:none}
+.cd-si .pw-reveal{grid-template-rows:0fr;opacity:0}
+.cd-si .pw-reveal.open{grid-template-rows:1fr;opacity:1}
+.cd-si .ec-inner,.cd-si .pw-inner{overflow:hidden;min-height:0;padding-top:16px}
 .cd-si .muted{color:var(--mute);font-weight:400}
 .cd-si .note{background:var(--white);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;margin-bottom:12px;text-align:left}
 .cd-si .note strong{display:block;font-size:16px;font-weight:650;margin:0 0 4px}
 .cd-si .note p{font-size:14px;line-height:1.45;color:var(--graph);margin:0}
+.cd-si .nowrap{white-space:nowrap}
 .cd-si .step-title{font-family:var(--serif);font-weight:400;font-size:34px;line-height:1.08;letter-spacing:-.02em;margin:0 0 10px}
 .cd-si .step-lead{font-size:15px;line-height:1.45;color:var(--graph);margin:0 0 20px}
 .cd-si .who-line,.cd-si .signed-as{margin-top:16px;font-size:13px;color:var(--mute)}
@@ -70809,32 +70816,34 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .shop-card small{display:block;margin-top:3px;font-size:13px;color:var(--graph)}
 .cd-si .success-mark{width:48px;height:48px;border-radius:50%;background:var(--positive-bg);color:var(--positive-text);display:grid;place-items:center;margin:0 0 16px}
 .cd-si .hold{margin-top:14px;font-size:14px;color:var(--flag,#8A5A0E)}
-.cd-si .email-pass{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows 420ms cubic-bezier(0.22,1,0.32,1),opacity 320ms ease}
-.cd-si .email-pass.open{grid-template-rows:1fr;opacity:1}
-.cd-si .email-pass > div{overflow:hidden}
-.cd-si .placeholder,.cd-set .placeholder{margin-top:6px;background:var(--warn-bg,#F5E8CF);border:1px solid #D9C08A;border-radius:12px;padding:8px 12px;color:var(--warn-text,#8A5A0E)}
+.cd-si .cancel-row{margin-top:16px}
+.cd-si .linkish{color:var(--ink);font-weight:600;font-size:14px;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer}
+.cd-si .placeholder,.cd-set .placeholder{margin-top:14px;background:var(--warn-bg,#F5E8CF);border:1px solid #D9C08A;border-radius:12px;padding:14px 16px;color:var(--warn-text,#8A5A0E)}
 .cd-si .placeholder .plab,.cd-set .placeholder .plab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--warn-text,#8A5A0E);margin-bottom:4px}
 .cd-si .placeholder p,.cd-set .placeholder p{font-size:13px;line-height:1.4;color:var(--warn-text,#8A5A0E);margin:0}
-.cd-si.is-phone .left{position:relative;left:auto;top:auto;width:auto;padding:20px 0 0}
-.cd-si.is-phone h1.display{font-size:56px;line-height:.9;margin-top:10px}
+.cd-si.is-phone{height:844px;min-height:844px;overflow:hidden}
+.cd-si.is-phone .left{position:relative;left:auto;top:auto;width:auto;padding:12px 0 0}
+.cd-si.is-phone h1.display{font-size:56px;line-height:.9;margin-top:8px}
 .cd-si.is-phone h1.display .dot{width:12px;height:12px;margin-left:6px}
-.cd-si.is-phone .sub{margin-top:16px;font-size:16px;max-width:none}
-.cd-si.is-phone .right{position:relative;left:auto;top:auto;width:auto;margin-top:22px;padding-bottom:80px}
+.cd-si.is-phone .sub{margin-top:12px;font-size:16px;max-width:none}
+.cd-si.is-phone .right{position:relative;left:auto;top:auto;width:auto;margin-top:16px;padding-bottom:64px}
 .cd-si.is-phone .slot{display:none !important}
 .cd-si.is-phone footer.footline{left:20px;right:20px;height:52px}
 .cd-si.is-phone footer.footline .line{font-size:15px}
-.cd-si.is-phone .row{grid-template-columns:1fr;gap:8px}
-.cd-si.is-phone .btn{height:auto}
+.cd-si.is-phone .row{grid-template-columns:1fr;gap:12px;margin-top:12px}
+.cd-si.is-phone .or{margin:16px 0}
+.cd-si.is-phone .btn{height:auto;min-height:56px;padding:12px 18px}
 .cd-si.is-phone .step-title{font-size:32px}
 .cd-si.is-phone .pinbox{flex:1;width:auto;max-width:48px}
 .cd-si.is-still .slot{transform:scaleX(1);animation:none}
 .cd-si.is-still .dot{animation:none}
+.cd-si.is-still .email-continue,.cd-si.is-still .pw-reveal{transition:none}
 @keyframes cdSlotDraw{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes cdDotOnce{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
 .cd-si .slot.play{animation:cdSlotDraw 720ms cubic-bezier(0.22,1,0.32,1) 300ms forwards}
 .cd-si .dot.play{animation:cdDotOnce 560ms cubic-bezier(0.22,1,0.32,1) 180ms both}
 @media (prefers-reduced-motion: reduce){
-  .cd-si .email-pass{transition:none}
+  .cd-si .email-continue,.cd-si .pw-reveal{transition:none}
   .cd-si .slot,.cd-si .dot{animation:none !important}
   .cd-si .slot{transform:scaleX(1)}
 }
@@ -71130,8 +71139,44 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const target = root.querySelector("[data-cd-target]");
         const left = root.querySelector("[data-cd-left]");
         const right = root.querySelector("[data-cd-right]");
+        const nudgeClear = () => {
+          if (!left || !right) return;
+          const footerH = device === "390" ? 52 : 56;
+          const viewH = device === "390" ? 844 : 800;
+          const head = device === "390" ? 72 : 88;
+          const rev = right.querySelector("#pw-reveal");
+          const cont = right.querySelector("#email-continue");
+          let fullH = right.getBoundingClientRect().height;
+          if (rev) {
+            const prevRev = rev.className;
+            const prevCont = cont ? cont.className : "";
+            rev.style.transition = "none";
+            if (cont) cont.style.transition = "none";
+            rev.classList.add("open");
+            if (cont) cont.classList.add("hide");
+            fullH = right.getBoundingClientRect().height;
+            rev.className = prevRev;
+            rev.style.transition = "";
+            if (cont) {
+              cont.className = prevCont;
+              cont.style.transition = "";
+            }
+          }
+          const overflow = right.getBoundingClientRect().top + fullH - (viewH - footerH - 16);
+          if (overflow <= 0) return;
+          const shift = Math.min(overflow, Math.max(0, left.getBoundingClientRect().top - (head + 4)));
+          if (shift <= 0) return;
+          if (device === "390") {
+            const cur = parseFloat(getComputedStyle(left).marginTop) || 0;
+            left.style.marginTop = cur - shift + "px";
+          } else {
+            left.style.top = parseFloat(left.style.top) - shift + "px";
+            right.style.top = parseFloat(right.style.top) - shift + "px";
+          }
+        };
         if (device === "390" || !dot || !slot || !left || !right) {
           if (slot) slot.style.display = "none";
+          nudgeClear();
           if (dot && !still) {
             dot.classList.remove("play");
             void dot.offsetWidth;
@@ -71148,17 +71193,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const headerH = 88;
         const band = 800 - headerH - 56;
         const lr = left.getBoundingClientRect();
-        const rr = right.getBoundingClientRect();
+        const rightBox = right.getBoundingClientRect();
+        const core = right.querySelector("[data-cd-core]");
+        const coreBox = core ? core.getBoundingClientRect() : rightBox;
         const dr = dot.getBoundingClientRect();
         const tr = target.getBoundingClientRect();
-        const targetOffset = tr.top - rr.top;
+        const targetOffset = tr.top - rightBox.top;
         const dotC = dr.top + dr.height / 2 - lr.top;
         const rightRel = dotC - targetOffset - tr.height / 2;
         const topMost = Math.min(0, rightRel);
-        const botMost = Math.max(lr.height, rightRel + rr.height);
+        const botMost = Math.max(lr.height, rightRel + coreBox.height);
         const total = botMost - topMost;
-        let T = headerH + (band - total) / 2 - topMost;
-        if (T < headerH + 8) T = headerH + 8;
+        const T = headerH + (band - total) / 2 - topMost;
         left.style.top = T + "px";
         right.style.top = T + rightRel + "px";
         const r2 = dot.getBoundingClientRect();
@@ -71176,8 +71222,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             slot.classList.add("play");
             dot.classList.add("play");
           }
+          nudgeClear();
+          const r3 = dot.getBoundingClientRect();
+          slot.style.top = r3.top + r3.height / 2 - 0.5 + "px";
         } else {
           slot.style.display = "none";
+          nudgeClear();
         }
         root.setAttribute("data-ready", "1");
       };
@@ -71212,55 +71262,68 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       onClick: () => onStub("continueWithMicrosoft")
     }, /*#__PURE__*/React.createElement(IcoMs, null), /*#__PURE__*/React.createElement("span", null, "Continue with Microsoft")) : null);
   }
-  function EmailBlock({
-    preview,
-    showPassword,
+  function EmailCore({
     email,
-    setEmail,
+    setEmail
+  }) {
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "or",
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("i", null), /*#__PURE__*/React.createElement("span", null, "or"), /*#__PURE__*/React.createElement("i", null)), /*#__PURE__*/React.createElement("label", {
+      className: "eyebrow",
+      htmlFor: "cd-email"
+    }, "Email or desk ID"), /*#__PURE__*/React.createElement("div", {
+      className: "field",
+      id: "email-field"
+    }, /*#__PURE__*/React.createElement("input", {
+      id: "cd-email",
+      name: "email",
+      type: "text",
+      autoComplete: "username",
+      placeholder: "you@shop.ca or desk ID",
+      value: email,
+      onChange: e => setEmail(e.target.value)
+    })));
+  }
+  function EmailAfter({
+    showPassword,
     password,
     setPassword,
     showPw,
     setShowPw,
-    onContinue,
-    onSubmit,
     onLink,
     onRecover,
     notice
   }) {
-    return /*#__PURE__*/React.createElement("form", {
-      onSubmit: showPassword ? onSubmit : onContinue
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "email-continue" + (showPassword ? " hide" : ""),
+      id: "email-continue"
     }, /*#__PURE__*/React.createElement("div", {
-      className: "or",
-      "aria-hidden": "true"
-    }, /*#__PURE__*/React.createElement("i", null), /*#__PURE__*/React.createElement("span", null, "OR"), /*#__PURE__*/React.createElement("i", null)), /*#__PURE__*/React.createElement("label", {
-      className: "eyebrow",
-      htmlFor: "cd-email"
-    }, "Email"), /*#__PURE__*/React.createElement("div", {
-      className: "field"
-    }, /*#__PURE__*/React.createElement("input", {
-      id: "cd-email",
-      name: "email",
-      type: "email",
-      autoComplete: "username",
-      placeholder: "you@shop.ca",
-      value: email,
-      onChange: e => setEmail(e.target.value)
-    })), !showPassword ? /*#__PURE__*/React.createElement("button", {
+      className: "ec-inner"
+    }, /*#__PURE__*/React.createElement("button", {
       type: "submit",
-      className: "btn sec"
-    }, "Continue with email") : null, /*#__PURE__*/React.createElement("div", {
-      className: "email-pass" + (showPassword ? " open" : "")
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-      className: "eyebrow",
-      htmlFor: "cd-password"
-    }, "Password"), /*#__PURE__*/React.createElement("div", {
-      className: "field"
+      className: "btn sec wide",
+      id: "email-go"
+    }, "Continue with email"), /*#__PURE__*/React.createElement("div", {
+      className: "foot"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onLink
+    }, "Email me a sign-in link")))), /*#__PURE__*/React.createElement("div", {
+      className: "pw-reveal" + (showPassword ? " open" : ""),
+      id: "pw-reveal"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "pw-inner"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "field" + (showPassword ? " focus" : ""),
+      id: "pw-field"
     }, /*#__PURE__*/React.createElement("input", {
-      id: "cd-password",
+      id: "pw-input",
       name: "password",
       type: showPw ? "text" : "password",
       autoComplete: "current-password",
       placeholder: "Password",
+      "aria-label": "Password",
       value: password,
       onChange: e => setPassword(e.target.value),
       disabled: !showPassword,
@@ -71270,21 +71333,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       className: "eye",
       "aria-label": showPw ? "Hide password" : "Show password",
       onClick: () => setShowPw(v => !v),
-      disabled: !showPassword
+      disabled: !showPassword,
+      tabIndex: showPassword ? 0 : -1
     }, /*#__PURE__*/React.createElement(IcoEye, null)), /*#__PURE__*/React.createElement("button", {
       type: "submit",
-      className: "go",
-      "aria-label": "Sign in",
-      disabled: !showPassword
-    }, /*#__PURE__*/React.createElement(IcoArrow, null))))), /*#__PURE__*/React.createElement("p", {
-      className: "email-note",
-      "data-email-placeholder": "1"
-    }, "Placeholder. Email spacing waits for the redrawn frames."), /*#__PURE__*/React.createElement("div", {
-      className: "links"
+      className: "signin-inline",
+      disabled: !showPassword,
+      tabIndex: showPassword ? 0 : -1
+    }, "Sign in")), /*#__PURE__*/React.createElement("div", {
+      className: "foot"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
-      onClick: onLink
-    }, "Email me a sign-in link"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      onClick: onLink,
+      tabIndex: showPassword ? 0 : -1
+    }, "Email me a link instead")))), /*#__PURE__*/React.createElement("div", {
+      className: "foot recover"
+    }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
       className: "muted"
     }, "Can't get in? "), /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -71292,47 +71356,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, "Recover access"))), notice ? /*#__PURE__*/React.createElement("p", {
       className: "hold",
       role: "status"
-    }, notice) : null, preview ? null : null);
-  }
-  function DigitBoxes({
-    label,
-    count,
-    value,
-    onChange,
-    masked
-  }) {
-    const refs = useRef([]);
-    const chars = value.split("");
-    const setAt = (i, digit) => {
-      const next = (value + "      ").slice(0, count).split("");
-      next[i] = digit;
-      const joined = next.join("").replace(/\s/g, "").slice(0, count);
-      onChange(joined);
-      if (digit && refs.current[i + 1]) refs.current[i + 1].focus();
-    };
-    return /*#__PURE__*/React.createElement("div", {
-      className: "pinrow",
-      role: "group",
-      "aria-label": label,
-      "data-cd-target": masked ? "1" : undefined
-    }, Array.from({
-      length: count
-    }, (_, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
-      className: "pinbox" + (i === chars.length && chars.length < count ? " on" : "")
-    }, masked && chars[i] ? /*#__PURE__*/React.createElement("span", {
-      className: "dot"
-    }) : /*#__PURE__*/React.createElement("input", {
-      ref: el => {
-        refs.current[i] = el;
-      },
-      inputMode: "numeric",
-      autoComplete: i === 0 ? "one-time-code" : "off",
-      "aria-label": "Digit " + (i + 1) + " of " + count,
-      maxLength: 1,
-      value: chars[i] || "",
-      onChange: e => setAt(i, e.target.value.replace(/\D/g, "").slice(-1))
-    }))));
+    }, notice) : null);
   }
   function MethodsList({
     methods,
@@ -71430,14 +71454,13 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       microsoft: false
     };
     const [state, setState] = useState(props.state || "a");
-    const [email, setEmail] = useState("");
+    const [email, setEmail] = useState(props.preview && props.state === "a2" ? "jordan@yorkfx.ca" : "");
     const [password, setPassword] = useState("");
     const [showPw, setShowPw] = useState(false);
     const [showPassword, setShowPassword] = useState(props.state === "a2");
     const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
     const [code, setCode] = useState("");
-    const [authCode, setAuthCode] = useState("");
     const [backup, setBackup] = useState(false);
     const [quick, setQuick] = useState(false);
     const authRef = useRef(null);
@@ -71462,6 +71485,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (props.state) {
         setState(props.state);
         setShowPassword(props.state === "a2");
+        if (preview && props.state === "a2") setEmail("jordan@yorkfx.ca");
       }
     }, [props.state]);
     const onStub = async name => {
@@ -71615,32 +71639,35 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         role: "status",
         "aria-live": "polite"
       }, "Confirm with your fingerprint, face or device unlock. This page will continue when you are done."), /*#__PURE__*/React.createElement("div", {
-        className: "links"
+        className: "cancel-row"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
+        className: "linkish",
         onClick: () => {
           if (!preview) setState("a");
         }
       }, "Cancel")));
     } else if (state === "c") {
-      right = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      right = /*#__PURE__*/React.createElement("form", {
+        onSubmit: showPassword ? onSubmit : onContinue
+      }, /*#__PURE__*/React.createElement("div", {
+        "data-cd-core": "1"
+      }, /*#__PURE__*/React.createElement("div", {
         className: "note",
         "data-cd-target": "1"
       }, /*#__PURE__*/React.createElement("strong", null, "No passkey on this device"), /*#__PURE__*/React.createElement("p", null, "Use Google, Microsoft, email or a sign-in link below.")), /*#__PURE__*/React.createElement(Providers, {
         flags: flags,
         preview: preview,
         onStub: onStub
-      }), /*#__PURE__*/React.createElement(EmailBlock, {
-        preview: preview,
-        showPassword: showPassword,
+      }), /*#__PURE__*/React.createElement(EmailCore, {
         email: email,
-        setEmail: setEmail,
+        setEmail: setEmail
+      })), /*#__PURE__*/React.createElement(EmailAfter, {
+        showPassword: showPassword,
         password: password,
         setPassword: setPassword,
         showPw: showPw,
         setShowPw: setShowPw,
-        onContinue: onContinue,
-        onSubmit: onSubmit,
         onLink: () => onStub("sendSignInLink"),
         onRecover: () => props.onRecover && props.onRecover(),
         notice: notice
@@ -71650,7 +71677,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         className: "eyebrow"
       }, "Confirm it is you"), /*#__PURE__*/React.createElement("h2", {
         className: "step-title"
-      }, "Confirm with a passkey or your 6-digit code"), /*#__PURE__*/React.createElement("p", {
+      }, "Confirm with a passkey or the ", /*#__PURE__*/React.createElement("span", {
+        className: "nowrap"
+      }, "6-digit code"), " from your authenticator app"), /*#__PURE__*/React.createElement("p", {
         className: "step-lead"
       }, "Google or Microsoft alone is not a second factor for owners and admins. A passkey that asks for the device unlock counts."), /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -71659,21 +71688,18 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         onClick: () => onStub("continueWithPasskey")
       }, /*#__PURE__*/React.createElement(IcoPasskey, null), /*#__PURE__*/React.createElement("span", {
         className: "lbl"
-      }, "Continue with a passkey")), /*#__PURE__*/React.createElement("label", {
-        className: "eyebrow",
+      }, "Continue with a passkey")), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "btn sec wide",
         style: {
           marginTop: 16
         },
-        htmlFor: "cd-auth-0"
-      }, "Authenticator code"), /*#__PURE__*/React.createElement(DigitBoxes, {
-        label: "6-digit authenticator code",
-        count: 6,
-        value: authCode,
-        onChange: setAuthCode
-      }), /*#__PURE__*/React.createElement("div", {
-        className: "links"
+        onClick: () => setBackup(false)
+      }, "Enter your 6-digit code"), /*#__PURE__*/React.createElement("div", {
+        className: "cancel-row"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
+        className: "linkish",
         onClick: () => setBackup(true)
       }, "Use a backup code")), backup ? /*#__PURE__*/React.createElement("div", {
         className: "field",
@@ -71719,11 +71745,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         className: "pinbox"
       }), /*#__PURE__*/React.createElement("div", {
         className: "pinbox"
-      })), /*#__PURE__*/React.createElement("div", {
-        className: "links"
-      }, /*#__PURE__*/React.createElement("button", {
-        type: "button"
-      }, "Cancel")), /*#__PURE__*/React.createElement("p", {
+      })), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        className: "linkish"
+      }, "Cancel"), /*#__PURE__*/React.createElement("p", {
         className: "who-line"
       }, /*#__PURE__*/React.createElement("b", null, "Daniel Osei"), " \xB7 Teller"));
     } else if (state === "f") {
@@ -71762,9 +71787,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       }, /*#__PURE__*/React.createElement(IcoPasskey, null), /*#__PURE__*/React.createElement("span", {
         className: "lbl"
       }, "Set up passkey")), /*#__PURE__*/React.createElement("div", {
-        className: "links"
+        className: "cancel-row"
       }, /*#__PURE__*/React.createElement("button", {
-        type: "button"
+        type: "button",
+        className: "linkish"
       }, "Not now")));
     } else if (state === "g2") {
       right = /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -71815,7 +71841,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         role: "status"
       }, notice) : null);
     } else {
-      right = /*#__PURE__*/React.createElement("div", null, showPasskey ? /*#__PURE__*/React.createElement("button", {
+      right = /*#__PURE__*/React.createElement("form", {
+        onSubmit: showPassword ? onSubmit : onContinue
+      }, /*#__PURE__*/React.createElement("div", {
+        "data-cd-core": "1"
+      }, showPasskey ? /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "btn primary",
         "data-cd-target": "1",
@@ -71828,17 +71858,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         flags: flags,
         preview: preview,
         onStub: onStub
-      }), /*#__PURE__*/React.createElement(EmailBlock, {
-        preview: preview,
-        showPassword: showPassword,
+      }), /*#__PURE__*/React.createElement(EmailCore, {
         email: email,
-        setEmail: setEmail,
+        setEmail: setEmail
+      })), /*#__PURE__*/React.createElement(EmailAfter, {
+        showPassword: showPassword,
         password: password,
         setPassword: setPassword,
         showPw: showPw,
         setShowPw: setShowPw,
-        onContinue: onContinue,
-        onSubmit: onSubmit,
         onLink: () => onStub("sendSignInLink"),
         onRecover: () => props.onRecover && props.onRecover(),
         notice: notice
