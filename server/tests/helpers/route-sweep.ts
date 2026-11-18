@@ -92,6 +92,8 @@ export function fillRoute(route: string, ids: SweepIds): string {
     /* Sign-up v2.1's sign-in providers; the sweep's ref is not a
        CurrencyDesk ID, so the route answers 404 or 503. */
     ["provider", "google"],
+    /* The sign-in preview gallery. A named state, so the sweep can open it. */
+    ["state", "a"],
   ]);
   if (route.startsWith("/api/admin/enquiries/")) params.set("id", ids.enquiryId);
   else if (route.startsWith("/api/admin/staff/")) params.set("id", ids.staffId);
