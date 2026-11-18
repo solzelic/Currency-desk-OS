@@ -56,7 +56,7 @@ commit the generated output — CI diffs `web/` against a fresh build.
 
 | Route | Serves |
 | --- | --- |
-| `/` (`/d`, `/m`) | marketing site — desktop / phone design by user agent |
+| `/` (`/d`, `/m`) | marketing site: desktop or phone design by user agent. On a staging host with `STAGING` exactly `1`, `/` answers 302 to `/login` (the role picker) unless the query has `door`. `/?door=` still serves the site. `/d` still serves the site. A live host is unchanged. |
 | `/signup` | Early Access application, v2.1 since 14 Nov (`web/early-access-v2.html`, the same page as `/early-access`); every "Get early access" on the site leads here. The old page (`web/early-access.html`) is still built but no route serves it. |
 | `/early-access` | Early Access v2.1 (`web/early-access-v2.html`, built from `design/site/CurrencyDesk Early Access v2.dc.html`, a port of Sol's prototype with the server wired in; notes at the top of the source). Served at `/signup` too since 14 Nov; still marked noindex with `/early-access` as its canonical address until it is promoted past staging. Reads its two switches from `GET /api/site/early-access` (`mode` from `OPEN_SIGNUP`, `samCall` from `SAM_CALL`). |
 | Staging way back to sign-in | `scripts/staging-back-link.mjs`, injected into every site page and the setup page: on a staging hostname only, it asks `GET /api/staging/signin` and, when the door is open, draws a fixed "Staging · Back to sign in" link to `/login` (Sol, 14 Nov). Live never asks. |

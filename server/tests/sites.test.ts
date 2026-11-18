@@ -2,7 +2,7 @@
    /sites/yorkfx/, and once the owner records their domain, any request
    arriving with that Host header serves the same site at the root —
    the DNS handoff needs no code change. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { createDb, type DbHandle } from "../src/db/index.js";
@@ -223,6 +223,68 @@ describe("the public site", () => {
     const res = await app.inject({ method: "GET", url: "/", headers: { host: "yorkfx.ca" } });
     // no mapping → falls through to the CurrencyDesk front door, not the storefront
     expect(res.body).toContain("more trades, less paperwork");
+  });
+});
+
+/* Staging only. The flag is exactly "1" and both the process host and
+   the request host are staging hosts. A live host, and a staging host
+   with the flag off, still get the marketing site. /?door= stays the
+   site so Start a fresh shop can open it. */
+describe("staging root opens the role picker", () => {
+  const prior = {
+    STAGING: process.env.STAGING,
+    RENDER_EXTERNAL_HOSTNAME: process.env.RENDER_EXTERNAL_HOSTNAME,
+  };
+  const stagingHost = "currencydesk-staging.onrender.com";
+  const liveHost = "currencydeskos.com";
+  const site = "more trades, less paperwork";
+  const restore = () => {
+    if (prior.STAGING === undefined) delete process.env.STAGING;
+    else process.env.STAGING = prior.STAGING;
+    if (prior.RENDER_EXTERNAL_HOSTNAME === undefined) delete process.env.RENDER_EXTERNAL_HOSTNAME;
+    else process.env.RENDER_EXTERNAL_HOSTNAME = prior.RENDER_EXTERNAL_HOSTNAME;
+  };
+  afterEach(restore);
+
+  it("sends / to /login when the staging door is open", async () => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
+    const res = await app.inject({ method: "GET", url: "/", headers: { host: stagingHost } });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe("/login");
+  });
+
+  it("still serves the site when the door query is present", async () => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
+    const res = await app.inject({ method: "GET", url: "/?door=x", headers: { host: stagingHost } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(site);
+  });
+
+  it("leaves a live host on the site", async () => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
+    const res = await app.inject({
+      method: "GET",
+      url: "/",
+      headers: { host: liveHost, "x-forwarded-host": stagingHost },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(site);
+
+    process.env.RENDER_EXTERNAL_HOSTNAME = liveHost;
+    const live = await app.inject({ method: "GET", url: "/", headers: { host: liveHost } });
+    expect(live.statusCode).toBe(200);
+    expect(live.body).toContain(site);
+  });
+
+  it("leaves the site in place on a staging host when the flag is off", async () => {
+    delete process.env.STAGING;
+    process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
+    const res = await app.inject({ method: "GET", url: "/", headers: { host: stagingHost } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(site);
   });
 });
 
