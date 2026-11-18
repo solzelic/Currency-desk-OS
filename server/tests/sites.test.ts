@@ -262,6 +262,14 @@ describe("staging root opens the role picker", () => {
     expect(res.body).toContain(site);
   });
 
+  it.each(["/?door=", "/?door", "/?x=1&door="])("still serves the site for %s", async (url) => {
+    process.env.STAGING = "1";
+    process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
+    const res = await app.inject({ method: "GET", url, headers: { host: stagingHost } });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(site);
+  });
+
   it("leaves a live host on the site", async () => {
     process.env.STAGING = "1";
     process.env.RENDER_EXTERNAL_HOSTNAME = stagingHost;
