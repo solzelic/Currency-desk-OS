@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import rawBody from "fastify-raw-body";
 import fastifyStatic from "@fastify/static";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { Writable } from "node:stream";
 import type { Db } from "./db/index.js";
@@ -18,6 +18,8 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerPasswordChangeGate } from "./auth/password-change-gate.js";
 import { stagingDoorOpen } from "./auth/staging-runtime.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
+import { anySignInFlag, readSignInFlags, withSignInFlags } from "./auth/signin-flags.js";
+import { registerSignInPreviewRoutes } from "./routes/signin-preview.js";
 import { registerStagingFreshShopRoutes } from "./routes/staging-fresh-shop.js";
 import { registerStagingDayOneRoutes } from "./routes/staging-day-one.js";
 import { registerStaffRoutes } from "./routes/staff.js";
@@ -317,6 +319,7 @@ export async function buildApp(
     ok: true,
     service: "currencydesk-server",
   }));
+  registerSignInPreviewRoutes(app);
   registerAuthRoutes(app, db);
   /* The routes do not exist unless the shared staging door is open
      for registration (STAGING exactly "1"). Host is checked again
@@ -460,8 +463,15 @@ export async function buildApp(
       // is built it owns the route (see SITE_PAGES).
       const productRoutes = ["/app", "/login"];
       if (!existsSync(path.join(staticDir, SITE_PAGES["/signup"]))) productRoutes.push("/signup");
+      const sendDesk = (reply: { sendFile: (file: string) => unknown; header: (name: string, value: string) => void; type: (value: string) => { send: (body: string) => unknown } }) => {
+        const flags = readSignInFlags();
+        if (!anySignInFlag(flags)) return reply.sendFile(indexFile);
+        const html = readFileSync(path.join(staticDir, indexFile), "utf8");
+        reply.header("cache-control", "no-store");
+        return reply.type("text/html; charset=utf-8").send(withSignInFlags(html, flags));
+      };
       for (const route of productRoutes) {
-        app.get(route, (_req, reply) => reply.sendFile(indexFile));
+        app.get(route, (_req, reply) => sendDesk(reply));
       }
       app.get("/app/", (_req, reply) => reply.redirect("/app", 301));
       app.get("/app/*", (_req, reply) => reply.redirect("/app", 301));
@@ -523,7 +533,13 @@ export async function buildApp(
       if (req.method === "GET" && !req.url.startsWith("/api/") && wantsPage(req)) {
         // unknown paths under /app belong to the OS; everything else lands on
         // the public site (or the OS, when no site is deployed)
-        if (req.url.startsWith("/app")) return reply.sendFile(indexFile);
+        if (req.url.startsWith("/app")) {
+          const flags = readSignInFlags();
+          if (!anySignInFlag(flags)) return reply.sendFile(indexFile);
+          const html = readFileSync(path.join(staticDir, indexFile), "utf8");
+          reply.header("cache-control", "no-store");
+          return reply.type("text/html; charset=utf-8").send(withSignInFlags(html, flags));
+        }
         if (!hasMobile) return reply.sendFile(rootFile);
         reply.header("Vary", "User-Agent");
         return reply.sendFile(isPhone(req.headers["user-agent"]) ? mobileFile : rootFile);

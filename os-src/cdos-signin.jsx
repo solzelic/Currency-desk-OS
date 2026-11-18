@@ -97,8 +97,8 @@
   });
 
   /* ====================== SIGN-IN FLOW (A1 → A2 → A3) ================== */
-  function SignIn({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem }) {
-    const [step, setStep] = useState('id');            // id | password | code
+  function SignInLegacy({ employees, onSignup, onComplete, onMustChange, stagingOpen, freshProblem, startStep }) {
+    const [step, setStep] = useState(startStep || 'id');            // id | password | code
     const [idInput, setIdInput] = useState('');
     const [freshErr, setFreshErr] = useState(freshProblem == null || freshProblem === '' ? '' : window.CDOS.freshShopMessage(freshProblem));
     const [pw, setPw] = useState(''); const [showPw, setShowPw] = useState(false);
@@ -762,6 +762,18 @@
           : <Keypad value={pin} max={4} onDigit={push} onBack={() => { if (!verifying) setPin(pin.slice(0, -1)); }} leftLabel="Cancel" onLeft={() => { setPick(null); setPin(''); setErr(''); setLockedOut(false); }} verifying={verifying} />}
       </div>
     </div>);
+  }
+
+  function SignIn(props) {
+    const [useLegacy, setUseLegacy] = useState(false);
+    const flags = (window.CDOS.signInAdapter && window.CDOS.signInAdapter.flagsFromWindow(window))
+      || { passkey: false, google: false, microsoft: false };
+    const methodsOn = !!(window.CDOS.signInAdapter && window.CDOS.signInAdapter.anyOn(flags) && window.CDOS.SignInMethods);
+    if (!useLegacy && methodsOn) {
+      const Methods = window.CDOS.SignInMethods;
+      return <Methods {...props} flags={flags} onRecover={() => setUseLegacy(true)} />;
+    }
+    return <SignInLegacy {...props} startStep={useLegacy ? 'forgot' : undefined} />;
   }
 
   window.CDOS = window.CDOS || {};

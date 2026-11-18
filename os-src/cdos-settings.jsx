@@ -1396,7 +1396,8 @@
        are the owner's. Search does not offer them to anyone else. The
        server still refuses the write. */
     const ownerDesk = me.role === 'Owner';
-    const ownerOnlyTab = { business: 1, localization: 1, compliance: 1, billing: 1, payment: 1, permissions: 1 };
+    const ownerOnlyTab = { business: 1, localization: 1, compliance: 1, billing: 1, payment: 1, permissions: 1, 'signin-methods': 1 };
+    const signInOn = !!(window.CDOS.signInAdapter && window.CDOS.signInAdapter.anyOn(window.CDOS.signInAdapter.flagsFromWindow(window)));
     const NAV_GROUPS = canSys ? [
       ['Business', [
         ['business', 'Business profile', 'building'],
@@ -1425,6 +1426,7 @@
       ]],
       ['Access', [
         ['permissions', 'Role presets', 'id'],
+        ...(signInOn ? [['signin-methods', 'Sign-in methods', 'id']] : []),
       ]],
     ] : [
       /* A cashier does not get the rest of this rail. They can open
@@ -2516,6 +2518,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           <div className="text-sm font-medium mb-1 mt-5" style={{ color: CD.ink }}>Shift &amp; drawer handoff</div>
           <Row title="Require a drawer count at handoff" desc="When the till changes hands, force a count before the new person takes over. Off (typical for a single-operator shop) lets them hand off as-is with one tap — the handoff is still recorded either way."><Sw on={!!settings.requireCountOnHandoff} click={() => toggleSet('requireCountOnHandoff', 'Require count at handoff')} /></Row>
         </div>); })()}
+
+        {signInOn && tab === 'signin-methods' && window.CDOS.SignInMethodsSettings
+          ? React.createElement(window.CDOS.SignInMethodsSettings, null)
+          : null}
 
         {tab === 'ticker' && (<div>
           <SectionTitle icon="bars" title="Ticker tape" sub="The scrolling rate strip in the desk header. Rates come from the Rate Board — these control how it looks." />
