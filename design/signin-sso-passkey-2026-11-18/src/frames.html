@@ -65,22 +65,45 @@ html.still .si h1.display .dot{transform:none;animation:none}
 .btn.primary .lbl{flex:1;text-align:left}
 .btn.primary.wait{background:var(--ink)}
 .tag{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8FD3AE;border:1px solid rgba(143,211,174,.4);border-radius:999px;padding:5px 9px 4px;white-space:nowrap}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
 .btn.sec{background:var(--white);border:1px solid var(--hair);color:var(--ink);justify-content:center;font-size:13.5px;box-shadow:0 1px 0 rgba(23,20,15,.04);gap:8px;padding:0 12px;white-space:nowrap}
 .btn.sec .gword,.btn.sec .mword{font-weight:550}
-.or{display:flex;align-items:center;gap:16px;margin:22px 0 18px}
+.btn.sec.wide{width:100%;font-size:16px;padding:0 20px;white-space:nowrap}
+.btn.sec.wide.pressed{background:var(--paper)}
+.or{display:flex;align-items:center;gap:16px;margin:24px 0}
 .or i{flex:1;height:1px;background:var(--hair)}
 .or span{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute);text-transform:uppercase}
 label.eyebrow{display:block;margin:0 0 8px}
-.field{height:56px;border-radius:12px;background:var(--white);border:1px solid var(--field);display:flex;align-items:center;padding:0 8px 0 18px;margin-bottom:12px}
+.field{height:56px;border-radius:12px;background:var(--white);border:1px solid var(--field);display:flex;align-items:center;padding:0 8px 0 18px}
 .field .ph{flex:1;font-size:16px;color:var(--faint)}
 .field .val{flex:1;font-size:16px;color:var(--ink)}
+.field input{flex:1;border:0;background:transparent;font:inherit;font-size:16px;color:var(--ink);outline:none;width:100%;min-width:0}
+.field input::placeholder{color:var(--faint)}
+.field.focus,.field:focus-within{border-color:var(--forest);box-shadow:0 0 0 1px var(--forest)}
 .go{width:40px;height:40px;border-radius:9px;background:var(--paper);border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;flex:none}
 .eye{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;color:var(--graph)}
-.foot{display:flex;flex-direction:column;gap:12px;margin-top:10px;font-size:14px}
+.signin-inline{font-size:14px;font-weight:600;color:var(--ink);padding:0 14px;height:40px;display:flex;align-items:center;flex:none;border-left:1px solid var(--hair);margin-left:4px;background:transparent;cursor:pointer}
+.foot.recover{margin-top:8px}
+.foot{display:flex;flex-direction:column;gap:8px;margin-top:16px;font-size:14px}
 .foot a{color:var(--ink);font-weight:550;text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px}
 .foot .muted{color:var(--mute)}
 .link{color:var(--ink);font-weight:550;text-decoration:none;border-bottom:1px solid var(--hair);padding-bottom:2px;font-size:14px}
+
+/* Email step: password opens under the email field, email stays put */
+.email-continue,.pw-reveal{
+  display:grid;
+  transition:grid-template-rows 240ms cubic-bezier(0.22, 1, 0.32, 1),
+             opacity 240ms cubic-bezier(0.22, 1, 0.32, 1);
+}
+.email-continue{grid-template-rows:1fr;opacity:1}
+.email-continue.hide{grid-template-rows:0fr;opacity:0;pointer-events:none}
+.pw-reveal{grid-template-rows:0fr;opacity:0}
+.pw-reveal.open{grid-template-rows:1fr;opacity:1}
+.ec-inner,.pw-inner{overflow:hidden;min-height:0;padding-top:16px}
+html.still .email-continue,html.still .pw-reveal{transition:none}
+@media (prefers-reduced-motion: reduce){
+  .email-continue,.pw-reveal{transition:none}
+}
 
 /* notes, steps, PIN, shops */
 .note{background:var(--white);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;margin-bottom:12px}
@@ -116,19 +139,19 @@ html.d390 .si .newhere{font-size:13px;white-space:nowrap}
 html.d390 .si .newhere .nh-prefix{display:none}
 html.d390 .si header{gap:12px}
 html.d390 .si .lockup{min-width:0;flex:none}
-html.d390 .si .left{position:relative;left:auto;top:auto;width:auto;padding:20px 0 0}
-html.d390 .si h1.display{font-size:56px;line-height:.9;margin-top:10px}
+html.d390 .si .left{position:relative;left:auto;top:auto;width:auto;padding:12px 0 0}
+html.d390 .si h1.display{font-size:56px;line-height:.9;margin-top:8px}
 html.d390 .si h1.display .dot{width:12px;height:12px;margin-left:6px}
-html.d390 .si .sub{margin-top:16px;font-size:16px;max-width:none}
-html.d390 .si .right{position:relative;left:auto;top:auto;width:auto;margin-top:22px;padding-bottom:64px}
+html.d390 .si .sub{margin-top:12px;font-size:16px;max-width:none}
+html.d390 .si .right{position:relative;left:auto;top:auto;width:auto;margin-top:16px;padding-bottom:64px}
 html.d390 .si .slot{display:none}
 html.d390 .si footer{left:20px;right:20px;height:52px}
 html.d390 .si footer .line{font-size:15px}
-html.d390 .row{grid-template-columns:1fr;gap:8px}
+html.d390 .row{grid-template-columns:1fr;gap:12px;margin-top:12px}
 html.d390 .btn{height:auto;min-height:56px;padding:12px 18px}
-html.d390 .field{margin-bottom:10px}
-html.d390 .or{margin:16px 0 14px}
-html.d390 .foot{gap:10px;margin-top:8px}
+html.d390 .or{margin:16px 0}
+html.d390 .ec-inner,html.d390 .pw-inner{padding-top:16px}
+html.d390 .foot{gap:8px;margin-top:16px}
 html.d390 .step-title{font-size:32px}
 html.d390 .pinbox{flex:1;width:auto;max-width:48px}
 
@@ -282,16 +305,46 @@ function providers(){
     '<div class="btn sec">' + ICO.ms + '<span class="mword">Continue with Microsoft</span></div>' +
   '</div>';
 }
-function emailPassword(){
-  return '<div class="or"><i></i><span>or</span><i></i></div>' +
+function divider(){
+  return '<div class="or"><i></i><span>or</span><i></i></div>';
+}
+function emailField(open){
+  // A2 shows the address just typed. Same password step for every email.
+  // No welcome-back or "we found your account" copy.
+  if (open) return '<div class="field" id="email-field"><span class="val">jordan@yorkfx.ca</span></div>';
+  return '<div class="field" id="email-field"><span class="ph">you@shop.ca or desk ID</span></div>';
+}
+function emailContinue(hidden){
+  return '<div class="email-continue' + (hidden ? ' hide' : '') + '" id="email-continue">' +
+    '<div class="ec-inner">' +
+      '<button type="button" class="btn sec wide" id="email-go">Continue with email</button>' +
+      '<div class="foot"><span><a href="#">Email me a sign-in link</a></span></div>' +
+    '</div>' +
+  '</div>';
+}
+function passwordReveal(open){
+  return '<div class="pw-reveal' + (open ? ' open' : '') + '" id="pw-reveal">' +
+    '<div class="pw-inner">' +
+      '<div class="field' + (open ? ' focus' : '') + '" id="pw-field">' +
+        '<input id="pw-input" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password">' +
+        '<div class="eye">' + ICO.eye + '</div>' +
+        '<button type="button" class="signin-inline">Sign in</button>' +
+      '</div>' +
+      '<div class="foot"><span><a href="#">Email me a link instead</a></span></div>' +
+    '</div>' +
+  '</div>';
+}
+function recover(){
+  return '<div class="foot recover"><span><span class="muted">Can’t get in?</span>&nbsp;&nbsp;<a href="#">Recover access</a></span></div>';
+}
+function emailStep(open){
+  return divider() +
     '<label class="eyebrow">Email or desk ID</label>' +
-    '<div class="field"><span class="ph">you@shop.ca or desk ID</span></div>' +
-    '<label class="eyebrow">Password</label>' +
-    '<div class="field"><span class="ph">Password</span><div class="eye">' + ICO.eye + '</div><div class="go">' + ICO.go + '</div></div>' +
-    '<div class="foot">' +
-      '<span><a href="#">Email me a sign-in link</a></span>' +
-      '<span><span class="muted">Can’t get in?</span>&nbsp;&nbsp;<a href="#">Recover access</a></span>' +
-    '</div>';
+    emailField(open) +
+    '</div>' +
+    emailContinue(open) +
+    passwordReveal(open) +
+    recover();
 }
 function passkeyBtn(label, tag){
   return '<div class="btn primary" id="pk">' + ICO.passkey +
@@ -300,7 +353,16 @@ function passkeyBtn(label, tag){
   '</div>';
 }
 
-function formA(){ return passkeyBtn('Continue with a passkey','Recommended') + providers() + emailPassword(); }
+function formA(){
+  return '<div id="form-core">' +
+    passkeyBtn('Continue with a passkey','Recommended') + providers() +
+    emailStep(false);
+}
+function formA2(){
+  return '<div id="form-core">' +
+    passkeyBtn('Continue with a passkey','Recommended') + providers() +
+    emailStep(true);
+}
 
 function formB(){
   return '<div class="btn primary wait" id="pk">' + ICO.passkey +
@@ -310,16 +372,19 @@ function formB(){
 }
 
 function formC(){
-  return '<div class="note" id="pk"><strong>No passkey on this device</strong><p>Use Google, Microsoft, email or a sign-in link below.</p></div>' +
-    providers() + emailPassword();
+  return '<div id="form-core">' +
+    '<div class="note" id="pk"><strong>No passkey on this device</strong><p>Use Google, Microsoft, email or a sign-in link below.</p></div>' +
+    providers() +
+    emailStep(false);
 }
 
 function formD(){
   return '<div class="step-kicker eyebrow">Confirm it is you</div>' +
-    '<h2 class="step-title">Confirm with a passkey or your <span class="nowrap">6-digit PIN</span></h2>' +
+    '<h2 class="step-title">Confirm with a passkey or the <span class="nowrap">6-digit code</span> from your authenticator app</h2>' +
     '<p class="step-lead">Google or Microsoft alone is not a second factor for owners and admins. A passkey that asks for the device unlock counts.</p>' +
     passkeyBtn('Continue with a passkey') +
-    '<div class="btn sec" style="margin-top:12px;width:100%">Enter your 6-digit PIN</div>' +
+    '<button type="button" class="btn sec wide" style="margin-top:16px">Enter your 6-digit code</button>' +
+    '<div class="cancel-row"><a class="link" href="#">Use a backup code</a></div>' +
     '<p class="signed-as">Signed in with Google as <b>jordan@yorkfx.ca</b></p>';
 }
 
@@ -390,7 +455,50 @@ document.documentElement.classList.add('d' + dev);
 if (still) document.documentElement.classList.add('still');
 document.body.dataset.frame = frame;
 
-const signinFrames = {A:formA,B:formB,C:formC,D:formD,E:formE,F:formF,G:formG,G2:formG2};
+const signinFrames = {A:formA,A2:formA2,B:formB,C:formC,D:formD,E:formE,F:formF,G:formG,G2:formG2};
+
+function measureOpenRightHeight(right){
+  const rev = document.getElementById('pw-reveal');
+  const cont = document.getElementById('email-continue');
+  if (!rev) return right.getBoundingClientRect().height;
+  const prevRev = rev.className, prevRevT = rev.style.transition;
+  const prevCont = cont ? cont.className : '', prevContT = cont ? cont.style.transition : '';
+  rev.style.transition = 'none';
+  if (cont) cont.style.transition = 'none';
+  rev.classList.add('open');
+  if (cont) cont.classList.add('hide');
+  void right.offsetHeight;
+  const h = right.getBoundingClientRect().height;
+  rev.className = prevRev;
+  rev.style.transition = prevRevT;
+  if (cont) { cont.className = prevCont; cont.style.transition = prevContT; }
+  return h;
+}
+
+function keepAboveFooter(clearance){
+  const right = document.getElementById('right');
+  const left = document.getElementById('left');
+  if (!right || !left) return 0;
+  const footerH = dev === '390' ? 52 : 56;
+  const viewH = dev === '390' ? 844 : 800;
+  const headerH = dev === '390' ? 72 : 88;
+  const minTop = headerH + 16;
+  const fullH = measureOpenRightHeight(right);
+  const top = right.getBoundingClientRect().top;
+  const overflow = (top + fullH) - (viewH - footerH - clearance);
+  if (overflow <= 0) return 0;
+  const leftTop = left.getBoundingClientRect().top;
+  const shift = Math.min(overflow, Math.max(0, leftTop - minTop));
+  if (shift <= 0) return 0;
+  if (dev === '390') {
+    const cur = parseFloat(getComputedStyle(left).marginTop) || 0;
+    left.style.marginTop = (cur - shift) + 'px';
+  } else {
+    left.style.top = (parseFloat(left.style.top) - shift) + 'px';
+    right.style.top = (parseFloat(right.style.top) - shift) + 'px';
+  }
+  return shift;
+}
 
 function layoutSignin(){
   const left = document.getElementById('left');
@@ -400,6 +508,7 @@ function layoutSignin(){
   const pk = document.getElementById('pk');
   if (dev === '390' || !d) {
     slot.style.display = 'none';
+    if (dev === '390') keepAboveFooter(16);
     if (d && !still && !hold) {
       d.classList.remove('play');
       void d.offsetWidth;
@@ -409,16 +518,20 @@ function layoutSignin(){
   }
   const headerH = 88, footerH = 56, band = 800 - headerH - footerH;
   const lr = left.getBoundingClientRect();
-  const rr = right.getBoundingClientRect();
+  const core = document.getElementById('form-core') || right;
+  const rr = core.getBoundingClientRect();
+  const rightTop = right.getBoundingClientRect().top;
   if (pk) {
     // Same geometry as the original Open the desk source: the 1px ink
     // hairline runs from the green dot (plus a 20px gap) to the connect
     // target, and the right column is shifted so that target is centred
     // on the dot. Compensate for targets that are not at the top of the
     // right column, so titles sit above the line instead of on it.
+    // Measure form-core (not the password reveal) so opening the
+    // password step cannot shift the email field or the hairline.
     const dr = d.getBoundingClientRect();
     const pkr = pk.getBoundingClientRect();
-    const pkOffset = pkr.top - rr.top;
+    const pkOffset = pkr.top - rightTop;
     const dotC = dr.top + dr.height/2 - lr.top;
     const rightRel = dotC - pkOffset - pkr.height/2;
     const topMost = Math.min(0, rightRel);
@@ -441,6 +554,10 @@ function layoutSignin(){
       if (!still && !hold) {
         slot.classList.add('play');
         d.classList.add('play');
+      }
+      if (keepAboveFooter(16)) {
+        const r3 = d.getBoundingClientRect();
+        slot.style.top = (r3.top + r3.height/2 - 0.5) + 'px';
       }
     } else {
       slot.style.display = 'none';
@@ -476,6 +593,20 @@ function show(){
   if (frame === 'G2') document.getElementById('left-sub').textContent = 'You are ready to open the desk.';
 }
 
+window.openEmailStep = function(){
+  const cont = document.getElementById('email-continue');
+  const rev = document.getElementById('pw-reveal');
+  const pw = document.getElementById('pw-field');
+  const input = document.getElementById('pw-input');
+  if (cont) cont.classList.add('hide');
+  if (rev) {
+    void rev.offsetWidth;
+    rev.classList.add('open');
+  }
+  if (pw) pw.classList.add('focus');
+  if (input) input.focus();
+};
+
 window.startMotion = function(){
   const slot = document.getElementById('slot');
   const d = document.getElementById('dot');
@@ -493,7 +624,11 @@ window.startMotion = function(){
 
 document.fonts.ready.then(() => {
   show();
-  requestAnimationFrame(() => requestAnimationFrame(layoutSignin));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    layoutSignin();
+    const go = document.getElementById('email-go');
+    if (go) go.addEventListener('click', () => window.openEmailStep());
+  }));
 });
 </script>
 </body>
