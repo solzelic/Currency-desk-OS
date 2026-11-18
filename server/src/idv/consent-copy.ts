@@ -1,13 +1,13 @@
-/* CD-219 wording v0.3.8, still a draft for counsel. One module so it can be swapped.
+/* CD-219 wording v0.3.9, still a draft for counsel. One module so it can be swapped.
    The small-photo sentence is included only while this shop keeps the face crop. */
 
-export const CONSENT_VERSION = "consent-v0.3.8-draft";
+export const CONSENT_VERSION = "consent-v0.3.9-draft";
 
 export const ID_DETAILS_LINE = "Your ID details are kept for at least 5 years because the law requires it.";
 
 export const US_REGION_LINE = "Your information is stored and processed in the United States, and may be accessed by courts, law enforcement and national security authorities there.";
 
-export const CROP_LINE = "We also keep a small photo of your face so staff can recognise you.";
+export const CROP_LINE = "We also keep a small photo of your face from your ID for 5 years, so staff can compare it with you by eye.";
 
 export const PLACEHOLDER_SHOP = "[Shop legal name]";
 export const PLACEHOLDER_PRIVACY = "[Shop privacy officer name or title, email, phone]";
@@ -28,8 +28,16 @@ function shopName(fill: ConsentFill): string {
   return name || PLACEHOLDER_SHOP;
 }
 
+function shownPhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (local.length !== 10) return value.trim();
+  return `${local.slice(0, 3)}-${local.slice(3, 6)}-${local.slice(6)}`;
+}
+
 function privacy(fill: ConsentFill): string {
-  const parts = [fill.privacyContact, fill.privacyEmail, fill.privacyPhone].map((part) => part?.trim() ?? "").filter(Boolean);
+  const phone = fill.privacyPhone?.trim() ? shownPhone(fill.privacyPhone) : "";
+  const parts = [fill.privacyContact?.trim() ?? "", fill.privacyEmail?.trim() ?? "", phone].filter(Boolean);
   return parts.length ? parts.join(", ") : PLACEHOLDER_PRIVACY;
 }
 

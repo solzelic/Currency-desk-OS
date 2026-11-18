@@ -1727,21 +1727,22 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         </div>)}
 
         {tab === 'clients' && (<div>
-          <SectionTitle icon="users" title="Clients · KYC" sub="Defaults and identity checks for the Clients app — these drive the KYC status badges on every contact." />
+          <SectionTitle icon="users" title="Clients · KYC" sub="Defaults and identity checks for the Clients app. These drive the KYC status badges on every contact." />
+          {window.CDOS.IdCheck ? <window.CDOS.IdCheck.Settings /> : null}
           <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>New contacts</div>
           <Row title="Default risk for new contacts" desc="Pre-set on contacts created at the desk or through a KYC flow."><select value={(window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(settings.defaultClientRisk) : (settings.defaultClientRisk || 'Normal'))} onChange={e => set('defaultClientRisk', e.target.value, `default risk ${e.target.value}`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 150 }}>{(window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High']).map(r => <option key={r}>{r}</option>)}</select></Row>
           <Row title="Warn when ID expires within" desc="Contacts get an amber 'ID expiring' badge inside this window."><select value={settings.idExpiryWarnDays ?? 30} onChange={e => set('idExpiryWarnDays', +e.target.value, `id expiry warn ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 150 }}>{[[0, 'Off'], [30, '30 days'], [60, '60 days'], [90, '90 days']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Row>
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Risk tiers</div>
-          <div className="text-[11px] mb-2" style={{ color: CD.mute, maxWidth: 620 }}>Your own client risk ratings — staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check.</div>
+          <div className="text-[11px] mb-2" style={{ color: CD.mute, maxWidth: 620 }}>Your own client risk ratings. Staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check.</div>
           <div className="space-y-2">
             {(window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High']).map(r => { const tn = window.CDOS.riskTone(r); const notes = settings.riskTierNotes || {}; const esc = r === 'High' || (r === 'Medium' && !!settings.escalateMediumRisk); return (
               <div key={r} className="flex items-center gap-3 p-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.panel }}>
                 <span className="grid place-items-center flex-none text-[11px] font-semibold" style={{ minWidth: 72, padding: '4px 10px', borderRadius: 999, background: tn.bg, color: tn.c }}>{r}</span>
-                <input value={notes[r] || ''} onChange={e => set('riskTierNotes', { ...notes, [r]: e.target.value }, `risk tier note ${r}`)} placeholder={({ Normal: 'Standard walk-in activity', Low: 'Known, established, low-risk', Medium: 'Elevated — enhanced due diligence', High: 'High-risk — deepest checks & monitoring' })[r]} className="flex-1 text-[12.5px] px-2.5 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)', color: CD.ink }} />
-                <span className="text-[10px] flex-none uppercase tracking-widest" style={{ color: esc ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{esc ? 'escalates' : '—'}</span>
+                <input value={notes[r] || ''} onChange={e => set('riskTierNotes', { ...notes, [r]: e.target.value }, `risk tier note ${r}`)} placeholder={({ Normal: 'Standard walk-in activity', Low: 'Known, established, low-risk', Medium: 'Elevated, enhanced due diligence', High: 'High-risk, deepest checks and monitoring' })[r]} className="flex-1 text-[12.5px] px-2.5 py-1.5 outline-none" style={{ border: `1px solid ${CD.line}`, borderRadius: 7, background: 'var(--cd-panel)', color: CD.ink }} />
+                <span className="text-[10px] flex-none uppercase tracking-widest" style={{ color: esc ? CD.flag : CD.faint, fontFamily: 'Space Mono, monospace' }}>{esc ? 'escalates' : 'Not set'}</span>
               </div>); })}
           </div>
-          <div className="mt-2"><Row title="Also escalate Medium-risk to a full check" desc="Off by default — Medium stays a lighter, recommended check; High always escalates."><Sw on={!!settings.escalateMediumRisk} click={() => toggleSet('escalateMediumRisk', 'Escalate medium-risk')} /></Row></div>
+          <div className="mt-2"><Row title="Also escalate Medium-risk to a full check" desc="Off by default. Medium stays a lighter, recommended check. High always escalates."><Sw on={!!settings.escalateMediumRisk} click={() => toggleSet('escalateMediumRisk', 'Escalate medium-risk')} /></Row></div>
 
           <div className="text-[10px] uppercase tracking-widest mb-1 mt-5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>File completeness</div>
           <Row title="Require ID scan on file" desc="Moved to Compliance & jurisdiction, alongside the rest of the verification policy."><button onClick={() => setTab('compliance')} className="flex items-center gap-1 text-[12.5px] font-semibold" style={{ color: CD.ink }}>Open <Ic n="chev" s={13} c={CD.mute} /></button></Row>
@@ -1764,7 +1765,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               {(CCY || []).filter(c => c !== base).map(c => { const floors = settings.vaultFloors || {}; return (
                 <div key={c} className="flex items-center gap-2 px-2.5 py-1.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, background: CD.panel }}>
                   <span className="text-[12px] font-medium flex-none" style={{ color: CD.ink, width: 34, fontFamily: 'Space Mono, monospace' }}>{c}</span>
-                  <input type="number" value={floors[c] ?? ''} onChange={e => { const v = e.target.value; setSettings(s => ({ ...s, vaultFloors: { ...(s.vaultFloors || {}), [c]: v === '' ? '' : +v } })); }} placeholder="—" className="text-sm px-1.5 py-1 outline-none text-right w-full bg-transparent" style={{ fontVariantNumeric: 'tabular-nums' }} />
+                  <input type="number" value={floors[c] ?? ''} onChange={e => { const v = e.target.value; setSettings(s => ({ ...s, vaultFloors: { ...(s.vaultFloors || {}), [c]: v === '' ? '' : +v } })); }} placeholder="Not set" className="text-sm px-1.5 py-1 outline-none text-right w-full bg-transparent" style={{ fontVariantNumeric: 'tabular-nums' }} />
                 </div>); })}
             </div>
           </div>

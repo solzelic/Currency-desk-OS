@@ -862,6 +862,9 @@ export async function createDb(): Promise<DbHandle> {
     await readFile(new URL("./migrations/081_idv_check_records.sql", import.meta.url), "utf8"),
   );
   await client.exec(await readFile(new URL("./migrations/080_signup_agreement_history.sql", import.meta.url), "utf8"));
+  await client.exec(
+    await readFile(new URL("./migrations/082_pep_answer_events.sql", import.meta.url), "utf8"),
+  );
   const db = drizzlePglite(client, { schema });
   return { db, pool: null, close: () => client.close() };
 }

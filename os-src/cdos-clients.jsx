@@ -509,7 +509,7 @@
   /* A total across currencies, or nothing. One leg this desk cannot price
      makes the whole total unknown; a sum quietly missing a currency looks
      complete and is the shape of wrong this project keeps finding. */
-  const fmtHome = (v) => v == null ? '—' : fmt(v, homeCcy());
+  const fmtHome = (v) => v == null ? 'None yet' : fmt(v, homeCcy());
   const initials = (n) => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = (dob) => { if (!dob) return null; const d = new Date(dob); if (isNaN(d)) return null; const t = new Date(window.CDOS.wallClock()); let a = t.getFullYear() - d.getFullYear(); const m = t.getMonth() - d.getMonth(); if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--; return a; };
 
@@ -537,24 +537,16 @@
   // (Missing ID, ID expired, ID expiring, or ID on hand).
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
-  function kycStatus(rec, settings, name) {
-    const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // Returned only when an approved check of that tier is already on file.
-    if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
-    if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // An approved quick check on file. Nothing writes one now.
-    if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
-    // no provider check on file — judge by the ID the desk is holding
-    if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
-    if (expired) return ['ID expired', CD.flag, CD.flagSoft];
-    const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) { const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000; if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft]; }
-    return ['ID on hand', CD.amber, CD.amberSoft];
+  function kycStatus(rec) {
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    if (state === 'ok') { const tone = window.CDOS.idBadgeTone('checked'); return [(rec.idStanding && rec.idStanding.chip) || 'ID on file', tone.c, tone.bg]; }
+    if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
+    if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    const chip = rec && rec.idStanding && rec.idStanding.chip;
+    if (chip === 'ID typed by hand, not checked') { const tone = window.CDOS.idBadgeTone('hand'); return [chip, tone.c, tone.bg]; }
+    if (chip && chip !== 'Missing ID') return [chip, CD.flag, CD.flagSoft];
+    return [chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = (s) => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
@@ -605,7 +597,7 @@
       {icon && <span className="grid place-items-center flex-none mt-0.5" style={{ width: 24, height: 24, borderRadius: 7, background: CD.lineSoft }}><Ic n={icon} s={13} c={CD.mute} /></span>}
       <div className="min-w-0 flex-1">
         <div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{label}</div>
-        <div className="text-[13px] break-words" style={{ color: value ? CD.ink : CD.faint, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value || '—'}</div>
+        <div className="text-[13px] break-words" style={{ color: value ? CD.ink : CD.faint, fontVariantNumeric: mono ? 'tabular-nums' : 'normal' }}>{value || 'Not set'}</div>
       </div>
     </div>);
   }
@@ -714,9 +706,9 @@
             <td className="px-3 py-2 whitespace-nowrap" style={{ color: CD.text }}>{x.date}</td>
             <td className="px-3 py-2" style={{ color: CD.mute }}>{x.type}</td>
             <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink }}>{num(x.inAmt)} <span style={{ color: CD.faint }}>{x.inCcy}</span></td>
-            <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? '—' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
+            <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.green, fontWeight: 600 }}>{x.outAmt === '' ? 'Not set' : num(x.outAmt)} <span style={{ color: CD.faint, fontWeight: 400 }}>{x.outCcy}</span></td>
             {!compact && <td className="px-3 py-2 text-right whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums', color: CD.mute }}>{fmtHome(x.fee)}</td>}
-            <td className="px-3 py-2 text-center" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: CD.mute }}>{v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || '—')}</td>
+            <td className="px-3 py-2 text-center" style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: CD.mute }}>{v ? 'VOID' : ([f.single ? 'RPT' : '', f.str ? 'STR' : '', (f.kyc && f.kyc !== 'ok') ? 'ID' : ''].filter(Boolean).join(' ') || 'Not set')}</td>
           </tr>); })}</tbody>
       </table>
     </div>);
@@ -808,7 +800,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Txns</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.n}</div></div>
             <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Volume</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtHome(st.vol)}</div></div>
-            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Last seen</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.last || '—'}</div></div>
+            <div><div className="text-[10px] uppercase tracking-wide" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Last seen</div><div className="text-[15px] font-semibold" style={{ color: CD.ink, fontVariantNumeric: 'tabular-nums' }}>{st.last || 'Not set'}</div></div>
           </div>
         </div>
         <div className="p-5">
@@ -868,7 +860,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>); })}
         </div>
       ) : (
-        <div className="text-[12px] py-4 text-center" style={{ color: CD.faint }}>No beneficiaries on file. {canEdit ? `Add who ${first} sends money to — it'll be ready at the counter.` : ''}</div>
+        <div className="text-[12px] py-4 text-center" style={{ color: CD.faint }}>No beneficiaries on file. {canEdit ? `Add who ${first} sends money to. It will be ready at the counter.` : ''}</div>
       )}
       {edit && <Portal><Tx.BeneficiaryModal init={edit === 'new' ? null : edit} sender={name} lockSender corridors={corridors} onClose={() => setEdit(null)} onSave={save} /></Portal>}
     </div>);
@@ -887,12 +879,16 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       {actionLabel && <button onClick={onAction} className="flex items-center gap-1 text-[12px] font-medium flex-none px-2.5 py-1.5" style={{ color: tone, border: `1px solid ${tone}`, borderRadius: 7, background: 'var(--cd-panel)', whiteSpace: 'nowrap' }}>{actionLabel} <Ic n="chev" s={12} c={tone} /></button>}
     </div>);
   }
-  function ClientCompliance({ name, rec, mine, flags, settings, canEdit, onOpenLedger, onFixId }) {
+  function ClientCompliance({ name, rec, mine, flags, settings, canEdit, onOpenLedger, onFixId, standing }) {
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => { const f = flags[r.id] || {}; return (f.single || f.agg24) && !r.filed; });
     const strRows = live.filter(r => { const f = flags[r.id] || {}; return f.str && !r.ackStr; });
     const kycRow = live.find(r => { const f = flags[r.id] || {}; return f.kyc && f.kyc !== 'ok'; });
-    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : ((!rec || !rec.idType || !rec.idNum) ? 'missing ID' : null);
+    const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const papers = !!(rec && rec.idType && rec.idNum);
+    const handTyped = standing && standing.chip === 'ID typed by hand, not checked' && !(rec && rec.idCheckError);
+    const fromCheck = (rec && rec.idCheckError) ? rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.gap : (idState === 'ok' ? null : idState);
+    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = (settings && +settings.structuringDays) || 7;
     const open = rpt.length + (strRows.length ? 1 : 0) + (kycReason ? 1 : 0);
@@ -902,12 +898,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         {open ? <Pill text={`${open} open`} c={CD.flag} bg={CD.flagSoft} /> : <Pill text="All clear" c={CD.green} bg={CD.greenSoft} />}
       </div>
       {open === 0 ? (
-        <div className="flex items-center gap-2 text-[12.5px] px-1 py-1" style={{ color: CD.mute }}><Ic n="checkcircle" s={15} c={CD.green} /> No open flags — reportables filed, ID on file, no structuring pattern.</div>
+        <div className="flex items-center gap-2 text-[12.5px] px-1 py-1" style={{ color: CD.mute }}><Ic n="checkcircle" s={15} c={CD.green} /> No open flags. Reportables filed, ID on file, no structuring pattern.</div>
       ) : (
         <div className="space-y-2">
-          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable — not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
+          {rpt.length > 0 && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="alert" title="Reportable, not yet filed" sub={`${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`} actionLabel="Review & file" onAction={() => onOpenLedger(name)} />}
           {strRows.length > 0 && <CompRow tone={CD.amber} soft={CD.amberSoft} icon="alert" title="Structuring watch" sub={`${win}-day cash-in ${fmtHome(strAgg)} across ${strRows.length} just-under deal${strRows.length === 1 ? '' : 's'}.`} actionLabel="Review in ledger" onAction={() => onOpenLedger(name)} />}
-          {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}.`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
+          {kycReason && <CompRow tone={CD.flag} soft={CD.flagSoft} icon="id" title="KYC / ID gap" sub={`Identification issue: ${kycReason}${/[.!?]$/.test(String(kycReason)) ? '' : '.'}`} actionLabel={canEdit ? 'Fix ID' : null} onAction={onFixId} />}
         </div>
       )}
     </div>);
@@ -1091,100 +1087,55 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
      status the server stored. The ID image and the name Persona read
      are not on this desk. */
   function IdentityCheck({ clientId, canEdit }) {
-    const [status, setStatus] = useState('');
-    const [checksOn, setChecksOn] = useState(false);
-    const [note, setNote] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [loaded, setLoaded] = useState(false);
-    const [tick, setTick] = useState(0);
-    const labels = {
-      starting: 'Starting',
-      'in progress': 'In progress',
-      'needs review': 'Needs review',
-      'Check passed': 'Check passed',
-      'Check passed (test)': 'Check passed (test)',
-      declined: 'Declined',
-      failed: 'Failed',
-      expired: 'Expired',
-    };
-    useEffect(() => {
-      if (!clientId) return undefined;
-      let live = true;
-      setLoaded(false);
-      setStatus('');
-      let timer = 0;
-      const open = (value) => value === 'starting' || value === 'in progress' || value === 'needs review';
-      const pull = () => {
-        const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-        if (!api || !api.idvStatus) return;
-        api.idvStatus(clientId).then(body => {
-          if (!live) return;
-          const next = body && typeof body.status === 'string' ? body.status : '';
-          setStatus(next);
-          setChecksOn(!!(body && body.checksEnabled));
-          setLoaded(true);
-          if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
-        }).catch(() => { if (live) { setLoaded(true); setNote('The identity check status could not be read.'); } });
-      };
-      pull();
-      return () => { live = false; window.clearTimeout(timer); };
-    }, [clientId, tick]);
-    const start = () => {
-      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.startIdv || busy) return;
-      setBusy(true);
-      setNote('');
-      api.startIdv(clientId).then(body => {
-        if (body && body.connected === false) {
-          setNote(body.message || 'Identity checks are not connected.');
-          setBusy(false);
-          return;
-        }
-        setStatus('starting');
-        setTick(n => n + 1);
-        setBusy(false);
-      }).catch(err => {
-        setNote((err && err.message) || 'The identity check could not be started.');
-        setBusy(false);
-      });
-    };
-    const label = status === 'approved' ? 'Check passed' : (labels[status] || (status ? 'Recorded' : ''));
-    const passed = label === 'Check passed' || label === 'Check passed (test)';
-    return (<div data-testid="identity-check" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
-      <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Identity check</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <span data-testid="identity-check-status" className="text-[12.5px]" style={{ color: CD.ink }}>{loaded ? (label || 'No check has been started for this client.') : 'Reading the identity check.'}</span>
-        {canEdit && checksOn && !passed && <button type="button" onClick={start} disabled={busy} className="text-[12px] font-medium px-2.5 py-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: 'transparent' }}>{busy ? 'Starting' : 'Start identity check'}</button>}
-      </div>
-      {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from this check are not saved on the desk. Enter the ID with Fix ID.</div>
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's ID photo and selfie are not copied to this desk.</div>
-    </div>);
+    if (window.CDOS.IdCheck) return <window.CDOS.IdCheck.Panel clientId={clientId} canEdit={canEdit} />;
+    return null;
   }
 
-  function ProcessStanding({ rec, settings }) {
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
+  function ProcessStanding({ rec, settings, standing }) {
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
-    const standing = {
-      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
-      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
-      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
-      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.'],
-    }[status];
-    if (!standing) return null;
     const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
+    const article = reportLine.code === 'LCTR' || /^[AEIOU]/i.test(reportLine.code || '') ? 'an' : 'a';
     const rule = stated
-      ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.`
+      ? `This desk asks for identification at ${idLine.label} and ${article} ${reportLine.code} at ${reportLine.label}.`
       : 'This desk has no identification or reporting line stated, so neither number is shown here.';
-    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
-    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
-    return (<div data-tour="identification" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+    const fail = rec && rec.idCheckError;
+    if (fail) {
+      return (<div data-tour="identification" data-testid="client-where" className="client-where mb-3 p-3.5 min-w-0 max-w-full" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-start gap-2 min-w-0 max-w-full">
+          <Pill text="Not identified" c={CD.mute} bg={CD.lineSoft} />
+          <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{rec.idCheckError}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
+    if (standing) {
+      const on = !!standing.onFile;
+      const checked = window.CDOS.idBadgeTone('checked');
+      const tone = on ? checked.c : CD.flag;
+      const soft = on ? checked.bg : CD.flagSoft;
+      return (<div data-tour="identification" data-testid="client-where" className="client-where mb-3 p-3.5 min-w-0 max-w-full" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
+        <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
+        <div className="flex items-start gap-2 min-w-0 max-w-full">
+          <Pill text={standing.title} c={tone} bg={soft} />
+          <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{standing.line}</span>
+        </div>
+        <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
+      </div>);
+    }
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = (rec && rec.idStanding && rec.idStanding.line) || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = state === 'ok';
+    const checked = window.CDOS.idBadgeTone('checked');
+    const tone = on ? checked.c : CD.flag;
+    const soft = on ? checked.bg : CD.flagSoft;
+    return (<div data-tour="identification" data-testid="client-where" className="mb-3 p-3.5" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Where they are</div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Pill text={standing[0]} c={tone} bg={soft} />
-        <span className="text-[12.5px]" style={{ color: CD.ink }}>{standing[1]}</span>
+      <div className="flex items-start gap-2 min-w-0 max-w-full">
+        <Pill text={title} c={tone} bg={soft} />
+        <span data-testid="client-where-line" className="client-where-line text-[12.5px] min-w-0 flex-1 break-words" style={{ color: CD.ink }}>{line}</span>
       </div>
       <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{rule}</div>
     </div>);
@@ -1253,6 +1204,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
   /* ---------- FULL PROFILE (double click) ---------- */
   function Profile({ name, rec, rows, clients, setClients, settings, me, canEdit, canExport, beneficiaries, setBeneficiaries, corridors, onOpenLedger, onClose, log, highlightTx, reload }) {
     const [edit, setEdit] = useState(false);   // always open read-only; Edit button enters edit mode
+    const [fixId, setFixId] = useState(false);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -1289,7 +1241,36 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
-    const [stat, col, bg] = kycStatus(rec, settings, name);
+    const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState('');
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      const clientId = rec && rec.clientId;
+      if (!api || !clientId) return undefined;
+      let live = true;
+      const pull = () => {
+        api.checks(clientId).then((body) => {
+          if (!live) return;
+          setReadError('');
+          setStanding(body && body.standing ? body.standing : null);
+        }).catch(() => { if (live) { setStanding(null); setReadError('Could not read the ID check. Try again.'); } });
+      };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
+      const onReread = (event) => { if (!event.detail || event.detail.clientId !== clientId) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
+    }, [rec && rec.clientId]);
+    const shown = readError ? { ...rec, idCheckError: readError } : rec;
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
+    const failedRead = !!(readError || (rec && rec.idCheckError));
+    const handTyped = !failedRead && standing && standing.chip === 'ID typed by hand, not checked';
+    const stat = failedRead ? (readError || rec.idCheckError) : handTyped ? 'ID typed by hand, not checked' : (standing ? standing.chip : fallbackStat);
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const col = failedRead || handTyped ? handTone.c : (standing ? (standing.onFile ? checkedTone.c : CD.flag) : fallbackCol);
+    const bg = failedRead || handTyped ? handTone.bg : (standing ? (standing.onFile ? checkedTone.bg : CD.flagSoft) : fallbackBg);
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -1303,7 +1284,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             {canEdit && <span className="absolute -bottom-1 -right-1"><PhotoCaptureMenu onPhoto={(data) => { set('avatar', data); log && log('Photo added', name); }} title="Set contact photo" badge={{ width: 24, height: 24, borderRadius: '50%', background: CD.ink, border: `2px solid ${CD.panel}` }} /></span>}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><Pill text={stat} c={col} bg={bg} />{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file & valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon — re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
+            <div className="flex items-center gap-2 flex-wrap"><span className="client-file-name text-[20px] font-bold min-w-0" style={{ color: CD.ink }}>{name}</span><Pill text={corp ? 'Corporate' : 'Individual'} c={CD.mute} bg={CD.lineSoft} /><span data-testid="client-standing"><Pill text={stat} c={col} bg={bg} /></span>{failedRead && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}{normalizeRisk(rec.risk) !== 'Normal' && <Pill text={normalizeRisk(rec.risk) + ' risk'} c={riskTone(rec.risk).c} bg={riskTone(rec.risk).bg} />}<window.CDOS.InfoTip title="Status & risk" body="Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance." lines={[{k:'Verified',v:'ID on file and valid'},{k:'Missing ID',v:'no ID captured yet'},{k:'ID expiring',v:'expires soon, re-collect'},{k:'Risk tier',v:'Normal · Low · Medium · High'}]} /></div>
             <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1.5 text-[12.5px]" style={{ color: CD.mute }}>
               {rec.email && <span className="flex items-center gap-1.5"><Ic n="mail" s={12} c={CD.faint} /> {rec.email}</span>}
               {rec.phone && <span className="flex items-center gap-1.5"><Ic n="phone" s={12} c={CD.faint} /> {rec.phone}</span>}
@@ -1320,7 +1301,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         </div>
 
         {/* body */}
-        <div className="flex-1 overflow-auto px-6 py-5">
+        <div className="flex-1 overflow-auto px-6 py-5 min-w-0 max-w-full">
           {/* THE COLLISION, SAID OUT LOUD.
 
               The old store keyed customers by name, so two people called
@@ -1347,10 +1328,10 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             </div>
           )}
           {/* COMPLIANCE — first thing the owner sees, mirrors the menu-bar bell */}
-          <ClientCompliance name={name} rec={rec} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setEdit(true)} />
+          <ClientCompliance name={name} rec={shown} mine={mine} flags={flags} settings={settings} canEdit={canEdit} onOpenLedger={onOpenLedger} onFixId={() => setFixId(true)} standing={readError ? null : standing} />
           {/* Then the two things an operator came in for: where this
               customer is in identification, and the papers filed for them. */}
-          <ProcessStanding rec={rec} settings={settings} />
+          <ProcessStanding rec={shown} settings={settings} standing={readError ? null : standing} />
           {rec && rec.clientId ? <IdentityCheck clientId={rec.clientId} canEdit={canEdit} /> : null}
           <FileFolder rec={rec} canEdit={canEdit} writer={writer} log={log} name={name} />
           {/* risk rating — always visible on the profile, set inline without entering edit mode */}
@@ -1461,6 +1442,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           </div>
         </div>
       </div>
+      {fixId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, { name, rec, setClients, log, onClose: () => setFixId(false), onDone: () => setFixId(false) })}
     </div>);
   }
 
@@ -1534,7 +1516,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
 
     const counts = useMemo(() => {
       let ind = 0, corp = 0, ver = 0, att = 0;
-      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (isVerified(s)) ver++; else att++; });
+      list.forEach(c => { if ((c.rec.kind || 'individual') === 'corporate') corp++; else ind++; const [s] = kycStatus(c.rec, settings, c.name); if (c.rec.idStanding ? c.rec.idStanding.onFile : isVerified(s)) ver++; if (c.rec.idStanding ? !c.rec.idStanding.onFile : !isVerified(s)) att++; });
       return { all: list.length, individual: ind, corporate: corp, verified: ver, attention: att };
     }, [list, settings]);
 
@@ -1543,8 +1525,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'individual' && (r.kind || 'individual') !== 'individual') return false;
       if (filter === 'corporate' && r.kind !== 'corporate') return false;
       const [s] = kycStatus(r, settings, c.name);
-      if (filter === 'verified' && !isVerified(s)) return false;
-      if (filter === 'attention' && isVerified(s)) return false;
+      if (filter === 'verified' && !(r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
+      if (filter === 'attention' && (r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
       /* A health number is never searched, even one still cached. */
@@ -1615,7 +1597,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       {/* filter chips */}
       <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 flex-none" style={{ borderBottom: `1px solid ${CD.lineSoft}` }}>
         {FILTERS.map(([id, label, n]) => (
-          <button key={id} onClick={() => setFilter(id)} className="text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
+          <button key={id} data-testid={`client-filter-${id}`} onClick={() => setFilter(id)} className="text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5" style={{ borderRadius: 999, background: filter === id ? CD.ink : 'transparent', color: filter === id ? 'var(--cd-on-ink)' : CD.mute, border: `1px solid ${filter === id ? CD.ink : CD.line}` }}>
             {label}<span style={{ opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>{n}</span>
           </button>
         ))}
@@ -1652,11 +1634,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
                   <Pill text={st} c={col} bg={bg} />
                 </div>
                 {/* rate-board readout: the numbers that matter, in mono */}
-                <div className="grid grid-cols-3" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
-                  {[['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => (
-                    <div key={l} className="px-3 py-2.5" style={{ borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none' }}>
+                <div className="grid" style={{ borderTop: `1px solid ${CD.lineSoft}`, gridTemplateColumns: 'auto minmax(7.6rem, 1.7fr) minmax(0, 1fr)' }}>
+                  {[['TXNS', String(c.st.n)], ['VOLUME', c.st.vol == null ? 'None yet' : fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || 'Not set']].map(([l, v], i) => (
+                    <div key={l} className="px-2.5 py-2.5" style={{ borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none', minWidth: 0 }}>
                       <div className="text-[8.5px] uppercase tracking-widest" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>{l}</div>
-                      <div className="text-[12.5px] font-bold truncate" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+                      <div className="text-[12.5px] font-bold" style={{ color: CD.ink, fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{v}</div>
                     </div>
                   ))}
                 </div>
@@ -1807,6 +1789,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             await shared.record(clientId, payload);
           }
           setClients(prev => shared.project(prev));
+          if (clientId) window.dispatchEvent(new CustomEvent('cdos-id-standing', { detail: { clientId } }));
         } else {
           const today = stampToday();
           setClients(c => ({ ...c, [name]: { ...(c[name] || {}), idType: payload.idType, idNum: payload.idNum, idIssued: payload.idIssued || '', idExpiry: payload.idExpiry, photo: payload.photo, updatedAt: today } }));

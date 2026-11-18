@@ -87,6 +87,8 @@ export function fillRoute(route: string, ids: SweepIds): string {
     /* A window screen token. No screen holds this one, so the public
        screen route answers 404, which is all a sweep needs from it. */
     ["token", "sweep".padEnd(32, "0")],
+    /* The reveal list is a GET. A teller is refused before this id is read. */
+    ["recordId", "idc_sweep"],
     /* Sign-up v2.1's sign-in providers; the sweep's ref is not a
        CurrencyDesk ID, so the route answers 404 or 503. */
     ["provider", "google"],

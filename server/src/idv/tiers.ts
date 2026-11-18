@@ -38,12 +38,17 @@ export const DUE_LINE = "A new full ID check is needed.";
 export const COUNTER_CHOSEN_LINE = "Customer chose the counter check. Inspect the original ID.";
 export const QUEBEC_LINE = "Face match is off for this branch. Inspect the original ID.";
 export const PROVINCE_LINE = "Set this branch's province before a face match. Inspect the original ID.";
-export const REVIEW_LINE = "This needs review. Your compliance officer will review this.";
+export const REVIEW_LINE = "This needs review. A supervisor will help.";
 export const DECLINED_LINE = "Check not passed. Check the ID at the counter.";
 export const INCOMPLETE_LINE = "Method not completed. Check the ID at the counter.";
 export const NONE_LINE = "No ID check on file";
 export const PROGRESS_LINE = "ID check in progress";
 export const PASSED_TEST_LINE = "Check passed (test)";
+export const VERIFIED_SCAN_BADGE = "ID verified, scan and selfie";
+
+export function verifiedScanChip(date: string, test = false): string {
+  return test ? `${VERIFIED_SCAN_BADGE} (test), ${date}` : `${VERIFIED_SCAN_BADGE}, ${date}`;
+}
 
 export function resolveTier(input: string): TierNumber | null {
   return TIER_NUMBER[input] ?? null;
@@ -84,6 +89,14 @@ export function counterOnly(province: string | null | undefined): { counter: boo
   return { counter: false, quebec: false, line: "" };
 }
 
+export function notPassedLine(date: string): string {
+  return `Not passed ${date}`;
+}
+
+export function underReviewLine(date: string): string {
+  return `Under review since ${date}`;
+}
+
 export function idCheckedLine(date: string, methodLabel: string, test: boolean): string {
   const line = `ID checked ${date}, ${methodLabel}`;
   return test ? `${line} (test)` : line;
@@ -93,10 +106,25 @@ export function returningLine(originalDate: string, methodLabel: string): string
   return `Returning client, ID checked ${originalDate}, ${methodLabel}`;
 }
 
-export function expiredLine(isoDate: string): string {
+export function civilDateWords(isoDate: string): string {
   const [year, month, day] = isoDate.slice(0, 10).split("-");
   const name = MONTHS[Number(month) - 1] ?? month;
-  return `Expired ${Number(day)} ${name} ${year}`;
+  return `${Number(day)} ${name} ${year}`;
+}
+
+export function expiredLine(isoDate: string): string {
+  return `Expired ${civilDateWords(isoDate)}`;
+}
+
+export const HAND_TYPED_LINE = "ID typed by hand, not checked";
+export const TOO_OLD_LINE = "This check is too old. A new ID check is needed.";
+
+export function seenInPersonLine(staff: string, type: string, expiry: string, checked: string): string {
+  return `ID seen in person by ${staff}, ${type}, expires ${expiry}, checked ${checked}`;
+}
+
+export function expiredNextDealLine(expiryWords: string): string {
+  return `Expired ${expiryWords}. A new ID check is needed before the next deal of $3,000 or more.`;
 }
 
 export function civilToday(timeZone: string, now = new Date()): string {

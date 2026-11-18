@@ -116,6 +116,8 @@ export const migrations: readonly Migration[] = [
   ["079_signup_every_deal_id", "src/db/migrations/079_signup_every_deal_id.sql"],
   ["080_signup_agreement_history", "src/db/migrations/080_signup_agreement_history.sql"],
   ["081_idv_check_records", "src/db/migrations/081_idv_check_records.sql"],
+  /* PEP answers are an append-only log. 082 follows 081. */
+  ["082_pep_answer_events", "src/db/migrations/082_pep_answer_events.sql"],
 ] as const;
 
 type MigrationReader = {

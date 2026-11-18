@@ -74,6 +74,7 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
+        pep_form_stale: "This form is out of date. Reload the page and answer again.",
       };
       /* The teller sees this sentence for a duplicate already in progress,
          including when the response carries no message of its own. */
@@ -982,6 +983,32 @@
      object gets routed to the right place. */
   var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn" };
 
+  window.CDOS.Backend.IdCheck = {
+    checks: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId) + "/checks"); },
+    copy: function () { return request("/api/idv/consent-copy"); },
+    consent: function (body) { return request("/api/idv/consents", { method: "POST", body: JSON.stringify(body) }); },
+    start: function (clientId, tier) {
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId, tier: tier }) });
+    },
+    link: function (inquiryId) {
+      return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });
+    },
+    inPerson: function (body) { return request("/api/idv/checks/in-person", { method: "POST", body: JSON.stringify(body) }); },
+    returning: function (body) { return request("/api/idv/checks/returning", { method: "POST", body: JSON.stringify(body) }); },
+    reveal: function (recordId, body) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/reveal", { method: "POST", body: JSON.stringify(body) });
+    },
+    reveals: function (recordId) { return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/reveals"); },
+    face: function (recordId, body) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/face", { method: "POST", body: JSON.stringify(body) });
+    },
+    linkDeal: function (recordId, dealId) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/deal", { method: "POST", body: JSON.stringify({ dealId: dealId }) });
+    },
+    settings: function () { return request("/api/settings/idv"); },
+    saveSettings: function (body) { return request("/api/settings/idv", { method: "PUT", body: JSON.stringify(body) }); },
+  };
+
   window.CDOS.Backend.Clients = {
     RISK_IN: RISK_IN,
     RISK_OUT: RISK_OUT,
@@ -991,8 +1018,10 @@
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
     idvStatus: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId)); },
-    startIdv: function (clientId) {
-      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId }) });
+    startIdv: function (clientId, tier) {
+      var body = { clientId: clientId };
+      if (tier) body.tier = tier;
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify(body) });
     },
     /* Settings → Accepted IDs. The read is anybody's; `canChange` says
        whether this person may switch types. The write takes catalogue

@@ -11,7 +11,7 @@ import { generateOneTimeLink } from "./persona-calls.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
-  agreedConsent, consentFill, dbQuery, inquiryClientId, linkRecordDeal, loadShopIdv, readClientChecks, recordInPerson,
+  agreedConsent, consentFill, dbQuery, inquiryClientId, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
   recordReturning, revealNumber, storeConsent, supersedeRecord, viewFaceCrop, type DeskActor,
 } from "./records.js";
 import { shopEnvCodeFor } from "./shop-config.js";
@@ -46,11 +46,20 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const actor = await who(req, reply);
     if (!actor) return;
     const fill = await consentFill(db, actor);
+    const branch = await dbQuery(db).query(
+      "SELECT province FROM branches WHERE id = $1 AND legal_entity_id = $2",
+      [actor.branchId, actor.legalEntityId],
+    );
+    const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
     return {
       version: CONSENT_VERSION,
       faceCrop: fill.faceCrop,
       notice: noticeCopy(fill),
       selfieConsent: selfieConsentCopy(fill),
+      counterOnly: gate.counter,
+      quebec: gate.quebec,
+      counterLine: gate.line,
+      privacyReady: privacyReady(fill),
     };
   });
 
@@ -63,13 +72,16 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       choice: z.enum(["agreed", "counter_check"]),
       language: z.string().trim().min(2).max(8),
       inquiryId: z.string().trim().min(1).max(80).nullable().optional(),
+      copyVersion: z.string().trim().min(1).max(80),
+      faceCropShown: z.boolean(),
     }).strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const saved = await storeConsent(db, actor, {
       clientId: body.data.clientId, choice: body.data.choice, language: body.data.language,
       inquiryId: body.data.inquiryId ?? null,
+      copyVersion: body.data.copyVersion, faceCropShown: body.data.faceCropShown,
     });
-    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, code: saved.error, message: saved.message });
     return saved.body;
   });
 
@@ -101,13 +113,21 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const actor = await who(req, reply);
     if (!actor) return;
     if (!hasBackendPermission(actor.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
+    const rawPep = req.body && typeof req.body === "object" ? (req.body as { pepAnswer?: unknown }).pepAnswer : undefined;
+    if (typeof rawPep === "boolean" || rawPep === "true" || rawPep === "false") {
+      return reply.code(409).send({
+        error: "pep_form_stale",
+        code: "pep_form_stale",
+        message: "This form is out of date. Reload the page and answer again.",
+      });
+    }
     const body = z.object({
       clientId: CLIENT_ID,
       noDoubts: z.boolean(),
       detailsChanged: z.boolean(),
       doubtReason: z.string().trim().max(500).optional(),
       dealId: z.string().trim().min(1).max(80).optional(),
-      pepAnswer: z.boolean(),
+      pepAnswer: z.enum(["yes", "no", "not_asked"]),
     }).strict().safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_request" });
     const saved = await recordReturning(db, actor, body.data);
@@ -170,6 +190,14 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const shown = await revealNumber(db, actor, req.params.recordId, body.data.reason, body.data.note, env());
     if (!shown.ok) return reply.code(shown.status).send({ error: shown.error, message: shown.message });
     return shown.body;
+  });
+
+  app.get<{ Params: { recordId: string } }>("/api/idv/checks/:recordId/reveals", async (req, reply) => {
+    const actor = await who(req, reply);
+    if (!actor) return;
+    const listed = await listReveals(db, actor, req.params.recordId);
+    if (!listed.ok) return reply.code(listed.status).send({ error: listed.error, message: listed.message });
+    return listed.body;
   });
 
   app.post<{ Params: { recordId: string } }>("/api/idv/checks/:recordId/face", async (req, reply) => {

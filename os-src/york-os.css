@@ -1293,6 +1293,7 @@ html[data-cdtheme="dark"] .tenant-logo { background: rgba(255,255,255,0.03); }
 html[data-cdtheme="dark"] #appbar { background: rgba(29,28,25,0.41); }
 html[data-cdtheme="dark"] .app-btn:hover { background: rgba(255,255,255,0.06); }
 html[data-cdtheme="dark"] .app-btn.is-active { background: rgba(255,255,255,0.08); }
+html[data-cdtheme="dark"] .app-btn.is-active .al { color: #f4f1ea; }
 html[data-cdtheme="dark"] #appbar.editing .app-btn { background: rgba(255,255,255,0.05); }
 html[data-cdtheme="dark"] .app-btn.dragging { background: #2c2b26 !important; box-shadow: 0 10px 24px -6px rgba(0,0,0,0.6), 0 0 0 1px var(--hair); }
 html[data-cdtheme="dark"] .app-badge { border-color: var(--bar); }
@@ -2288,6 +2289,11 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     border-top: 1px solid #E2DFD8;
     box-shadow: none;
   }
+  html[data-cdtheme="dark"] #phone-dock {
+    background: #1d1c19;
+    border-top-color: rgba(255,255,255,0.16);
+    --tab-inactive: rgba(236,234,227,0.62);
+  }
   #phonebar {
     height: var(--tabbar-h);
     display: flex;
@@ -2444,6 +2450,20 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      bottom of a tall one sat under the bar. Keep the scrim, and
      the panel, above it. */
   .fixed.inset-0 { bottom: var(--phone-dock-h) !important; }
+  /* An ID check sheet covers the deal, including the phone dock and
+     the fixed post bar. The dock inset must not leave that bar showing. */
+  [data-testid="id-check-flow"].fixed.inset-0,
+  [data-testid="id-check-reveal"].fixed.inset-0 {
+    bottom: 0 !important;
+    z-index: 9500 !important;
+  }
+  [data-testid="id-check-flow"] input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    flex: none;
+  }
   .fixed.inset-0 > div,
   .fixed.inset-0 > form,
   .fixed.inset-0 > section {
@@ -2495,7 +2515,7 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
      name, and the name collapsed to a word a line. */
   .client-file-head { flex-wrap: wrap; row-gap: 10px; }
   .client-file-head > .flex-1 { flex: 1 1 calc(100% - 88px); }
-  .client-file-name { white-space: nowrap; }
+  .client-file-name { white-space: normal; overflow-wrap: break-word; min-width: 0; }
   .client-file-actions {
     flex: 1 1 100%;
     width: 100%;
@@ -3071,22 +3091,27 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     content: none;
   }
   .cd-tx-blurb { display: none; }
+  .cd-tx-types-bar { min-width: 0; max-width: 100%; }
   .cd-tx-types {
     display: flex !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     gap: 8px;
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
-    /* 16px stands in for --page-gutter. The left inset is forced,
-       and scroll-padding keeps a programmatic scroll from eating it.
-       The mask fades the pills themselves. A wash painted in the
-       panel colour sat on pills of that same colour and disappeared. */
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
     padding: 8px 16px 12px !important;
-    scroll-padding-inline: 16px;
     grid-template-columns: none !important;
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 24px), transparent);
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .cd-tx-id-chip { display: none !important; }
+  /* The typed-by-hand chip stays on the phone deal. The other chips
+     stay hidden, and the nudge stays off this sheet. */
+  .cd-tx-id-chip.is-hand {
+    display: inline-flex !important;
+    flex: 1 1 100%;
+    max-width: 100%;
+    white-space: normal;
   }
   .cd-tx-types::-webkit-scrollbar { display: none; }
   .cd-tx-overlay .cd-tx-types button {
@@ -3128,6 +3153,15 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
     background: var(--gray-900, #1A1917) !important;
     color: #fff !important;
     border: none !important;
+  }
+  /* Dark ink flips to cream. A selected pill that keeps the light-theme
+     ink disappears on the night sheet. The words stay light. */
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on,
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on span {
+    color: #f6f4ef !important;
+  }
+  html[data-cdtheme="dark"] .cd-tx-overlay .cd-tx-types button.is-on {
+    background: #3c3a34 !important;
   }
   .cd-tx-types button svg { display: none; }
   .cd-tx-types button span {
@@ -3514,6 +3548,78 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
 }
 
 /* Frozen server quote. The twelve-place rate wraps inside the viewport. */
+/* While an ID check sheet is open, the deal's post bar stays off
+   the screen at every width. The sheet also covers it. */
+body[data-id-check="open"] .cd-tx-actions { display: none !important; }
+/* The check sheet dims the deal. It does not restyle the type chips.
+   An unselected chip stays the panel with an ink label. */
+body[data-id-check="open"] .cd-tx-types button {
+  transition: none !important;
+}
+body[data-id-check="open"] .cd-tx-types button:not(.is-on) {
+  background: var(--cd-panel, #fff) !important;
+  background-image: none !important;
+  color: var(--cd-ink, #0a0a0a) !important;
+}
+body[data-id-check="open"] .cd-tx-types button:not(.is-on) span {
+  color: var(--cd-ink, #0a0a0a) !important;
+}
+/* Where they are names the method and the date. The line wraps at
+   every width. It is not one clipped row. */
+.client-file { min-width: 0; max-width: 100%; }
+.client-where,
+.client-where-line {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.id-check-attest {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+.id-check-attest input { flex: none; }
+.id-check-attest span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+.id-check-skel {
+  height: 14px;
+  border-radius: 6px;
+  background: var(--cd-line, #E4E1D8);
+}
+.id-check-figure,
+[data-testid="id-check-masked"],
+[data-testid="id-check-badge"],
+[data-testid="id-check-record-line"],
+[data-testid="client-where"],
+[data-testid="identity-check"] {
+  font-variant-numeric: tabular-nums;
+}
+.win.max,
+.win.max .win-body {
+  background: var(--paper, #f6f4ef);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+[data-testid="id-check-flow"] button,
+[data-testid="id-check-flow"] input,
+[data-testid="id-check-flow"] select,
+[data-testid="id-check-reveal"] button,
+[data-testid="id-check-reveal"] input,
+[data-testid="id-check-reveal"] select {
+  font-family: "Archivo", system-ui, sans-serif;
+}
+
 .cd-quote-face { z-index: 99999; display: flex; flex-direction: column; box-sizing: border-box; background: var(--cd-ink, #1c1917); color: var(--cd-on-ink, #fff); }
 .cd-quote-head, .cd-quote-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 24px 40px; }
 .cd-quote-head { border-bottom: 1px solid var(--cd-on-ink-faint); }
