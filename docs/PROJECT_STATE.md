@@ -1,3 +1,11 @@
+## Sign-in screens, UI only (CD-277, 18 November 2026)
+
+The approved frames in `design/signin-sso-passkey-2026-11-18/` are on the desk as a new sign-in surface: passkey, Google, Microsoft, then email. States B through H are on the design preview. Flags `SIGNIN_PASSKEY`, `SIGNIN_GOOGLE`, and `SIGNIN_MICROSOFT` are off unless set. With all three off, `/login` is the sign-in that shipped before this change: email and password, no new buttons, and no new request. The new buttons call client stubs that return `not_available` and do not start OAuth, WebAuthn, or a session. That work is CD-273, CD-274, CD-275, and CD-276.
+
+Sol's email change, now matched to the redrawn frames: A and C show the email field and Continue with email. A2 opens the password under that field for every non-empty address, in 240ms, and does not look up the account or its methods. Frame D is titled "Confirm it's you." on one line, with "Use a passkey or the 6-digit code from your authenticator app." under it, plus Use a backup code. The word PIN is not on D. The teller till PIN on frame E stays. The last sign-in method in Settings cannot be removed. No password strength rule was added. Sign-up and onboarding were not edited.
+
+`/design-preview/signin` and `/design-preview/signin/<state>` render the frames with fake data. The server answers only for Host `currencydesk-staging.onrender.com` or localhost. Live hosts are 404. The page is noindex.
+
 ## Provider validation dependency composition (CD206, 17 November 2026)
 
 PR800's exact `964beadf` full fresh PostgreSQL run completed with 2323 passed,

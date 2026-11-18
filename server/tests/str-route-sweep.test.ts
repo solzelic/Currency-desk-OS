@@ -47,6 +47,8 @@ const EXPECTED: Record<string, { status: number; reason: string }> = {
   "/api/onboarding/:ref/resume": { status: 404, reason: "The sweep's ref is a setup reference, not a CurrencyDesk ID, so sign-up v2.1's resume does not know it." },
   "/api/onboarding/:ref/prices": { status: 404, reason: "The sweep's ref is a setup reference, not a CurrencyDesk ID, so sign-up v2.1's price quote for a desk does not know it." },
   "/api/onboarding/:ref/sso/:provider/start": { status: 503, reason: "No Google client is configured in tests, so sign-up v2.1's SSO door is closed." },
+  "/design-preview": { status: 404, reason: "The sign-in preview is only served under /design-preview/signin, so the bare path is closed." },
+  "/design-preview*": { status: 404, reason: "Anything under /design-preview that is not a named sign-in preview is closed." },
 };
 type Hit = { route: string; field: string; sample: string };
 
