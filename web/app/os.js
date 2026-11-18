@@ -3464,6 +3464,7 @@
         CHEQUE_NOT_HELD: "Somebody has already cleared, returned or reversed this cheque. Reopen the register to see where it stands.",
         CHEQUE_CURRENCY_NOT_HOME: "A cheque written in another currency is an exchange as well as a cheque — quote it on the exchange path first. Nothing was posted.",
         COMPLIANCE_BLOCKED: "This desk's compliance policy will not let this be posted. Identify the customer, or capture what the rules require, and try again.",
+        pep_form_stale: "This form is out of date. Reload the page and answer again.",
       };
       /* The teller sees this sentence for a duplicate already in progress,
          including when the response carries no message of its own. */
@@ -4372,6 +4373,32 @@
      object gets routed to the right place. */
   var DOCUMENT_FIELDS = { idType: "docType", idNum: "docNumber", idIssued: "issuedOn", idExpiry: "expiresOn" };
 
+  window.CDOS.Backend.IdCheck = {
+    checks: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId) + "/checks"); },
+    copy: function () { return request("/api/idv/consent-copy"); },
+    consent: function (body) { return request("/api/idv/consents", { method: "POST", body: JSON.stringify(body) }); },
+    start: function (clientId, tier) {
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId, tier: tier }) });
+    },
+    link: function (inquiryId) {
+      return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });
+    },
+    inPerson: function (body) { return request("/api/idv/checks/in-person", { method: "POST", body: JSON.stringify(body) }); },
+    returning: function (body) { return request("/api/idv/checks/returning", { method: "POST", body: JSON.stringify(body) }); },
+    reveal: function (recordId, body) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/reveal", { method: "POST", body: JSON.stringify(body) });
+    },
+    reveals: function (recordId) { return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/reveals"); },
+    face: function (recordId, body) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/face", { method: "POST", body: JSON.stringify(body) });
+    },
+    linkDeal: function (recordId, dealId) {
+      return request("/api/idv/checks/" + encodeURIComponent(recordId) + "/deal", { method: "POST", body: JSON.stringify({ dealId: dealId }) });
+    },
+    settings: function () { return request("/api/settings/idv"); },
+    saveSettings: function (body) { return request("/api/settings/idv", { method: "PUT", body: JSON.stringify(body) }); },
+  };
+
   window.CDOS.Backend.Clients = {
     RISK_IN: RISK_IN,
     RISK_OUT: RISK_OUT,
@@ -4381,8 +4408,10 @@
     list: function () { return request("/api/clients"); },
     get: function (clientId) { return request("/api/clients/" + encodeURIComponent(clientId)); },
     idvStatus: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId)); },
-    startIdv: function (clientId) {
-      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId }) });
+    startIdv: function (clientId, tier) {
+      var body = { clientId: clientId };
+      if (tier) body.tier = tier;
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify(body) });
     },
     /* Settings → Accepted IDs. The read is anybody's; `canChange` says
        whether this person may switch types. The write takes catalogue
@@ -4732,6 +4761,48 @@ if (typeof window !== "undefined") {
   const deskTime = window.CDOS.deskTime;
   const deskDay = window.CDOS.deskDay;
   /* ---- shared compliance computation (also used by the app-bar badge) ---- */
+  /* The server standing is the only ID on file answer. Until that
+     read arrives, the desk says it is still checking. Typed papers
+     on the contact are not a pass. */
+  function idFileKyc(rec) {
+    /* A failed read is not on file, even when an older pass is still
+       on the contact. The chip must not treat that pass as current. */
+    if (rec && rec.idCheckError) return "missing ID";
+    const standing = rec && rec.idStanding;
+    if (!standing) return "Checking ID";
+    if (standing.onFile) return "ok";
+    if (standing.chip === "ID expired") return "ID expired";
+    return "missing ID";
+  }
+  /* The words a reader prints. idFileKyc stays the gate answer
+     (ok, or not). A typed ID with no check record is this sentence
+     on every reader. A real check state keeps that sentence. */
+  function idStandingLabel(rec) {
+    if (rec && rec.idCheckError) return rec.idCheckError;
+    const state = idFileKyc(rec);
+    const chip = rec && rec.idStanding && rec.idStanding.chip;
+    if (state === "ok") return chip || "ID on file";
+    if (chip === "ID typed by hand, not checked") return chip;
+    if (state === "Checking ID" || state === "ID expired") return state;
+    if (chip && chip !== "Missing ID") return chip;
+    return state || "missing ID";
+  }
+  /* A passed or paid check uses the neutral chip, the same family as
+     the other status chips. It does not use the green success token.
+     A hand-typed ID stays the grey mute chip, and it uses a different
+     icon, so the two chips are not the same colour with the same mark. */
+  function idBadgeTone(kind) {
+    if (kind === "checked") return {
+      c: CD.ink,
+      bg: CD.chip,
+      icon: "checkcircle"
+    };
+    return {
+      c: CD.mute,
+      bg: CD.lineSoft,
+      icon: "alert"
+    };
+  }
   function computeFlags(rows, clients, settings) {
     const map = {};
     const countsForLctr = window.CDOS.countsForLctr || function () {
@@ -4850,8 +4921,10 @@ if (typeof window !== "undefined") {
       });
       const agg24 = hours != null && TH != null && !single && above(agg24Sum) && isClusterEnd;
       const rec = clients[row.customer];
-      let kyc = 'ok';
-      if (!rec || !rec.idType || !rec.idNum) kyc = 'missing ID';else if (rec.idExpiry && rec.idExpiry < businessDate()) kyc = 'ID expired';else if (settings.requireIdPhoto && !rec.photo) kyc = 'photo needed';
+      let kyc = idFileKyc(rec);
+      const label = idStandingLabel(rec);
+      const pep = !!(rec && rec.pepReview === "open");
+      if (kyc === "ok" && settings.requireIdPhoto && !(rec && rec.photo)) kyc = "photo needed";else if (kyc !== "ok" && label === "ID typed by hand, not checked") kyc = label;
       // ID is only REQUIRED once the deal reaches the owner's ID threshold (or the
       // mandatory reportable line). Below that a missing ID is a soft note the
       // teller can acknowledge — not a compliance warning and not a notification.
@@ -4896,6 +4969,7 @@ if (typeof window !== "undefined") {
         kyc,
         idNeeded,
         idFloor,
+        pep,
         void: false
       };
     });
@@ -6402,6 +6476,9 @@ if (typeof window !== "undefined") {
   window.CDOS = Object.assign(window.CDOS || {}, {
     computeFlags,
     computeAlerts,
+    idFileKyc,
+    idStandingLabel,
+    idBadgeTone,
     Audit,
     Calc,
     ReceiptModal,
@@ -10522,8 +10599,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
     }), " ", exported ? 'Downloaded' : 'Export CSV')))), tab === 'clients' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "users",
       title: "Clients \xB7 KYC",
-      sub: "Defaults and identity checks for the Clients app \u2014 these drive the KYC status badges on every contact."
-    }), /*#__PURE__*/React.createElement("div", {
+      sub: "Defaults and identity checks for the Clients app. These drive the KYC status badges on every contact."
+    }), window.CDOS.IdCheck ? /*#__PURE__*/React.createElement(window.CDOS.IdCheck.Settings, null) : null, /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mb-1",
       style: {
         color: CD.faint,
@@ -10568,7 +10645,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         color: CD.mute,
         maxWidth: 620
       }
-    }, "Your own client risk ratings \u2014 staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check."), /*#__PURE__*/React.createElement("div", {
+    }, "Your own client risk ratings. Staff set a tier on each contact's profile, so you can show regulators you run your own risk model. Add a short note describing what each tier means at your desk. High-risk automatically deepens the recommended ID check."), /*#__PURE__*/React.createElement("div", {
       className: "space-y-2"
     }, (window.CDOS.RISK_TIERS || ['Normal', 'Low', 'Medium', 'High']).map(r => {
       const tn = window.CDOS.riskTone(r);
@@ -10600,8 +10677,8 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         placeholder: {
           Normal: 'Standard walk-in activity',
           Low: 'Known, established, low-risk',
-          Medium: 'Elevated — enhanced due diligence',
-          High: 'High-risk — deepest checks & monitoring'
+          Medium: 'Elevated, enhanced due diligence',
+          High: 'High-risk, deepest checks and monitoring'
         }[r],
         className: "flex-1 text-[12.5px] px-2.5 py-1.5 outline-none",
         style: {
@@ -10616,12 +10693,12 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: esc ? CD.flag : CD.faint,
           fontFamily: 'Space Mono, monospace'
         }
-      }, esc ? 'escalates' : '—'));
+      }, esc ? 'escalates' : 'Not set'));
     })), /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement(Row, {
       title: "Also escalate Medium-risk to a full check",
-      desc: "Off by default \u2014 Medium stays a lighter, recommended check; High always escalates."
+      desc: "Off by default. Medium stays a lighter, recommended check. High always escalates."
     }, /*#__PURE__*/React.createElement(Sw, {
       on: !!settings.escalateMediumRisk,
       click: () => toggleSet('escalateMediumRisk', 'Escalate medium-risk')
@@ -10750,7 +10827,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
             }
           }));
         },
-        placeholder: "\u2014",
+        placeholder: "Not set",
         className: "text-sm px-1.5 py-1 outline-none text-right w-full bg-transparent",
         style: {
           fontVariantNumeric: 'tabular-nums'
@@ -25764,7 +25841,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   /* A total across currencies, or nothing. One leg this desk cannot price
      makes the whole total unknown; a sum quietly missing a currency looks
      complete and is the shape of wrong this project keeps finding. */
-  const fmtHome = v => v == null ? '—' : fmt(v, homeCcy());
+  const fmtHome = v => v == null ? 'None yet' : fmt(v, homeCcy());
   const initials = n => (n || '?').split(/[\s.]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
   const ageFrom = dob => {
     if (!dob) return null;
@@ -25801,27 +25878,22 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   // (Missing ID, ID expired, ID expiring, or ID on hand).
   // Screened, Verified, and Verified Plus are returned only when kycTier
   // finds a completed approved check. Nothing writes one now.
-  function kycStatus(rec, settings, name) {
-    const tier = kycTier(name);
-    /* Has this document expired? A question about the calendar, so the
-       WALL CLOCK — but read now rather than from the snapshot taken when
-       the page loaded, which on a desk left open overnight went on saying
-       an ID expiring at midnight was still valid. */
-    const expired = rec && rec.idExpiry && rec.idExpiry < window.CDOS.wallClock();
-    // Returned only when an approved check of that tier is already on file.
-    if (tier === 'plus') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified Plus', CD.green, CD.greenSoft];
-    if (tier === 'verify') return expired ? ['ID expired', CD.flag, CD.flagSoft] : ['Verified', CD.green, CD.greenSoft];
-    // An approved quick check on file. Nothing writes one now.
-    if (tier === 'quick') return ['Screened', CD.amber, CD.amberSoft];
-    // no provider check on file — judge by the ID the desk is holding
-    if (!rec || !rec.idType || !rec.idNum) return ['Missing ID', CD.flag, CD.flagSoft];
-    if (expired) return ['ID expired', CD.flag, CD.flagSoft];
-    const warn = settings && +settings.idExpiryWarnDays;
-    if (warn && rec.idExpiry) {
-      const days = (new Date(rec.idExpiry) - new Date(window.CDOS.wallClock())) / 86400000;
-      if (days >= 0 && days <= warn) return ['ID expiring', CD.amber, CD.amberSoft];
+  function kycStatus(rec) {
+    if (rec && rec.idCheckError) return [rec.idCheckError, CD.mute, CD.lineSoft];
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    if (state === 'ok') {
+      const tone = window.CDOS.idBadgeTone('checked');
+      return [rec.idStanding && rec.idStanding.chip || 'ID on file', tone.c, tone.bg];
     }
-    return ['ID on hand', CD.amber, CD.amberSoft];
+    if (state === 'ID expired') return ['ID expired', CD.flag, CD.flagSoft];
+    if (state === 'Checking ID') return ['Checking ID', CD.mute, CD.lineSoft];
+    const chip = rec && rec.idStanding && rec.idStanding.chip;
+    if (chip === 'ID typed by hand, not checked') {
+      const tone = window.CDOS.idBadgeTone('hand');
+      return [chip, tone.c, tone.bg];
+    }
+    if (chip && chip !== 'Missing ID') return [chip, CD.flag, CD.flagSoft];
+    return [chip || 'Missing ID', CD.flag, CD.flagSoft];
   }
   const isVerified = s => s === 'Verified' || s === 'Verified Plus';
   function clientStats(rows, name) {
@@ -25960,7 +26032,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         color: value ? CD.ink : CD.faint,
         fontVariantNumeric: mono ? 'tabular-nums' : 'normal'
       }
-    }, value || '—')));
+    }, value || 'Not set')));
   }
   function EditField({
     label,
@@ -26466,7 +26538,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           color: CD.green,
           fontWeight: 600
         }
-      }, x.outAmt === '' ? '—' : num(x.outAmt), " ", /*#__PURE__*/React.createElement("span", {
+      }, x.outAmt === '' ? 'Not set' : num(x.outAmt), " ", /*#__PURE__*/React.createElement("span", {
         style: {
           color: CD.faint,
           fontWeight: 400
@@ -26484,7 +26556,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           fontSize: 10,
           color: CD.mute
         }
-      }, v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || '—'));
+      }, v ? 'VOID' : [f.single ? 'RPT' : '', f.str ? 'STR' : '', f.kyc && f.kyc !== 'ok' ? 'ID' : ''].filter(Boolean).join(' ') || 'Not set'));
     }))));
   }
 
@@ -26687,7 +26759,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.ink,
         fontVariantNumeric: 'tabular-nums'
       }
-    }, st.last || '—')))), /*#__PURE__*/React.createElement("div", {
+    }, st.last || 'Not set')))), /*#__PURE__*/React.createElement("div", {
       className: "p-5"
     }, (rec.email || rec.phone) && /*#__PURE__*/React.createElement("div", {
       className: "flex flex-wrap gap-x-5 gap-y-1 mb-3"
@@ -27001,7 +27073,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       style: {
         color: CD.faint
       }
-    }, "No beneficiaries on file. ", canEdit ? `Add who ${first} sends money to — it'll be ready at the counter.` : ''), edit && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Tx.BeneficiaryModal, {
+    }, "No beneficiaries on file. ", canEdit ? `Add who ${first} sends money to. It will be ready at the counter.` : ''), edit && /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement(Tx.BeneficiaryModal, {
       init: edit === 'new' ? null : edit,
       sender: name,
       lockSender: true,
@@ -27077,7 +27149,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     settings,
     canEdit,
     onOpenLedger,
-    onFixId
+    onFixId,
+    standing
   }) {
     const live = mine.filter(r => r.status !== 'void');
     const rpt = live.filter(r => {
@@ -27092,7 +27165,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       const f = flags[r.id] || {};
       return f.kyc && f.kyc !== 'ok';
     });
-    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : !rec || !rec.idType || !rec.idNum ? 'missing ID' : null;
+    const idState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const papers = !!(rec && rec.idType && rec.idNum);
+    const handTyped = standing && standing.chip === 'ID typed by hand, not checked' && !(rec && rec.idCheckError);
+    const fromCheck = rec && rec.idCheckError ? rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.gap : idState === 'ok' ? null : idState;
+    const kycReason = kycRow ? (flags[kycRow.id] || {}).kyc : fromCheck;
     const strAgg = strRows.reduce((m, r) => Math.max(m, (flags[r.id] || {}).agg || 0), 0);
     const win = settings && +settings.structuringDays || 7;
     const open = rpt.length + (strRows.length ? 1 : 0) + (kycReason ? 1 : 0);
@@ -27132,13 +27209,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "checkcircle",
       s: 15,
       c: CD.green
-    }), " No open flags \u2014 reportables filed, ID on file, no structuring pattern.") : /*#__PURE__*/React.createElement("div", {
+    }), " No open flags. Reportables filed, ID on file, no structuring pattern.") : /*#__PURE__*/React.createElement("div", {
       className: "space-y-2"
     }, rpt.length > 0 && /*#__PURE__*/React.createElement(CompRow, {
       tone: CD.flag,
       soft: CD.flagSoft,
       icon: "alert",
-      title: "Reportable \u2014 not yet filed",
+      title: "Reportable, not yet filed",
       sub: `${rpt.length} transaction${rpt.length === 1 ? '' : 's'} over the reporting threshold awaiting a report.`,
       actionLabel: "Review & file",
       onAction: () => onOpenLedger(name)
@@ -27155,7 +27232,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       soft: CD.flagSoft,
       icon: "id",
       title: "KYC / ID gap",
-      sub: `Identification issue: ${kycReason}.`,
+      sub: `Identification issue: ${kycReason}${/[.!?]$/.test(String(kycReason)) ? '' : '.'}`,
       actionLabel: canEdit ? 'Fix ID' : null,
       onAction: onFixId
     })));
@@ -27436,144 +27513,107 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     clientId,
     canEdit
   }) {
-    const [status, setStatus] = useState('');
-    const [checksOn, setChecksOn] = useState(false);
-    const [note, setNote] = useState('');
-    const [busy, setBusy] = useState(false);
-    const [loaded, setLoaded] = useState(false);
-    const [tick, setTick] = useState(0);
-    const labels = {
-      starting: 'Starting',
-      'in progress': 'In progress',
-      'needs review': 'Needs review',
-      'Check passed': 'Check passed',
-      'Check passed (test)': 'Check passed (test)',
-      declined: 'Declined',
-      failed: 'Failed',
-      expired: 'Expired'
-    };
-    useEffect(() => {
-      if (!clientId) return undefined;
-      let live = true;
-      setLoaded(false);
-      setStatus('');
-      let timer = 0;
-      const open = value => value === 'starting' || value === 'in progress' || value === 'needs review';
-      const pull = () => {
-        const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-        if (!api || !api.idvStatus) return;
-        api.idvStatus(clientId).then(body => {
-          if (!live) return;
-          const next = body && typeof body.status === 'string' ? body.status : '';
-          setStatus(next);
-          setChecksOn(!!(body && body.checksEnabled));
-          setLoaded(true);
-          if (open(next)) timer = window.setTimeout(pull, next === 'needs review' ? 60000 : 4000);
-        }).catch(() => {
-          if (live) {
-            setLoaded(true);
-            setNote('The identity check status could not be read.');
-          }
-        });
-      };
-      pull();
-      return () => {
-        live = false;
-        window.clearTimeout(timer);
-      };
-    }, [clientId, tick]);
-    const start = () => {
-      const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.startIdv || busy) return;
-      setBusy(true);
-      setNote('');
-      api.startIdv(clientId).then(body => {
-        if (body && body.connected === false) {
-          setNote(body.message || 'Identity checks are not connected.');
-          setBusy(false);
-          return;
-        }
-        setStatus('starting');
-        setTick(n => n + 1);
-        setBusy(false);
-      }).catch(err => {
-        setNote(err && err.message || 'The identity check could not be started.');
-        setBusy(false);
-      });
-    };
-    const label = status === 'approved' ? 'Check passed' : labels[status] || (status ? 'Recorded' : '');
-    const passed = label === 'Check passed' || label === 'Check passed (test)';
-    return /*#__PURE__*/React.createElement("div", {
-      "data-testid": "identity-check",
-      className: "mb-3 p-3.5",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 12
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-1.5",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, "Identity check"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-wrap"
-    }, /*#__PURE__*/React.createElement("span", {
-      "data-testid": "identity-check-status",
-      className: "text-[12.5px]",
-      style: {
-        color: CD.ink
-      }
-    }, loaded ? label || 'No check has been started for this client.' : 'Reading the identity check.'), canEdit && checksOn && !passed && /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: start,
-      disabled: busy,
-      className: "text-[12px] font-medium px-2.5 py-1",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        color: CD.ink,
-        background: 'transparent'
-      }
-    }, busy ? 'Starting' : 'Start identity check')), note && /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] mt-1.5",
-      style: {
-        color: CD.flag
-      }
-    }, note), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] mt-1.5",
-      style: {
-        color: CD.mute
-      }
-    }, "ID details from this check are not saved on the desk. Enter the ID with Fix ID."), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11.5px] mt-1.5",
-      style: {
-        color: CD.mute
-      }
-    }, "Persona's ID photo and selfie are not copied to this desk."));
+    if (window.CDOS.IdCheck) return /*#__PURE__*/React.createElement(window.CDOS.IdCheck.Panel, {
+      clientId: clientId,
+      canEdit: canEdit
+    });
+    return null;
   }
   function ProcessStanding({
     rec,
-    settings
+    settings,
+    standing
   }) {
-    const status = rec && rec.verificationStatus;
-    if (!status) return null;
     const idLine = window.CDOS.identificationLimit(settings);
     const reportLine = window.CDOS.reportingLimit(settings);
-    const standing = {
-      unverified: ['Not identified', 'No identity-document number is on this file yet.'],
-      identified: ['Identified', 'An identity document with a number is on file, and it has not expired.'],
-      expired: ['ID expired', 'The primary identity document is past its expiry. The till will not treat this customer as identified.'],
-      verified: ['Verified', 'The identity on file was authenticated. Adding or removing papers in the folder does not grant or remove that.']
-    }[status];
-    if (!standing) return null;
     const stated = idLine.amount != null && idLine.currency && reportLine.amount != null && reportLine.currency;
-    const rule = stated ? `This desk asks for identification at ${idLine.label} and a ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
-    const tone = status === 'identified' || status === 'verified' ? CD.green : CD.flag;
-    const soft = status === 'identified' || status === 'verified' ? CD.greenSoft : CD.flagSoft;
+    const article = reportLine.code === 'LCTR' || /^[AEIOU]/i.test(reportLine.code || '') ? 'an' : 'a';
+    const rule = stated ? `This desk asks for identification at ${idLine.label} and ${article} ${reportLine.code} at ${reportLine.label}.` : 'This desk has no identification or reporting line stated, so neither number is shown here.';
+    const fail = rec && rec.idCheckError;
+    if (fail) {
+      return /*#__PURE__*/React.createElement("div", {
+        "data-tour": "identification",
+        "data-testid": "client-where",
+        className: "client-where mb-3 p-3.5 min-w-0 max-w-full",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] uppercase tracking-widest mb-1.5",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-start gap-2 min-w-0 max-w-full"
+      }, /*#__PURE__*/React.createElement(Pill, {
+        text: "Not identified",
+        c: CD.mute,
+        bg: CD.lineSoft
+      }), /*#__PURE__*/React.createElement("span", {
+        "data-testid": "client-where-line",
+        className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
+        style: {
+          color: CD.ink
+        }
+      }, rec.idCheckError)), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11.5px] mt-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, rule));
+    }
+    if (standing) {
+      const on = !!standing.onFile;
+      const checked = window.CDOS.idBadgeTone('checked');
+      const tone = on ? checked.c : CD.flag;
+      const soft = on ? checked.bg : CD.flagSoft;
+      return /*#__PURE__*/React.createElement("div", {
+        "data-tour": "identification",
+        "data-testid": "client-where",
+        className: "client-where mb-3 p-3.5 min-w-0 max-w-full",
+        style: {
+          background: CD.panel,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[10px] uppercase tracking-widest mb-1.5",
+        style: {
+          color: CD.faint,
+          fontFamily: 'Space Mono, monospace'
+        }
+      }, "Where they are"), /*#__PURE__*/React.createElement("div", {
+        className: "flex items-start gap-2 min-w-0 max-w-full"
+      }, /*#__PURE__*/React.createElement(Pill, {
+        text: standing.title,
+        c: tone,
+        bg: soft
+      }), /*#__PURE__*/React.createElement("span", {
+        "data-testid": "client-where-line",
+        className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
+        style: {
+          color: CD.ink
+        }
+      }, standing.line)), /*#__PURE__*/React.createElement("div", {
+        className: "text-[11.5px] mt-1.5",
+        style: {
+          color: CD.mute
+        }
+      }, rule));
+    }
+    const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const title = state === 'ID expired' ? 'ID expired' : state === 'ok' ? 'Identified' : state === 'Checking ID' ? 'Checking ID' : 'Not identified';
+    const line = rec && rec.idStanding && rec.idStanding.line || (state === 'Checking ID' ? 'Checking ID' : 'No identity-document number is on this file yet.');
+    const on = state === 'ok';
+    const checked = window.CDOS.idBadgeTone('checked');
+    const tone = on ? checked.c : CD.flag;
+    const soft = on ? checked.bg : CD.flagSoft;
     return /*#__PURE__*/React.createElement("div", {
       "data-tour": "identification",
+      "data-testid": "client-where",
       className: "mb-3 p-3.5",
       style: {
         background: CD.panel,
@@ -27587,17 +27627,18 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         fontFamily: 'Space Mono, monospace'
       }
     }, "Where they are"), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-wrap"
+      className: "flex items-start gap-2 min-w-0 max-w-full"
     }, /*#__PURE__*/React.createElement(Pill, {
-      text: standing[0],
+      text: title,
       c: tone,
       bg: soft
     }), /*#__PURE__*/React.createElement("span", {
-      className: "text-[12.5px]",
+      "data-testid": "client-where-line",
+      className: "client-where-line text-[12.5px] min-w-0 flex-1 break-words",
       style: {
         color: CD.ink
       }
-    }, standing[1])), /*#__PURE__*/React.createElement("div", {
+    }, line)), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
@@ -27818,6 +27859,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     reload
   }) {
     const [edit, setEdit] = useState(false); // always open read-only; Edit button enters edit mode
+    const [fixId, setFixId] = useState(false);
     const [intakeErr, setIntakeErr] = useState('');
     /* Every editor below writes through here, and where it lands — the
        person, an identity document, or a picture of one — is decided in
@@ -27892,7 +27934,54 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     const flags = useMemo(() => computeFlags(rows, clients, settings), [rows, clients, settings]);
     const mine = useMemo(() => rows.filter(r => r.customer === name).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)), [rows, name]);
     const st = clientStats(rows, name);
-    const [stat, col, bg] = kycStatus(rec, settings, name);
+    const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState('');
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      const clientId = rec && rec.clientId;
+      if (!api || !clientId) return undefined;
+      let live = true;
+      const pull = () => {
+        api.checks(clientId).then(body => {
+          if (!live) return;
+          setReadError('');
+          setStanding(body && body.standing ? body.standing : null);
+        }).catch(() => {
+          if (live) {
+            setStanding(null);
+            setReadError('Could not read the ID check. Try again.');
+          }
+        });
+      };
+      const onStanding = event => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        pull();
+      };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        pull();
+      };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => {
+        live = false;
+        window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
+      };
+    }, [rec && rec.clientId]);
+    const shown = readError ? {
+      ...rec,
+      idCheckError: readError
+    } : rec;
+    const [fallbackStat, fallbackCol, fallbackBg] = kycStatus(shown);
+    const failedRead = !!(readError || rec && rec.idCheckError);
+    const handTyped = !failedRead && standing && standing.chip === 'ID typed by hand, not checked';
+    const stat = failedRead ? readError || rec.idCheckError : handTyped ? 'ID typed by hand, not checked' : standing ? standing.chip : fallbackStat;
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const col = failedRead || handTyped ? handTone.c : standing ? standing.onFile ? checkedTone.c : CD.flag : fallbackCol;
+    const bg = failedRead || handTyped ? handTone.bg : standing ? standing.onFile ? checkedTone.bg : CD.flagSoft : fallbackBg;
     const corp = rec.kind === 'corporate';
     const reportable = mine.filter(r => (flags[r.id] || {}).single).length;
     const addr = fullAddr(rec);
@@ -27946,7 +28035,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 flex-wrap"
     }, /*#__PURE__*/React.createElement("span", {
-      className: "client-file-name text-[20px] font-bold",
+      className: "client-file-name text-[20px] font-bold min-w-0",
       style: {
         color: CD.ink
       }
@@ -27954,11 +28043,30 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       text: corp ? 'Corporate' : 'Individual',
       c: CD.mute,
       bg: CD.lineSoft
-    }), /*#__PURE__*/React.createElement(Pill, {
+    }), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "client-standing"
+    }, /*#__PURE__*/React.createElement(Pill, {
       text: stat,
       c: col,
       bg: bg
-    }), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
+    })), failedRead && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again"), normalizeRisk(rec.risk) !== 'Normal' && /*#__PURE__*/React.createElement(Pill, {
       text: normalizeRisk(rec.risk) + ' risk',
       c: riskTone(rec.risk).c,
       bg: riskTone(rec.risk).bg
@@ -27967,13 +28075,13 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       body: "Two independent reads on this contact: the KYC status is the ID you hold on file; the risk rating is the tier you've assigned for your own compliance.",
       lines: [{
         k: 'Verified',
-        v: 'ID on file & valid'
+        v: 'ID on file and valid'
       }, {
         k: 'Missing ID',
         v: 'no ID captured yet'
       }, {
         k: 'ID expiring',
-        v: 'expires soon — re-collect'
+        v: 'expires soon, re-collect'
       }, {
         k: 'Risk tier',
         v: 'Normal · Low · Medium · High'
@@ -28062,7 +28170,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       n: "x",
       s: 18
     })))), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 overflow-auto px-6 py-5"
+      className: "flex-1 overflow-auto px-6 py-5 min-w-0 max-w-full"
     }, (rec.possibleDuplicate || (rec.sameNameClientIds || []).length > 0) && /*#__PURE__*/React.createElement("div", {
       className: "mb-4 flex items-start gap-2.5 px-3.5 py-3",
       style: {
@@ -28086,16 +28194,18 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     }, rec.duplicateReason))), /*#__PURE__*/React.createElement(ClientCompliance, {
       name: name,
-      rec: rec,
+      rec: shown,
       mine: mine,
       flags: flags,
       settings: settings,
       canEdit: canEdit,
       onOpenLedger: onOpenLedger,
-      onFixId: () => setEdit(true)
+      onFixId: () => setFixId(true),
+      standing: readError ? null : standing
     }), /*#__PURE__*/React.createElement(ProcessStanding, {
-      rec: rec,
-      settings: settings
+      rec: shown,
+      settings: settings,
+      standing: readError ? null : standing
     }), rec && rec.clientId ? /*#__PURE__*/React.createElement(IdentityCheck, {
       clientId: rec.clientId,
       canEdit: canEdit
@@ -28605,7 +28715,14 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       flags: flags,
       onOpen: () => onOpenLedger(name),
       highlightRef: highlightTx
-    })))));
+    })))), fixId && window.CDOS.RecordIdSheet && React.createElement(window.CDOS.RecordIdSheet, {
+      name,
+      rec,
+      setClients,
+      log,
+      onClose: () => setFixId(false),
+      onDone: () => setFixId(false)
+    }));
   }
 
   /* ---------- NEW CONTACT ---------- */
@@ -28782,7 +28899,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       list.forEach(c => {
         if ((c.rec.kind || 'individual') === 'corporate') corp++;else ind++;
         const [s] = kycStatus(c.rec, settings, c.name);
-        if (isVerified(s)) ver++;else att++;
+        if (c.rec.idStanding ? c.rec.idStanding.onFile : isVerified(s)) ver++;
+        if (c.rec.idStanding ? !c.rec.idStanding.onFile : !isVerified(s)) att++;
       });
       return {
         all: list.length,
@@ -28797,8 +28915,8 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       if (filter === 'individual' && (r.kind || 'individual') !== 'individual') return false;
       if (filter === 'corporate' && r.kind !== 'corporate') return false;
       const [s] = kycStatus(r, settings, c.name);
-      if (filter === 'verified' && !isVerified(s)) return false;
-      if (filter === 'attention' && isVerified(s)) return false;
+      if (filter === 'verified' && !(r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
+      if (filter === 'attention' && (r.idStanding ? r.idStanding.onFile : isVerified(s))) return false;
       if (!q) return true;
       const files = (r.docs || []).map(d => `${d.label || ''} ${d.fileName || ''}`).join(' ');
       /* A health number is never searched, even one still cached. */
@@ -28943,6 +29061,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       }
     }, FILTERS.map(([id, label, n]) => /*#__PURE__*/React.createElement("button", {
       key: id,
+      "data-testid": `client-filter-${id}`,
       onClick: () => setFilter(id),
       className: "text-[12px] px-2.5 py-1.5 font-medium flex items-center gap-1.5",
       style: {
@@ -29075,15 +29194,17 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         c: col,
         bg: bg
       })), /*#__PURE__*/React.createElement("div", {
-        className: "grid grid-cols-3",
+        className: "grid",
         style: {
-          borderTop: `1px solid ${CD.lineSoft}`
+          borderTop: `1px solid ${CD.lineSoft}`,
+          gridTemplateColumns: 'auto minmax(7.6rem, 1.7fr) minmax(0, 1fr)'
         }
-      }, [['TXNS', String(c.st.n)], ['VOLUME', fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || '—']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
+      }, [['TXNS', String(c.st.n)], ['VOLUME', c.st.vol == null ? 'None yet' : fmtHome(c.st.vol)], ['LAST SEEN', c.st.last || 'Not set']].map(([l, v], i) => /*#__PURE__*/React.createElement("div", {
         key: l,
-        className: "px-3 py-2.5",
+        className: "px-2.5 py-2.5",
         style: {
-          borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none'
+          borderLeft: i ? `1px solid ${CD.lineSoft}` : 'none',
+          minWidth: 0
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[8.5px] uppercase tracking-widest",
@@ -29092,11 +29213,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
           fontFamily: 'Space Mono, monospace'
         }
       }, l), /*#__PURE__*/React.createElement("div", {
-        className: "text-[12.5px] font-bold truncate",
+        className: "text-[12.5px] font-bold",
         style: {
           color: CD.ink,
           fontFamily: 'Space Mono, monospace',
-          fontVariantNumeric: 'tabular-nums'
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap'
         }
       }, v)))));
     })), /*#__PURE__*/React.createElement("p", {
@@ -29321,6 +29443,11 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
             await shared.record(clientId, payload);
           }
           setClients(prev => shared.project(prev));
+          if (clientId) window.dispatchEvent(new CustomEvent('cdos-id-standing', {
+            detail: {
+              clientId
+            }
+          }));
         } else {
           const today = stampToday();
           setClients(c => ({
@@ -30015,6 +30142,12 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     effectiveRate,
     RATE_NOTE
   } = window.CDOS;
+  const spokenDay = iso => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || "";
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const parts = String(iso).split("-");
+    return months[Number(parts[1]) - 1] + " " + Number(parts[2]) + ", " + parts[0];
+  };
 
   /* THE DESK'S OWN CURRENCY, ONCE.
       Sixty-five `'CAD'` literals stood in this file. Some named a Canadian
@@ -30407,14 +30540,67 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         topCcy
       };
     }, [name, live, settings]);
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
-    const idOk = !idMissing && !idExpired;
-    const idTone = idOk ? CD.green : CD.flag;
-    /* Papers on file, not a verification: nothing on this desk checks
-       an ID with a provider. A health number is never shown, even masked. */
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID on file';
-    const maskedId = rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? '••••' + String(rec.idNum).slice(-3) : '';
+    const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) {
+        setStanding(null);
+        return undefined;
+      }
+      let liveFlag = true;
+      const pull = () => {
+        api.checks(id).then(body => {
+          if (liveFlag) {
+            setReadError("");
+            setStanding(body && body.standing || null);
+          }
+        }).catch(() => {
+          if (liveFlag) {
+            setStanding(null);
+            setReadError("Could not read the ID check. Try again.");
+          }
+        });
+      };
+      const onStanding = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => {
+        liveFlag = false;
+        window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
+      };
+    }, [rec && rec.clientId]);
+    const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = readError ? {
+      ...(rec || {}),
+      idCheckError: readError
+    } : standingNow ? {
+      ...(rec || {}),
+      idStanding: standingNow,
+      idCheckError: undefined
+    } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip follows the server standing only. Typed papers do not count.
+       A failed read is neutral. It is not a pass, so it is not green. */
+    const unread = !!(readError || rec && rec.idCheckError);
+    const idOk = !unread && kycState === 'ok';
+    const handTyped = !unread && !!(viewed && viewed.idStanding && viewed.idStanding.chip === 'ID typed by hand, not checked');
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
+    const idLabel = unread ? readError || rec.idCheckError : idOk ? viewed.idStanding && viewed.idStanding.chip || 'ID on file' : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const maskedId = papersMissing || !rec.idNum || window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -30477,26 +30663,44 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
         color: CD.mute
       }
     }, s.count > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, s.count, " deal", s.count !== 1 ? 's' : '', " \xB7 ", lastLabel) : 'No prior deals at this desk')), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "ledger-id-badge",
       className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
       style: {
-        background: idOk ? CD.greenSoft : CD.flagSoft,
+        background: idOk ? checkedTone.bg : unread || handTyped || kycState === 'Checking ID' ? handTone.bg : CD.flagSoft,
         color: idTone,
         borderRadius: 999
       }
     }, /*#__PURE__*/React.createElement(Ic, {
-      n: idOk ? 'checkcircle' : 'alert',
+      n: idOk ? checkedTone.icon : handTone.icon,
       s: 12,
       c: idTone
-    }), " ", idLabel)), /*#__PURE__*/React.createElement("div", {
+    }), " ", idLabel), unread && rec && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again")), /*#__PURE__*/React.createElement("div", {
       className: "grid",
       style: {
         gridTemplateColumns: '1fr 1fr 1fr'
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
       label: "ID on file",
-      value: idMissing ? '—' : rec.idType || 'ID',
-      sub: idMissing ? 'collect below' : maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''),
-      tone: idMissing ? CD.flag : idExpired ? CD.flag : CD.ink
+      value: papersMissing ? 'Not set' : rec.idType || 'ID',
+      sub: papersMissing ? 'collect below' : maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''),
+      tone: papersMissing ? CD.flag : idOk ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: `Last ${s.winDays}d`,
       value: fmtHome(s.windowCad),
@@ -30505,7 +30709,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually buys",
-      value: s.topCcy || '—',
+      value: s.topCcy || 'None yet',
       sub: s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer',
       tone: CD.ink,
       divider: true
@@ -30878,7 +31082,7 @@ table.tx td{font-size:11.5px;padding:6px 9px;border-bottom:1px solid #f0efe9;}.r
     }, [customer, live, inCadEquiv]);
     const structuring = !single && customer && limit.amount != null && recentTotal != null && (reportCmp === 'gt' ? recentTotal > limit.amount : recentTotal >= limit.amount);
     const rec = clients[customer];
-    const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : !rec || !rec.idType || !rec.idNum ? 'missing ID' : rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok';
+    const kyc = newClient ? nc.idType && nc.idNum ? 'ok' : 'missing ID' : window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : !rec || !rec.idType || !rec.idNum ? "missing ID" : rec.idExpiry && rec.idExpiry < businessDate() ? "ID expired" : "ok";
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const governed = !!(packNow && packNow.packId || settings && settings.baselineRules);
     const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
@@ -31100,7 +31304,9 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       style: {
         color: CD.mute
       }
-    }, "Teller ", me.name, " \xB7 ", businessDate()))), /*#__PURE__*/React.createElement("button", {
+    }, "Teller ", me.name, " \xB7 ", spokenDay(businessDate())))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "aria-label": "Close ledger transaction",
       onClick: onClose,
       className: "p-1.5",
       style: {
@@ -31172,8 +31378,11 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         zIndex: 20
       }
     }, shownNames.map(n => {
-      const st = !clients[n] || !clients[n].idType || !clients[n].idNum ? 'missing ID' : clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'ID on file';
-      const ok = st === 'ID on file';
+      const person = clients[n] || {};
+      const failed = !!person.idCheckError;
+      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : !person.idType || !person.idNum ? 'missing ID' : 'ok';
+      const st = failed ? person.idCheckError : state === 'ok' ? person.idStanding && person.idStanding.chip || 'ID on file' : state;
+      const ok = !failed && state === 'ok';
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onClick: () => pickClient(n),
@@ -31186,8 +31395,8 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: ok ? CD.greenSoft : CD.flagSoft,
-          color: ok ? CD.green : CD.flag
+          background: failed ? CD.lineSoft : ok ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft,
+          color: failed ? CD.mute : ok ? window.CDOS.idBadgeTone('checked').c : CD.flag
         }
       }, st));
     }), shownNames.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -31686,12 +31895,13 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
     }, "Structuring watch \u2014 this client's ", settings.structuringDays, "-day total reaches ", fmtHome(recentTotal), " with this deal."), idRequired && /*#__PURE__*/React.createElement("div", {
       className: "text-[12px] flex items-center gap-1.5",
       style: {
-        color: kyc === 'ok' ? CD.green : CD.flag
+        color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
-      s: 13
-    }), " ", kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`)), single && /*#__PURE__*/React.createElement("div", {
+      s: 13,
+      c: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag
+    }), " ", kyc === 'ok' ? 'Customer ID on file. OK to proceed.' : `ID required at this amount. Customer ID is ${kyc}.`)), single && /*#__PURE__*/React.createElement("div", {
       className: "p-3 space-y-2.5",
       style: {
         background: 'var(--cd-panel)',
@@ -33153,6 +33363,14 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       }
     }, "The original was voided and kept on file."))), /*#__PURE__*/React.createElement(TxFlow, {
       row: row
+    }), window.CDOS.IdCheck && (row.clientId || clients[row.customer] && clients[row.customer].clientId) && /*#__PURE__*/React.createElement(window.CDOS.IdCheck.DealBar, {
+      clientId: row.clientId || clients[row.customer].clientId,
+      dealId: row.serverTransactionId || row.quoteRef || null,
+      onLinked: () => window.dispatchEvent(new CustomEvent("cdos-id-standing", {
+        detail: {
+          clientId: row.clientId || clients[row.customer].clientId
+        }
+      }))
     }), /*#__PURE__*/React.createElement("div", null, (() => {
       const kycBad = flag.kyc && flag.kyc !== 'ok' && flag.idNeeded;
       const flagCount = (flag.single ? 1 : 0) + (flag.str ? 1 : 0) + (kycBad ? 1 : 0);
@@ -33188,17 +33406,36 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         s: 12,
         c: "currentColor"
       }), " Acknowledge all"));
-    })(), !flag.single && !flag.str && (flag.kyc === 'ok' || !flag.idNeeded) && !(flag.kyc !== 'ok' && !flag.idNeeded) && /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px] flex items-center gap-1.5 px-3 py-2.5",
-      style: {
-        color: CD.green,
-        background: CD.greenSoft,
-        borderRadius: 9
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "checkcircle",
-      s: 14
-    }), " No flags \u2014 within thresholds, ID on file."), flag.single && /*#__PURE__*/React.createElement("div", {
+    })(), (() => {
+      const idLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(clients[row.customer]) : flag.kyc === 'ok' ? 'ID on file' : flag.kyc;
+      const handPosted = idLabel === 'ID typed by hand, not checked';
+      if (flag.single || flag.str) return null;
+      if (handPosted) return /*#__PURE__*/React.createElement("div", {
+        "data-testid": "posted-id-label",
+        className: "text-[12px] flex items-center gap-1.5 px-3 py-2.5",
+        style: {
+          color: CD.mute,
+          background: CD.lineSoft,
+          borderRadius: 9
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "alert",
+        s: 14,
+        c: CD.mute
+      }), " ID typed by hand, not checked");
+      if (flag.kyc === 'ok') return /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] flex items-center gap-1.5 px-3 py-2.5",
+        style: {
+          color: CD.green,
+          background: CD.greenSoft,
+          borderRadius: 9
+        }
+      }, /*#__PURE__*/React.createElement(Ic, {
+        n: "checkcircle",
+        s: 14
+      }), " No flags. Within thresholds, ID on file.");
+      return null;
+    })(), flag.single && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 mb-2",
       style: {
         background: isFiled ? CD.greenSoft : CD.flagSoft,
@@ -33275,7 +33512,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
         color: row.ackStr ? CD.mute : 'var(--cd-on-ink)',
         border: row.ackStr ? `1px solid ${CD.line}` : 'none'
       }
-    }, row.ackStr ? 'Reopen' : 'Acknowledge'))), flag.kyc && flag.kyc !== 'ok' && flag.idNeeded && /*#__PURE__*/React.createElement("div", {
+    }, row.ackStr ? 'Reopen' : 'Acknowledge'))), flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && flag.idNeeded && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5 flex items-center justify-between gap-2",
       style: {
         background: CD.flagSoft,
@@ -33306,7 +33543,7 @@ ${(parseFloat(fee) || 0) > 0 ? `<div class="r"><span class="k">Commission</span>
       n: "users",
       s: 13,
       c: "var(--cd-on-ink)"
-    }), " Open in Clients")), flag.kyc && flag.kyc !== 'ok' && !flag.idNeeded && /*#__PURE__*/React.createElement("div", {
+    }), " Open in Clients")), flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && !flag.idNeeded && /*#__PURE__*/React.createElement("div", {
       className: "px-3 py-2.5",
       style: {
         background: row.idNoteAcked ? CD.lineSoft : CD.amberSoft,
@@ -36483,16 +36720,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, shown.map(n => {
       const c = clients[n] || {};
-      const ver = (() => {
-        try {
-          return (window.CDOS.KYC && window.CDOS.KYC.checksFor(n) || []).some(k => (k.template === 'verify' || k.template === 'plus') && k.status === 'completed' && k.result && k.result.decision === 'approved');
-        } catch (e) {
-          return false;
-        }
-      })();
-      const st = !c.idType ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : ver ? 'verified' : 'ID on file';
-      const ok = st === 'verified';
-      const onfile = st === 'ID on file';
+      const failed = !!c.idCheckError;
+      const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : !c.idType || !c.idNum ? 'missing ID' : 'ok';
+      const st = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : failed ? c.idCheckError : state === 'ok' ? c.idStanding && c.idStanding.chip || 'ID on file' : state;
+      const onfile = !failed && state === 'ok';
+      const hand = st === 'ID typed by hand, not checked';
+      const tone = failed || hand ? window.CDOS.idBadgeTone('hand') : onfile ? window.CDOS.idBadgeTone('checked') : null;
       return /*#__PURE__*/React.createElement("button", {
         key: n,
         onMouseDown: e => e.preventDefault(),
@@ -36505,11 +36738,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           color: CD.ink
         }
       }, /*#__PURE__*/React.createElement("span", null, n), /*#__PURE__*/React.createElement("span", {
+        "data-testid": "suggest-id-chip",
         className: "text-[10px] px-1.5 py-0.5",
         style: {
           borderRadius: 4,
-          background: ok ? CD.greenSoft : onfile ? CD.amberSoft : CD.flagSoft,
-          color: ok ? CD.green : onfile ? CD.amber : CD.flag
+          background: tone ? tone.bg : CD.flagSoft,
+          color: tone ? tone.c : CD.flag
         }
       }, st));
     }), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
@@ -36577,39 +36811,94 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         top: Object.keys(cc).sort((a, b) => cc[b] - cc[a])[0] || null
       };
     }, [name, live, settings]);
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < TODAY;
-    const idOk = !idMissing && !idExpired;
-    // green ONLY after a real provider verification (Verified / Verified Plus).
-    // A typed / scanned ID with no KYC is amber “ID on file” — present, not verified.
-    const verified = (() => {
-      try {
-        const ch = window.CDOS.KYC && window.CDOS.KYC.checksFor(name) || [];
-        return ch.some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved');
-      } catch (e) {
-        return false;
+    const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) {
+        setStanding(null);
+        return undefined;
       }
-    })();
-    const badge = idMissing ? {
-      t: 'No ID',
-      c: CD.flag,
-      bg: CD.flagSoft,
-      ic: 'alert'
-    } : idExpired ? {
+      let live = true;
+      const pull = () => {
+        api.checks(id).then(body => {
+          if (live) {
+            setReadError("");
+            setStanding(body && body.standing || null);
+          }
+        }).catch(() => {
+          if (live) {
+            setStanding(null);
+            setReadError("Could not read the ID check. Try again.");
+          }
+        });
+      };
+      const onStanding = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
+      const onReread = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => {
+        live = false;
+        window.removeEventListener("cdos-id-standing", onStanding);
+        window.removeEventListener("cdos-id-reread", onReread);
+      };
+    }, [rec && rec.clientId, rec && rec.idType, rec && rec.idNum, rec && rec.idExpiry]);
+    const standingNow = readError || rec && rec.idCheckError ? null : standing || rec && rec.idStanding || null;
+    const viewed = readError ? {
+      ...(rec || {}),
+      idCheckError: readError
+    } : standingNow ? {
+      ...(rec || {}),
+      idStanding: standingNow,
+      idCheckError: undefined
+    } : rec;
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip and idOk follow the server standing only. Typed papers
+       do not count. PR 3 owns the posting gate. */
+    const unread = !!(readError || rec && rec.idCheckError);
+    const idOk = !unread && kycState === 'ok';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !unread && !!(viewed && viewed.idStanding && viewed.idStanding.chip === 'ID typed by hand, not checked');
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const badge = unread ? {
+      t: readError || rec.idCheckError,
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
+    } : idOk ? {
+      t: viewed.idStanding && viewed.idStanding.chip || 'ID on file',
+      c: checkedTone.c,
+      bg: checkedTone.bg,
+      ic: checkedTone.icon
+    } : kycState === 'ID expired' ? {
       t: 'ID expired',
       c: CD.flag,
       bg: CD.flagSoft,
       ic: 'alert'
-    } : verified ? {
-      t: 'ID verified',
-      c: CD.green,
-      bg: CD.greenSoft,
-      ic: 'checkcircle'
+    } : kycState === 'Checking ID' ? {
+      t: 'Checking ID',
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
+    } : handTyped ? {
+      t: 'ID typed by hand, not checked',
+      c: handTone.c,
+      bg: handTone.bg,
+      ic: handTone.icon
     } : {
-      t: 'ID on file',
-      c: CD.amber,
-      bg: CD.amberSoft,
-      ic: 'id'
+      t: 'Missing ID',
+      c: CD.flag,
+      bg: CD.flagSoft,
+      ic: 'alert'
     };
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const line = reportingLimit(settings).amount;
@@ -36666,7 +36955,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.mute
       }
     }, s.count > 0 ? `${s.count} deal${s.count !== 1 ? 's' : ''} · ${lastLbl}` : 'No prior deals here')), /*#__PURE__*/React.createElement("span", {
-      className: "flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium",
+      "data-testid": "deal-id-badge",
+      className: 'cd-tx-id-chip flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium' + (handTyped ? ' is-hand' : ''),
       style: {
         background: badge.bg,
         color: badge.c,
@@ -36676,17 +36966,34 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       n: badge.ic,
       s: 12,
       c: badge.c
-    }), " ", badge.t)), /*#__PURE__*/React.createElement("div", {
+    }), " ", badge.t), unread && (rec.idCheckTries || 0) >= 3 && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-try-again",
+      onClick: () => window.dispatchEvent(new CustomEvent("cdos-id-reread", {
+        detail: {
+          clientId: rec.clientId
+        }
+      })),
+      className: "text-[12px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 12px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: "var(--cd-panel)"
+      }
+    }, "Try again")), /*#__PURE__*/React.createElement("div", {
       className: "cd-tx-stats grid",
       style: {
         gridTemplateColumns: '1fr 1fr 1fr'
       }
     }, /*#__PURE__*/React.createElement(CCstat, {
-      label: "ID on file",
+      label: !papersMissing && !idOk ? 'Typed ID' : 'ID on file',
       sentence: phone,
-      value: idMissing ? '—' : rec.idType || 'ID',
-      sub: idMissing ? 'collect below' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
-      tone: idOk ? CD.ink : CD.flag
+      value: papersMissing ? 'Not set' : rec.idType || 'ID',
+      sub: papersMissing ? 'collect below' : !idOk ? rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'not checked' : rec.idExpiry ? `exp ${phone ? phoneDay(rec.idExpiry) : rec.idExpiry}` : 'on file',
+      tone: idOk || handTyped ? CD.ink : CD.flag
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: phone ? `Last ${s.winDays} days` : `Last ${s.winDays}d`,
       sentence: phone,
@@ -36696,7 +37003,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       divider: true
     }), /*#__PURE__*/React.createElement(CCstat, {
       label: "Usually",
-      value: s.top || '—',
+      value: s.top || 'None yet',
       sub: s.count > 0 ? s.total == null ? 'Rate unavailable' : `${fmt(s.total, deskHome())} lifetime` : 'new',
       tone: CD.ink,
       divider: true
@@ -36793,17 +37100,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
   function Check({
     ok,
     warn,
+    hand,
     label,
     sub,
     action,
     mark,
-    onActivate
+    onActivate,
+    testId
   }) {
+    const ticked = ok && !hand;
     const copy = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] leading-tight",
       style: {
-        color: ok ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute,
-        fontWeight: ok ? 500 : 400
+        color: hand ? CD.mute : ticked ? CD.ink : warn ? 'var(--cd-brass-text)' : CD.mute,
+        fontWeight: ticked ? 500 : 400
       }
     }, label), sub && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mt-0.5 leading-snug",
@@ -36812,25 +37122,27 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, sub), action);
     return /*#__PURE__*/React.createElement("div", {
+      "data-testid": testId || undefined,
       className: 'flex items-start gap-2 py-1.5' + (mark ? ' cd-tx-missing' : '')
     }, /*#__PURE__*/React.createElement("span", {
+      "data-testid": testId ? testId + '-mark' : undefined,
       className: "flex-none grid place-items-center",
       style: {
         width: 18,
         height: 18,
         borderRadius: '50%',
-        border: ok ? 'none' : `1.5px solid ${warn ? CD.amber : CD.line}`,
-        background: ok ? CD.green : 'transparent',
+        border: ticked ? 'none' : `1.5px solid ${hand ? CD.line : warn ? CD.amber : CD.line}`,
+        background: ticked ? CD.green : hand ? CD.lineSoft : 'transparent',
         marginTop: 1
       }
-    }, ok ? /*#__PURE__*/React.createElement(Ic, {
+    }, ticked ? /*#__PURE__*/React.createElement(Ic, {
       n: "check",
       s: 11,
       c: "var(--cd-on-ink)"
-    }) : warn ? /*#__PURE__*/React.createElement(Ic, {
+    }) : hand || warn ? /*#__PURE__*/React.createElement(Ic, {
       n: "alert",
       s: 11,
-      c: CD.amber
+      c: hand ? CD.mute : CD.amber
     }) : null), onActivate ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: onActivate,
@@ -37215,6 +37527,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const paused = window.CDOS.rulesMissing && window.CDOS.rulesMissing(settings);
     const idFloor = paused ? null : regime.idAt == null ? null : regime.idAt;
     const rec = clients[customer];
+    /* Posting still reads the typed papers. PR 3 is the deal gate.
+       This PR does not block a deal from this line. */
     const kyc = !rec || !rec.idType || !rec.idNum ? 'missing' : rec.idExpiry && rec.idExpiry < TODAY ? 'expired' : 'ok';
     /* Null-safe: with no threshold the honest answer is "cannot say", and
        coercing it makes `>= null` mean `>= 0` — every deal reportable. A
@@ -37262,6 +37576,11 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const overId = idAmount != null && inCadEquiv != null && (idCmp === 'gt' ? inCadEquiv > idAmount : inCadEquiv >= idAmount);
     const idRequired = !paused && (ukIdRequired != null ? ukIdRequired : aeTransfer ? true : ph ? unpriced || !idRow || idRow.threshold == null || overId : unpriced || single || idFloor == null || inCadEquiv >= idFloor || isSend);
     const idOk = kyc === 'ok';
+    /* Papers still pass the gate. A typed ID with no check on file
+       does not get a tick or a Ready, and the deal still posts. */
+    const fileState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : 'Checking ID';
+    const handLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(rec) : '';
+    const handPosted = !!customer && idOk && fileState !== 'ok' && handLabel === 'ID typed by hand, not checked';
     const recent = useMemo(() => {
       if (!customer) return {
         sum: 0,
@@ -37351,9 +37670,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     if (idRequired) reqs.push({
       key: 'id',
       ok: !!customer && idOk,
+      hand: handPosted,
       warn: !!customer && !idOk,
-      label: `${custLabel} identified`,
-      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)} — search or add them` : !idOk ? phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc} — fix on the client file` : null
+      label: handPosted ? 'ID typed by hand, not checked' : `${custLabel} identified`,
+      sub: !customer ? `ID required ${single ? `over ${limit.label}` : isSend ? 'for remittance' : idFloor == null ? 'on every deal' : 'over ' + fmt(idFloor, home)}. Search or add them` : !idOk ? phoneSheet ? 'ID not recorded yet' : `Their ID is ${kyc}. Fix it on the client file` : null
     });else reqs.push({
       key: 'cust',
       ok: !!customer.trim(),
@@ -38069,7 +38389,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       style: {
         color: CD.mute
       }
-    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneSheet ? phoneDay(TODAY) : TODAY))), /*#__PURE__*/React.createElement("button", {
+    }, meta.short, " \xB7 ", me.name, " \xB7 ", phoneDay(TODAY)))), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: requestClose,
       "aria-label": "Close",
@@ -38219,6 +38539,14 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rec: clients[customer],
       live: live,
       settings: settings
+    }), customer && clients[customer] && clients[customer].clientId && window.CDOS.IdCheck && /*#__PURE__*/React.createElement(window.CDOS.IdCheck.DealBar, {
+      clientId: clients[customer].clientId,
+      dealId: serverQuote && serverQuote.quoteId,
+      onLinked: () => window.dispatchEvent(new CustomEvent("cdos-id-standing", {
+        detail: {
+          clientId: clients[customer].clientId
+        }
+      }))
     }), customer && window.CDOS.ClientIdViewer && React.createElement(window.CDOS.ClientIdViewer, {
       name: customer,
       rec: clients[customer],
@@ -38249,7 +38577,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: CD.green
     }), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-id-need-label"
-    }, rec && rec.idType || 'ID', " on file", rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : '')), isExchange && /*#__PURE__*/React.createElement("div", {
+    }, rec && rec.idStanding && rec.idStanding.onFile ? `${rec && rec.idType || 'ID'} on file${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}` : `${rec && rec.idType || 'ID'} typed by hand${rec && rec.idExpiry ? ` · exp ${phoneSheet ? phoneDay(rec.idExpiry) : rec.idExpiry}` : ''}`)), isExchange && /*#__PURE__*/React.createElement("div", {
       className: "p-3.5",
       style: {
         background: 'var(--cd-panel)',
@@ -38301,7 +38629,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       on: liveFace.rounded,
       hold: quotePending
     })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
-      value: shownOut ? unitText(shownOut, outCcy) : '—',
+      value: shownOut ? unitText(shownOut, outCcy) : 'Not set',
       ccy: outCcy,
       onCcy: v => {
         setOutCcy(v);
@@ -38612,7 +38940,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }), " ", rateShown(home, payoutCcy, amtN, out.amt)), /*#__PURE__*/React.createElement(SheetRateNote, {
       on: pricedRate(amtN, out.amt, payoutCcy).rounded
     })), /*#__PURE__*/React.createElement(Lbl, null, benName || 'Beneficiary', " receives"), /*#__PURE__*/React.createElement(Money, {
-      value: out.amt ? unitText(out.amt, payoutCcy) : '—',
+      value: out.amt ? unitText(out.amt, payoutCcy) : 'Not set',
       ccy: payoutCcy,
       readOnly: true,
       accent: CD.green,
@@ -39219,19 +39547,24 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         fontFamily: 'Space Mono, monospace'
       }
     }, "Before you post"), /*#__PURE__*/React.createElement("span", {
+      "data-testid": "before-you-post",
       className: "cd-tx-kicker cd-tx-quiet text-[10px] px-1.5 py-0.5",
       style: {
         borderRadius: 999,
-        background: allGreen ? CD.greenSoft : CD.lineSoft,
-        color: allGreen ? CD.green : CD.mute,
-        fontFamily: 'Space Mono, monospace'
+        background: handPosted ? CD.lineSoft : allGreen ? CD.greenSoft : CD.lineSoft,
+        color: handPosted ? CD.mute : allGreen ? CD.green : CD.mute,
+        fontFamily: 'Space Mono, monospace',
+        whiteSpace: 'normal',
+        textAlign: 'right'
       }
-    }, allGreen ? phoneSheet ? 'Ready' : 'READY' : phoneSheet ? `${remaining} left` : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
+    }, handPosted ? 'ID typed by hand, not checked' : allGreen ? phoneSheet ? 'Ready' : 'READY' : phoneSheet ? `${remaining} left` : `${remaining} LEFT`)), reqs.map(r => /*#__PURE__*/React.createElement(Check, {
       key: r.key,
       ok: r.ok,
+      hand: r.hand,
       warn: r.warn && !r.ok,
       label: r.label,
       sub: !r.ok ? r.sub : null,
+      testId: r.key === 'id' ? 'post-id-row' : '',
       mark: phoneSheet && missKey === r.key,
       onActivate: phoneSheet && r.key === 'server-facts' && !r.ok ? focusFacts : undefined,
       action: phoneSheet && r.key === 'id' && !r.ok && customer ? /*#__PURE__*/React.createElement("button", {
@@ -40509,10 +40842,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       settings
     }), [direction, recvCcy, amtN, settings, home]);
     const recvAmt = pricing.outAmt;
-    const kyc = (() => {
-      const c = clients[senderName];
-      return !c || !c.idType || !c.idNum ? 'missing ID' : c.idExpiry && c.idExpiry < TODAY ? 'ID expired' : 'ok';
-    })();
+    const sender = clients[senderName];
+    const kyc = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(sender) : !sender || !sender.idType || !sender.idNum ? "missing ID" : "ok";
+    const idLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(sender) : kyc;
+    const handTyped = idLabel === "ID typed by hand, not checked";
     const regimeNow = window.CDOS.getRegime ? window.CDOS.getRegime(settings) : null;
     const idAnswered = !!(thresholds && thresholds.idThreshold && Object.prototype.hasOwnProperty.call(thresholds.idThreshold, 'effective'));
     const idRows = window.CDOS.deskIdThresholds ? window.CDOS.deskIdThresholds() || [] : [];
@@ -41150,14 +41483,16 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: CD.ink
       }
     }, "Reportable EFT \u2014 ", fmt(homeAmount, home), " (\u2265 ", limit.label, "). An international EFT report will be required."), idRequired && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "transfer-sender-id",
       className: "text-[12px] flex items-center gap-1.5",
       style: {
-        color: kyc === 'ok' ? CD.green : CD.flag
+        color: kyc === 'ok' ? CD.ink : handTyped ? CD.mute : CD.flag
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: kyc === 'ok' ? 'checkcircle' : 'alert',
-      s: 13
-    }), " ", kyc === 'ok' ? 'Sender ID on file — OK.' : `ID required — sender ID is ${kyc}.`), /*#__PURE__*/React.createElement(Field, {
+      s: 13,
+      c: kyc === 'ok' ? CD.ink : handTyped ? CD.mute : CD.flag
+    }), " ", kyc === 'ok' ? 'Sender ID on file, OK.' : handTyped ? idLabel : `ID required. Sender ID is ${idLabel}.`), /*#__PURE__*/React.createElement(Field, {
       label: "Source of funds"
     }, /*#__PURE__*/React.createElement("input", {
       value: sourceOfFunds,
@@ -49828,6 +50163,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     settings,
     setSettings,
     me,
+    serverRole,
     log,
     baseline,
     receipts,
@@ -50076,6 +50412,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       });
       return s.size;
     }, [rows, clients, settings]);
+    const pepNames = serverRole === "compliance_officer" || serverRole === "administrator" ? Object.keys(clients || {}).filter(name => clients[name] && clients[name].pepReview === "open") : [];
     const TABS = [['screening', 'Screening', 'shield', 0], ['aggregation', regime.windowKind === 'calendar_month' ? 'Calendar month' : regime.windowKind === 'banking_day' ? 'Banking day' : regime.aggregate === false ? 'Threshold reports' : regime.aggHours ? `${regime.aggHours}h aggregation` : 'Aggregation', 'clock', aggN], ['submissions', philippines ? 'Not filed' : 'Filings', 'filetext', philippines ? 0 : draftN], ['structuring', 'Structuring watch', 'alert', strN], ['reports', 'Reports', 'bars', 0], ['history', 'History', 'scroll', 0], ['regime', 'Jurisdiction', 'globe', 0]];
     return /*#__PURE__*/React.createElement("div", {
       className: "flex flex-col",
@@ -50168,7 +50505,25 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: CD.mute
         }
       }, sub));
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), pepNames.length > 0 && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "pep-review-list",
+      className: "mt-3 mb-1"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] font-semibold mb-1",
+      style: {
+        color: CD.ink
+      }
+    }, "PEP review"), pepNames.map(name => /*#__PURE__*/React.createElement("button", {
+      key: name,
+      type: "button",
+      onClick: () => onOpenClient && onOpenClient(name),
+      className: "block text-left text-[13px]",
+      style: {
+        color: CD.ink,
+        minHeight: 48,
+        padding: "12px 12px"
+      }
+    }, name))), /*#__PURE__*/React.createElement("div", {
       className: "fld-bar",
       style: {
         margin: '2px -16px 0',
@@ -51521,16 +51876,12 @@ ${(filing.map || []).map(blockHTML).join('')}
     return Math.floor((Date.now() - ms) / 86400000);
   }
   const NUDGE_CTA = {
-    quick: {
-      label: 'Run quick check · $3.99',
-      ic: 'search'
-    },
     verify: {
-      label: 'Run verify check · $6.99',
+      label: 'Check ID',
       ic: 'id'
     },
     plus: {
-      label: 'Run Verify Plus · $14.99',
+      label: 'Run Verify Plus',
       ic: 'shield'
     }
   };
@@ -51545,6 +51896,31 @@ ${(filing.map || []).map(blockHTML).join('')}
   }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) {
+        setStanding(null);
+        return undefined;
+      }
+      let live = true;
+      const pull = () => {
+        api.checks(id).then(body => {
+          if (live) setStanding(body && body.standing || null);
+        }).catch(() => {});
+      };
+      const onStanding = event => {
+        if (!event.detail || event.detail.clientId !== id) return;
+        pull();
+      };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => {
+        live = false;
+        window.removeEventListener("cdos-id-standing", onStanding);
+      };
+    }, [rec && rec.clientId]);
     if (!name) return null;
     const RECO_DAYS = settings && +settings.recheckDays || 180; // periodic quick-screen cadence
     const REVERIFY_DAYS = settings && +settings.reverifyDays || 365; // full re-verification cadence
@@ -51553,6 +51929,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !!(standing && standing.chip === 'ID typed by hand, not checked');
     const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = window.CDOS && window.CDOS.normalizeRisk ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : /high|enhanced/i.test(String(rec && (rec.risk || rec.riskRating) || '')) ? 'High' : 'Normal';
     const highRisk = riskLvl === 'High';
@@ -51590,25 +51967,26 @@ ${(filing.map || []).map(blockHTML).join('')}
     }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
     else if (bigDeal && policy !== 'off') {
+      const asked = policy === 'quick' ? 'verify' : policy;
       level = 'force';
-      tier = !lastFull && policy === 'quick' ? 'verify' : policy;
-      title = 'Check required — large transaction';
-      reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + (!lastFull && policy === 'quick' ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : '');
+      tier = asked;
+      title = 'Check required. Large transaction';
+      reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`;
+    } else if (handTyped && !idExpired) {
+      level = 'reco';
+      tier = 'verify';
+      title = 'ID typed by hand, not checked';
+      reason = 'Check the ID to confirm these details.';
     } else if (bigDeal && !lastFull) {
       level = 'reco';
       tier = 'plus';
       title = 'Verified Plus recommended';
       reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`;
-    } else if (!lastFull) {
+    } else if (!lastFull && !(standing && standing.onFile)) {
       level = 'reco';
       tier = 'verify';
       title = 'Verification recommended';
-      reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`;
-    } else if (ageAny != null && ageAny >= RECO_DAYS) {
-      level = 'reco';
-      tier = 'quick';
-      title = 'Quick check recommended';
-      reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`;
+      reason = `${first} has no ID on file.`;
     } else {
       return null;
     }
@@ -51622,10 +52000,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`;
     }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force') {
+    if (idRequired && !lastFull && level !== 'force' && !handTyped) {
       level = 'force';
       title = idMissing ? 'Identity verification required' : 'Verification required for this deal';
-      reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`;
+      reason = `This deal needs a verified ID. ${reason.charAt(0).toLowerCase() + reason.slice(1)}`;
     }
     if (dismissed && level !== 'force') return null;
     const force = level === 'force';
@@ -51709,16 +52087,32 @@ ${(filing.map || []).map(blockHTML).join('')}
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
       let live = true;
       const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.idvStatus) return undefined;
-      api.idvStatus(clientId).then(body => {
-        if (!live || !body) return;
-        setIdvStatus(typeof body.status === 'string' ? body.status : '');
-        setChecksOn(!!body.checksEnabled);
-      }).catch(() => {});
+      const checksApi = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (api && api.idvStatus) {
+        api.idvStatus(clientId).then(body => {
+          if (!live || !body) return;
+          setIdvStatus(typeof body.status === 'string' ? body.status : '');
+          setChecksOn(!!body.checksEnabled);
+        }).catch(() => {});
+      }
+      if (!checksApi || !checksApi.checks) {
+        setRecordState('no');
+        return () => {
+          live = false;
+        };
+      }
+      checksApi.checks(clientId).then(body => {
+        if (!live) return;
+        const records = body && body.records;
+        setRecordState(records && records.length ? 'yes' : 'no');
+      }).catch(() => {
+        if (live) setRecordState('no');
+      });
       return () => {
         live = false;
       };
@@ -51757,6 +52151,12 @@ ${(filing.map || []).map(blockHTML).join('')}
         };
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
+
+    /* The Identity check panel is the record. This older card stays off
+       once that record exists, so the file does not say there is no
+       verification under a check that is already on the file. A shop
+       with checks on, and no record yet, still shows this card. */
+    if (recordState === 'yes') return null;
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4",
       "data-testid": "client-identity",
@@ -52414,7 +52814,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, /*#__PURE__*/React.createElement("div", null, "The client's own answer."), /*#__PURE__*/React.createElement("div", {
       className: "mt-1"
-    }, "Ask the client: are they a politically exposed person?"), /*#__PURE__*/React.createElement("div", {
+    }, "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?"), /*#__PURE__*/React.createElement("div", {
       className: "flex gap-2 mt-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",
@@ -53019,6 +53419,1654 @@ ${(filing.map || []).map(blockHTML).join('')}
       VerificationNudge,
       decisionMeta,
       phaseMeta
+    }
+  });
+})();
+
+/* ---- os-src/cdos-id-check.jsx ---- */
+/* Counter ID check. Notice, consent, in person, returning client,
+   the one-time link, the badge, the masked number, and the reveal.
+   The words come from the server. Sandbox only. No price and no charge. */
+(function () {
+  const {
+    useState,
+    useEffect
+  } = React;
+  const {
+    CD
+  } = window.CDOS;
+  const Portal = ({
+    children
+  }) => ReactDOM.createPortal(children, document.body);
+  const REVEAL = {
+    supervisor: true,
+    branch_manager: true,
+    compliance_officer: true,
+    administrator: true
+  };
+  const CROP = {
+    teller: true,
+    supervisor: true,
+    branch_manager: true,
+    compliance_officer: true,
+    administrator: true
+  };
+  function safePersonaLink(value) {
+    try {
+      const url = new URL(String(value || "").trim());
+      if (url.protocol !== "https:") return "";
+      if (url.username || url.password) return "";
+      if (url.port && url.port !== "443") return "";
+      const host = url.hostname.toLowerCase();
+      if (host !== "withpersona.com" && !host.endsWith(".withpersona.com")) return "";
+      return url.toString();
+    } catch (e) {
+      return "";
+    }
+  }
+  const REASONS = [["fintrac_request", "FINTRAC request"], ["report_filing", "Report filing"], ["id_mismatch", "ID mismatch"], ["client_request", "Client request"]];
+  const REASON_LABEL = {
+    fintrac_request: "FINTRAC request",
+    report_filing: "Report filing",
+    id_mismatch: "ID mismatch",
+    client_request: "Client request"
+  };
+  const ROLE_LABEL = {
+    teller: "Teller",
+    supervisor: "Supervisor",
+    branch_manager: "Branch manager",
+    compliance_officer: "Compliance officer",
+    administrator: "Administrator",
+    auditor: "Auditor"
+  };
+  const quietBtn = {
+    minHeight: 44,
+    padding: "0 16px",
+    border: `1px solid ${CD.line}`,
+    borderRadius: 8,
+    color: CD.ink,
+    background: "transparent",
+    fontFamily: '"Archivo", system-ui, sans-serif'
+  };
+  const api = () => window.CDOS.Backend && window.CDOS.Backend.IdCheck || null;
+  const card = {
+    background: CD.panel,
+    border: `1px solid ${CD.line}`,
+    borderRadius: 12
+  };
+  const inputStyle = {
+    border: `1px solid ${CD.line}`,
+    borderRadius: 8,
+    background: "var(--cd-panel)",
+    color: CD.ink,
+    width: "100%",
+    fontFamily: '"Archivo", system-ui, sans-serif',
+    minHeight: 44,
+    padding: "0 12px"
+  };
+  const btnStyle = disabled => ({
+    flex: "1 1 160px",
+    minHeight: 44,
+    padding: "0 16px",
+    borderRadius: 8,
+    border: "0",
+    background: disabled ? "#E4E1D8" : CD.ink,
+    color: disabled ? "#3F3C36" : "var(--cd-on-ink)",
+    fontFamily: '"Archivo", system-ui, sans-serif',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: disabled ? "not-allowed" : "pointer"
+  });
+  const ghost = {
+    flex: "1 1 160px",
+    minHeight: 44,
+    padding: "0 16px",
+    borderRadius: 8,
+    border: `1px solid ${CD.line}`,
+    background: CD.paper,
+    color: CD.ink,
+    fontFamily: '"Archivo", system-ui, sans-serif',
+    fontSize: 14,
+    fontWeight: 600
+  };
+  function linesOf(text) {
+    return String(text || "").split("\n").filter(Boolean);
+  }
+  function inquiryLine(status) {
+    if (status === "Check passed" || status === "Check passed (test)") return status;
+    if (status === "starting" || status === "in progress") return "ID check in progress";
+    if (status === "needs review") return "This needs review. A supervisor will help.";
+    if (status === "declined") return "Check not passed. Check the ID at the counter.";
+    if (status === "failed" || status === "expired") return "Method not completed. Check the ID at the counter.";
+    return "";
+  }
+  function badgeOf(record) {
+    if (!record) return {
+      primary: "",
+      secondary: ""
+    };
+    const primary = record.statusLine || record.line || "";
+    const secondary = record.line && record.line !== primary ? record.line : "";
+    return {
+      primary,
+      secondary
+    };
+  }
+  function idChoices() {
+    try {
+      return window.CDOS.acceptedHere(window.CDOS.idTypes().pickerLabels("person"));
+    } catch (e) {
+      return ["Passport", "Driver's Licence"];
+    }
+  }
+  function holdSheet() {
+    const count = Number(document.body.dataset.idCheckCount || "0") + 1;
+    document.body.dataset.idCheckCount = String(count);
+    document.body.setAttribute("data-id-check", "open");
+    return () => {
+      const next = Number(document.body.dataset.idCheckCount || "1") - 1;
+      if (next <= 0) {
+        delete document.body.dataset.idCheckCount;
+        document.body.removeAttribute("data-id-check");
+      } else document.body.dataset.idCheckCount = String(next);
+    };
+  }
+  function linkLabel(url, before) {
+    if (/Privacy policy:\s*$/.test(before)) return "Privacy policy";
+    if (/Persona's privacy notice:\s*$/.test(before)) return "Persona's privacy notice";
+    return "Link";
+  }
+  function linkedParts(part) {
+    const re = /https:\/\/[^\s)]+/g;
+    const out = [];
+    let last = 0;
+    let match = re.exec(part);
+    while (match) {
+      let before = part.slice(last, match.index);
+      const raw = match[0];
+      const url = raw.replace(/[.,]$/, "");
+      const trail = raw.slice(url.length);
+      if (!url.startsWith("https://")) {
+        if (before) out.push(before);
+        out.push(raw);
+        last = match.index + raw.length;
+        match = re.exec(part);
+        continue;
+      }
+      const label = linkLabel(url, before);
+      if (label === "Privacy policy") before = before.replace(/Privacy policy:\s*$/, "");
+      if (label === "Persona's privacy notice") before = before.replace(/Persona's privacy notice:\s*$/, "");
+      if (before) out.push(before);
+      out.push(/*#__PURE__*/React.createElement("a", {
+        key: url + match.index,
+        href: url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        style: {
+          color: CD.ink,
+          textDecoration: "underline"
+        }
+      }, label));
+      if (trail) out.push(trail);
+      last = match.index + raw.length;
+      match = re.exec(part);
+    }
+    if (last < part.length) out.push(part.slice(last));
+    return out.length ? out : [part];
+  }
+  function CopyBlock({
+    text,
+    testid,
+    omit
+  }) {
+    const skip = omit || [];
+    const parts = linesOf(text).filter(part => skip.indexOf(part) < 0);
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": testid,
+      className: "space-y-2 text-[13px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45,
+        fontFamily: '"Archivo", system-ui, sans-serif'
+      }
+    }, parts.map((part, i) => {
+      const cut = part.indexOf(": ");
+      const body = linkedParts(part);
+      if (i === 0) return /*#__PURE__*/React.createElement("div", {
+        key: i,
+        className: "text-sm font-semibold"
+      }, body);
+      if (cut > 0 && cut < 42 && !/https?:/.test(part)) return /*#__PURE__*/React.createElement("p", {
+        key: i
+      }, /*#__PURE__*/React.createElement("b", null, part.slice(0, cut + 1)), " ", linkedParts(part.slice(cut + 2)));
+      return /*#__PURE__*/React.createElement("p", {
+        key: i
+      }, body);
+    }));
+  }
+  function Skel({
+    width
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      className: "id-check-skel",
+      style: {
+        width: width || "100%"
+      }
+    });
+  }
+  function Flow({
+    clientId,
+    dealId,
+    onClose,
+    onDone,
+    initialStep
+  }) {
+    const [step, setStep] = useState(initialStep || "chooser");
+    const [copy, setCopy] = useState(null);
+    const [pack, setPack] = useState(null);
+    const [tier, setTier] = useState("");
+    const [agreed, setAgreed] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const [linkUrl, setLinkUrl] = useState("");
+    const [inquiryId, setInquiryId] = useState("");
+    const [consentId, setConsentId] = useState("");
+    const [databaseMessage, setDatabaseMessage] = useState("");
+    const [counterLine, setCounterLine] = useState("");
+    const [record, setRecord] = useState(null);
+    const [form, setForm] = useState({
+      nameOnId: "",
+      documentType: "",
+      documentNumber: "",
+      issuingJurisdiction: "",
+      issuingCountry: "CA",
+      expiryDate: "",
+      attested: false
+    });
+    const [ret, setRet] = useState({
+      noDoubts: false,
+      detailsChanged: false,
+      doubtReason: "",
+      pep: ""
+    });
+    const [moreOpen, setMoreOpen] = useState(false);
+    useEffect(() => holdSheet(), []);
+    useEffect(() => {
+      const client = api();
+      if (!client) return undefined;
+      let live = true;
+      client.copy().then(body => {
+        if (live) setCopy(body);
+      }).catch(err => {
+        if (live) setError(err.message || "The notice could not be read.");
+      });
+      client.checks(clientId).then(body => {
+        if (live) setPack(body);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [clientId]);
+    useEffect(() => {
+      if (step !== "link" || !inquiryId) return undefined;
+      let live = true;
+      let timer = 0;
+      const waitMs = window.CDOS && window.CDOS.idCheckWaitMs || 90000;
+      const giveUpTimer = window.setTimeout(() => {
+        if (live) setStep("failed");
+      }, waitMs);
+      const onGiveUp = () => {
+        if (live) setStep("failed");
+      };
+      window.addEventListener("cdos-id-check-give-up", onGiveUp);
+      const pull = () => {
+        const client = api();
+        if (!client) return;
+        client.checks(clientId).then(body => {
+          if (!live) return;
+          const found = (body.records || []).find(item => item.personaInquiryId === inquiryId);
+          if (!found) {
+            timer = window.setTimeout(pull, 2000);
+            return;
+          }
+          const finish = () => {
+            setRecord(found);
+            setPack(body);
+            if (found.result === "method_not_completed") setStep("failed");else setStep("done");
+            if (onDone) onDone(found);
+          };
+          if (dealId) client.linkDeal(found.recordId, dealId).then(finish).catch(finish);else finish();
+        }).catch(() => {
+          if (live) timer = window.setTimeout(pull, 2000);
+        });
+      };
+      timer = window.setTimeout(pull, 600);
+      return () => {
+        live = false;
+        window.clearTimeout(timer);
+        window.clearTimeout(giveUpTimer);
+        window.removeEventListener("cdos-id-check-give-up", onGiveUp);
+      };
+    }, [step, inquiryId, clientId, dealId, onDone]);
+    const counter = !!(copy && copy.counterOnly);
+    const pick = next => {
+      setError("");
+      setTier(next);
+      if (next === "1") setStep("inperson");else if (next === "2") {
+        if (!pack) {
+          setError("Reading the earlier check.");
+          return;
+        }
+        const full = (pack.records || []).some(item => item.result === "pass" && item.method !== "returning_client");
+        setStep(pack.due || !full ? "blocked" : "returning");
+      } else if (next === "4") return;else setStep("notice");
+    };
+    useEffect(() => {
+      const onKey = event => {
+        if (event.key === "Escape") {
+          onClose();
+          return;
+        }
+        if (event.key !== "Enter" || step !== "chooser") return;
+        const target = event.target;
+        if (target && target.closest && target.closest("button, a, input, select, textarea")) return;
+        event.preventDefault();
+        pick(counter ? "1" : "3");
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [step, counter, onClose, pack]);
+    const agree = async () => {
+      const client = api();
+      if (!client || busy || !agreed) return;
+      setBusy(true);
+      setError("");
+      setStep("opening");
+      try {
+        const started = await client.start(clientId, tier);
+        if (started && started.connected === false) {
+          setError(started.message || "Identity checks are not connected.");
+          setStep("consent");
+          setBusy(false);
+          return;
+        }
+        const saved = await client.consent({
+          clientId,
+          choice: "agreed",
+          language: "en",
+          inquiryId: started.providerRef,
+          copyVersion: copy && copy.version,
+          faceCropShown: !!(copy && copy.faceCrop)
+        });
+        const link = await client.link(started.providerRef);
+        setInquiryId(started.providerRef);
+        setConsentId(saved.consentId);
+        setLinkUrl(safePersonaLink(link.url));
+        setDatabaseMessage(started.message || "");
+        setStep("link");
+      } catch (err) {
+        if (err && (err.code === "consent_copy_changed" || /notice changed/i.test(err && err.message || ""))) {
+          const fresh = await client.copy().catch(() => null);
+          if (fresh) setCopy(fresh);
+          setAgreed(false);
+          setStep("notice");
+          setError(err && err.message || "The notice changed. Read it again before you choose.");
+        } else if (err && (err.code === "COUNTER_ONLY" || /Inspect the original ID/.test(err.message || ""))) {
+          setCounterLine(err.message || "");
+          setStep("chooser");
+        } else setStep("failed");
+      }
+      setBusy(false);
+    };
+    const noThanks = async () => {
+      const client = api();
+      if (!client || busy) return;
+      setBusy(true);
+      setError("");
+      try {
+        const saved = await client.consent({
+          clientId,
+          choice: "counter_check",
+          language: "en",
+          inquiryId: null,
+          copyVersion: copy && copy.version,
+          faceCropShown: !!(copy && copy.faceCrop)
+        });
+        setConsentId(saved.consentId);
+        setCounterLine(saved.tellerLine || "Customer chose the counter check. Inspect the original ID.");
+        setStep("nothanks");
+      } catch (err) {
+        if (err && (err.code === "consent_copy_changed" || /notice changed/i.test(err && err.message || ""))) {
+          const fresh = await client.copy().catch(() => null);
+          if (fresh) setCopy(fresh);
+          setAgreed(false);
+          setStep("notice");
+          setError(err && err.message || "The notice changed. Read it again before you choose.");
+        } else setError(err && err.message || "The choice could not be saved.");
+      }
+      setBusy(false);
+    };
+    const savePerson = async () => {
+      const client = api();
+      if (!client || busy) return;
+      setBusy(true);
+      setError("");
+      try {
+        const saved = await client.inPerson({
+          clientId,
+          nameOnId: form.nameOnId,
+          documentType: form.documentType,
+          documentNumber: form.documentNumber,
+          issuingJurisdiction: form.issuingJurisdiction,
+          issuingCountry: form.issuingCountry,
+          expiryDate: form.expiryDate || undefined,
+          attested: form.attested === true,
+          dealId: dealId || undefined,
+          consentId: consentId || undefined
+        });
+        const body = await client.checks(clientId);
+        const found = (body.records || []).find(item => item.recordId === saved.recordId) || {
+          recordId: saved.recordId,
+          statusLine: "Not checked",
+          line: "Not checked",
+          maskedNumber: null,
+          photoLine: "No photo on file",
+          result: "method_not_completed",
+          method: "in_person"
+        };
+        setRecord(found);
+        setPack(body);
+        setStep("done");
+        if (onDone) onDone(found);
+      } catch (err) {
+        setError(err && err.message || "The ID record could not be saved.");
+      }
+      setBusy(false);
+    };
+    const saveReturning = async () => {
+      const client = api();
+      if (!client || busy || ret.pep !== "yes" && ret.pep !== "no") return;
+      setBusy(true);
+      setError("");
+      try {
+        const saved = await client.returning({
+          clientId,
+          noDoubts: ret.noDoubts === true,
+          detailsChanged: ret.detailsChanged === true,
+          doubtReason: ret.doubtReason || undefined,
+          dealId: dealId || undefined,
+          pepAnswer: ret.pep
+        });
+        const body = await client.checks(clientId);
+        const found = (body.records || []).find(item => item.recordId === saved.recordId);
+        setPack(body);
+        setRecord(found || null);
+        setStep("done");
+        if (found && onDone) onDone(found);
+      } catch (err) {
+        setError(err && err.message || "Returning client could not be recorded.");
+        setStep("blocked");
+      }
+      setBusy(false);
+    };
+    const setField = (key, value) => setForm(cur => ({
+      ...cur,
+      [key]: value
+    }));
+    const shell = (testid, title, body) => /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-flow",
+      tabIndex: -1,
+      className: "fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6",
+      style: {
+        background: "var(--cd-scrim)",
+        zIndex: 9400
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "id-check-sheet w-full",
+      style: {
+        maxWidth: 560,
+        background: CD.paper,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 16,
+        boxShadow: "0 30px 70px -20px var(--cd-scrim)",
+        fontFamily: '"Archivo", system-ui, sans-serif',
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-3 px-5 py-4",
+      style: {
+        borderBottom: `1px solid ${CD.line}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "id-check-kicker text-[10px] uppercase tracking-widest",
+      style: {
+        color: CD.faint,
+        fontFamily: '"Space Mono", monospace'
+      }
+    }, title), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-close",
+      onClick: onClose,
+      className: "text-[13px] font-medium",
+      style: {
+        minHeight: 44,
+        padding: "0 16px",
+        border: `1px solid ${CD.line}`,
+        borderRadius: 8,
+        color: CD.ink,
+        background: CD.paper,
+        fontFamily: '"Archivo", system-ui, sans-serif'
+      }
+    }, "Close")), /*#__PURE__*/React.createElement("div", {
+      "data-testid": testid,
+      className: "px-5 py-4"
+    }, body), error && /*#__PURE__*/React.createElement("div", {
+      role: "alert",
+      "data-testid": "id-check-storage",
+      className: "text-[13px] px-5 pb-4",
+      style: {
+        color: CD.ink
+      }
+    }, error))));
+    if (!copy) return shell("id-check-loading", "ID check", /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-loading",
+      className: "space-y-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, null), /*#__PURE__*/React.createElement(Skel, {
+      width: "70%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "46%"
+    })));
+    if (step === "chooser") {
+      const records = pack && pack.records || [];
+      const full = records.some(item => item.result === "pass" && item.method !== "returning_client");
+      const primary = counter ? {
+        id: "1",
+        label: "In person",
+        note: "Staff inspect the original ID. No photo is taken."
+      } : {
+        id: "3",
+        label: "ID and selfie",
+        note: "Document check and a selfie."
+      };
+      const more = [];
+      if (!counter && primary.id !== "1") more.push({
+        id: "1",
+        label: "In person",
+        note: "Staff inspect the original ID. No photo is taken."
+      });
+      if (!counter && full) more.push({
+        id: "2",
+        label: "Returning client",
+        note: "Reuse the check on file."
+      });
+      return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
+        className: "space-y-3",
+        style: {
+          paddingBottom: 16
+        }
+      }, (counterLine || counter && copy.counterLine) && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-counter-line",
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, counterLine || copy.counterLine), /*#__PURE__*/React.createElement("button", {
+        "data-testid": "id-check-primary",
+        type: "button",
+        onClick: () => pick(primary.id),
+        className: "w-full text-left",
+        style: {
+          ...btnStyle(false),
+          flex: "none",
+          minHeight: 72,
+          padding: "14px 16px",
+          borderRadius: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[16px] font-semibold"
+      }, primary.label), /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px] mt-1",
+        style: {
+          color: "var(--cd-on-ink)",
+          opacity: 0.82
+        }
+      }, primary.note)), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-more"
+      }, /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "aria-expanded": moreOpen,
+        onClick: () => setMoreOpen(open => !open),
+        className: "w-full",
+        style: {
+          minHeight: 44,
+          padding: "0 16px",
+          borderRadius: 10,
+          border: `1px solid ${CD.line}`,
+          background: "transparent",
+          color: CD.ink,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontFamily: '"Archivo", system-ui, sans-serif',
+          fontSize: 14,
+          fontWeight: 600
+        }
+      }, /*#__PURE__*/React.createElement("span", null, "More options"), /*#__PURE__*/React.createElement("svg", {
+        "aria-hidden": "true",
+        width: "16",
+        height: "16",
+        viewBox: "0 0 16 16",
+        style: {
+          flex: "none",
+          transform: moreOpen ? "rotate(180deg)" : "none"
+        }
+      }, /*#__PURE__*/React.createElement("path", {
+        d: "M4 6l4 4 4-4",
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: "1.6",
+        strokeLinecap: "round",
+        strokeLinejoin: "round"
+      }))), moreOpen && /*#__PURE__*/React.createElement("div", {
+        className: "space-y-2 mt-2"
+      }, more.map(item => /*#__PURE__*/React.createElement("button", {
+        key: item.id,
+        type: "button",
+        onClick: () => pick(item.id),
+        className: "w-full text-left px-4",
+        style: {
+          minHeight: 44,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10,
+          background: CD.paper,
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold"
+      }, item.label), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-0.5",
+        style: {
+          color: CD.mute
+        }
+      }, item.note)))))));
+    }
+    if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-loading",
+      className: "space-y-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, null), /*#__PURE__*/React.createElement(Skel, {
+      width: "78%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "42%"
+    })));
+    if (step === "notice") return shell("id-check-notice", "Before we check your ID", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
+      text: copy.notice
+    }), /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => {
+        setAgreed(false);
+        setStep("consent");
+      },
+      style: btnStyle(false)
+    }, "Continue"))));
+    if (step === "consent") return shell("id-check-consent", "Optional face match", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
+      text: copy.selfieConsent,
+      omit: ["I agree to the face match."]
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "flex items-start gap-2 mt-3 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      "data-testid": "id-check-agree-box",
+      type: "checkbox",
+      checked: agreed,
+      onChange: e => setAgreed(e.target.checked)
+    }), /*#__PURE__*/React.createElement("span", null, "I agree to the face match.")), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 mt-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: !agreed || busy,
+      onClick: agree,
+      style: btnStyle(!agreed || busy)
+    }, busy ? "Starting" : "I agree"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: busy,
+      onClick: noThanks,
+      style: ghost
+    }, "No thanks, check my ID at the counter"))));
+    if (step === "nothanks") return shell("id-check-no-thanks", "Counter check", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, counterLine), /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => setStep("inperson"),
+      style: btnStyle(false)
+    }, "Enter the ID"))));
+    if (step === "link") return shell("id-check-link", tier === "4" ? "ID, selfie and database" : "ID and selfie", /*#__PURE__*/React.createElement("div", {
+      className: "space-y-2"
+    }, tier === "4" && /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, databaseMessage || "The database step is not on yet. This check runs ID and selfie."), /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Hand the counter device to the customer. The check opens at this link."), linkUrl ? /*#__PURE__*/React.createElement("a", {
+      "data-testid": "id-check-link-url",
+      href: linkUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      className: "id-check-figure text-[12.5px] break-all",
+      style: {
+        color: CD.ink
+      }
+    }, linkUrl) : /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-link-url",
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "The ID check link could not be opened."), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-result-wait",
+      className: "space-y-2 mt-3",
+      "aria-busy": "true"
+    }, /*#__PURE__*/React.createElement(Skel, {
+      width: "58%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "36%"
+    }), /*#__PURE__*/React.createElement(Skel, {
+      width: "24%"
+    }))));
+    if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-error",
+      className: "space-y-3"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "The ID check did not finish. Try again, or check the ID in person."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-error-in-person",
+      onClick: () => {
+        setError("");
+        setStep("inperson");
+      },
+      style: btnStyle(false)
+    }, "Check the ID in person")));
+    if (step === "blocked") return shell("id-check-returning-blocked", "Returning client", /*#__PURE__*/React.createElement("div", {
+      className: "space-y-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, error || pack && pack.due || "Returning client needs an earlier ID check at this shop."), pack && pack.due && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, pack.due), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Offer a full check instead."), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => pick("3"),
+      style: btnStyle(false)
+    }, "ID and selfie"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => pick("1"),
+      style: ghost
+    }, "In person"))));
+    if (step === "returning") {
+      const earlier = (pack && pack.records || []).find(item => item.result === "pass" && item.method !== "returning_client");
+      return shell("id-check-returning", "Returning client", /*#__PURE__*/React.createElement("div", {
+        className: "space-y-2"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, earlier ? `Earlier check: ${earlier.line}` : "No photo on file"), /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-no-photo",
+        className: "text-[12.5px]",
+        style: {
+          color: CD.mute
+        }
+      }, earlier && earlier.photoOnFile ? "A small photo from the ID is on file." : "No photo on file"), pack && pack.advice && /*#__PURE__*/React.createElement("div", {
+        className: "text-[12.5px]",
+        style: {
+          color: CD.ink
+        }
+      }, pack.advice), /*#__PURE__*/React.createElement("label", {
+        className: "flex items-start gap-2 text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: ret.noDoubts,
+        onChange: e => setRet(cur => ({
+          ...cur,
+          noDoubts: e.target.checked
+        }))
+      }), /*#__PURE__*/React.createElement("span", null, "I have no doubts this is the same person. Name and date of birth match.")), /*#__PURE__*/React.createElement("label", {
+        className: "flex items-start gap-2 text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: ret.detailsChanged,
+        onChange: e => setRet(cur => ({
+          ...cur,
+          detailsChanged: e.target.checked
+        }))
+      }), /*#__PURE__*/React.createElement("span", null, "Identifying details have changed.")), (!ret.noDoubts || ret.detailsChanged) && /*#__PURE__*/React.createElement("input", {
+        value: ret.doubtReason,
+        onChange: e => setRet(cur => ({
+          ...cur,
+          doubtReason: e.target.value
+        })),
+        placeholder: "Reason, if there is a doubt",
+        className: "text-sm px-2.5 py-2 outline-none",
+        style: inputStyle
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?"), /*#__PURE__*/React.createElement("div", {
+        className: "flex gap-2"
+      }, [["yes", "Yes"], ["no", "No"], ["not_asked", "Not asked"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+        key: id,
+        type: "button",
+        onClick: () => setRet(cur => ({
+          ...cur,
+          pep: id
+        })),
+        style: {
+          ...ghost,
+          flex: 1,
+          background: ret.pep === id ? CD.ink : "transparent",
+          color: ret.pep === id ? "var(--cd-on-ink)" : CD.ink
+        }
+      }, label))), /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        disabled: busy || ret.pep !== "yes" && ret.pep !== "no" && ret.pep !== "not_asked",
+        onClick: saveReturning,
+        style: btnStyle(busy || ret.pep !== "yes" && ret.pep !== "no" && ret.pep !== "not_asked")
+      }, busy ? "Saving" : "Record returning client")));
+    }
+    if (step === "inperson") return shell("id-check-in-person", "In person", /*#__PURE__*/React.createElement("div", {
+      className: "space-y-2"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Inspect the original ID. No photo or copy is taken."), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Name on the ID", /*#__PURE__*/React.createElement("input", {
+      value: form.nameOnId,
+      onChange: e => setField("nameOnId", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Document type", /*#__PURE__*/React.createElement("select", {
+      value: form.documentType,
+      onChange: e => setField("documentType", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Choose"), idChoices().map(label => /*#__PURE__*/React.createElement("option", {
+      key: label
+    }, label)))), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Document number", /*#__PURE__*/React.createElement("input", {
+      value: form.documentNumber,
+      onChange: e => setField("documentNumber", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "grid grid-cols-2 gap-2"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Issuer", /*#__PURE__*/React.createElement("input", {
+      value: form.issuingJurisdiction,
+      onChange: e => setField("issuingJurisdiction", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Country", /*#__PURE__*/React.createElement("input", {
+      value: form.issuingCountry,
+      onChange: e => setField("issuingCountry", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    }))), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Expiry date", /*#__PURE__*/React.createElement("input", {
+      type: "date",
+      value: form.expiryDate,
+      onChange: e => setField("expiryDate", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "id-check-attest flex w-full min-w-0 max-w-full items-start gap-2 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      className: "flex-none",
+      type: "checkbox",
+      checked: form.attested,
+      onChange: e => setField("attested", e.target.checked)
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "min-w-0 flex-1",
+      style: {
+        whiteSpace: "normal",
+        overflowWrap: "anywhere"
+      }
+    }, "I inspected the original ID. It looked authentic, valid, and not expired, and the face matched.")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: busy || !form.attested,
+      onClick: savePerson,
+      style: btnStyle(busy || !form.attested)
+    }, busy ? "Saving" : "Save the ID record")));
+    const shown = record ? badgeOf(record) : {
+      primary: "",
+      secondary: ""
+    };
+    return shell("id-check-done", "ID check", /*#__PURE__*/React.createElement("div", {
+      className: "space-y-1.5"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, shown.primary), shown.secondary && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, shown.secondary), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, pack && pack.detail || "Shows the check done on this date. Not a guarantee of identity."), record && record.maskedNumber && /*#__PURE__*/React.createElement("div", {
+      className: "id-check-figure text-[13px]",
+      style: {
+        color: CD.ink,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, record.maskedNumber), record && record.photoLine && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, record.photoLine), /*#__PURE__*/React.createElement("div", {
+      className: "mt-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      style: btnStyle(false)
+    }, "Done"))));
+  }
+  function Reveal({
+    record,
+    onClose
+  }) {
+    const [reason, setReason] = useState("");
+    const [note, setNote] = useState("");
+    const [number, setNumber] = useState("");
+    const [rows, setRows] = useState([]);
+    const [error, setError] = useState("");
+    const [busy, setBusy] = useState(false);
+    const load = () => {
+      const client = api();
+      if (!client) return;
+      client.reveals(record.recordId).then(body => setRows(body.reveals || [])).catch(() => {});
+    };
+    useEffect(() => {
+      setNumber("");
+      setReason("");
+      setNote("");
+      setError("");
+      setRows([]);
+      load();
+    }, [record.recordId]);
+    useEffect(() => holdSheet(), []);
+    const show = async () => {
+      const client = api();
+      if (!client || !reason || busy) return;
+      setBusy(true);
+      setError("");
+      try {
+        const body = await client.reveal(record.recordId, {
+          reason,
+          note: note.trim() || undefined
+        });
+        setNumber(body.number || "");
+        load();
+      } catch (err) {
+        setError(err && err.message || "The number could not be shown.");
+      }
+      setBusy(false);
+    };
+    return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      className: "fixed inset-0 overflow-auto",
+      style: {
+        background: "rgba(0,0,0,.45)",
+        zIndex: 9600
+      },
+      onClick: onClose
+    }, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-reveal",
+      className: "mx-auto my-8 p-4",
+      style: {
+        ...card,
+        maxWidth: 480,
+        background: CD.paper
+      },
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-sm font-semibold mb-2",
+      style: {
+        color: CD.ink
+      }
+    }, "Show the document number"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Each time someone shows the full number, it is written to the audit. The number itself is never written there."), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Reason", /*#__PURE__*/React.createElement("select", {
+      "data-testid": "id-check-reveal-reason",
+      value: reason,
+      onChange: e => setReason(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Choose"), REASONS.map(([id, label]) => /*#__PURE__*/React.createElement("option", {
+      key: id,
+      value: id
+    }, label)))), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Note, optional", /*#__PURE__*/React.createElement("input", {
+      value: note,
+      onChange: e => setNote(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      disabled: !reason || busy,
+      onClick: show,
+      style: btnStyle(!reason || busy)
+    }, busy ? "Showing" : "Show number"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: onClose,
+      style: ghost
+    }, "Close")), error && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mt-2",
+      style: {
+        color: CD.flag
+      }
+    }, error), number && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-revealed",
+      className: "text-[14px] mt-3",
+      style: {
+        color: CD.ink,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, number), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-audit",
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1",
+      style: {
+        color: CD.faint,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, "Who looked at this number"), rows.length ? rows.map(row => /*#__PURE__*/React.createElement("div", {
+      key: row.revealId,
+      className: "text-[12px] py-1",
+      style: {
+        color: CD.ink,
+        borderTop: `1px solid ${CD.lineSoft}`
+      }
+    }, REASON_LABEL[row.reason] || row.reason, " \xB7 ", ROLE_LABEL[row.role] || row.role, " \xB7 ", row.date, ", ", row.time, row.note ? ` · ${row.note}` : "")) : /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Nobody has looked at the full number.")))));
+  }
+  function Panel({
+    clientId,
+    canEdit,
+    dealId
+  }) {
+    const [pack, setPack] = useState(null);
+    const [status, setStatus] = useState("");
+    const [checksOn, setChecksOn] = useState(false);
+    const [role, setRole] = useState("");
+    const [loaded, setLoaded] = useState(false);
+    const [open, setOpen] = useState(false);
+    const [startAt, setStartAt] = useState("chooser");
+    const [reveal, setReveal] = useState(false);
+    const [photo, setPhoto] = useState("");
+    const [note, setNote] = useState("");
+    const [tick, setTick] = useState(0);
+    useEffect(() => {
+      let live = true;
+      fetch("/api/auth/me", {
+        credentials: "same-origin"
+      }).then(res => res.json()).then(body => {
+        if (live) setRole(body && body.user && body.user.role || "");
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
+    useEffect(() => {
+      const onOpen = event => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        setStartAt("inperson");
+        setOpen(true);
+      };
+      window.addEventListener("cdos-open-in-person", onOpen);
+      return () => window.removeEventListener("cdos-open-in-person", onOpen);
+    }, [clientId]);
+    useEffect(() => {
+      setPhoto("");
+      setReveal(false);
+      setNote("");
+    }, [clientId]);
+    useEffect(() => {
+      const client = api();
+      if (!client || !clientId) return undefined;
+      let live = true;
+      setPhoto("");
+      setLoaded(false);
+      Promise.all([client.checks(clientId).catch(() => null), window.CDOS.Backend.Clients && window.CDOS.Backend.Clients.idvStatus ? window.CDOS.Backend.Clients.idvStatus(clientId).catch(() => null) : Promise.resolve(null)]).then(([checks, inquiry]) => {
+        if (!live) return;
+        setPack(checks);
+        setStatus(inquiry && typeof inquiry.status === "string" ? inquiry.status : "");
+        setChecksOn(!!(inquiry && inquiry.checksEnabled));
+        setLoaded(true);
+      });
+      return () => {
+        live = false;
+      };
+    }, [clientId, tick]);
+    const records = pack && pack.records || [];
+    const latest = records[0] || null;
+    const badge = latest ? badgeOf(latest) : {
+      primary: "",
+      secondary: ""
+    };
+    const fromInquiry = inquiryLine(status);
+    const roster = window.CDOS && window.CDOS.clientRoster || {};
+    const typedOnly = !latest && Object.keys(roster).some(key => {
+      const rec = roster[key];
+      return rec && rec.clientId === clientId && rec.idType && rec.idNum;
+    });
+    let primary = badge.primary || fromInquiry || (loaded ? typedOnly ? "ID typed by hand, not checked" : "No ID check on file" : "Reading the identity check.");
+    let secondary = badge.secondary;
+    /* A sandbox key says "Check passed (test)". Any other pass says "Check passed".
+       The record line stays underneath either way. */
+    if (latest && latest.result === "pass" && (fromInquiry === "Check passed" || fromInquiry === "Check passed (test)") && badge.primary && badge.primary.indexOf(fromInquiry) < 0 && String(badge.primary).indexOf("ID checked") === 0) {
+      secondary = badge.secondary || badge.primary;
+      primary = fromInquiry;
+    }
+    const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
+    const advised = !!(pack && pack.advice);
+    const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
+    const canReveal = !!REVEAL[role];
+    const showPhoto = async () => {
+      const client = api();
+      if (!client || !latest) return;
+      setNote("");
+      try {
+        const body = await client.face(latest.recordId, {
+          reason: "eye_comparison"
+        });
+        setPhoto(`data:${body.contentType || "image/png"};base64,${body.dataBase64}`);
+      } catch (err) {
+        setNote(err && err.message || "No photo on file");
+      }
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "identity-check",
+      className: "mb-3 p-3.5",
+      style: card
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1.5",
+      style: {
+        color: CD.faint,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, "Identity check"), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-badge",
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, primary), secondary && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-record-line",
+      className: "text-[12.5px] mt-1",
+      style: {
+        color: CD.ink
+      }
+    }, secondary), pack && pack.detail && latest && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, pack.detail), pack && pack.advice && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-advice",
+      className: "text-[12.5px] mt-1.5",
+      style: {
+        color: CD.ink
+      }
+    }, pack.advice), pack && pack.due && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-due",
+      className: "text-[12.5px] mt-1.5",
+      style: {
+        color: CD.ink
+      }
+    }, pack.due), latest && latest.maskedNumber && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-masked",
+      className: "id-check-figure text-[13px] mt-1.5",
+      style: {
+        color: CD.ink,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, latest.maskedNumber), latest && !photo && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-photo-line",
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, latest.photoOnFile ? "Photo from ID, for comparison by eye" : latest.photoLine || "No photo on file"), photo && /*#__PURE__*/React.createElement("figure", {
+      className: "mt-2"
+    }, /*#__PURE__*/React.createElement("img", {
+      "data-testid": "id-check-photo",
+      alt: "Photo from ID, for comparison by eye",
+      src: photo,
+      width: 96,
+      height: 96,
+      style: {
+        width: 96,
+        height: 96,
+        objectFit: "cover",
+        borderRadius: 8,
+        background: "#E4E1D8"
+      }
+    }), /*#__PURE__*/React.createElement("figcaption", {
+      className: "text-[11px] mt-1",
+      style: {
+        color: CD.mute,
+        fontFamily: '"Space Mono", monospace'
+      }
+    }, "Photo from ID, for comparison by eye")), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2 mt-2"
+    }, role !== "auditor" && !passed && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-start",
+      onClick: () => {
+        setStartAt("chooser");
+        setOpen(true);
+      },
+      className: "text-[12px] font-medium",
+      style: quietBtn
+    }, checksOn ? "Check ID" : "Check ID in person"), canReveal && latest && latest.maskedNumber && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-reveal-open",
+      onClick: () => setReveal(true),
+      className: "text-[12px] font-medium",
+      style: quietBtn
+    }, "Show number"), CROP[role] && latest && latest.photoOnFile && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: showPhoto,
+      className: "text-[12px] font-medium",
+      style: quietBtn
+    }, "Show the photo")), note && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.flag
+      }
+    }, note), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "ID details from a finished check are kept on the server. This screen shows the last 4 of the number."), latest && latest.photoOnFile && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye."), open && /*#__PURE__*/React.createElement(Flow, {
+      clientId: clientId,
+      dealId: dealId,
+      initialStep: startAt,
+      onClose: () => {
+        setOpen(false);
+        setTick(n => n + 1);
+      },
+      onDone: () => {
+        window.dispatchEvent(new CustomEvent("cdos-id-standing", {
+          detail: {
+            clientId
+          }
+        }));
+        setTick(n => n + 1);
+      }
+    }), reveal && latest && /*#__PURE__*/React.createElement(Reveal, {
+      record: latest,
+      onClose: () => setReveal(false)
+    }));
+  }
+  function DealBar({
+    clientId,
+    dealId,
+    onLinked
+  }) {
+    const [pack, setPack] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [startAt, setStartAt] = useState("chooser");
+    const [tick, setTick] = useState(0);
+    useEffect(() => {
+      const onOpen = event => {
+        if (!event.detail || event.detail.clientId !== clientId) return;
+        setStartAt("inperson");
+        setOpen(true);
+      };
+      window.addEventListener("cdos-open-in-person", onOpen);
+      return () => window.removeEventListener("cdos-open-in-person", onOpen);
+    }, [clientId]);
+    useEffect(() => {
+      const client = api();
+      if (!client || !clientId) return undefined;
+      let live = true;
+      client.checks(clientId).then(body => {
+        if (live) setPack(body);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, [clientId, tick, dealId]);
+    const hit = (pack && pack.records || []).find(item => dealId && ((item.deals || []).indexOf(dealId) >= 0 || item.dealId === dealId)) || null;
+    const badge = hit ? badgeOf(hit) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "deal-id-check",
+      className: "p-3.5",
+      style: card
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[10px] uppercase tracking-widest mb-1.5",
+      style: {
+        color: CD.faint,
+        fontFamily: "Space Mono, monospace"
+      }
+    }, "ID check"), badge ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "deal-id-link",
+      className: "text-[12.5px]",
+      style: {
+        color: CD.ink
+      }
+    }, badge.primary, badge.secondary ? `. ${badge.secondary}` : "") : /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "No ID check linked to this deal."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "deal-check-id",
+      onClick: () => {
+        setStartAt("chooser");
+        setOpen(true);
+      },
+      className: "text-[12px] font-medium mt-2",
+      style: quietBtn
+    }, "Check ID for this deal"), open && /*#__PURE__*/React.createElement(Flow, {
+      clientId: clientId,
+      dealId: dealId,
+      initialStep: startAt,
+      onClose: () => {
+        setOpen(false);
+        setTick(n => n + 1);
+      },
+      onDone: record => {
+        if (onLinked) onLinked(record);
+        window.dispatchEvent(new CustomEvent("cdos-id-standing", {
+          detail: {
+            clientId
+          }
+        }));
+        setTick(n => n + 1);
+      }
+    }));
+  }
+  function Settings() {
+    const [row, setRow] = useState(null);
+    const [note, setNote] = useState("");
+    const [saved, setSaved] = useState(false);
+    useEffect(() => {
+      const client = api();
+      if (!client) return undefined;
+      let live = true;
+      client.settings().then(body => {
+        if (live) setRow(body);
+      }).catch(() => {
+        if (live) setRow(null);
+      });
+      return () => {
+        live = false;
+      };
+    }, []);
+    if (!row) return null;
+    const set = (key, value) => setRow(cur => ({
+      ...cur,
+      [key]: value
+    }));
+    const save = async () => {
+      const client = api();
+      if (!client) return;
+      setNote("");
+      setSaved(false);
+      const payload = {
+        checksEnabled: row.checksEnabled === true,
+        faceCropEnabled: row.faceCropEnabled !== false,
+        privacyContact: row.privacyContact || null,
+        privacyEmail: row.privacyEmail || null,
+        privacyPhone: row.privacyPhone || null,
+        privacyPolicyUrl: row.privacyPolicyUrl || null
+      };
+      if (row.templateId) payload.templateId = row.templateId;
+      if (row.apiKeyRef) payload.apiKeyRef = row.apiKeyRef;
+      try {
+        const body = await client.saveSettings(payload);
+        setRow(body);
+        setSaved(true);
+      } catch (err) {
+        setNote(err && err.message || "The identity check settings could not be saved.");
+      }
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-settings",
+      className: "mb-4 p-3.5",
+      style: card
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "Identity check"), /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1 mb-2",
+      style: {
+        color: CD.mute
+      }
+    }, "A small photo from the ID is kept for comparison by eye. It is on unless you turn it off."), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-3 py-1.5 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Identity checks"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "aria-checked": row.checksEnabled === true,
+      "aria-label": "Identity checks",
+      onClick: () => set("checksEnabled", row.checksEnabled !== true),
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: row.checksEnabled === true ? CD.ink : "var(--cd-disabled)",
+        borderRadius: 999,
+        border: "none",
+        padding: 0
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: row.checksEnabled === true ? 22 : 2,
+        background: "var(--cd-panel)",
+        borderRadius: 999
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-center justify-between gap-3 py-1.5 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Small photo from the ID"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      role: "switch",
+      "data-testid": "id-check-crop-switch",
+      "aria-checked": row.faceCropEnabled !== false,
+      "aria-label": "Small photo from the ID",
+      onClick: () => set("faceCropEnabled", row.faceCropEnabled === false),
+      className: "w-11 h-6 relative flex-none",
+      style: {
+        background: row.faceCropEnabled !== false ? CD.ink : "var(--cd-disabled)",
+        borderRadius: 999,
+        border: "none",
+        padding: 0
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 w-5 h-5",
+      style: {
+        left: row.faceCropEnabled !== false ? 22 : 2,
+        background: "var(--cd-panel)",
+        borderRadius: 999
+      }
+    }))), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Privacy contact", /*#__PURE__*/React.createElement("input", {
+      value: row.privacyContact || "",
+      onChange: e => set("privacyContact", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Privacy email", /*#__PURE__*/React.createElement("input", {
+      value: row.privacyEmail || "",
+      onChange: e => set("privacyEmail", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Privacy phone", /*#__PURE__*/React.createElement("input", {
+      value: row.privacyPhone || "",
+      onChange: e => set("privacyPhone", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Privacy policy link", /*#__PURE__*/React.createElement("input", {
+      value: row.privacyPolicyUrl || "",
+      onChange: e => set("privacyPolicyUrl", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: save,
+      className: "text-[12px] font-medium mt-3",
+      style: quietBtn
+    }, "Save identity check settings"), saved && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-1.5",
+      style: {
+        color: CD.mute
+      }
+    }, "Saved."), note && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12px] mt-1.5",
+      style: {
+        color: CD.flag
+      }
+    }, note));
+  }
+  window.CDOS = Object.assign(window.CDOS || {}, {
+    IdCheck: {
+      Panel,
+      Flow,
+      DealBar,
+      Settings
     }
   });
 })();
@@ -54636,7 +56684,7 @@ ${snap}`;
           const parts = tx.map(r => homeEquiv(r.inAmt, r.inCcy, homeCcy));
           const v = parts.some(p => p == null) ? null : parts.reduce((sum, p) => sum + p, 0);
           const idNum = kycIdNumber(c);
-          const st = !c.idType || !idNum ? 'missing ID' : c.idExpiry && c.idExpiry < businessDate() ? 'ID expired' : 'ID on file';
+          const st = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : c.idCheckError ? c.idCheckError : !c.idType || !idNum ? 'missing ID' : 'ok';
           return [n, kycIdType(c), idNum, c.idExpiry || '', st, tx.length, csvMoney(v)];
         })];
       }
@@ -55957,9 +58005,17 @@ ${snap}`;
         const names = Array.from(new Set([...Object.keys(clients), ...data.live.map(r => r.customer)])).sort();
         const stat = n => {
           const c = clients[n] || {};
-          if (!c.idType || !kycIdNumber(c)) return ['missing ID', CD.flag, CD.flagSoft];
-          if (c.idExpiry && c.idExpiry < businessDate()) return ['ID expired', CD.flag, CD.flagSoft];
-          return ['ID on file', CD.green, CD.greenSoft];
+          const label = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(c) : 'missing ID';
+          if (c.idCheckError || label === 'Checking ID') return [label, CD.mute, CD.lineSoft];
+          if (label === 'ID expired') return [label, CD.flag, CD.flagSoft];
+          if (label === 'ID typed by hand, not checked') {
+            const tone = window.CDOS.idBadgeTone('hand');
+            return [label, tone.c, tone.bg];
+          }
+          const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(c) : 'missing ID';
+          if (state !== 'ok') return [label, CD.flag, CD.flagSoft];
+          const tone = window.CDOS.idBadgeTone('checked');
+          return [label, tone.c, tone.bg];
         };
         return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(DocHead, {
           title: "Client & KYC Register",
@@ -72383,6 +74439,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     Handover
   } = window.CDOS;
 
+  /* Standing and a PEP review are read from the server on each visit.
+     They are not written into cdos_clients_v1. A cached pass would
+     outlive a failed read. */
+  function clientsForDisk(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    Object.keys(raw).forEach(name => {
+      const rec = raw[name];
+      if (!rec || typeof rec !== 'object') {
+        out[name] = rec;
+        return;
+      }
+      const next = {
+        ...rec
+      };
+      delete next.idStanding;
+      delete next.pepReview;
+      delete next.idCheckError;
+      delete next.idCheckTries;
+      out[name] = next;
+    });
+    return out;
+  }
+
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
      wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
@@ -74571,7 +76651,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [clients, setClients] = useState(() => {
       try {
         const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null');
-        return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+        return r && typeof r === 'object' && !Array.isArray(r) ? clientsForDisk(r) : {};
       } catch (e) {
         return {};
       }
@@ -74583,9 +76663,138 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, [rows]);
     useEffect(() => {
       try {
-        localStorage.setItem('cdos_clients_v1', JSON.stringify(clients));
+        localStorage.setItem('cdos_clients_v1', JSON.stringify(clientsForDisk(clients)));
       } catch (e) {}
     }, [clients]);
+    useEffect(() => {
+      if (window.CDOS) window.CDOS.clientRoster = clients;
+    });
+    const [standingPulse, setStandingPulse] = useState(0);
+    useEffect(() => {
+      const onStanding = () => setStandingPulse(n => n + 1);
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => window.removeEventListener("cdos-id-standing", onStanding);
+    }, []);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.checks) return undefined;
+      const ids = [];
+      Object.keys(clients).forEach(name => {
+        const id = clients[name] && clients[name].clientId;
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      if (!ids.length) return undefined;
+      let live = true;
+      let retryTimer = 0;
+      const pull = () => {
+        Promise.all(ids.map(id => api.checks(id).then(body => ({
+          id,
+          body,
+          failed: false
+        })).catch(() => ({
+          id,
+          body: null,
+          failed: true
+        })))).then(pairs => {
+          if (!live) return;
+          let retry = false;
+          setClients(prev => {
+            let changed = false;
+            const next = {
+              ...prev
+            };
+            pairs.forEach(({
+              id,
+              body,
+              failed
+            }) => {
+              Object.keys(next).forEach(name => {
+                const rec = next[name];
+                if (!rec || rec.clientId !== id) return;
+                if (failed) {
+                  const tries = rec.idCheckTries || 0;
+                  if (tries < 3) retry = true;
+                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.' && tries >= 3) return;
+                  const cleared = {
+                    ...rec,
+                    idCheckTries: tries + 1
+                  };
+                  delete cleared.idStanding;
+                  delete cleared.pepReview;
+                  cleared.idCheckError = 'Could not read the ID check. Try again.';
+                  next[name] = cleared;
+                  changed = true;
+                  return;
+                }
+                const standing = body && body.standing;
+                if (!standing) {
+                  if (rec.idCheckError || rec.idCheckTries) {
+                    const stored = {
+                      ...rec,
+                      idCheckTries: 0
+                    };
+                    delete stored.idCheckError;
+                    delete stored.idStanding;
+                    delete stored.pepReview;
+                    next[name] = stored;
+                    changed = true;
+                  }
+                  return;
+                }
+                const pepReview = body && body.pepReview === "open" ? "open" : null;
+                const cur = rec.idStanding;
+                const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
+                const samePep = (rec.pepReview || null) === pepReview;
+                if (sameStanding && samePep && !rec.idCheckError) return;
+                const stored = {
+                  ...rec,
+                  pepReview,
+                  idStanding: {
+                    onFile: !!standing.onFile,
+                    chip: standing.chip,
+                    title: standing.title,
+                    line: standing.line,
+                    gap: standing.gap
+                  }
+                };
+                delete stored.idCheckError;
+                next[name] = stored;
+                changed = true;
+              });
+            });
+            return changed ? next : prev;
+          });
+          if (retry && live) retryTimer = window.setTimeout(pull, 2000);
+        });
+      };
+      const onReread = event => {
+        const id = event.detail && event.detail.clientId;
+        if (!id) return;
+        setClients(prev => {
+          let touched = false;
+          const next = {
+            ...prev
+          };
+          Object.keys(next).forEach(name => {
+            const rec = next[name];
+            if (!rec || rec.clientId !== id || !(rec.idCheckTries >= 3)) return;
+            next[name] = {
+              ...rec,
+              idCheckTries: 0
+            };
+            touched = true;
+          });
+          return touched ? next : prev;
+        });
+      };
+      window.addEventListener("cdos-id-reread", onReread);
+      pull();
+      return () => {
+        live = false;
+        window.clearTimeout(retryTimer);
+        window.removeEventListener("cdos-id-reread", onReread);
+      };
+    }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
       if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
@@ -77012,7 +79221,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const known = new Set(fromLedger.map(r => r.serverTransactionId));
         return fromLedger.concat(saved.filter(r => !r || !known.has(r.serverTransactionId)));
       });
-      setClients(rd('cdos_clients_v1', {}));
+      setClients(clientsForDisk(rd('cdos_clients_v1', {})));
       const svS = rd('cdos_settings', null);
       if (svS) setSettings(s => ({
         ...s,
@@ -77628,6 +79837,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
             settings,
             setSettings,
             me,
+            serverRole: srvUser && srvUser.role,
             log,
             baseline,
             receipts,

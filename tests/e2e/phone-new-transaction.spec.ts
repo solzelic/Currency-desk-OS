@@ -173,29 +173,29 @@ test("a teller can fill new transaction on a phone", async ({ page }) => {
          what must not be cut off. */
       return { top: r.top, width: r.width, text: (el.textContent || "").trim(), clipped: label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1 };
     }));
-    expect(Math.max(...typeBoxes.map((b) => b.top)) - Math.min(...typeBoxes.map((b) => b.top)), `type chips on one row at ${width}`).toBeLessThanOrEqual(4);
     expect(Math.min(...typeBoxes.map((b) => b.width)), `type chip width at ${width}`).toBeGreaterThanOrEqual(40);
     expect(typeBoxes.filter((b) => b.clipped).map((b) => b.text), `type names clipped at ${width}`).toEqual([]);
     const chipRow = await page.locator(".cd-tx-types").evaluate((el) => {
       const style = getComputedStyle(el);
-      const selected = el.querySelector(".is-on");
       const row = el.getBoundingClientRect();
-      const chip = selected instanceof HTMLElement ? selected.getBoundingClientRect() : null;
+      const partial = [...el.querySelectorAll("button")].filter((node) => {
+        const box = node.getBoundingClientRect();
+        return box.left < row.left - 1 || box.right > row.right + 1;
+      }).map((node) => (node.textContent || "").trim());
+      const tops = [...el.querySelectorAll("button")].map((node) => Math.round(node.getBoundingClientRect().top));
       return {
-        overflowX: style.overflowX,
-        snap: style.scrollSnapType,
         wrap: style.flexWrap,
-        scrolls: el.scrollWidth > el.clientWidth + 1,
-        selectedInView: !!chip && chip.left >= row.left - 1 && chip.right <= row.right + 1,
+        overflowX: style.overflowX,
+        mask: style.maskImage,
+        partial,
+        lines: new Set(tops).size,
       };
     });
-    expect(chipRow.overflowX, `chip row scrolls at ${width}`).toBe("auto");
-    /* Chrome serializes the proximity default as "x". "x mandatory"
-       would be a different snap. */
-    expect(chipRow.snap === "x" || chipRow.snap === "x proximity", `chip snap at ${width}: ${chipRow.snap}`).toBe(true);
-    expect(chipRow.wrap, `chip row nowrap at ${width}`).toBe("nowrap");
-    expect(chipRow.scrolls, `chip row overflows at ${width}`).toBe(true);
-    expect(chipRow.selectedInView, `selected chip in view at ${width}`).toBe(true);
+    expect(chipRow.wrap, `chip row wraps at ${width}`).toBe("wrap");
+    expect(chipRow.overflowX === "visible" || chipRow.overflowX === "hidden", `chip row does not scroll at ${width}: ${chipRow.overflowX}`).toBe(true);
+    expect(chipRow.mask, `chip row has no fade at ${width}`).toBe("none");
+    expect(chipRow.partial, `partial chips at ${width}`).toEqual([]);
+    expect(chipRow.lines, `two lines at ${width}`).toBe(2);
     const chipInset = await page.locator(".cd-tx-types").evaluate((el) => {
       const first = el.querySelector("button");
       if (!(first instanceof HTMLElement)) return -1;
@@ -483,7 +483,7 @@ test("recording an ID from the phone deal writes the document", async ({ page })
   await expect(sheet).toBeHidden();
   await expect(page.locator(".cd-tx-id-need")).toContainText("Driver's Licence");
   await expect(page.locator(".cd-tx-id-need")).toContainText("Apr 1, 2030");
-  await expect(page.locator(".cd-tx-stats")).toContainText("ID on file");
+  await expect(page.locator(".cd-tx-stats")).toContainText("Typed ID");
   await expect(page.locator(".cd-tx-stats")).toContainText(/Last \d+ days/);
   expect(await page.locator(".cd-tx-stat-label").first().evaluate((el) => getComputedStyle(el).textTransform), "stat label case").toBe("none");
   await expect(page.locator(".cd-tx-stats")).toContainText("Apr 1, 2030");
@@ -554,7 +554,7 @@ test("new transaction stays two columns on a desk", async ({ page }) => {
   expect(rail.width).toBeLessThan(340);
   expect(rail.x).toBeGreaterThanOrEqual(form.x + form.width - 2);
   expect(form.y).toBeLessThanOrEqual(rail.y + 2);
-  await expect(page.locator(".cd-tx-head")).toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expect(page.locator(".cd-tx-head")).toContainText(/[A-Z][a-z]{2} \d{1,2}, \d{4}/);
   await expect(page.locator(".cd-tx-note")).toHaveAttribute("placeholder", "Anything worth keeping on the record…");
   await expect(page.locator(".cd-tx-cancel")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Text quote$/ })).toBeVisible();

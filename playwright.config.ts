@@ -77,6 +77,15 @@ export default defineConfig({
          server allows twenty an hour from one address unless this says
          otherwise (routes/enquiries.ts); Render leaves it unset. */
       ENQUIRY_IP_MAX: "1000",
+      /* The ID check seam talks to a stub, not Persona. The key has no
+         persona_ prefix, which this local host allows. A sandbox prefix
+         is refused here and is used only when the host is staging. */
+      PERSONA_API_KEY: "seam-fixture-key",
+      PERSONA_WEBHOOK_SECRET: "seam-webhook-secret",
+      PERSONA_API_BASE: "http://127.0.0.1:4199/api/v1",
+      /* The seam is NODE_ENV development, so the fixed test key is not
+         used. This value exists only for that local server. */
+      ID_NUMBER_KEY: "seam-id-number-key",
       /* Sign-up v2.1: the codes it emails are never logged, so the seam
          entry keeps them in memory for the suite (email-test-mailbox.ts).
          Passkeys need an origin the browser trusts: localhost, over http,

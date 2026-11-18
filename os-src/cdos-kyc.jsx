@@ -451,10 +451,22 @@
      Returns null when the file is inside the window.
      ==================================================================== */
   function daysAgo(ms) { return Math.floor((Date.now() - ms) / 86400000); }
-  const NUDGE_CTA = { quick: { label: 'Run quick check · $3.99', ic: 'search' }, verify: { label: 'Run verify check · $6.99', ic: 'id' }, plus: { label: 'Run Verify Plus · $14.99', ic: 'shield' } };
+  const NUDGE_CTA = { verify: { label: 'Check ID', ic: 'id' }, plus: { label: 'Run Verify Plus', ic: 'shield' } };
   function VerificationNudge({ name, rec, settings, onRun, demoChecks, amountCad, idRequired }) {
     useStore();
     const [dismissed, setDismissed] = useState(false);
+    const [standing, setStanding] = useState(null);
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) { setStanding(null); return undefined; }
+      let live = true;
+      const pull = () => { api.checks(id).then((body) => { if (live) setStanding((body && body.standing) || null); }).catch(() => {}); };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => { live = false; window.removeEventListener("cdos-id-standing", onStanding); };
+    }, [rec && rec.clientId]);
     if (!name) return null;
     const RECO_DAYS = (settings && +settings.recheckDays) || 180;      // periodic quick-screen cadence
     const REVERIFY_DAYS = (settings && +settings.reverifyDays) || 365;  // full re-verification cadence
@@ -463,6 +475,7 @@
     const today = window.CDOS.wallClock();
     const first = String(name).split(/\s+/)[0];
     const idMissing = !rec || !rec.idType || !rec.idNum;
+    const handTyped = !!(standing && standing.chip === 'ID typed by hand, not checked');
     const idExpired = rec && rec.idExpiry && rec.idExpiry < today;
     const riskLvl = (window.CDOS && window.CDOS.normalizeRisk) ? window.CDOS.normalizeRisk(rec && (rec.risk || rec.riskRating)) : (/high|enhanced/i.test(String((rec && (rec.risk || rec.riskRating)) || '')) ? 'High' : 'Normal');
     const highRisk = riskLvl === 'High';
@@ -487,10 +500,10 @@
     let level = null, tier = 'quick', title = '', reason = '';
     if (idExpired) { level = 'force'; tier = 'verify'; title = 'Re-verification required'; reason = `The ID on file expired${rec.idExpiry ? ' on ' + rec.idExpiry : ''}. Re-verify ${first} before running this deal.`; }
     // house mandate outranks the soft recommendation: a set policy is a hard stop on every large deal
-    else if (bigDeal && policy !== 'off') { level = 'force'; tier = (!lastFull && policy === 'quick') ? 'verify' : policy; title = 'Check required — large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[policy]} check — even on a verified profile.` + ((!lastFull && policy === 'quick') ? ` ${first} has never been fully verified, so this first check runs at the Verified tier.` : ''); }
+    else if (bigDeal && policy !== 'off') { const asked = policy === 'quick' ? 'verify' : policy; level = 'force'; tier = asked; title = 'Check required. Large transaction'; reason = `House policy: every deal at or above ${THLabel} requires a ${TIER_NAME[asked]} check, even on a verified profile.`; }
+    else if (handTyped && !idExpired) { level = 'reco'; tier = 'verify'; title = 'ID typed by hand, not checked'; reason = 'Check the ID to confirm these details.'; }
     else if (bigDeal && !lastFull) { level = 'reco'; tier = 'plus'; title = 'Verified Plus recommended'; reason = `First large transaction — this deal is at or above ${THLabel} and ${first} has never been verified. Run the full enhanced check.`; }
-    else if (!lastFull) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = idMissing ? `${first} has no verified ID on file — run a verify check to establish identity.` : `${first} has an ID on file but has never been fully verified.`; }
-    else if (ageAny != null && ageAny >= RECO_DAYS) { level = 'reco'; tier = 'quick'; title = 'Quick check recommended'; reason = ageAny >= REVERIFY_DAYS ? `${first} was last screened ${ageAny} days ago — over a year. A quick check keeps the file current.` : `Last screened ${ageAny} days ago — a quick check keeps ${first}'s file current.`; }
+    else if (!lastFull && !(standing && standing.onFile)) { level = 'reco'; tier = 'verify'; title = 'Verification recommended'; reason = `${first} has no ID on file.`; }
     else { return null; }
     // house rule: a high-risk subject escalates any identity check to the deepest tier
     // (owner-configurable in Settings → Compliance · Identity verification policy; on by default)
@@ -498,7 +511,7 @@
     const escalateRisk = highRisk || (riskLvl === 'Medium' && !!(settings && settings.escalateMediumRisk));
     if (ESCALATE_HIGH_RISK && escalateRisk && tier === 'verify') { tier = 'plus'; title = 'Enhanced ' + title.charAt(0).toLowerCase() + title.slice(1); reason += ` ${first} is flagged ${riskLvl.toLowerCase()}-risk — enhanced (Verified Plus) recommended.`; }
     // this deal legally needs a verified ID and the file isn't verified yet → hard stop, not a suggestion
-    if (idRequired && !lastFull && level !== 'force') { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID — ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
+    if (idRequired && !lastFull && level !== 'force' && !handTyped) { level = 'force'; title = idMissing ? 'Identity verification required' : 'Verification required for this deal'; reason = `This deal needs a verified ID. ${reason.charAt(0).toLowerCase() + reason.slice(1)}`; }
     if (dismissed && level !== 'force') return null;
     const force = level === 'force';
     const BLUE = '#2B50E2';
@@ -536,16 +549,25 @@
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
       let live = true;
       const api = window.CDOS.Backend && window.CDOS.Backend.Clients;
-      if (!api || !api.idvStatus) return undefined;
-      api.idvStatus(clientId).then(body => {
-        if (!live || !body) return;
-        setIdvStatus(typeof body.status === 'string' ? body.status : '');
-        setChecksOn(!!body.checksEnabled);
-      }).catch(() => {});
+      const checksApi = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (api && api.idvStatus) {
+        api.idvStatus(clientId).then(body => {
+          if (!live || !body) return;
+          setIdvStatus(typeof body.status === 'string' ? body.status : '');
+          setChecksOn(!!body.checksEnabled);
+        }).catch(() => {});
+      }
+      if (!checksApi || !checksApi.checks) { setRecordState('no'); return () => { live = false; }; }
+      checksApi.checks(clientId).then(body => {
+        if (!live) return;
+        const records = body && body.records;
+        setRecordState(records && records.length ? 'yes' : 'no');
+      }).catch(() => { if (live) setRecordState('no'); });
       return () => { live = false; };
     }, [clientId]);
     const idvWords = {
@@ -573,6 +595,12 @@
         return { ...c, [name]: next };
       });
     }, [checks.map(c => c.id + c.status).join(',')]);
+
+    /* The Identity check panel is the record. This older card stays off
+       once that record exists, so the file does not say there is no
+       verification under a check that is already on the file. A shop
+       with checks on, and no record yet, still shows this card. */
+    if (recordState === 'yes') return null;
 
     return (<div className="p-4" data-testid="client-identity" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
       <div className="flex items-center gap-2.5 mb-3">
@@ -799,7 +827,7 @@
             <VerifyChooserBody subject={name.trim() || 'this contact'} hasId={!!photo} verified={false} tplId={tplId} setTplId={setTplId} mode={mode} setMode={setMode} via={via} setVia={setVia} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} onScanMore={() => setStep('id')} onCapture={setPhoto} />
             {needsPep && <div className="mt-3 text-[12.5px]" data-testid="pep-client-answer" style={{ color: CD.ink }}>
               <div>The client's own answer.</div>
-              <div className="mt-1">Ask the client: are they a politically exposed person?</div>
+              <div className="mt-1">Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?</div>
               <div className="flex gap-2 mt-2">
                 <button type="button" onClick={() => setPepAnswer(true)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === true ? CD.ink : 'transparent', color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink }}>Yes</button>
                 <button type="button" onClick={() => setPepAnswer(false)} className="px-3 py-1.5 text-[12px]" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, background: pepAnswer === false ? CD.ink : 'transparent', color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink }}>No</button>

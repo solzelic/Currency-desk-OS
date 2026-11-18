@@ -13,6 +13,25 @@
     Assistant, LoanCalc, AppStore, COMING, STORE_DESC, Reports, Vault, Transfers, Cheques, Compliance, Branches, APP_ACCENT, Pricing, Rates, Telegraph, SignIn, LockDesk, Handover
   } = window.CDOS;
 
+  /* Standing and a PEP review are read from the server on each visit.
+     They are not written into cdos_clients_v1. A cached pass would
+     outlive a failed read. */
+  function clientsForDisk(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out = {};
+    Object.keys(raw).forEach((name) => {
+      const rec = raw[name];
+      if (!rec || typeof rec !== 'object') { out[name] = rec; return; }
+      const next = { ...rec };
+      delete next.idStanding;
+      delete next.pepReview;
+      delete next.idCheckError;
+      delete next.idCheckTries;
+      out[name] = next;
+    });
+    return out;
+  }
+
   /* How the public site hands off into the product. The marketing front door
      serves at "/" and sends people here two ways: "/signup" opens the new-desk
      wizard (add "?plan=pro" to preselect one), "/login" lands on sign-in. Both
@@ -819,9 +838,97 @@
        they can trust anything else on the screen. What is here is filled from
        the ledger — see `loadLedger` in cdos-backend.js, called by the Ledger app. */
     const [rows, setRows] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_rows_v1') || 'null'); return Array.isArray(r) ? r : []; } catch (e) { return []; } });
-    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? r : {}; } catch (e) { return {}; } });
+    const [clients, setClients] = useState(() => { try { const r = JSON.parse(localStorage.getItem('cdos_clients_v1') || 'null'); return r && typeof r === 'object' && !Array.isArray(r) ? clientsForDisk(r) : {}; } catch (e) { return {}; } });
     useEffect(() => { try { localStorage.setItem('cdos_rows_v1', JSON.stringify(rows)); } catch (e) {} }, [rows]);
-    useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clients)); } catch (e) {} }, [clients]);
+    useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clientsForDisk(clients))); } catch (e) {} }, [clients]);
+    useEffect(() => { if (window.CDOS) window.CDOS.clientRoster = clients; });
+    const [standingPulse, setStandingPulse] = useState(0);
+    useEffect(() => {
+      const onStanding = () => setStandingPulse((n) => n + 1);
+      window.addEventListener("cdos-id-standing", onStanding);
+      return () => window.removeEventListener("cdos-id-standing", onStanding);
+    }, []);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.checks) return undefined;
+      const ids = [];
+      Object.keys(clients).forEach((name) => {
+        const id = clients[name] && clients[name].clientId;
+        if (id && ids.indexOf(id) < 0) ids.push(id);
+      });
+      if (!ids.length) return undefined;
+      let live = true;
+      let retryTimer = 0;
+      const pull = () => {
+        Promise.all(ids.map((id) => api.checks(id).then((body) => ({ id, body, failed: false })).catch(() => ({ id, body: null, failed: true })))).then((pairs) => {
+          if (!live) return;
+          let retry = false;
+          setClients((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            pairs.forEach(({ id, body, failed }) => {
+              Object.keys(next).forEach((name) => {
+                const rec = next[name];
+                if (!rec || rec.clientId !== id) return;
+                if (failed) {
+                  const tries = rec.idCheckTries || 0;
+                  if (tries < 3) retry = true;
+                  if (!rec.idStanding && !rec.pepReview && rec.idCheckError === 'Could not read the ID check. Try again.' && tries >= 3) return;
+                  const cleared = { ...rec, idCheckTries: tries + 1 };
+                  delete cleared.idStanding;
+                  delete cleared.pepReview;
+                  cleared.idCheckError = 'Could not read the ID check. Try again.';
+                  next[name] = cleared;
+                  changed = true;
+                  return;
+                }
+                const standing = body && body.standing;
+                if (!standing) {
+                  if (rec.idCheckError || rec.idCheckTries) {
+                    const stored = { ...rec, idCheckTries: 0 };
+                    delete stored.idCheckError;
+                    delete stored.idStanding;
+                    delete stored.pepReview;
+                    next[name] = stored;
+                    changed = true;
+                  }
+                  return;
+                }
+                const pepReview = body && body.pepReview === "open" ? "open" : null;
+                const cur = rec.idStanding;
+                const sameStanding = cur && cur.onFile === !!standing.onFile && cur.chip === standing.chip && cur.line === standing.line && cur.gap === standing.gap;
+                const samePep = (rec.pepReview || null) === pepReview;
+                if (sameStanding && samePep && !rec.idCheckError) return;
+                const stored = { ...rec, pepReview, idStanding: { onFile: !!standing.onFile, chip: standing.chip, title: standing.title, line: standing.line, gap: standing.gap } };
+                delete stored.idCheckError;
+                next[name] = stored;
+                changed = true;
+              });
+            });
+            return changed ? next : prev;
+          });
+          if (retry && live) retryTimer = window.setTimeout(pull, 2000);
+        });
+      };
+      const onReread = (event) => {
+        const id = event.detail && event.detail.clientId;
+        if (!id) return;
+        setClients((prev) => {
+          let touched = false;
+          const next = { ...prev };
+          Object.keys(next).forEach((name) => {
+            const rec = next[name];
+            if (!rec || rec.clientId !== id || !(rec.idCheckTries >= 3)) return;
+            next[name] = { ...rec, idCheckTries: 0 };
+            touched = true;
+          });
+          return touched ? next : prev;
+        });
+      };
+      window.addEventListener("cdos-id-reread", onReread);
+      pull();
+      return () => { live = false; window.clearTimeout(retryTimer); window.removeEventListener("cdos-id-reread", onReread); };
+    }, [clients, standingPulse]);
     // backfill contacts from completed Persona verifications, app-wide (even when no profile is open)
     useEffect(() => {
       if (window.CDOS.KYC && window.CDOS.KYC.setProvider && settings.kycProvider) window.CDOS.KYC.setProvider(settings.kycProvider);
@@ -2178,7 +2285,7 @@
         const known = new Set(fromLedger.map(r => r.serverTransactionId));
         return fromLedger.concat(saved.filter(r => !r || !known.has(r.serverTransactionId)));
       });
-      setClients(rd('cdos_clients_v1', {}));
+      setClients(clientsForDisk(rd('cdos_clients_v1', {})));
       const svS = rd('cdos_settings', null);
       if (svS) setSettings(s => ({ ...s, ...svS, billingPlan: s.billingPlan || svS.billingPlan }));
       const svP = rd('cdos_perms', null); if (svP) setPerms(svP);
@@ -2458,7 +2565,7 @@
           : <Ledger {...{ rows, setRows, clients, setClients, settings, subs, beneficiaries, me, perms, log, setReceipt, client: ledgerClient, setClient: setLedgerClient, newSignal: newDealSignal, onNewConsumed: () => setNewDealSignal(null), openLedgerForClient, openLedgerForRefs, openClientProfile, txToOpen, viewSignal: ledgerView, focusSignal: ledgerFocus, rateVersion, dayClosed: day.closed, onOpenDayClose: () => openApp('till'), cheques, setCheques, chequeSchedule, onOpenCheques: () => { setChequeCaptureSig(Date.now()); openApp('cheques'); }, onOpenCompliance: () => openApp('compliance'), registerNav: registerWinNav, winId: id, onFileLCTR: openComplianceFiling, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'transfers': return <Transfers {...{ rows, setRows, clients, setClients, settings, me, log, beneficiaries, setBeneficiaries, corridors, setCorridors, serverBacked: !!srvUser, onTillChanged: syncTillFromServer }} />;
         case 'cheques': return <Cheques {...{ rows, setRows, clients, settings, me, log, cheques, setCheques, schedule: chequeSchedule, setSchedule: setChequeSchedule, captureSignal: chequeCaptureSig, serverBacked: !!srvUser, onTillChanged: syncTillFromServer, onRefreshCheques: refreshCheques }} />;
-        case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
+        case 'compliance': return <Compliance {...{ rows, setRows, clients, setClients, beneficiaries, settings, setSettings, me, serverRole: srvUser && srvUser.role, log, baseline, receipts, day, station, branches, subs, setSubs, onOpenSettings: () => openSettingsTab('compliance'), onOpenTransaction: openTransaction, onOpenClient: openClientProfile, onOpenRefs: openLedgerRefs, onOpenTransfers: () => openApp('transfers'), fileSignal: complianceFiling }} />;
         case 'clients': return <Clients {...{ rows, clients, setClients, settings, me, perms, log, openLedgerForClient, openProfileSignal: clientToOpen, beneficiaries, setBeneficiaries, corridors }} />;
         case 'dashboard': return <Dashboard serverBacked={!!srvUser} cashVersion={cashVersion} rows={rows} clients={clients} settings={settings} me={me} subs={subs} beneficiaries={beneficiaries} onOpenLedger={() => openApp('ledger')} onOpenClient={openClientProfile} openFiltered={openLedgerFiltered} onOpenApp={openApp} />;
         case 'till': return <TillDrawer rows={rows} log={log} day={day} onCloseDay={closeDay} onOpenNextDay={openNextDay} me={me} myId={srvUser && srvUser.id} canCloseDay={can('canCloseDay')} baseline={baseline} setBaseline={setBaseline} receipts={receipts} stationName={stationName} stationTill={stationTill} branches={branches} station={station} setStation={setStation} onOpenReport={openReport} settings={settings} onMoveCash={setMoveCash} onOpenVault={() => openApp('vault')} moves={branchMoves} serverBacked={!!srvUser} cashVersion={cashVersion} onSessionSync={onTillSession} ledgerScope={ledgerScope} onSelectLedgerTill={selectLedgerTill} />;

@@ -16,6 +16,13 @@
     currencyPlaces, effectiveRate, RATE_NOTE
   } = window.CDOS;
 
+  const spokenDay = (iso) => {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return iso || "";
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const parts = String(iso).split("-");
+    return months[Number(parts[1]) - 1] + " " + Number(parts[2]) + ", " + parts[0];
+  };
+
   /* THE DESK'S OWN CURRENCY, ONCE.
 
      Sixty-five `'CAD'` literals stood in this file. Some named a Canadian
@@ -170,14 +177,37 @@
       return { count: h.length, total, windowCad, winDays, lastVisit, daysSince, topCcy };
     }, [name, live, settings]);
 
-    const idMissing = !rec || !rec.idType || !rec.idNum;
-    const idExpired = rec && rec.idExpiry && rec.idExpiry < businessDate();
-    const idOk = !idMissing && !idExpired;
-    const idTone = idOk ? CD.green : CD.flag;
-    /* Papers on file, not a verification: nothing on this desk checks
-       an ID with a provider. A health number is never shown, even masked. */
-    const idLabel = idMissing ? 'No ID on file' : idExpired ? 'ID expired' : 'ID on file';
-    const maskedId = rec && rec.idNum && !window.CDOS.idTypes().isHealthCardType(rec.idType) ? '••••' + String(rec.idNum).slice(-3) : '';
+    const [standing, setStanding] = useState(null);
+    const [readError, setReadError] = useState("");
+    useEffect(() => {
+      const id = rec && rec.clientId;
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !id) { setStanding(null); return undefined; }
+      let liveFlag = true;
+      const pull = () => {
+        api.checks(id).then((body) => { if (liveFlag) { setReadError(""); setStanding((body && body.standing) || null); } }).catch(() => { if (liveFlag) { setStanding(null); setReadError("Could not read the ID check. Try again."); } });
+      };
+      const onStanding = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      const onReread = (event) => { if (!event.detail || event.detail.clientId !== id) return; pull(); };
+      pull();
+      window.addEventListener("cdos-id-standing", onStanding);
+      window.addEventListener("cdos-id-reread", onReread);
+      return () => { liveFlag = false; window.removeEventListener("cdos-id-standing", onStanding); window.removeEventListener("cdos-id-reread", onReread); };
+    }, [rec && rec.clientId]);
+    const standingNow = (readError || (rec && rec.idCheckError)) ? null : (standing || (rec && rec.idStanding) || null);
+    const viewed = readError ? { ...(rec || {}), idCheckError: readError } : (standingNow ? { ...(rec || {}), idStanding: standingNow, idCheckError: undefined } : rec);
+    const kycState = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(viewed) : 'Checking ID';
+    /* The chip follows the server standing only. Typed papers do not count.
+       A failed read is neutral. It is not a pass, so it is not green. */
+    const unread = !!(readError || (rec && rec.idCheckError));
+    const idOk = !unread && kycState === 'ok';
+    const handTyped = !unread && !!(viewed && viewed.idStanding && viewed.idStanding.chip === 'ID typed by hand, not checked');
+    const checkedTone = window.CDOS.idBadgeTone('checked');
+    const handTone = window.CDOS.idBadgeTone('hand');
+    const idTone = unread || handTyped || kycState === 'Checking ID' ? handTone.c : idOk ? checkedTone.c : CD.flag;
+    const idLabel = unread ? (readError || rec.idCheckError) : idOk ? ((viewed.idStanding && viewed.idStanding.chip) || 'ID on file') : kycState === 'ID expired' ? 'ID expired' : kycState === 'Checking ID' ? 'Checking ID' : handTyped ? 'ID typed by hand, not checked' : 'Missing ID';
+    const papersMissing = !rec || !rec.idType || !rec.idNum;
+    const maskedId = papersMissing || !rec.idNum || (window.CDOS.idTypes && window.CDOS.idTypes().isHealthCardType(rec.idType)) ? "" : "••••" + String(rec.idNum).slice(-3);
     const regular = s.count >= 3;
     const initials = name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const limit = limitOf(settings);
@@ -202,14 +232,15 @@
             </div>
             <div className="text-[11px] mt-0.5" style={{ color: CD.mute }}>{s.count > 0 ? <>{s.count} deal{s.count !== 1 ? 's' : ''} · {lastLabel}</> : 'No prior deals at this desk'}</div>
           </div>
-          <span className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? CD.greenSoft : CD.flagSoft, color: idTone, borderRadius: 999 }}><Ic n={idOk ? 'checkcircle' : 'alert'} s={12} c={idTone} /> {idLabel}</span>
+          <span data-testid="ledger-id-badge" className="flex items-center gap-1 text-[11px] px-2 py-1 flex-none font-medium" style={{ background: idOk ? checkedTone.bg : (unread || handTyped || kycState === 'Checking ID' ? handTone.bg : CD.flagSoft), color: idTone, borderRadius: 999 }}><Ic n={idOk ? checkedTone.icon : handTone.icon} s={12} c={idTone} /> {idLabel}</span>
+          {unread && rec && (rec.idCheckTries || 0) >= 3 && <button type="button" data-testid="id-check-try-again" onClick={() => window.dispatchEvent(new CustomEvent("cdos-id-reread", { detail: { clientId: rec.clientId } }))} className="text-[12px] font-medium" style={{ minHeight: 44, padding: "0 12px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: "var(--cd-panel)" }}>Try again</button>}
         </div>
 
         {/* facts */}
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-          <CCstat label="ID on file" value={idMissing ? '—' : (rec.idType || 'ID')} sub={idMissing ? 'collect below' : (maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''))} tone={idMissing ? CD.flag : idExpired ? CD.flag : CD.ink} />
+          <CCstat label="ID on file" value={papersMissing ? 'Not set' : (rec.idType || 'ID')} sub={papersMissing ? 'collect below' : (maskedId + (rec.idExpiry ? ` · exp ${rec.idExpiry}` : ''))} tone={papersMissing ? CD.flag : idOk ? CD.ink : CD.flag} />
           <CCstat label={`Last ${s.winDays}d`} value={fmtHome(s.windowCad)} sub={s.windowCad == null ? 'not valued in ' + (homeCcy() || 'the desk’s currency') : overThreshold ? 'over reporting line' : nearThreshold ? 'nearing the line' : 'within range'} tone={s.windowCad == null ? CD.mute : overThreshold ? CD.flag : nearThreshold ? CD.amber : CD.ink} divider />
-          <CCstat label="Usually buys" value={s.topCcy || '—'} sub={s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer'} tone={CD.ink} divider />
+          <CCstat label="Usually buys" value={s.topCcy || 'None yet'} sub={s.count > 0 ? `lifetime ${fmtHome(s.total)}` : 'new customer'} tone={CD.ink} divider />
         </div>
 
         {(overThreshold || nearThreshold) && (
@@ -383,7 +414,7 @@
     const rec = clients[customer];
     const kyc = newClient
       ? (nc.idType && nc.idNum ? 'ok' : 'missing ID')
-      : (!rec || !rec.idType || !rec.idNum ? 'missing ID' : (rec.idExpiry && rec.idExpiry < businessDate() ? 'ID expired' : 'ok'));
+      : (window.CDOS.idFileKyc ? window.CDOS.idFileKyc(rec) : (!rec || !rec.idType || !rec.idNum ? "missing ID" : (rec.idExpiry && rec.idExpiry < businessDate() ? "ID expired" : "ok")));
     const packNow = window.CDOS.deskPack && window.CDOS.deskPack();
     const governed = !!((packNow && packNow.packId) || (settings && settings.baselineRules));
     const ph = !!(packNow && packNow.packId === 'pack-ph-v1');
@@ -487,8 +518,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
         <div onMouseDown={e => e.stopPropagation()} className="w-full flex flex-col" style={{ maxWidth: 560, maxHeight: 'calc(100vh - 32px)', background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 14, boxShadow: '0 24px 60px var(--cd-scrim)' }}>
           {/* header */}
           <div className="flex-none flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${CD.line}` }}>
-            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="plus" s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {businessDate()}</div></div></div>
-            <button onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
+            <div className="flex items-center gap-2.5"><span className="grid place-items-center" style={{ width: 30, height: 30, background: CD.ink, borderRadius: 8 }}><Ic n="plus" s={17} c="var(--cd-on-ink)" /></span><div><div className="font-semibold leading-tight" style={{ color: CD.ink }}>New transaction</div><div className="text-[11px]" style={{ color: CD.mute }}>Teller {me.name} · {spokenDay(businessDate())}</div></div></div>
+            <button type="button" aria-label="Close ledger transaction" onClick={onClose} className="p-1.5" style={{ borderRadius: 8 }}><Ic n="x" s={18} c={CD.mute} /></button>
           </div>
 
           <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
@@ -509,9 +540,9 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 </div>
                 {custOpen && (
                   <div className="absolute left-0 right-0 mt-1 py-1 max-h-52 overflow-auto" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 10, boxShadow: '0 12px 30px var(--cd-shade)', zIndex: 20 }}>
-                    {shownNames.map(n => { const st = (!clients[n] || !clients[n].idType || !clients[n].idNum) ? 'missing ID' : (clients[n].idExpiry && clients[n].idExpiry < businessDate() ? 'ID expired' : 'ID on file'); const ok = st === 'ID on file'; return (
+                    {shownNames.map(n => { const person = clients[n] || {}; const failed = !!person.idCheckError; const state = window.CDOS.idFileKyc ? window.CDOS.idFileKyc(person) : (!person.idType || !person.idNum ? 'missing ID' : 'ok'); const st = failed ? person.idCheckError : state === 'ok' ? ((person.idStanding && person.idStanding.chip) || 'ID on file') : state; const ok = !failed && state === 'ok'; return (
                       <button key={n} onClick={() => pickClient(n)} className="w-full flex items-center justify-between px-3 py-2 text-left text-sm" style={{ color: CD.ink }} onMouseDown={e => e.preventDefault()}>
-                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: ok ? CD.greenSoft : CD.flagSoft, color: ok ? CD.green : CD.flag }}>{st}</span>
+                        <span>{n}</span><span className="text-[10px] px-1.5 py-0.5" style={{ borderRadius: 4, background: failed ? CD.lineSoft : ok ? window.CDOS.idBadgeTone('checked').bg : CD.flagSoft, color: failed ? CD.mute : ok ? window.CDOS.idBadgeTone('checked').c : CD.flag }}>{st}</span>
                       </button>); })}
                     {shownNames.length === 0 && <div className="px-3 py-2 text-[11px]" style={{ color: CD.faint }}>No match.</div>}
                     <button onClick={startNewClient} onMouseDown={e => e.preventDefault()} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium" style={{ color: CD.ink, borderTop: `1px solid ${CD.lineSoft}` }}><Ic n="userplus" s={15} /> Create new client{custQuery ? ` "${custQuery.trim()}"` : ''}</button>
@@ -650,7 +681,7 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                 <div className="text-[11px] font-semibold flex items-center gap-1.5" style={{ color: single ? CD.flag : structuring ? CD.amber : CD.ink }}><Ic n="shield" s={13} /> Compliance check</div>
                 {single && <div className="text-[12px]" style={{ color: CD.ink }}>Reportable, pay-in approx {fmtHome(inCadEquiv)} (at or above {limit.label}). {((window.CDOS.getRegime && window.CDOS.getRegime(settings).largeCode) || '') ? `A ${window.CDOS.getRegime(settings).largeCode} will be required.` : 'This crosses the reporting line on this desk.'}</div>}
                 {structuring && <div className="text-[12px]" style={{ color: CD.ink }}>Structuring watch — this client's {settings.structuringDays}-day total reaches {fmtHome(recentTotal)} with this deal.</div>}
-                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? CD.green : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} /> {kyc === 'ok' ? 'Customer ID on file — OK to proceed.' : `ID required at this amount — customer ID is ${kyc}.`}</div>}
+                {idRequired && <div className="text-[12px] flex items-center gap-1.5" style={{ color: kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag }}><Ic n={kyc === 'ok' ? 'checkcircle' : 'alert'} s={13} c={kyc === 'ok' ? window.CDOS.idBadgeTone('checked').c : CD.flag} /> {kyc === 'ok' ? 'Customer ID on file. OK to proceed.' : `ID required at this amount. Customer ID is ${kyc}.`}</div>}
               </div>
             )}
             {/* reportable — capture the FINTRAC info at the counter, pre-fills the filing */}
@@ -1147,6 +1178,8 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
 
             {/* hero flow — what this transaction actually is, at a glance */}
             <TxFlow row={row} />
+            {window.CDOS.IdCheck && (row.clientId || (clients[row.customer] && clients[row.customer].clientId)) &&
+              <window.CDOS.IdCheck.DealBar clientId={row.clientId || clients[row.customer].clientId} dealId={row.serverTransactionId || row.quoteRef || null} onLinked={() => window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId: row.clientId || clients[row.customer].clientId } }))} />}
 
             {/* compliance */}
             <div>
@@ -1159,7 +1192,14 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   {!isVoid && flagCount >= 2 && openAckable && <button onClick={ackAll} title="Mark every open compliance item on this deal as reviewed" className="flex items-center gap-1 text-[11px] px-2 py-1" style={{ background: 'transparent', color: CD.mute, border: `1px solid ${CD.line}`, borderRadius: 7 }} onMouseEnter={e => { e.currentTarget.style.color = CD.ink; e.currentTarget.style.borderColor = CD.mute; }} onMouseLeave={e => { e.currentTarget.style.color = CD.mute; e.currentTarget.style.borderColor = CD.line; }}><Ic n="check" s={12} c="currentColor" /> Acknowledge all</button>}
                 </div>);
               })()}
-              {!flag.single && !flag.str && (flag.kyc === 'ok' || !flag.idNeeded) && !(flag.kyc !== 'ok' && !flag.idNeeded) && <div className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.green, background: CD.greenSoft, borderRadius: 9 }}><Ic n="checkcircle" s={14} /> No flags — within thresholds, ID on file.</div>}
+              {(() => {
+                const idLabel = window.CDOS.idStandingLabel ? window.CDOS.idStandingLabel(clients[row.customer]) : (flag.kyc === 'ok' ? 'ID on file' : flag.kyc);
+                const handPosted = idLabel === 'ID typed by hand, not checked';
+                if (flag.single || flag.str) return null;
+                if (handPosted) return <div data-testid="posted-id-label" className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.mute, background: CD.lineSoft, borderRadius: 9 }}><Ic n="alert" s={14} c={CD.mute} /> ID typed by hand, not checked</div>;
+                if (flag.kyc === 'ok') return <div className="text-[12px] flex items-center gap-1.5 px-3 py-2.5" style={{ color: CD.green, background: CD.greenSoft, borderRadius: 9 }}><Ic n="checkcircle" s={14} /> No flags. Within thresholds, ID on file.</div>;
+                return null;
+              })()}
 
               {flag.single && (
                 <div className="px-3 py-2.5 mb-2" style={{ background: isFiled ? CD.greenSoft : CD.flagSoft, borderRadius: 9 }}>
@@ -1177,13 +1217,13 @@ ${(parseFloat(fee)||0)>0?`<div class="r"><span class="k">Commission</span><span>
                   </div>
                 </div>
               )}
-              {flag.kyc && flag.kyc !== 'ok' && flag.idNeeded && (
+              {flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && flag.idNeeded && (
                 <div className="px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: CD.flagSoft, borderRadius: 9 }}>
                   <div className="text-[12px] font-medium flex items-center gap-1.5" style={{ color: CD.flag }}><Ic n="id" s={14} /> Client ID — {flag.kyc} <span style={{ color: CD.mute, fontWeight: 400 }}>· required over {fmtHome(flag.idFloor)}</span></div>
                   <button onClick={() => onOpenClient(row.customer, row.ref)} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 font-medium" style={{ borderRadius: 7, background: CD.ink, color: 'var(--cd-on-ink)' }}><Ic n="users" s={13} c="var(--cd-on-ink)" /> Open in Clients</button>
                 </div>
               )}
-              {flag.kyc && flag.kyc !== 'ok' && !flag.idNeeded && (
+              {flag.kyc && flag.kyc !== 'ok' && flag.kyc !== 'ID typed by hand, not checked' && !flag.idNeeded && (
                 <div className="px-3 py-2.5" style={{ background: row.idNoteAcked ? CD.lineSoft : CD.amberSoft, borderRadius: 9 }}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-[12px] font-medium" style={{ color: row.idNoteAcked ? CD.mute : CD.amber }}><div className="flex items-center gap-1.5"><Ic n={row.idNoteAcked ? 'check' : 'id'} s={14} /> No ID on file{row.idNoteAcked ? ' — acknowledged' : ''}</div><div className="text-[10px] mt-0.5" style={{ color: CD.mute }}>Not required under {fmtHome(flag.idFloor)} · {fmtHome(inCad)} deal{row.idNoteInfo ? ` · ${row.idNoteInfo.by}` : ''}</div></div>

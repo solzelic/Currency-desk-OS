@@ -58,8 +58,22 @@ export async function generateOneTimeLink(input: {
   }
   const payload = obj(await res.json());
   const link = obj(payload.meta)["one-time-link"];
-  if (typeof link !== "string" || !link.trim()) throw new Error("link_missing");
+  if (typeof link !== "string" || !personaOneTimeLink(link)) throw new Error("link_refused");
   return link.trim();
+}
+
+/* The link the customer opens. https only, and only a Persona host. */
+export function personaOneTimeLink(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:") return false;
+    if (url.username || url.password) return false;
+    if (url.port !== "" && url.port !== "443") return false;
+    const host = url.hostname.toLowerCase();
+    return host === "withpersona.com" || host.endsWith(".withpersona.com");
+  } catch {
+    return false;
+  }
 }
 
 async function readBounded(res: Response, cap: number): Promise<Buffer | null> {
@@ -112,7 +126,7 @@ export async function cropFromFrontPhoto(input: {
   fetchImpl?: typeof fetch;
 }): Promise<Buffer | null> {
   const url = input.url?.trim() ?? "";
-  if (!url || !personaFileHost(url) || /selfie/i.test(url)) return null;
+  if (!url || !personaFileHost(url, input.env) || /selfie/i.test(url)) return null;
   assertPersonaKey(input.key, input.env, baseOf(input.env));
   const fetchImpl = input.fetchImpl ?? fetch;
   const res = await fetchImpl(url, { method: "GET", redirect: "manual" });
