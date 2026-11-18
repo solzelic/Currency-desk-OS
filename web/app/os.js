@@ -70786,9 +70786,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .field.focus,.cd-si .field:focus-within{border-color:var(--forest);box-shadow:0 0 0 1px var(--forest)}
 .cd-si .eye{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;color:var(--graph);background:transparent;border:0;padding:0}
 .cd-si .signin-inline{font-size:14px;font-weight:600;color:var(--ink);padding:0 14px;height:40px;display:flex;align-items:center;flex:none;border:0;border-left:1px solid var(--hair);margin-left:4px;background:transparent;cursor:pointer}
-.cd-si .foot{display:flex;flex-direction:column;gap:8px;margin-top:16px;font-size:14px}
-.cd-si .foot.recover{margin-top:8px}
-.cd-si .foot button{color:var(--ink);font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer;font-size:14px}
+.cd-si .foot{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:16px;font-size:14px;text-align:left}
+.cd-si .foot.recover{margin-top:24px}
+.cd-si .foot button{display:inline;color:var(--ink);font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer;font-size:14px;width:auto;max-width:max-content;text-align:left}
+.cd-si .pw-reveal:not(.open) .pw-inner{padding-top:0}
 .cd-si .email-continue,.cd-si .pw-reveal{display:grid;transition:grid-template-rows 240ms cubic-bezier(0.22,1,0.32,1),opacity 240ms cubic-bezier(0.22,1,0.32,1)}
 .cd-si .email-continue{grid-template-rows:1fr;opacity:1}
 .cd-si .email-continue.hide{grid-template-rows:0fr;opacity:0;pointer-events:none}
