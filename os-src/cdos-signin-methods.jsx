@@ -591,8 +591,8 @@
       right = (
         <div>
           <div className="eyebrow">Confirm it is you</div>
-          <h2 className="step-title">Confirm with a passkey or the <span className="nowrap">6-digit code</span> from your authenticator app</h2>
-          <p className="step-lead">Google or Microsoft alone is not a second factor for owners and admins. A passkey that asks for the device unlock counts.</p>
+          <h2 className="step-title">Confirm it's you.</h2>
+          <p className="step-lead">Use a passkey or the 6-digit code from your authenticator app.</p>
           <button type="button" className="btn primary" data-cd-target="1" onClick={() => onStub("continueWithPasskey")}><IcoPasskey /><span className="lbl">Continue with a passkey</span></button>
           <button type="button" className="btn sec wide" style={{ marginTop: 16 }} onClick={() => setBackup(false)}>Enter your 6-digit code</button>
           <div className="cancel-row"><button type="button" className="linkish" onClick={() => setBackup(true)}>Use a backup code</button></div>

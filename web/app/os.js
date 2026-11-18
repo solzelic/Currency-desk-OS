@@ -71677,11 +71677,9 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         className: "eyebrow"
       }, "Confirm it is you"), /*#__PURE__*/React.createElement("h2", {
         className: "step-title"
-      }, "Confirm with a passkey or the ", /*#__PURE__*/React.createElement("span", {
-        className: "nowrap"
-      }, "6-digit code"), " from your authenticator app"), /*#__PURE__*/React.createElement("p", {
+      }, "Confirm it's you."), /*#__PURE__*/React.createElement("p", {
         className: "step-lead"
-      }, "Google or Microsoft alone is not a second factor for owners and admins. A passkey that asks for the device unlock counts."), /*#__PURE__*/React.createElement("button", {
+      }, "Use a passkey or the 6-digit code from your authenticator app."), /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "btn primary",
         "data-cd-target": "1",
