@@ -1,4 +1,5 @@
 /* CD-273 step-up, owner authenticator, recovery codes, and session revoke. */
+import { Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { Secret, TOTP } from "otpauth";
@@ -215,5 +216,34 @@ describe("step-up and owner recovery", () => {
       verifyStatus = res.statusCode;
     }
     expect(verifyStatus).toBe(429);
+  });
+
+  it("answers one 503 when every sign-in flag is off and does not write twice", async () => {
+    const saved = process.env.SIGNIN_GOOGLE;
+    delete process.env.SIGNIN_GOOGLE;
+    delete process.env.SIGNIN_MICROSOFT;
+    delete process.env.SIGNIN_PASSKEY;
+    const logs: string[] = [];
+    const stream = new Writable({
+      write(chunk, _enc, cb) {
+        logs.push(String(chunk));
+        cb();
+      },
+    });
+    const quiet = await buildApp(handle.db, {}, stream);
+    const crashes: string[] = [];
+    const onReject = (err: unknown) => {
+      crashes.push(err instanceof Error ? err.message : String(err));
+    };
+    process.on("unhandledRejection", onReject);
+    const res = await quiet.inject({ method: "POST", url: "/api/auth/stepup", payload: {} });
+    await new Promise((resolve) => setImmediate(resolve));
+    process.off("unhandledRejection", onReject);
+    await quiet.close();
+    process.env.SIGNIN_GOOGLE = saved;
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "not_available" });
+    const noise = `${logs.join("\n")}\n${crashes.join("\n")}`;
+    expect(noise).not.toContain("Cannot write headers after they are sent");
   });
 });
