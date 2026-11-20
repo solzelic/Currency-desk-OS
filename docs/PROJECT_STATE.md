@@ -2,6 +2,10 @@
 
 When the server refuses a preview because the published rate board is stale, New Transaction clears Pending, tells the teller to ask for a new publication, and permits a retry without discarding the deal details. It does not create a new quote from stale or fallback pricing. The server freshness guard, frozen quote expiry and financial controls are unchanged.
 
+## Staff sign-in identity tables (CD-273, 20 November 2026)
+
+Migration 083 adds `staff_identities`, `staff_passkeys`, `auth_challenges`, `staff_recovery_codes`, and `staff_totp`, plus `tenants.ms_tenant_allowlist` and `sessions.step_up_at`. One identity provider subject can be linked in two shops, and not twice in the same shop. One staff member has at most one Google link and one Microsoft link. Challenges and recovery codes carry `tenant_id`. No sign-in route reads them yet. `ms_tenant_allowlist` null leaves the Microsoft tenant allowlist off. Flags `SIGNIN_GOOGLE`, `SIGNIN_MICROSOFT`, and `SIGNIN_PASSKEY` stay off. Sign-up, `/onboarding/sso`, and `SSO_REDIRECT_URI` are unchanged. Nothing in this change creates a staff row from an identity provider.
+
 ## Sign-in screens, UI only (CD-277, 18 November 2026)
 
 The approved frames in `design/signin-sso-passkey-2026-11-18/` are on the desk as a new sign-in surface: passkey, Google, Microsoft, then email. States B through H are on the design preview. Flags `SIGNIN_PASSKEY`, `SIGNIN_GOOGLE`, and `SIGNIN_MICROSOFT` are off unless set. With all three off, `/login` is the sign-in that shipped before this change: email and password, no new buttons, and no new request. The new buttons call client stubs that return `not_available` and do not start OAuth, WebAuthn, or a session. That work is CD-273, CD-274, CD-275, and CD-276.
