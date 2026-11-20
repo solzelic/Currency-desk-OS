@@ -4,7 +4,7 @@ Password sign-in, the emailed-code finish, and a username with no email address 
 
 ## Staff sign-in identity tables (CD-273, 20 November 2026)
 
-Migration 083 adds `staff_identities`, `staff_passkeys`, `auth_challenges`, `staff_recovery_codes`, and `staff_totp`, plus `tenants.ms_tenant_allowlist` and `sessions.step_up_at`. No sign-in route reads them yet. `ms_tenant_allowlist` null leaves the Microsoft tenant allowlist off. Flags `SIGNIN_GOOGLE`, `SIGNIN_MICROSOFT`, and `SIGNIN_PASSKEY` stay off. Sign-up, `/onboarding/sso`, and `SSO_REDIRECT_URI` are unchanged. Nothing in this change creates a staff row from an identity provider.
+Migration 083 adds `staff_identities`, `staff_passkeys`, `auth_challenges`, `staff_recovery_codes`, and `staff_totp`, plus `tenants.ms_tenant_allowlist` and `sessions.step_up_at`. One identity provider subject can be linked in two shops, and not twice in the same shop. One staff member has at most one Google link and one Microsoft link. Challenges and recovery codes carry `tenant_id`. No sign-in route reads them yet. `ms_tenant_allowlist` null leaves the Microsoft tenant allowlist off. Flags `SIGNIN_GOOGLE`, `SIGNIN_MICROSOFT`, and `SIGNIN_PASSKEY` stay off. Sign-up, `/onboarding/sso`, and `SSO_REDIRECT_URI` are unchanged. Nothing in this change creates a staff row from an identity provider.
 
 ## Sign-in screens, UI only (CD-277, 18 November 2026)
 
