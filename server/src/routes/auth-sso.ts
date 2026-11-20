@@ -144,6 +144,7 @@ export function registerSsoRoutes(app: FastifyInstance, db: Db, providers: reado
     const parsed = z.object({ code: z.string().trim().min(6).max(32) }).safeParse(req.body);
     if (!token || !parsed.success) return reply.code(401).send({ error: "invalid_credentials" });
     const result = await confirmOwner(db, token, parsed.data.code, clientIp(req));
+    if (!result.ok && result.reason === "locked") return reply.code(429).send(lockBody(result.locked, "UTC"));
     if (!result.ok || result.kind !== "session") return reply.code(401).send({ error: "invalid_credentials" });
     reply.setCookie(SESSION_COOKIE, result.token, { ...cookies, expires: result.expiresAt });
     reply.clearCookie(PENDING, cookies);

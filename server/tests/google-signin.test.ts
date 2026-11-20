@@ -1,7 +1,7 @@
 /* CD-275. Google sign-in and link, with a mock provider and no network.
    The demo shop is never linked. An owner without a second step gets
    the same refusal as a missing account. */
-import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
+import { createHash, generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -11,7 +11,8 @@ import { buildApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/password.js";
 import { seed, DEMO } from "../src/seed.js";
 import { clearJwksCache, type FetchJson } from "../src/auth/oidc.js";
-import { setSsoHttp } from "../src/auth/sso-flow.js";
+import { confirmOwner, setSsoHttp, spendPendingChallenge } from "../src/auth/sso-flow.js";
+import { normalizeBackupCode } from "../src/auth/owner-mfa.js";
 
 const ORIGIN = "https://currencydesk-staging.onrender.com";
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -37,6 +38,7 @@ let app: FastifyInstance;
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
+  process.env.PGLITE_MEMORY = "1";
   for (const key of ["SIGNIN_GOOGLE", "SIGNIN_MICROSOFT", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SSO_SIGNIN_REDIRECT_URI", "SSO_LINK_REDIRECT_URI"]) {
     saved[key] = process.env[key];
   }
@@ -47,6 +49,7 @@ beforeAll(async () => {
   process.env.SSO_LINK_REDIRECT_URI = `${ORIGIN}/auth/sso/link/callback`;
   handle = await createDb();
   await seed(handle.db);
+  await handle.db.insert(schema.tenants).values({ id: "tnt-platform", name: "CurrencyDesk Platform" }).onConflictDoNothing();
   app = await buildApp(handle.db);
   setSsoHttp(http);
 });
@@ -246,5 +249,42 @@ describe("Google sign-in", () => {
     await app.inject({ method: "POST", url: "/api/auth/stepup", headers: { cookie: demoCookie }, payload: { password: DEMO.password } });
     const demoLink = await app.inject({ method: "GET", url: "/api/auth/sso/link/google/start", headers: { cookie: demoCookie } });
     expect(demoLink.statusCode).toBe(403);
+  });
+
+  it("spends the owner pending sign-in after three wrong codes, once", async () => {
+    const person = await makePerson("administrator", "");
+    const backup = "abcde-fghij";
+    await handle.db.insert(schema.staffTotp).values({
+      staffUserId: person.userId, tenantId: person.tenantId, secretEnc: "not-used", enrolledAt: new Date(),
+    });
+    await handle.db.insert(schema.staffRecoveryCodes).values({
+      id: `rcv-${randomUUID()}`, tenantId: person.tenantId, staffUserId: person.userId,
+      codeHash: await hashPassword(normalizeBackupCode(backup)),
+    });
+    const token = randomUUID();
+    const challengeId = `chl-${randomUUID()}`;
+    await handle.db.insert(schema.authChallenges).values({
+      id: challengeId, tenantId: person.tenantId, purpose: "oidc_signin",
+      challengeHash: createHash("sha256").update(token).digest("hex"),
+      provider: "google", issuer: "https://accounts.google.com", subject: "sub",
+      staffUserId: person.userId, returnTo: "/app", expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    for (let n = 0; n < 3; n += 1) {
+      const result = await confirmOwner(handle.db, token, "wrong-code-1", "203.0.113.44");
+      expect(result.ok).toBe(false);
+    }
+    const row = (await handle.db.select().from(schema.authChallenges).where(eq(schema.authChallenges.id, challengeId)).limit(1))[0];
+    expect(row?.usedAt).toBeTruthy();
+    const [first, second] = await Promise.all([
+      spendPendingChallenge(handle.db, challengeId, person.tenantId),
+      spendPendingChallenge(handle.db, challengeId, person.tenantId),
+    ]);
+    expect(first).toBe(false);
+    expect(second).toBe(false);
+    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.actorId, person.userId));
+    expect(audits.filter((event) => event.action === "auth.login_failed").length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(audits)).not.toContain("wrong-code-1");
+    const code = (await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, person.userId)).limit(1))[0];
+    expect(code?.usedAt ?? null).toBeNull();
   });
 });

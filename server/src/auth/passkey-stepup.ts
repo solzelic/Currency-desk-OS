@@ -11,8 +11,9 @@ import {
 import { schema, type Db } from "../db/index.js";
 import { relyingParty, CHALLENGE_TTL_MS, type RelyingParty } from "./webauthn.js";
 
-export async function passkeyStepUpOptions(db: Db, userId: string, rp: RelyingParty, sessionHash: string) {
+export async function passkeyStepUpOptions(db: Db, userId: string, tenantId: string, rp: RelyingParty, sessionHash: string) {
   const keys = await db.select().from(schema.staffPasskeys).where(and(
+    eq(schema.staffPasskeys.tenantId, tenantId),
     eq(schema.staffPasskeys.staffUserId, userId),
     isNull(schema.staffPasskeys.revokedAt),
   ));
@@ -28,6 +29,7 @@ export async function passkeyStepUpOptions(db: Db, userId: string, rp: RelyingPa
   });
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
+    tenantId,
     purpose: "passkey_auth",
     challengeHash: options.challenge,
     staffUserId: userId,
@@ -40,11 +42,13 @@ export async function passkeyStepUpOptions(db: Db, userId: string, rp: RelyingPa
 export async function passkeyStepUpVerify(
   db: Db,
   userId: string,
+  tenantId: string,
   rp: RelyingParty,
   sessionHash: string,
   response: AuthenticationResponseJSON,
 ): Promise<boolean> {
   const challenge = (await db.select().from(schema.authChallenges).where(and(
+    eq(schema.authChallenges.tenantId, tenantId),
     eq(schema.authChallenges.purpose, "passkey_auth"),
     eq(schema.authChallenges.staffUserId, userId),
     eq(schema.authChallenges.sessionHash, sessionHash),
@@ -54,10 +58,12 @@ export async function passkeyStepUpVerify(
   if (!challenge) return false;
   const spent = await db.update(schema.authChallenges).set({ usedAt: new Date() }).where(and(
     eq(schema.authChallenges.id, challenge.id),
+    eq(schema.authChallenges.tenantId, tenantId),
     isNull(schema.authChallenges.usedAt),
   )).returning();
   if (!spent.length) return false;
   const key = (await db.select().from(schema.staffPasskeys).where(and(
+    eq(schema.staffPasskeys.tenantId, tenantId),
     eq(schema.staffPasskeys.staffUserId, userId),
     eq(schema.staffPasskeys.credentialId, response.id),
     isNull(schema.staffPasskeys.revokedAt),

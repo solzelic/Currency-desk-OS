@@ -35,6 +35,7 @@ let app: FastifyInstance;
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
+  process.env.PGLITE_MEMORY = "1";
   for (const key of ["SIGNIN_MICROSOFT", "SIGNIN_GOOGLE", "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET", "SSO_SIGNIN_REDIRECT_URI", "SSO_LINK_REDIRECT_URI"]) {
     saved[key] = process.env[key];
   }

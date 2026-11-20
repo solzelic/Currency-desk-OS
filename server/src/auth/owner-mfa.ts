@@ -8,6 +8,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { TOTP, Secret } from "otpauth";
 import { schema, type Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "./password.js";
+import { recordSignInAttempt, releaseSignInSuccess, signInLock, type SignInDecision } from "./signin-guard.js";
 import { decryptSecret, encryptSecret } from "./totp-secret.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail } from "../email.js";
 import { isEmail } from "./login-user.js";
@@ -87,6 +88,7 @@ export async function issueStepUpCode(db: Db, user: Staff, sessionToken: string)
   const code = makeCode();
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
+    tenantId: user.tenantId,
     purpose: "stepup",
     challengeHash: sha256(`${user.id}:email`),
     verifier: hashCode(code),
@@ -100,11 +102,12 @@ export async function issueStepUpCode(db: Db, user: Staff, sessionToken: string)
   return { ok: true, code };
 }
 
-export async function consumeStepUpCode(db: Db, userId: string, sessionToken: string, code: string): Promise<boolean> {
+export async function consumeStepUpCode(db: Db, user: Staff, sessionToken: string, code: string): Promise<boolean> {
   const row = (await db.select().from(schema.authChallenges).where(and(
+    eq(schema.authChallenges.tenantId, user.tenantId),
     eq(schema.authChallenges.purpose, "stepup"),
     eq(schema.authChallenges.provider, "email"),
-    eq(schema.authChallenges.staffUserId, userId),
+    eq(schema.authChallenges.staffUserId, user.id),
     eq(schema.authChallenges.sessionHash, sha256(sessionToken)),
     isNull(schema.authChallenges.usedAt),
     gt(schema.authChallenges.expiresAt, new Date()),
@@ -131,6 +134,7 @@ export async function beginOwnerTotp(
   const ticket = randomBytes(32).toString("base64url");
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
+    tenantId: user.tenantId,
     purpose: "stepup",
     challengeHash: sha256(ticket),
     verifier: await encryptSecret(secret.base32),
@@ -143,8 +147,72 @@ export async function beginOwnerTotp(
   return { ok: true, ticket, otpauthUri: totp.toString(), manualSecret: secret.base32, backupCodes };
 }
 
-export async function confirmOwnerTotp(db: Db, user: Staff, sessionToken: string, ticket: string, code: string): Promise<boolean> {
+const FACTOR_MAX = 5;
+
+export type FactorFailure =
+  | { ok: false; error: "wrong_code" }
+  | { ok: false; error: "locked"; locked: Extract<SignInDecision, { result: "locked" }> };
+
+function stricterLock(left: SignInDecision | null, right: SignInDecision | null): Extract<SignInDecision, { result: "locked" }> | null {
+  const a = left?.result === "locked" ? left : null;
+  const b = right?.result === "locked" ? right : null;
+  if (!a) return b;
+  if (!b) return a;
+  return a.retryAfter >= b.retryAfter ? a : b;
+}
+
+/** Five wrong factor attempts per 15 minutes, for the staff member and the address. */
+export async function noteFactorAttempt(
+  db: Db,
+  user: Staff,
+  ip: string,
+  matched: boolean,
+  method: string,
+): Promise<{ ok: true } | Extract<FactorFailure, { error: "locked" }>> {
+  const staffKey = `factor:${user.id}`;
+  const ipKey = `factor-ip:${ip}`;
+  const staffAttempt = await recordSignInAttempt(db, staffKey);
+  const ipAttempt = await recordSignInAttempt(db, ipKey);
+  const locked = stricterLock(
+    signInLock(staffAttempt, FACTOR_MAX, "account", matched),
+    signInLock(ipAttempt, FACTOR_MAX, "ip", matched),
+  );
+  if (!matched || locked) {
+    await audit(db, {
+      tenantId: user.tenantId,
+      legalEntityId: user.legalEntityId,
+      branchId: user.branchId,
+      actorId: user.id,
+      action: locked ? SIGN_IN_AUDIT.loginLocked : SIGN_IN_AUDIT.loginFailed,
+      detail: signInAuditDetail({ method, result: "fail", staffId: user.staffId, shop: user.tenantId, ip }),
+    });
+  }
+  if (locked) return { ok: false, error: "locked", locked };
+  if (matched) await releaseSignInSuccess(db, staffKey, staffAttempt.failures, ipKey);
+  return { ok: true };
+}
+
+export async function authenticatorPresent(db: Db, userId: string, tenantId: string): Promise<boolean> {
+  if (await totpEnrolled(db, userId)) return true;
+  const key = (await db.select({ id: schema.staffPasskeys.id }).from(schema.staffPasskeys).where(and(
+    eq(schema.staffPasskeys.tenantId, tenantId),
+    eq(schema.staffPasskeys.staffUserId, userId),
+    isNull(schema.staffPasskeys.revokedAt),
+  )).limit(1))[0];
+  return !!key;
+}
+
+export async function confirmOwnerTotp(
+  db: Db,
+  user: Staff,
+  sessionToken: string,
+  ticket: string,
+  code: string,
+  ip: string,
+): Promise<true | FactorFailure | { ok: false; error: "already_enrolled" | "bad_ticket" }> {
+  if (await totpEnrolled(db, user.id)) return { ok: false, error: "already_enrolled" };
   const row = (await db.select().from(schema.authChallenges).where(and(
+    eq(schema.authChallenges.tenantId, user.tenantId),
     eq(schema.authChallenges.purpose, "stepup"),
     eq(schema.authChallenges.provider, "totp"),
     eq(schema.authChallenges.challengeHash, sha256(ticket)),
@@ -153,35 +221,50 @@ export async function confirmOwnerTotp(db: Db, user: Staff, sessionToken: string
     isNull(schema.authChallenges.usedAt),
     gt(schema.authChallenges.expiresAt, new Date()),
   )).limit(1))[0];
-  if (!row?.verifier || !/^\d{6}$/.test(code.trim())) return false;
+  if (!row?.verifier || !/^\d{6}$/.test(code.trim())) {
+    const gate = await noteFactorAttempt(db, user, ip, false, "totp");
+    return gate.ok ? { ok: false, error: "bad_ticket" } : gate;
+  }
   let base32: string;
   try {
     base32 = await decryptSecret(row.verifier);
   } catch {
-    return false;
+    const gate = await noteFactorAttempt(db, user, ip, false, "totp");
+    return gate.ok ? { ok: false, error: "bad_ticket" } : gate;
   }
   const step = await matchedStep(totpFor(user.staffId, base32), code.trim());
-  if (step === null) return false;
+  if (step === null) {
+    const gate = await noteFactorAttempt(db, user, ip, false, "totp");
+    return gate.ok ? { ok: false, error: "bad_ticket" } : gate;
+  }
   const hashes = JSON.parse(row.issuer || "[]") as unknown;
-  if (!Array.isArray(hashes) || hashes.some((item) => typeof item !== "string")) return false;
-  await db.insert(schema.staffTotp).values({
+  if (!Array.isArray(hashes) || hashes.some((item) => typeof item !== "string")) return { ok: false, error: "bad_ticket" };
+  const wrote = await db.insert(schema.staffTotp).values({
     staffUserId: user.id,
     tenantId: user.tenantId,
     secretEnc: row.verifier,
     enrolledAt: new Date(),
     lastStep: step,
-  }).onConflictDoNothing();
-  const enrolled = await totpEnrolled(db, user.id);
-  if (!enrolled) return false;
-  await db.delete(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, user.id));
+  }).onConflictDoNothing().returning();
+  if (!wrote.length) return { ok: false, error: "already_enrolled" };
+  await db.delete(schema.staffRecoveryCodes).where(and(
+    eq(schema.staffRecoveryCodes.tenantId, user.tenantId),
+    eq(schema.staffRecoveryCodes.staffUserId, user.id),
+  ));
   if (hashes.length) {
     await db.insert(schema.staffRecoveryCodes).values(hashes.map((codeHash) => ({
       id: `rcv-${randomUUID()}`,
+      tenantId: user.tenantId,
       staffUserId: user.id,
       codeHash: codeHash as string,
     })));
   }
-  await db.update(schema.authChallenges).set({ usedAt: new Date() }).where(eq(schema.authChallenges.id, row.id));
+  await db.update(schema.authChallenges).set({ usedAt: new Date() }).where(and(
+    eq(schema.authChallenges.tenantId, user.tenantId),
+    eq(schema.authChallenges.staffUserId, user.id),
+    eq(schema.authChallenges.provider, "totp"),
+    isNull(schema.authChallenges.usedAt),
+  ));
   await audit(db, {
     tenantId: user.tenantId,
     legalEntityId: user.legalEntityId,
@@ -193,12 +276,13 @@ export async function confirmOwnerTotp(db: Db, user: Staff, sessionToken: string
   return true;
 }
 
-/** TOTP or one backup code. A used backup code does not work again.
-    The same TOTP step does not work twice. */
-export async function verifyOwnerFactor(db: Db, user: Staff, code: string): Promise<"totp" | "backup" | null> {
+async function matchOwnerFactor(db: Db, user: Staff, code: string): Promise<"totp" | "backup" | null> {
   const trimmed = code.trim();
   if (/^\d{6}$/.test(trimmed)) {
-    const row = (await db.select().from(schema.staffTotp).where(eq(schema.staffTotp.staffUserId, user.id)).limit(1))[0];
+    const row = (await db.select().from(schema.staffTotp).where(and(
+      eq(schema.staffTotp.tenantId, user.tenantId),
+      eq(schema.staffTotp.staffUserId, user.id),
+    )).limit(1))[0];
     if (!row?.enrolledAt) return null;
     let base32: string;
     try {
@@ -208,34 +292,85 @@ export async function verifyOwnerFactor(db: Db, user: Staff, code: string): Prom
     }
     const step = await matchedStep(totpFor(user.staffId, base32), trimmed);
     if (step === null || (row.lastStep != null && step <= row.lastStep)) return null;
-    await db.update(schema.staffTotp).set({ lastStep: step }).where(eq(schema.staffTotp.staffUserId, user.id));
     return "totp";
   }
   const normalized = normalizeBackupCode(trimmed);
   if (normalized.length < 8) return null;
   const codes = await db.select().from(schema.staffRecoveryCodes).where(and(
+    eq(schema.staffRecoveryCodes.tenantId, user.tenantId),
     eq(schema.staffRecoveryCodes.staffUserId, user.id),
     isNull(schema.staffRecoveryCodes.usedAt),
   ));
   for (const row of codes) {
-    if (await verifyPassword(normalized, row.codeHash)) {
-      const spent = await db.update(schema.staffRecoveryCodes).set({ usedAt: new Date() }).where(and(
-        eq(schema.staffRecoveryCodes.id, row.id),
-        isNull(schema.staffRecoveryCodes.usedAt),
-      )).returning();
-      if (!spent.length) return null;
-      await audit(db, {
-        tenantId: user.tenantId,
-        legalEntityId: user.legalEntityId,
-        branchId: user.branchId,
-        actorId: user.id,
-        action: SIGN_IN_AUDIT.recoveryUsed,
-        detail: signInAuditDetail({ method: "backup", result: "ok", staffId: user.staffId, shop: user.tenantId }),
-      });
-      return "backup";
-    }
+    if (await verifyPassword(normalized, row.codeHash)) return "backup";
   }
   return null;
+}
+
+async function consumeOwnerFactor(db: Db, user: Staff, code: string, factor: "totp" | "backup"): Promise<boolean> {
+  if (factor === "totp") {
+    if ((await matchOwnerFactor(db, user, code)) !== "totp") return false;
+    const row = (await db.select().from(schema.staffTotp).where(and(
+      eq(schema.staffTotp.tenantId, user.tenantId),
+      eq(schema.staffTotp.staffUserId, user.id),
+    )).limit(1))[0];
+    if (!row?.enrolledAt) return false;
+    let base32: string;
+    try {
+      base32 = await decryptSecret(row.secretEnc);
+    } catch {
+      return false;
+    }
+    const step = await matchedStep(totpFor(user.staffId, base32), code.trim());
+    if (step === null) return false;
+    const wrote = await db.update(schema.staffTotp).set({ lastStep: step }).where(and(
+      eq(schema.staffTotp.staffUserId, user.id),
+      eq(schema.staffTotp.tenantId, user.tenantId),
+      row.lastStep == null ? isNull(schema.staffTotp.lastStep) : eq(schema.staffTotp.lastStep, row.lastStep),
+    )).returning();
+    return wrote.length === 1;
+  }
+  const normalized = normalizeBackupCode(code);
+  const codes = await db.select().from(schema.staffRecoveryCodes).where(and(
+    eq(schema.staffRecoveryCodes.tenantId, user.tenantId),
+    eq(schema.staffRecoveryCodes.staffUserId, user.id),
+    isNull(schema.staffRecoveryCodes.usedAt),
+  ));
+  for (const row of codes) {
+    if (!(await verifyPassword(normalized, row.codeHash))) continue;
+    const spent = await db.update(schema.staffRecoveryCodes).set({ usedAt: new Date() }).where(and(
+      eq(schema.staffRecoveryCodes.id, row.id),
+      eq(schema.staffRecoveryCodes.tenantId, user.tenantId),
+      isNull(schema.staffRecoveryCodes.usedAt),
+    )).returning();
+    if (!spent.length) return false;
+    await audit(db, {
+      tenantId: user.tenantId,
+      legalEntityId: user.legalEntityId,
+      branchId: user.branchId,
+      actorId: user.id,
+      action: SIGN_IN_AUDIT.recoveryUsed,
+      detail: signInAuditDetail({ method: "backup", result: "ok", staffId: user.staffId, shop: user.tenantId }),
+    });
+    return true;
+  }
+  return false;
+}
+
+/** TOTP or one backup code, with the shared wrong-code limit.
+    A used backup code does not work again. The same TOTP step does not work twice. */
+export async function verifyOwnerFactor(
+  db: Db,
+  user: Staff,
+  code: string,
+  ip: string,
+): Promise<{ ok: true; factor: "totp" | "backup" } | FactorFailure> {
+  const factor = await matchOwnerFactor(db, user, code);
+  const gate = await noteFactorAttempt(db, user, ip, factor !== null, factor ?? "code");
+  if (!gate.ok) return gate;
+  if (!factor) return { ok: false, error: "wrong_code" };
+  if (!(await consumeOwnerFactor(db, user, code, factor))) return { ok: false, error: "wrong_code" };
+  return { ok: true, factor };
 }
 
 export async function regenerateRecoveryCodes(db: Db, user: Staff): Promise<string[] | null> {
@@ -245,6 +380,7 @@ export async function regenerateRecoveryCodes(db: Db, user: Staff): Promise<stri
   await db.delete(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, user.id));
   await db.insert(schema.staffRecoveryCodes).values(hashes.map((codeHash) => ({
     id: `rcv-${randomUUID()}`,
+    tenantId: user.tenantId,
     staffUserId: user.id,
     codeHash,
   })));
