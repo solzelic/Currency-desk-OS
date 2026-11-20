@@ -44,6 +44,7 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_domain text;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS site_config jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS setup jsonb;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ms_tenant_allowlist jsonb;
 CREATE TABLE IF NOT EXISTS rate_quotes (
   id text PRIMARY KEY,
   tenant_id text NOT NULL REFERENCES tenants(id),
@@ -535,7 +536,73 @@ CREATE TABLE IF NOT EXISTS sessions (
   revoked_at timestamptz
 );
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS platform_mfa_at timestamptz;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS step_up_at timestamptz;
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+CREATE TABLE IF NOT EXISTS staff_identities (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  staff_user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  provider text NOT NULL CHECK (provider IN ('google', 'microsoft')),
+  issuer text NOT NULL,
+  subject text NOT NULL,
+  ms_tid text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by text,
+  last_used_at timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identities_link_idx ON staff_identities (provider, issuer, subject, staff_user_id);
+CREATE INDEX IF NOT EXISTS staff_identities_subject_idx ON staff_identities (provider, subject);
+CREATE INDEX IF NOT EXISTS staff_identities_ms_tid_idx ON staff_identities (provider, ms_tid, subject);
+CREATE TABLE IF NOT EXISTS staff_passkeys (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  staff_user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  credential_id text NOT NULL UNIQUE,
+  public_key text NOT NULL,
+  sign_count integer NOT NULL DEFAULT 0,
+  transports jsonb NOT NULL DEFAULT '[]',
+  aaguid text NOT NULL DEFAULT '',
+  backup_eligible boolean NOT NULL DEFAULT false,
+  backup_state boolean NOT NULL DEFAULT false,
+  label text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS staff_passkeys_user_idx ON staff_passkeys (staff_user_id);
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id text PRIMARY KEY,
+  purpose text NOT NULL CHECK (purpose IN ('oidc_signin', 'oidc_link', 'passkey_register', 'passkey_auth', 'stepup')),
+  challenge_hash text NOT NULL,
+  nonce text,
+  verifier text,
+  provider text,
+  return_to text,
+  issuer text,
+  subject text,
+  ms_tid text,
+  staff_user_id text REFERENCES staff_users(id) ON DELETE CASCADE,
+  session_hash text,
+  expires_at timestamptz NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS auth_challenges_hash_idx ON auth_challenges (purpose, challenge_hash);
+CREATE TABLE IF NOT EXISTS staff_recovery_codes (
+  id text PRIMARY KEY,
+  staff_user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  code_hash text NOT NULL,
+  used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS staff_recovery_codes_user_idx ON staff_recovery_codes (staff_user_id);
+CREATE TABLE IF NOT EXISTS staff_totp (
+  staff_user_id text PRIMARY KEY REFERENCES staff_users(id) ON DELETE CASCADE,
+  tenant_id text NOT NULL REFERENCES tenants(id),
+  secret_enc text NOT NULL,
+  enrolled_at timestamptz,
+  last_step integer
+);
 CREATE TABLE IF NOT EXISTS audit_events (
   id text PRIMARY KEY,
   tenant_id text NOT NULL,
@@ -864,6 +931,9 @@ export async function createDb(): Promise<DbHandle> {
   await client.exec(await readFile(new URL("./migrations/080_signup_agreement_history.sql", import.meta.url), "utf8"));
   await client.exec(
     await readFile(new URL("./migrations/082_pep_answer_events.sql", import.meta.url), "utf8"),
+  );
+  await client.exec(
+    await readFile(new URL("./migrations/083_staff_sign_in_identities.sql", import.meta.url), "utf8"),
   );
   const db = drizzlePglite(client, { schema });
   return { db, pool: null, close: () => client.close() };

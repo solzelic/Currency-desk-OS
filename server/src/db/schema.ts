@@ -38,6 +38,9 @@ export const tenants = pgTable("tenants", {
   // platform admin can freeze a desk (non-payment/abuse): a suspended desk's
   // people can't sign in. Reversible.
   suspended: boolean("suspended").notNull().default(false),
+  /* Optional Microsoft tenant allowlist. Null means the shop has not
+     turned it on. Migration 083. */
+  msTenantAllowlist: jsonb("ms_tenant_allowlist").$type<string[] | null>(),
   /* Staging test shop. Migration 056. False unless signup verify
      is finishing a staging fresh shop. */
   isTestShop: boolean("is_test_shop").notNull().default(false),
@@ -447,9 +450,107 @@ export const sessions = pgTable(
        code). Desk sessions leave it null. The panel requires it once the
        operator has enrolled. */
     platformMfaAt: timestamp("platform_mfa_at", { withTimezone: true }),
+    /* Set by a fresh step-up. Linking and unlinking read it. A new
+       sign-in does not copy it onto the next session. */
+    stepUpAt: timestamp("step_up_at", { withTimezone: true }),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
+
+/* A Google or Microsoft account linked to one existing staff row.
+   subject is Google's sub, or Microsoft's oid. ms_tid is Microsoft's
+   tid. Email is not stored and is not a match key. */
+export const staffIdentities = pgTable(
+  "staff_identities",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    staffUserId: text("staff_user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    msTid: text("ms_tid"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: text("created_by"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("staff_identities_link_idx").on(t.provider, t.issuer, t.subject, t.staffUserId),
+    index("staff_identities_subject_idx").on(t.provider, t.subject),
+    index("staff_identities_ms_tid_idx").on(t.provider, t.msTid, t.subject),
+  ],
+);
+
+/* A passkey registered to a staff row. The credential id and the public
+   key are stored. The attestation statement is not. */
+export const staffPasskeys = pgTable(
+  "staff_passkeys",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
+    staffUserId: text("staff_user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: text("public_key").notNull(),
+    signCount: integer("sign_count").notNull().default(0),
+    transports: jsonb("transports").$type<string[]>().notNull().default([]),
+    aaguid: text("aaguid").notNull().default(""),
+    backupEligible: boolean("backup_eligible").notNull().default(false),
+    backupState: boolean("backup_state").notNull().default(false),
+    label: text("label").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("staff_passkeys_user_idx").on(t.staffUserId)],
+);
+
+/* Single-use sign-in, link, passkey, and step-up challenges.
+   challenge_hash is the hash of the state or the cookie. The IdP
+   access token and refresh token are not columns. */
+export const authChallenges = pgTable(
+  "auth_challenges",
+  {
+    id: text("id").primaryKey(),
+    purpose: text("purpose").notNull(),
+    challengeHash: text("challenge_hash").notNull(),
+    nonce: text("nonce"),
+    verifier: text("verifier"),
+    provider: text("provider"),
+    returnTo: text("return_to"),
+    issuer: text("issuer"),
+    subject: text("subject"),
+    msTid: text("ms_tid"),
+    staffUserId: text("staff_user_id").references(() => staffUsers.id, { onDelete: "cascade" }),
+    sessionHash: text("session_hash"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("auth_challenges_hash_idx").on(t.purpose, t.challengeHash)],
+);
+
+/* Owner recovery codes. scrypt hash only. Shown once, at issue. */
+export const staffRecoveryCodes = pgTable(
+  "staff_recovery_codes",
+  {
+    id: text("id").primaryKey(),
+    staffUserId: text("staff_user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("staff_recovery_codes_user_idx").on(t.staffUserId)],
+);
+
+/* Owner authenticator. secret_enc is ciphertext. enrolled_at stays
+   null until a code from that secret verifies. */
+export const staffTotp = pgTable("staff_totp", {
+  staffUserId: text("staff_user_id").primaryKey().references(() => staffUsers.id, { onDelete: "cascade" }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id),
+  secretEnc: text("secret_enc").notNull(),
+  enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
+  lastStep: integer("last_step"),
+});
 
 /* Rate board publications — APPEND-ONLY. A publication is the full board
    at a moment in time (same shape the prototype's converter reads):
