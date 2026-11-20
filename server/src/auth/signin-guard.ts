@@ -176,6 +176,26 @@ async function releaseSuccess(db: Db, accountKey: string, accountCount: number, 
   await db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${ipKey} AND failures <= 0`);
 }
 
+/** The count written by one attempt. The caller decides the cap once it
+    knows whether the code matched. */
+export async function recordSignInAttempt(db: Db, bucket: string): Promise<Bucket> {
+  return bump(db, bucket);
+}
+
+/** A matching code may land on the cap. A wrong code locks when the cap is reached. */
+export function signInLock(
+  attempt: Bucket,
+  max: number,
+  scope: "account" | "ip",
+  codeOk: boolean,
+): SignInDecision | null {
+  return lockFrom(attempt, max, scope, codeOk);
+}
+
+export async function releaseSignInSuccess(db: Db, accountKey: string, accountCount: number, ipKey: string): Promise<void> {
+  await releaseSuccess(db, accountKey, accountCount, ipKey);
+}
+
 /** An owner, a manager, or a break-glass reset. The address counter stays.
     No row is a finished clear, not a failure: they were not locked. */
 export async function clearSignInLock(db: Db, userId: string): Promise<void> {
