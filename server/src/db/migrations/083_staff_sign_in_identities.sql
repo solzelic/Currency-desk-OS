@@ -25,8 +25,10 @@ CREATE TABLE IF NOT EXISTS staff_identities (
   created_by text,
   last_used_at timestamptz
 );
-CREATE UNIQUE INDEX IF NOT EXISTS staff_identities_link_idx
-  ON staff_identities (provider, issuer, subject, staff_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identities_tenant_subject_idx
+  ON staff_identities (tenant_id, issuer, subject);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identities_user_provider_idx
+  ON staff_identities (staff_user_id, provider);
 CREATE INDEX IF NOT EXISTS staff_identities_subject_idx
   ON staff_identities (provider, subject);
 CREATE INDEX IF NOT EXISTS staff_identities_ms_tid_idx
@@ -52,6 +54,7 @@ CREATE INDEX IF NOT EXISTS staff_passkeys_user_idx ON staff_passkeys (staff_user
 
 CREATE TABLE IF NOT EXISTS auth_challenges (
   id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
   purpose text NOT NULL CHECK (purpose IN ('oidc_signin', 'oidc_link', 'passkey_register', 'passkey_auth', 'stepup')),
   challenge_hash text NOT NULL,
   nonce text,
@@ -71,6 +74,7 @@ CREATE INDEX IF NOT EXISTS auth_challenges_hash_idx ON auth_challenges (purpose,
 
 CREATE TABLE IF NOT EXISTS staff_recovery_codes (
   id text PRIMARY KEY,
+  tenant_id text NOT NULL REFERENCES tenants(id),
   staff_user_id text NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
   code_hash text NOT NULL,
   used_at timestamptz,
