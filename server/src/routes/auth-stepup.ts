@@ -53,7 +53,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   }
 
   app.post("/api/auth/stepup/email", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = z.object({ password: z.string().min(1).max(512) }).safeParse(req.body);
@@ -67,7 +67,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/stepup", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = stepBody.safeParse(req.body);
@@ -115,7 +115,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/stepup/passkey/options", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const gate = await noteFactorAttempt(db, session.user, clientIp(req), false, "passkey");
@@ -128,7 +128,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/stepup/passkey/verify", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const rp = relyingParty();
@@ -146,7 +146,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/mfa/enroll/start", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     if (!(await stepUpFresh(db, session.token))) return reply.code(403).send({ error: "step_up_required" });
@@ -162,7 +162,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/mfa/enroll/confirm", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = z.object({ ticket: z.string().min(10).max(200), code: z.string().trim().regex(/^\d{6}$/) }).safeParse(req.body);
@@ -175,7 +175,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/mfa/recovery", async (req, reply) => {
-    if (closed(reply)) return;
+    if (closed(reply)) return reply;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     if (!(await stepUpFresh(db, session.token))) return reply.code(403).send({ error: "step_up_required" });
