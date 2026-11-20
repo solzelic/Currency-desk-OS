@@ -289,7 +289,8 @@ for (const width of [390, 1280] as const) {
     const alert = page.getByTestId("exchange-stale-rate");
     const primary = page.locator(".cd-tx-go");
     await expect(alert).toContainText("The rate board is out of date.");
-    await expect(page.locator(".cd-tx-rate-shown")).not.toContainText("Pending");
+    await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).toHaveText("");
+    await expect(page.locator(".cd-tx-kicker .cd-tx-rate-shown")).toHaveText("");
     await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
     await expect(primary).toBeDisabled();
 
