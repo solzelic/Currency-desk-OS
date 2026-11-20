@@ -2,6 +2,7 @@
    The common authority is used. A shop allowlist stays off until set.
    No network. */
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -46,6 +47,8 @@ beforeAll(async () => {
   process.env.SSO_SIGNIN_REDIRECT_URI = `${ORIGIN}/auth/sso/callback`;
   process.env.SSO_LINK_REDIRECT_URI = `${ORIGIN}/auth/sso/link/callback`;
   handle = await createDb();
+  const seed = await readFile(new URL("../src/db/migrations/084_platform_tenant.sql", import.meta.url), "utf8");
+  await handle.db.execute(sql.raw(seed));
   await handle.db.execute(sql`DELETE FROM signin_failures WHERE bucket LIKE 'sso-ip:%' OR bucket LIKE 'sso:%'`);
   app = await buildApp(handle.db);
   setSsoHttp(http);
