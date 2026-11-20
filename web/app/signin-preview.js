@@ -141,6 +141,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .btn.primary .lbl{flex:1}
 .cd-si .tag{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8FD3AE;border:1px solid rgba(143,211,174,.4);border-radius:999px;padding:5px 9px 4px}
 .cd-si .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.cd-si .row.stack{grid-template-columns:minmax(0,1fr)}
 .cd-si .btn.sec{background:var(--white);border:1px solid var(--hair);color:var(--ink);justify-content:center;font-size:13.5px;box-shadow:0 1px 0 rgba(23,20,15,.04);gap:8px;padding:0 12px}
 .cd-si .btn.sec.wide{width:100%;font-size:16px;padding:0 20px}
 .cd-si .or{display:flex;align-items:center;gap:16px;margin:24px 0}
@@ -620,7 +621,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     const showM = preview || flags.microsoft;
     if (!showG && !showM) return null;
     return /*#__PURE__*/React.createElement("div", {
-      className: "row"
+      className: showG && showM ? "row stack" : "row"
     }, showG ? /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "btn sec",
