@@ -10,16 +10,19 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import { SIGN_IN_AUDIT, signInAuditDetail } from "../auth/signin-audit.js";
 import { clientIp } from "../auth/client-ip.js";
+import { anySignInFlag, readSignInFlags } from "../auth/signin-flags.js";
+import { lockBody } from "../auth/signin-guard.js";
 import {
+  authenticatorPresent,
   beginOwnerTotp,
   confirmOwnerTotp,
   consumeStepUpCode,
   issueStepUpCode,
   markStepUp,
+  noteFactorAttempt,
   passwordMatches,
   regenerateRecoveryCodes,
   stepUpFresh,
-  totpEnrolled,
   verifyOwnerFactor,
 } from "../auth/owner-mfa.js";
 import { passkeyStepUpOptions, passkeyStepUpVerify, relyingParty } from "../auth/passkey-stepup.js";
@@ -43,7 +46,14 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
     return { token, user: row };
   }
 
+  function closed(reply: { code: (status: number) => { send: (body: unknown) => unknown } }) {
+    if (anySignInFlag(readSignInFlags())) return false;
+    reply.code(503).send({ error: "not_available" });
+    return true;
+  }
+
   app.post("/api/auth/stepup/email", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = z.object({ password: z.string().min(1).max(512) }).safeParse(req.body);
@@ -57,6 +67,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/stepup", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = stepBody.safeParse(req.body);
@@ -72,14 +83,18 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
       });
       return reply.code(401).send({ error: "invalid_credentials" });
     }
-    const enrolled = await totpEnrolled(db, session.user.id);
-    if (enrolled) {
-      if (!parsed.data.totp) return reply.code(403).send({ error: "factor_required", detail: "Enter the code from your authenticator app." });
-      const factor = await verifyOwnerFactor(db, session.user, parsed.data.totp);
-      if (factor !== "totp") return reply.code(401).send({ error: "invalid_credentials" });
+    const strong = await authenticatorPresent(db, session.user.id, session.user.tenantId);
+    let method = "password";
+    if (strong) {
+      if (!parsed.data.totp) return reply.code(403).send({ error: "factor_required", detail: "Use your authenticator or a passkey." });
+      const factor = await verifyOwnerFactor(db, session.user, parsed.data.totp, clientIp(req));
+      if (!factor.ok && factor.error === "locked") return reply.code(429).send(lockBody(factor.locked, "UTC"));
+      if (!factor.ok || factor.factor !== "totp") return reply.code(401).send({ error: "invalid_credentials" });
+      method = "totp";
     } else if (parsed.data.emailCode) {
-      const ok = await consumeStepUpCode(db, session.user.id, session.token, parsed.data.emailCode);
+      const ok = await consumeStepUpCode(db, session.user, session.token, parsed.data.emailCode);
       if (!ok) return reply.code(401).send({ error: "invalid_credentials" });
+      method = "email";
     }
     await markStepUp(db, session.token);
     await audit(db, {
@@ -89,7 +104,7 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
       actorId: session.user.id,
       action: SIGN_IN_AUDIT.stepUp,
       detail: signInAuditDetail({
-        method: enrolled ? "totp" : parsed.data.emailCode ? "email" : "password",
+        method,
         result: "ok",
         ip: clientIp(req),
         staffId: session.user.staffId,
@@ -100,29 +115,38 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/stepup/passkey/options", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
+    const gate = await noteFactorAttempt(db, session.user, clientIp(req), false, "passkey");
+    if (!gate.ok) return reply.code(429).send(lockBody(gate.locked, "UTC"));
     const rp = relyingParty();
     if (!rp) return reply.code(503).send({ error: "not_available" });
-    const options = await passkeyStepUpOptions(db, session.user.id, rp, sha256(session.token));
+    const options = await passkeyStepUpOptions(db, session.user.id, session.user.tenantId, rp, sha256(session.token));
     if (!options) return reply.code(404).send({ error: "not_found" });
     return options;
   });
 
   app.post("/api/auth/stepup/passkey/verify", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const rp = relyingParty();
     if (!rp) return reply.code(503).send({ error: "not_available" });
     const response = req.body as AuthenticationResponseJSON;
     if (!response || typeof response !== "object" || !response.id) return reply.code(400).send({ error: "invalid_request" });
-    const ok = await passkeyStepUpVerify(db, session.user.id, rp, sha256(session.token), response);
-    if (!ok) return reply.code(401).send({ error: "invalid_credentials" });
+    const ok = await passkeyStepUpVerify(db, session.user.id, session.user.tenantId, rp, sha256(session.token), response);
+    if (!ok) {
+      const gate = await noteFactorAttempt(db, session.user, clientIp(req), false, "passkey");
+      if (!gate.ok) return reply.code(429).send(lockBody(gate.locked, "UTC"));
+      return reply.code(401).send({ error: "invalid_credentials" });
+    }
     await markStepUp(db, session.token);
     return { ok: true };
   });
 
   app.post("/api/auth/mfa/enroll/start", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     if (!(await stepUpFresh(db, session.token))) return reply.code(403).send({ error: "step_up_required" });
@@ -138,16 +162,20 @@ export function registerStepUpRoutes(app: FastifyInstance, db: Db): void {
   });
 
   app.post("/api/auth/mfa/enroll/confirm", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     const parsed = z.object({ ticket: z.string().min(10).max(200), code: z.string().trim().regex(/^\d{6}$/) }).safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
-    const ok = await confirmOwnerTotp(db, session.user, session.token, parsed.data.ticket, parsed.data.code);
-    if (!ok) return reply.code(401).send({ error: "invalid_credentials" });
-    return { ok: true };
+    const result = await confirmOwnerTotp(db, session.user, session.token, parsed.data.ticket, parsed.data.code, clientIp(req));
+    if (result === true) return { ok: true };
+    if (result.error === "already_enrolled") return reply.code(409).send({ error: "already_enrolled" });
+    if (result.error === "locked") return reply.code(429).send(lockBody(result.locked, "UTC"));
+    return reply.code(401).send({ error: "invalid_credentials" });
   });
 
   app.post("/api/auth/mfa/recovery", async (req, reply) => {
+    if (closed(reply)) return;
     const session = await who(req);
     if (!session) return reply.code(401).send({ error: "unauthenticated" });
     if (!(await stepUpFresh(db, session.token))) return reply.code(403).send({ error: "step_up_required" });
