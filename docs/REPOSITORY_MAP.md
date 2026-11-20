@@ -117,6 +117,17 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Adding a migration touches **three places**: the SQL file, the list in
   `server/src/db/migrations.ts`, and (for Drizzle-managed tables) the `DDL`
   constant in `server/src/db/index.ts` + `server/src/db/schema.ts`.
+- Migration `083_staff_sign_in_identities` adds `staff_identities`,
+  `staff_passkeys`, `auth_challenges`, `staff_recovery_codes`, and
+  `staff_totp`. The same issuer and subject can be linked in two shops,
+  and not twice in one shop. One staff row has one link per provider.
+  `auth_challenges.tenant_id` and `staff_recovery_codes.tenant_id` are
+  required. It also adds `tenants.ms_tenant_allowlist` (null means
+  that shop has not turned a Microsoft tenant allowlist on) and
+  `sessions.step_up_at`. PGlite applies the file from `createDb` because
+  it does not run the SQL migration list. The tables are also in the
+  boot DDL. No sign-in route reads them until a later change. 082 is the
+  PEP answer log.
 - Migration `075_sanctions_lists` adds `sanctions_list_snapshots`,
   `sanctions_list_entries`, `sanctions_ops_flags`, and
   `sanctions_score_settings`. 074 is the Persona inquiry client on PR 722,

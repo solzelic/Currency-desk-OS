@@ -118,6 +118,9 @@ export const migrations: readonly Migration[] = [
   ["081_idv_check_records", "src/db/migrations/081_idv_check_records.sql"],
   /* PEP answers are an append-only log. 082 follows 081. */
   ["082_pep_answer_events", "src/db/migrations/082_pep_answer_events.sql"],
+  /* 083 is linked staff identities, passkeys, sign-in challenges,
+     recovery codes, and the owner authenticator. 082 is on staging. */
+  ["083_staff_sign_in_identities", "src/db/migrations/083_staff_sign_in_identities.sql"],
 ] as const;
 
 type MigrationReader = {
