@@ -26,7 +26,8 @@ import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isStagingRuntime, type StagingDoorHeaders } from "../auth/staging-runtime.js";
 import { stagingTestOwnerOnScreen } from "./staging-fresh-shop.js";
-import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
+import { replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
+import { completeSignIn, deskUserPayload, sessionCookieOptions } from "../auth/complete-sign-in.js";
 import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
@@ -130,12 +131,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const found = await db.execute(sql`SELECT opened_by FROM ledger_till_sessions WHERE workspace_id = ${workspaceId} AND status = 'open' ORDER BY session_number DESC LIMIT 1`);
     return (found.rows[0] as { opened_by?: string } | undefined)?.opened_by ?? null;
   };
-  const cookieOpts = {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  };
+  const cookieOpts = sessionCookieOptions();
   // a platform-suspended desk can't sign in
   const tenantSuspended = async (tenantId: string) => {
     const r = await db.select({ s: schema.tenants.suspended }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1);
@@ -222,38 +218,18 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       });
     }
 
-    const { token, expiresAt } = await createSession(db, user.id);
-    await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
-
-    reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    const done = await completeSignIn(db, user, "password", { ip: clientIp(req) });
+    if (!done.ok) {
+      if (done.error === "suspended") return reply.code(403).send({ error: "suspended", detail: done.detail });
+      return reply.code(401).send({ error: "invalid_credentials" });
+    }
+    reply.setCookie(SESSION_COOKIE, done.token, { ...cookieOpts, expires: done.expiresAt });
     clearStagingCookie(reply, cookieOpts.secure);
-    return {
-      user: {
-        id: user.staffId,
-        name: user.name,
-        role: user.role,
-        tenantId: user.tenantId,
-        legalEntityId: user.legalEntityId,
-        branchId: user.branchId,
-        authorizedBranchIds: user.authorizedBranchIds,
-        mustChangePassword: user.mustChangePassword,
-        plan: await tenantPlan(db, user.tenantId),
-      },
-    };
+    return { user: done.user };
   });
 
   // shared response shape for a signed-in user
-  const userPayload = async (user: typeof schema.staffUsers.$inferSelect) => ({
-    id: user.staffId,
-    name: user.name,
-    role: user.role,
-    tenantId: user.tenantId,
-    legalEntityId: user.legalEntityId,
-    branchId: user.branchId,
-    authorizedBranchIds: user.authorizedBranchIds,
-    mustChangePassword: user.mustChangePassword,
-    plan: await tenantPlan(db, user.tenantId),
-  });
+  const userPayload = (user: typeof schema.staffUsers.$inferSelect) => deskUserPayload(db, user);
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
   // way the failure counter does.
@@ -312,11 +288,14 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const recipient = isEmail(user.staffId) ? user.staffId : null;
     if (!recipient) {
       // no address to verify — password is the only factor
-      const { token, expiresAt } = await createSession(db, user.id);
-      await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
-      reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+      const done = await completeSignIn(db, user, "password", { ip: clientIp(req) });
+      if (!done.ok) {
+        if (done.error === "suspended") return reply.code(403).send({ error: "suspended", detail: done.detail });
+        return reply.code(401).send({ error: "invalid_credentials" });
+      }
+      reply.setCookie(SESSION_COOKIE, done.token, { ...cookieOpts, expires: done.expiresAt });
       clearStagingCookie(reply, cookieOpts.secure);
-      return { ok: true, needsCode: false, user: await userPayload(user) };
+      return { ok: true, needsCode: false, user: done.user };
     }
     /* Pressing "Send my code" twice used to send two, and only the second
        one worked — so the code somebody read off the first email was the
@@ -381,11 +360,14 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     }
     await deleteLoginProof(db, proof.tokenHash);
     reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
-    const { token, expiresAt } = await createSession(db, user.id);
-    await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
-    reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    const done = await completeSignIn(db, user, "password", { ip: clientIp(req) });
+    if (!done.ok) {
+      if (done.error === "suspended") return reply.code(403).send({ error: "suspended", detail: done.detail });
+      return reply.code(401).send({ error: "invalid_credentials" });
+    }
+    reply.setCookie(SESSION_COOKIE, done.token, { ...cookieOpts, expires: done.expiresAt });
     clearStagingCookie(reply, cookieOpts.secure);
-    return { user: await userPayload(user) };
+    return { user: done.user };
   });
 
   app.post("/api/auth/change-password", async (req, reply) => {
