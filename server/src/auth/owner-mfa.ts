@@ -4,7 +4,7 @@
    can finish an owner sign-in. It cannot be the step-up that removes a
    method. */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { TOTP, Secret } from "otpauth";
 import { schema, type Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "./password.js";
@@ -357,14 +357,34 @@ async function consumeOwnerFactor(db: Db, user: Staff, code: string, factor: "to
   return false;
 }
 
+/** Failures still inside the 15-minute window. An expired window is zero. */
+async function freshFailures(db: Db, bucket: string): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT failures FROM signin_failures
+    WHERE bucket = ${bucket}
+      AND window_started_at > now() - interval '15 minutes'
+  `);
+  const row = result.rows[0] as { failures?: number | string } | undefined;
+  return row?.failures === undefined ? 0 : Number(row.failures);
+}
+
 /** TOTP or one backup code, with the shared wrong-code limit.
-    A used backup code does not work again. The same TOTP step does not work twice. */
+    A used backup code does not work again. The same TOTP step does not work twice.
+    A caller who is already locked does not reach scrypt. */
 export async function verifyOwnerFactor(
   db: Db,
   user: Staff,
   code: string,
   ip: string,
 ): Promise<{ ok: true; factor: "totp" | "backup" } | FactorFailure> {
+  const [staffFailures, ipFailures] = await Promise.all([
+    freshFailures(db, `factor:${user.id}`),
+    freshFailures(db, `factor-ip:${ip}`),
+  ]);
+  if (staffFailures >= FACTOR_MAX || ipFailures >= FACTOR_MAX) {
+    const locked = await noteFactorAttempt(db, user, ip, false, "code");
+    return locked.ok ? { ok: false, error: "wrong_code" } : locked;
+  }
   const factor = await matchOwnerFactor(db, user, code);
   const gate = await noteFactorAttempt(db, user, ip, factor !== null, factor ?? "code");
   if (!gate.ok) return gate;
@@ -377,7 +397,10 @@ export async function regenerateRecoveryCodes(db: Db, user: Staff): Promise<stri
   if (user.role !== "administrator" || !(await totpEnrolled(db, user.id))) return null;
   const backupCodes = Array.from({ length: BACKUP_COUNT }, () => generateBackupCode());
   const hashes = await Promise.all(backupCodes.map((code) => hashPassword(normalizeBackupCode(code))));
-  await db.delete(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, user.id));
+  await db.delete(schema.staffRecoveryCodes).where(and(
+    eq(schema.staffRecoveryCodes.tenantId, user.tenantId),
+    eq(schema.staffRecoveryCodes.staffUserId, user.id),
+  ));
   await db.insert(schema.staffRecoveryCodes).values(hashes.map((codeHash) => ({
     id: `rcv-${randomUUID()}`,
     tenantId: user.tenantId,
