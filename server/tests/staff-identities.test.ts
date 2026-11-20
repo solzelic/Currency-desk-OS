@@ -10,6 +10,7 @@ import { SIGN_IN_AUDIT, signInAuditDetail } from "../src/auth/signin-audit.js";
 let handle: DbHandle;
 
 beforeAll(async () => {
+  process.env.PGLITE_MEMORY = "1";
   handle = await createDb();
   await seed(handle.db);
 });
@@ -29,28 +30,37 @@ describe("staff sign-in identity tables", () => {
     expect(row?.list ?? null).toBeNull();
   });
 
-  it("allows the same IdP identity on two staff rows and refuses a duplicate link", async () => {
-    const base = {
-      tenantId: "tnt-yorkfx",
-      provider: "google",
-      issuer: "https://accounts.google.com",
-      subject: "sub-shared",
-    };
-    await handle.db.insert(schema.staffIdentities).values({
-      id: `idn-${randomUUID()}`,
-      staffUserId: "tnt-yorkfx:j.masri",
-      ...base,
+  it("allows one subject in two shops and refuses a second link in the same shop", async () => {
+    const subject = `sub-${randomUUID()}`;
+    const issuer = "https://accounts.google.com";
+    const other = `tnt-${randomUUID().slice(0, 8)}`;
+    await handle.db.insert(schema.tenants).values({ id: other, name: "Other desk" });
+    await handle.db.insert(schema.legalEntities).values({ id: `le-${other}`, tenantId: other, name: "Other", jurisdiction: "FINTRAC" });
+    await handle.db.insert(schema.branches).values({ id: `br-${other}`, tenantId: other, legalEntityId: `le-${other}`, name: "Main", province: "ON" });
+    await handle.db.insert(schema.staffUsers).values({
+      id: `${other}:owner`, tenantId: other, legalEntityId: `le-${other}`, branchId: `br-${other}`,
+      staffId: "owner", name: "Owner", role: "administrator", authorizedBranchIds: [`br-${other}`], passwordHash: "x",
     });
     await handle.db.insert(schema.staffIdentities).values({
-      id: `idn-${randomUUID()}`,
-      staffUserId: "tnt-yorkfx:m.costa",
-      ...base,
+      id: `idn-${randomUUID()}`, tenantId: "tnt-yorkfx", staffUserId: "tnt-yorkfx:j.masri",
+      provider: "google", issuer, subject,
     });
     await expect(handle.db.insert(schema.staffIdentities).values({
-      id: `idn-${randomUUID()}`,
-      staffUserId: "tnt-yorkfx:j.masri",
-      ...base,
+      id: `idn-${randomUUID()}`, tenantId: "tnt-yorkfx", staffUserId: "tnt-yorkfx:m.costa",
+      provider: "google", issuer, subject,
     })).rejects.toThrow();
+    await handle.db.insert(schema.staffIdentities).values({
+      id: `idn-${randomUUID()}`, tenantId: other, staffUserId: `${other}:owner`,
+      provider: "google", issuer, subject,
+    });
+    await expect(handle.db.insert(schema.staffIdentities).values({
+      id: `idn-${randomUUID()}`, tenantId: "tnt-yorkfx", staffUserId: "tnt-yorkfx:j.masri",
+      provider: "google", issuer: "https://accounts.google.com", subject: `other-${subject}`,
+    })).rejects.toThrow();
+    await handle.db.insert(schema.staffIdentities).values({
+      id: `idn-${randomUUID()}`, tenantId: "tnt-yorkfx", staffUserId: "tnt-yorkfx:j.masri",
+      provider: "microsoft", issuer: "https://login.microsoftonline.com/tid/v2.0", subject: `oid-${subject}`, msTid: "tid",
+    });
   });
 
   it("stores a recovery code hash column and a step-up marker column", async () => {
@@ -66,6 +76,12 @@ describe("staff sign-in identity tables", () => {
       WHERE table_name = 'sessions' AND column_name = 'step_up_at'
     `);
     expect(step.rows).toHaveLength(1);
+    const tenants = await handle.db.execute(sql`
+      SELECT table_name, is_nullable FROM information_schema.columns
+      WHERE column_name = 'tenant_id' AND table_name IN ('auth_challenges', 'staff_recovery_codes')
+    `);
+    const required = tenants.rows.map((row) => `${(row as { table_name: string }).table_name}:${(row as { is_nullable: string }).is_nullable}`).sort();
+    expect(required).toEqual(["auth_challenges:NO", "staff_recovery_codes:NO"]);
   });
 
   it("strips secrets from the audit detail allow-list", () => {
@@ -74,14 +90,18 @@ describe("staff sign-in identity tables", () => {
       method: "google",
       issuer: "https://accounts.google.com",
       result: "ok",
+      emailed: false,
       email: "person@example.com",
-      id_token: "eyJ",
-      access_token: "ya29",
-      code: "123456",
+      Email: "person@example.com",
+      accessToken: "ya29",
+      backupCode: "abcde",
+      nested: { code: "123456", shop: "tnt" },
     })).toEqual({
       method: "google",
       issuer: "https://accounts.google.com",
       result: "ok",
+      emailed: false,
+      nested: { shop: "tnt" },
     });
   });
 });
