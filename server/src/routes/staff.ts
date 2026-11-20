@@ -478,7 +478,7 @@ export function registerStaffRoutes(app: FastifyInstance, db: Db) {
     if (b.email !== undefined && (b.email || null) !== target.email) changes.email = b.email || null;
     if (Object.keys(changes).length > 0) {
       await db.update(schema.staffUsers).set(changes).where(eq(schema.staffUsers.id, target.id));
-      if (changes.active === false) await revokeAllSessions(db, target.id);
+      if (changes.active === false || changes.role !== undefined) await revokeAllSessions(db, target.id);
       await audit(db, {
         tenantId: who.tenantId,
         legalEntityId: who.legalEntityId,
