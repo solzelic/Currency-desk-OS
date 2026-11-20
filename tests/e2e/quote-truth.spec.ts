@@ -274,6 +274,38 @@ test("Post stays disabled until the preview arrives", async ({ page }) => {
   expect(Math.abs((await topAt()) - top390)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: path.join(SHOTS, "head-390.png") });
 });
+for (const width of [390, 1280] as const) {
+  test(`stale preview stops pending and can retry at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await signInAtDesk(page, "a.singh");
+    await openExchange(page);
+
+    let stale = true;
+    await page.route("**/api/quotes/preview", async (route) => {
+      if (!stale) return route.continue();
+      await route.fulfill({ status: 422, json: { code: "RATE_PUBLICATION_STALE" } });
+    });
+    await fillDeal(page, "100");
+    const alert = page.getByTestId("exchange-stale-rate");
+    const primary = page.locator(".cd-tx-go");
+    await expect(alert).toContainText("The rate board is out of date.");
+    await expect(page.locator(".cd-tx-rate-shown")).not.toContainText("Pending");
+    await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
+    await expect(primary).toBeDisabled();
+
+    mkdirSync(SHOTS, { recursive: true });
+    await page.screenshot({ path: path.join(SHOTS, `stale-rate-${width}.png`) });
+
+    stale = false;
+    const fresh = page.waitForResponse((res) => res.url().endsWith("/api/quotes/preview") && res.ok());
+    await alert.getByRole("button", { name: "Retry rate" }).click();
+    expect((await fresh).status()).toBe(200);
+    await expect(alert).toBeHidden();
+    await expect(page.locator(".cd-tx-receive")).toHaveText(/\d/);
+    await expect(primary).toBeEnabled();
+  });
+}
+
 test("a held text rate is the rate that posts", async ({ page }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
