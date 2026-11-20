@@ -6,7 +6,7 @@ import { z } from "zod";
 import { schema, type Db } from "../db/index.js";
 import { readSignInFlags } from "../auth/signin-flags.js";
 import { clientIp } from "../auth/client-ip.js";
-import { chargeSignInBucket, lockBody, SIGNIN_IP_MAX } from "../auth/signin-guard.js";
+import { chargeSignInBucket, lockBody, releaseSignInIp, SIGNIN_IP_MAX } from "../auth/signin-guard.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { sessionCookieOptions } from "../auth/complete-sign-in.js";
 import { stepUpFresh } from "../auth/owner-mfa.js";
@@ -62,6 +62,7 @@ export function registerSsoRoutes(app: FastifyInstance, db: Db, providers: reado
       if (!cfg) return reply.code(503).send({ error: "not_available" });
       const query = req.query as { returnTo?: unknown };
       const url = await beginSso(db, cfg, "signin", { returnTo: query.returnTo });
+      if (!url) return reply.code(503).send({ error: "not_available" });
       return reply.redirect(url, 302);
     });
 
@@ -75,6 +76,7 @@ export function registerSsoRoutes(app: FastifyInstance, db: Db, providers: reado
       const cfg = ssoConfig(provider, "link");
       if (!cfg) return reply.code(503).send({ error: "not_available" });
       const url = await beginSso(db, cfg, "link", { staffUserId: who.id, sessionToken: token, returnTo: "/app" });
+      if (!url) return reply.code(503).send({ error: "not_available" });
       return reply.redirect(url, 302);
     });
 
@@ -97,8 +99,9 @@ export function registerSsoRoutes(app: FastifyInstance, db: Db, providers: reado
     if (!query.success) return reply.redirect("/login?sso=refused", 303);
     if (!providers.some((provider) => flagOn(provider))) return reply.code(503).send({ error: "not_available" });
     const ip = clientIp(req);
-    const limited = await chargeSignInBucket(db, `sso-ip:${ip}`, SIGNIN_IP_MAX);
-    if (limited.result === "locked") return reply.code(429).send(lockBody(limited, "UTC"));
+    const bucket = `sso-ip:${ip}`;
+    const limited = await chargeSignInBucket(db, bucket, SIGNIN_IP_MAX);
+    if (limited.result === "locked") return reply.redirect("/login?sso=slow", 303);
     for (const provider of providers) {
       if (!flagOn(provider)) continue;
       const cfg = ssoConfig(provider, purpose);
@@ -107,6 +110,7 @@ export function registerSsoRoutes(app: FastifyInstance, db: Db, providers: reado
         ? await finishLinkCallback(db, cfg, query.data.code, query.data.state, req.cookies[SESSION_COOKIE])
         : await finishSignInCallback(db, cfg, query.data.code, query.data.state, ip);
       if (!result.ok && result.reason === "no_state") continue;
+      if (result.ok) await releaseSignInIp(db, bucket);
       return sendResult(reply, result, cookies);
     }
     return reply.redirect("/login?sso=refused", 303);

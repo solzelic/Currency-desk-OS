@@ -2,6 +2,7 @@
    The demo shop is never linked. An owner without a second step gets
    the same refusal as a missing account. */
 import { createHash, generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -12,7 +13,8 @@ import { hashPassword } from "../src/auth/password.js";
 import { seed, DEMO } from "../src/seed.js";
 import { clearJwksCache, type FetchJson } from "../src/auth/oidc.js";
 import { confirmOwner, setSsoHttp, spendPendingChallenge } from "../src/auth/sso-flow.js";
-import { normalizeBackupCode } from "../src/auth/owner-mfa.js";
+import { normalizeBackupCode, regenerateRecoveryCodes, verifyOwnerFactor } from "../src/auth/owner-mfa.js";
+import { SIGNIN_IP_MAX } from "../src/auth/signin-guard.js";
 
 const ORIGIN = "https://currencydesk-staging.onrender.com";
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -117,6 +119,31 @@ function claims(nonce: string, sub: string) {
     email: "hidden@example.com",
     email_verified: true,
   };
+}
+
+async function readyOwner(subject: string) {
+  const person = await makePerson("administrator", subject);
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    payload: { staffId: "person", password: "correct-horse", tenantId: person.tenantId },
+  });
+  const cookie = cookieFrom(login, "cdos_session");
+  await app.inject({ method: "POST", url: "/api/auth/stepup", headers: { cookie }, payload: { password: "correct-horse" } });
+  const started = await app.inject({ method: "POST", url: "/api/auth/mfa/enroll/start", headers: { cookie } });
+  const enroll = started.json() as { ticket: string; manualSecret: string; backupCodes: string[] };
+  const code = new TOTP({ algorithm: "SHA1", digits: 6, period: 30, secret: Secret.fromBase32(enroll.manualSecret) }).generate();
+  expect((await app.inject({
+    method: "POST",
+    url: "/api/auth/mfa/enroll/confirm",
+    headers: { cookie },
+    payload: { ticket: enroll.ticket, code },
+  })).statusCode).toBe(200);
+  const begun = await start("/api/auth/sso/google/start");
+  claims(begun.nonce, subject);
+  const confirm = await app.inject({ method: "GET", url: `/auth/sso/callback?code=good&state=${begun.state}` });
+  expect(confirm.headers.location).toBe("/login?sso=confirm");
+  return { person, pending: cookieFrom(confirm, "cdos_sso_pending"), backup: enroll.backupCodes[0] ?? "" };
 }
 
 function cookieFrom(res: { headers: { "set-cookie"?: string | string[] } }, name: string): string {
@@ -286,5 +313,205 @@ describe("Google sign-in", () => {
     expect(JSON.stringify(audits)).not.toContain("wrong-code-1");
     const code = (await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, person.userId)).limit(1))[0];
     expect(code?.usedAt ?? null).toBeNull();
+  });
+
+  it("keeps the miss cap at 3 under a parallel burst", async () => {
+    const person = await makePerson("administrator", "");
+    await handle.db.insert(schema.staffTotp).values({
+      staffUserId: person.userId, tenantId: person.tenantId, secretEnc: "not-used", enrolledAt: new Date(),
+    });
+    await handle.db.insert(schema.staffRecoveryCodes).values({
+      id: `rcv-${randomUUID()}`, tenantId: person.tenantId, staffUserId: person.userId,
+      codeHash: await hashPassword(normalizeBackupCode("abcde-fghij")),
+    });
+    const token = randomUUID();
+    const challengeId = `chl-${randomUUID()}`;
+    await handle.db.insert(schema.authChallenges).values({
+      id: challengeId, tenantId: person.tenantId, purpose: "oidc_signin",
+      challengeHash: createHash("sha256").update(token).digest("hex"),
+      provider: "google", issuer: "https://accounts.google.com", subject: "sub",
+      staffUserId: person.userId, returnTo: "/app", expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    const results = await Promise.all(Array.from({ length: 8 }, () => confirmOwner(handle.db, token, "nope", "198.51.100.20")));
+    expect(results.every((result) => result.ok === false)).toBe(true);
+    const row = (await handle.db.select().from(schema.authChallenges).where(eq(schema.authChallenges.id, challengeId)).limit(1))[0];
+    expect(row?.usedAt).toBeTruthy();
+    const counted = await handle.db.execute(sql`SELECT failures FROM signin_failures WHERE bucket = ${`sso-pending:${challengeId}`}`);
+    expect(Number((counted.rows[0] as { failures: number | string }).failures)).toBe(3);
+    const late = await confirmOwner(handle.db, token, "abcde-fghij", "198.51.100.21");
+    expect(late.ok).toBe(false);
+  });
+
+  it("answers 429 on confirm when the address is locked and audits auth.login_locked", async () => {
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, "factor-ip:127.0.0.1"));
+    const owner = await readyOwner(`lock-${randomUUID()}`);
+    await handle.db.insert(schema.signinFailures).values({
+      bucket: "factor-ip:127.0.0.1", failures: 5, windowStartedAt: new Date(),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/sso/confirm",
+      headers: { cookie: owner.pending },
+      payload: { code: "000000" },
+    });
+    expect(res.statusCode).toBe(429);
+    const audits = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.actorId, owner.person.userId));
+    expect(audits.some((event) => event.action === "auth.login_locked")).toBe(true);
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, "factor-ip:127.0.0.1"));
+  });
+
+  it("refuses the right code after a lock and does not spend it", async () => {
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, "factor-ip:127.0.0.1"));
+    const owner = await readyOwner(`after-${randomUUID()}`);
+    await handle.db.insert(schema.signinFailures).values({
+      bucket: "factor-ip:127.0.0.1", failures: 5, windowStartedAt: new Date(),
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/sso/confirm",
+      headers: { cookie: owner.pending },
+      payload: { code: owner.backup },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(String(res.headers["set-cookie"] ?? "")).not.toContain("cdos_session=");
+    const code = (await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, owner.person.userId)).limit(1))[0];
+    expect(code?.usedAt ?? null).toBeNull();
+    await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, "factor-ip:127.0.0.1"));
+  });
+
+  it("locks one address without locking another", async () => {
+    const person = await makePerson("administrator", "");
+    const plain = "abcde-fghij";
+    await handle.db.insert(schema.staffTotp).values({
+      staffUserId: person.userId, tenantId: person.tenantId, secretEnc: "not-used", enrolledAt: new Date(),
+    });
+    await handle.db.insert(schema.staffRecoveryCodes).values({
+      id: `rcv-${randomUUID()}`, tenantId: person.tenantId, staffUserId: person.userId,
+      codeHash: await hashPassword(normalizeBackupCode(plain)),
+    });
+    const user = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, person.userId)).limit(1))[0];
+    if (!user) throw new Error("missing owner");
+    await handle.db.insert(schema.signinFailures).values({
+      bucket: "factor-ip:203.0.113.8", failures: 5, windowStartedAt: new Date(),
+    });
+    const locked = await verifyOwnerFactor(handle.db, user, plain, "203.0.113.8");
+    expect(locked).toMatchObject({ ok: false, error: "locked" });
+    const untouched = (await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, person.userId)).limit(1))[0];
+    expect(untouched?.usedAt ?? null).toBeNull();
+    const open = await verifyOwnerFactor(handle.db, user, plain, "203.0.113.9");
+    expect(open.ok).toBe(true);
+  });
+
+  it("refuses a second Google account for the same person", async () => {
+    const person = await makePerson("teller", "");
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { staffId: "person", password: "correct-horse", tenantId: person.tenantId },
+    });
+    const cookie = cookieFrom(login, "cdos_session");
+    await app.inject({ method: "POST", url: "/api/auth/stepup", headers: { cookie }, payload: { password: "correct-horse" } });
+    const first = await start("/api/auth/sso/link/google/start", cookie);
+    const subject = `link-${randomUUID()}`;
+    claims(first.nonce, subject);
+    const linked = await app.inject({
+      method: "GET",
+      url: `/auth/sso/link/callback?code=good&state=${first.state}`,
+      headers: { cookie },
+    });
+    expect(linked.headers.location).toBe("/app?sso=linked");
+    await app.inject({ method: "POST", url: "/api/auth/stepup", headers: { cookie }, payload: { password: "correct-horse" } });
+    const again = await start("/api/auth/sso/link/google/start", cookie);
+    claims(again.nonce, `other-${randomUUID()}`);
+    const refused = await app.inject({
+      method: "GET",
+      url: `/auth/sso/link/callback?code=good&state=${again.state}`,
+      headers: { cookie },
+    });
+    expect(refused.statusCode).toBe(303);
+    expect(refused.headers.location).toBe("/login?sso=refused");
+    const rows = await handle.db.select().from(schema.staffIdentities).where(eq(schema.staffIdentities.staffUserId, person.userId));
+    expect(rows.map((row) => row.subject)).toEqual([subject]);
+  });
+
+  it("does not count a completed sign-in, and a full address gets a plain page", async () => {
+    await handle.db.execute(sql`DELETE FROM signin_failures WHERE bucket LIKE 'sso-ip:%'`);
+    const subject = `cap-${randomUUID()}`;
+    await makePerson("teller", subject);
+    const begun = await start("/api/auth/sso/google/start?returnTo=/app");
+    claims(begun.nonce, subject);
+    const ok = await app.inject({ method: "GET", url: `/auth/sso/callback?code=good&state=${begun.state}` });
+    expect(ok.headers.location).toBe("/app");
+    const afterOk = await handle.db.execute(sql`SELECT bucket FROM signin_failures WHERE bucket LIKE 'sso-ip:%'`);
+    expect(afterOk.rows).toEqual([]);
+
+    const miss = await start("/api/auth/sso/google/start");
+    claims(miss.nonce, `missing-${randomUUID()}`);
+    const refused = await app.inject({ method: "GET", url: `/auth/sso/callback?code=good&state=${miss.state}` });
+    expect(refused.headers.location).toBe("/login?sso=refused");
+    const counted = await handle.db.execute(sql`SELECT bucket, failures FROM signin_failures WHERE bucket LIKE 'sso-ip:%'`);
+    expect(counted.rows).toHaveLength(1);
+    const bucket = String((counted.rows[0] as { bucket: string }).bucket);
+    expect(Number((counted.rows[0] as { failures: number | string }).failures)).toBe(1);
+
+    const again = await start("/api/auth/sso/google/start?returnTo=/app");
+    claims(again.nonce, subject);
+    const kept = await app.inject({ method: "GET", url: `/auth/sso/callback?code=good&state=${again.state}` });
+    expect(kept.headers.location).toBe("/app");
+    const held = await handle.db.execute(sql`SELECT failures FROM signin_failures WHERE bucket = ${bucket}`);
+    expect(Number((held.rows[0] as { failures: number | string }).failures)).toBe(1);
+
+    await handle.db.execute(sql`UPDATE signin_failures SET failures = ${SIGNIN_IP_MAX} WHERE bucket = ${bucket}`);
+    const full = await start("/api/auth/sso/google/start");
+    claims(full.nonce, subject);
+    const locked = await app.inject({ method: "GET", url: `/auth/sso/callback?code=good&state=${full.state}` });
+    expect(locked.statusCode).toBe(303);
+    expect(locked.headers.location).toBe("/login?sso=slow");
+    expect(String(locked.headers["content-type"] ?? "")).not.toContain("json");
+    expect(locked.body).not.toContain("too_many_attempts");
+    await handle.db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${bucket}`);
+  });
+
+  it("reads the seeded platform tenant and does not insert one", async () => {
+    await handle.db.delete(schema.authChallenges).where(eq(schema.authChallenges.tenantId, "tnt-platform"));
+    await handle.db.delete(schema.tenants).where(eq(schema.tenants.id, "tnt-platform"));
+    try {
+      const before = await handle.db.execute(sql`SELECT count(*)::int AS n FROM tenants`);
+      const res = await app.inject({ method: "GET", url: "/api/auth/sso/google/start" });
+      expect(res.statusCode).toBe(503);
+      const after = await handle.db.execute(sql`SELECT count(*)::int AS n FROM tenants`);
+      expect(after.rows).toEqual(before.rows);
+      const missing = await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-platform"));
+      expect(missing).toEqual([]);
+    } finally {
+      const text = await readFile(new URL("../src/db/migrations/084_platform_tenant.sql", import.meta.url), "utf8");
+      await handle.db.execute(sql.raw(text));
+      await handle.db.execute(sql.raw(text));
+    }
+    const seeded = (await handle.db.select().from(schema.tenants).where(eq(schema.tenants.id, "tnt-platform")).limit(1))[0];
+    expect(seeded?.plan).toBe("premium");
+    expect(seeded?.siteSlug).toBe("platform");
+  });
+
+  it("replaces recovery codes only in that shop", async () => {
+    const person = await makePerson("administrator", "");
+    const other = `tnt-${randomUUID().slice(0, 8)}`;
+    const stray = `rcv-${randomUUID()}`;
+    await handle.db.insert(schema.staffTotp).values({
+      staffUserId: person.userId, tenantId: person.tenantId, secretEnc: "not-used", enrolledAt: new Date(),
+    });
+    await handle.db.insert(schema.tenants).values({ id: other, name: "Other shop" });
+    await handle.db.insert(schema.staffRecoveryCodes).values([
+      { id: stray, tenantId: other, staffUserId: person.userId, codeHash: "other-shop" },
+      { id: `rcv-${randomUUID()}`, tenantId: person.tenantId, staffUserId: person.userId, codeHash: "this-shop" },
+    ]);
+    const user = (await handle.db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, person.userId)).limit(1))[0];
+    if (!user) throw new Error("missing owner");
+    const codes = await regenerateRecoveryCodes(handle.db, user);
+    expect(codes).toHaveLength(10);
+    const left = await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.id, stray));
+    expect(left).toHaveLength(1);
+    const shop = await handle.db.select().from(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.tenantId, person.tenantId));
+    expect(shop).toHaveLength(10);
   });
 });

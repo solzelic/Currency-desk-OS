@@ -130,6 +130,9 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
   it does not run the SQL migration list. The tables are also in the
   boot DDL. No sign-in route reads them until a later change. 082 is the
   PEP answer log.
+- Migration `084_platform_tenant` seeds `tnt-platform` with plan `premium`
+  and slug `platform`. It is idempotent. Sign-in reads that row and does
+  not insert a tenant from a request.
 - Migration `075_sanctions_lists` adds `sanctions_list_snapshots`,
   `sanctions_list_entries`, `sanctions_ops_flags`, and
   `sanctions_score_settings`. 074 is the Persona inquiry client on PR 722,

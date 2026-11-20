@@ -3,14 +3,14 @@
    linked. It never creates a staff row, a tenant, or a shop. Access
    and refresh tokens are not stored. The demo shop is never linked. */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema, type Db } from "../db/index.js";
 import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { audit } from "../audit.js";
 import { completeSignIn, type DeskSignInMethod } from "./complete-sign-in.js";
 import { SIGN_IN_AUDIT, signInAuditDetail } from "./signin-audit.js";
-import { recordSignInAttempt, type SignInDecision } from "./signin-guard.js";
+import { type SignInDecision } from "./signin-guard.js";
 import { verifyOwnerFactor } from "./owner-mfa.js";
 import { ownerSecondStepReady, listSignInMethods, removalBlocked } from "./methods.js";
 import { revokeAllSessions } from "./sessions.js";
@@ -32,13 +32,25 @@ import { CHALLENGE_TTL_MS } from "./webauthn.js";
 const DEMO_TENANT = "tnt-yorkfx";
 const CONFIRM_SPEND_AT = 3;
 
-async function tenantForChallenge(db: Db, staffUserId?: string | null): Promise<string> {
+function uniqueViolation(err: unknown): boolean {
+  const seen = new Set<unknown>();
+  let current: unknown = err;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if ((current as { code?: unknown }).code === "23505") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** The platform row is seeded by migration 084. A request never inserts it. */
+async function tenantForChallenge(db: Db, staffUserId?: string | null): Promise<string | null> {
   if (staffUserId) {
     const user = (await db.select({ tenantId: schema.staffUsers.tenantId }).from(schema.staffUsers).where(eq(schema.staffUsers.id, staffUserId)).limit(1))[0];
     if (user) return user.tenantId;
   }
-  await db.insert(schema.tenants).values({ id: PLATFORM_TENANT, name: "CurrencyDesk Platform" }).onConflictDoNothing();
-  return PLATFORM_TENANT;
+  const row = (await db.select({ id: schema.tenants.id }).from(schema.tenants).where(eq(schema.tenants.id, PLATFORM_TENANT)).limit(1))[0];
+  return row ? PLATFORM_TENANT : null;
 }
 const b64url = (buf: Buffer): string => buf.toString("base64url");
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -60,11 +72,12 @@ export async function beginSso(
   cfg: ProviderConfig,
   purpose: SsoPurpose,
   opts: { returnTo?: unknown; staffUserId?: string | null; sessionToken?: string | null },
-): Promise<string> {
+): Promise<string | null> {
   const state = b64url(randomBytes(32));
   const verifier = b64url(randomBytes(32));
   const nonce = b64url(randomBytes(16));
   const tenantId = await tenantForChallenge(db, opts.staffUserId);
+  if (!tenantId) return null;
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
     tenantId,
@@ -159,9 +172,10 @@ export async function microsoftTenantAllowed(db: Db, tenantId: string, tid: stri
   return Array.isArray(row.list) && row.list.includes(tid);
 }
 
-async function pending(db: Db, identity: SignInIdentity, staffUserId: string | null, returnTo: string): Promise<string> {
+async function pending(db: Db, identity: SignInIdentity, staffUserId: string | null, returnTo: string): Promise<string | null> {
   const token = b64url(randomBytes(32));
   const tenantId = await tenantForChallenge(db, staffUserId);
+  if (!tenantId) return null;
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
     tenantId,
@@ -200,6 +214,7 @@ export async function finishSignInCallback(
   if (people.length === 0) return { ok: false, reason: "refused" };
   if (people.length > 1) {
     const token = await pending(db, identity, null, returnTo);
+    if (!token) return { ok: false, reason: "refused" };
     return { ok: true, kind: "shops", pending: token, returnTo };
   }
   const user = people[0]!;
@@ -208,6 +223,7 @@ export async function finishSignInCallback(
   }
   if (user.role === "administrator") {
     const token = await pending(db, identity, user.id, returnTo);
+    if (!token) return { ok: false, reason: "refused" };
     return { ok: true, kind: "confirm", pending: token, returnTo };
   }
   const done = await completeSignIn(db, user, cfg.provider as DeskSignInMethod, { ip, issuer: identity.issuer });
@@ -264,11 +280,51 @@ export async function pickShop(db: Db, pendingToken: string, staffUserId: string
   if (user.role === "administrator") {
     if (!(await ownerSecondStepReady(db, user))) return { ok: false, reason: "refused" };
     const token = await pending(db, identity, user.id, returnTo);
+    if (!token) return { ok: false, reason: "refused" };
     return { ok: true, kind: "confirm", pending: token, returnTo };
   }
   const done = await completeSignIn(db, user, identity.provider as DeskSignInMethod, { ip, issuer: identity.issuer });
   if (!done.ok) return { ok: false, reason: "refused" };
   return { ok: true, kind: "session", token: done.token, expiresAt: done.expiresAt, returnTo };
+}
+
+/** One statement bumps the miss count and spends the pending sign-in at 3.
+    A parallel burst cannot push the count past 3. */
+export async function notePendingMiss(db: Db, id: string, tenantId: string): Promise<{ failures: number; spent: boolean }> {
+  const bucket = `sso-pending:${id}`;
+  const result = await db.execute(sql`
+    WITH bumped AS (
+      INSERT INTO signin_failures (bucket, failures, window_started_at)
+      VALUES (${bucket}, 1, now())
+      ON CONFLICT (bucket) DO UPDATE SET
+        failures = CASE
+          WHEN signin_failures.window_started_at <= now() - interval '15 minutes' THEN 1
+          WHEN signin_failures.failures >= ${CONFIRM_SPEND_AT} THEN signin_failures.failures
+          ELSE signin_failures.failures + 1
+        END,
+        window_started_at = CASE
+          WHEN signin_failures.window_started_at <= now() - interval '15 minutes' THEN now()
+          ELSE signin_failures.window_started_at
+        END
+      RETURNING failures
+    ),
+    spent AS (
+      UPDATE auth_challenges
+      SET used_at = now()
+      WHERE id = ${id}
+        AND tenant_id = ${tenantId}
+        AND used_at IS NULL
+        AND (SELECT failures FROM bumped) >= ${CONFIRM_SPEND_AT}
+      RETURNING id
+    )
+    SELECT (SELECT failures FROM bumped) AS failures,
+           (SELECT count(*)::int FROM spent) AS spent
+  `);
+  const row = result.rows[0] as { failures?: number | string; spent?: number | string } | undefined;
+  return {
+    failures: Number(row?.failures ?? 0),
+    spent: Number(row?.spent ?? 0) === 1,
+  };
 }
 
 /** One writer wins. A second spend of the same pending sign-in returns false. */
@@ -295,8 +351,7 @@ export async function confirmOwner(db: Db, pendingToken: string, code: string, i
   }
   const factor = await verifyOwnerFactor(db, user, code, ip);
   if (!factor.ok) {
-    const pending = await recordSignInAttempt(db, `sso-pending:${row.id}`);
-    if (pending.failures >= CONFIRM_SPEND_AT) await spendPendingChallenge(db, row.id, user.tenantId);
+    await notePendingMiss(db, row.id, user.tenantId);
     if (factor.error === "locked") return { ok: false, reason: "locked", locked: factor.locked };
     return { ok: false, reason: "refused" };
   }
@@ -343,17 +398,29 @@ export async function finishLinkCallback(
     eq(schema.staffIdentities.tenantId, user.tenantId),
   ));
   if (others.some((item) => item.staffUserId !== user.id)) return { ok: false, reason: "refused" };
-  if (!others.some((item) => item.staffUserId === user.id)) {
-    await db.insert(schema.staffIdentities).values({
-      id: `idn-${randomUUID()}`,
-      tenantId: user.tenantId,
-      staffUserId: user.id,
-      provider: identity.provider,
-      issuer: identity.issuer,
-      subject: identity.subject,
-      msTid: identity.msTid,
-      createdBy: user.id,
-    });
+  const mine = (await db.select().from(schema.staffIdentities).where(and(
+    eq(schema.staffIdentities.staffUserId, user.id),
+    eq(schema.staffIdentities.provider, identity.provider),
+  )).limit(1))[0];
+  if (mine && (mine.subject !== identity.subject || mine.issuer !== identity.issuer)) {
+    return { ok: false, reason: "refused" };
+  }
+  if (!mine) {
+    try {
+      await db.insert(schema.staffIdentities).values({
+        id: `idn-${randomUUID()}`,
+        tenantId: user.tenantId,
+        staffUserId: user.id,
+        provider: identity.provider,
+        issuer: identity.issuer,
+        subject: identity.subject,
+        msTid: identity.msTid,
+        createdBy: user.id,
+      });
+    } catch (err) {
+      if (uniqueViolation(err)) return { ok: false, reason: "refused" };
+      throw err;
+    }
   }
   const label = identity.provider === "google" ? "Google" : "Microsoft";
   const emailed = await sendIdentityMail(db, user, "linked", label);

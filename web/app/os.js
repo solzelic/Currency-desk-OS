@@ -70739,6 +70739,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   const adapter = () => window.CDOS.signInAdapter;
   const NOT_READY = "This way in is not available yet.";
   const SAME_MISS = "That email or password does not match. Try again.";
+  const SSO_MISS = "That sign-in didn't go through. Try again, or use email.";
+  const SSO_SLOW = "Too many sign-in tries. Wait a few minutes and try again.";
 
   /* Module scope so a test can see that continuing with email does not
      call the network. Any non-empty address opens the password step. */
@@ -71489,7 +71491,8 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       if (preview || typeof window === "undefined") return undefined;
       const q = new URLSearchParams(window.location.search);
       const sso = q.get("sso");
-      if (sso === "refused") setNotice(SAME_MISS);
+      if (sso === "refused") setNotice(SSO_MISS);
+      if (sso === "slow") setNotice(SSO_SLOW);
       if (sso === "confirm") setState("d");
       if (sso === "shops") {
         setState("f");
@@ -71724,8 +71727,13 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           });
           const data = await res.json().catch(() => null);
           setBusy(false);
+          if (res.status === 429) {
+            setNotice(SSO_SLOW);
+            setCode("");
+            return;
+          }
           if (!res.ok) {
-            setNotice(SAME_MISS);
+            setNotice(SSO_MISS);
             setCode("");
             return;
           }
@@ -71743,14 +71751,14 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         className: "step-title"
       }, "Confirm it's you."), /*#__PURE__*/React.createElement("p", {
         className: "step-lead"
-      }, "Use a passkey or the 6-digit code from your authenticator app."), /*#__PURE__*/React.createElement("button", {
+      }, showPasskey ? "Use a passkey or the 6-digit code from your authenticator app." : "Use the 6-digit code from your authenticator app."), showPasskey ? /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "btn primary",
         "data-cd-target": "1",
         onClick: () => onStub("continueWithPasskey")
       }, /*#__PURE__*/React.createElement(IcoPasskey, null), /*#__PURE__*/React.createElement("span", {
         className: "lbl"
-      }, "Continue with a passkey")), /*#__PURE__*/React.createElement("button", {
+      }, "Continue with a passkey")) : null, /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "btn sec wide",
         style: {
@@ -71860,7 +71868,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           });
           const data = await res.json().catch(() => null);
           if (!res.ok) {
-            setNotice(SAME_MISS);
+            setNotice(SSO_MISS);
             return;
           }
           if (data && data.step === "confirm") {
