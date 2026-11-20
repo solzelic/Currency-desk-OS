@@ -58,6 +58,9 @@ describe("step-up and owner recovery", () => {
   });
 
   it("enrolls an authenticator only after step-up and stores recovery codes as hashes", async () => {
+    const ownerId = `${DEMO.tenantId}:j.masri`;
+    await handle.db.delete(schema.staffTotp).where(eq(schema.staffTotp.staffUserId, ownerId));
+    await handle.db.delete(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, ownerId));
     const cookie = await login("j.masri");
     const early = await app.inject({ method: "POST", url: "/api/auth/mfa/enroll/start", headers: { cookie } });
     expect(early.statusCode).toBe(403);
@@ -232,14 +235,26 @@ describe("step-up and owner recovery", () => {
     const onReject = (err: unknown) => {
       crashes.push(err instanceof Error ? err.message : String(err));
     };
+    const routes = [
+      "/api/auth/stepup/email",
+      "/api/auth/stepup",
+      "/api/auth/stepup/passkey/options",
+      "/api/auth/stepup/passkey/verify",
+      "/api/auth/mfa/enroll/start",
+      "/api/auth/mfa/enroll/confirm",
+      "/api/auth/mfa/recovery",
+    ];
     process.on("unhandledRejection", onReject);
-    const res = await quiet.inject({ method: "POST", url: "/api/auth/stepup", payload: {} });
-    await new Promise((resolve) => setImmediate(resolve));
+    const answers = [];
+    for (const url of routes) {
+      const res = await quiet.inject({ method: "POST", url, payload: {} });
+      await new Promise((resolve) => setImmediate(resolve));
+      answers.push({ url, status: res.statusCode, body: res.json() });
+    }
     process.off("unhandledRejection", onReject);
     await quiet.close();
     process.env.SIGNIN_GOOGLE = saved;
-    expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ error: "not_available" });
+    expect(answers).toEqual(routes.map((url) => ({ url, status: 503, body: { error: "not_available" } })));
     const noise = `${logs.join("\n")}\n${crashes.join("\n")}`;
     expect(noise).not.toContain("Cannot write headers after they are sent");
   });

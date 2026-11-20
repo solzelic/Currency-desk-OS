@@ -49,6 +49,11 @@ const EXPECTED: Record<string, { status: number; reason: string }> = {
   "/api/onboarding/:ref/sso/:provider/start": { status: 503, reason: "No Google client is configured in tests, so sign-up v2.1's SSO door is closed." },
   "/design-preview": { status: 404, reason: "The sign-in preview is only served under /design-preview/signin, so the bare path is closed." },
   "/design-preview*": { status: 404, reason: "Anything under /design-preview that is not a named sign-in preview is closed." },
+  "/api/auth/sso/google/start": { status: 503, reason: "SIGNIN_GOOGLE is off, so the Google sign-in door is closed." },
+  "/api/auth/sso/link/google/start": { status: 503, reason: "SIGNIN_GOOGLE is off, so linking Google is closed." },
+  "/auth/sso/callback": { status: 303, reason: "A callback without code and state goes back to the sign-in page." },
+  "/auth/sso/link/callback": { status: 303, reason: "A link callback without code and state goes back to the sign-in page." },
+  "/api/auth/sso/shops": { status: 401, reason: "Shop choice needs the pending sign-in cookie, which this sweep does not send." },
 };
 type Hit = { route: string; field: string; sample: string };
 

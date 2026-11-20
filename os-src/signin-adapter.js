@@ -42,11 +42,24 @@
     return Promise.resolve({ status: "not_available" });
   }
 
+  /* The browser leaves for the provider only when that flag is on.
+     With the flag off this returns not_available and does not navigate. */
+  function startProvider(provider, flag) {
+    return function () {
+      var w = typeof window !== "undefined" ? window : null;
+      var flags = flagsFromWindow(w);
+      if (!flags[flag]) return unavailable();
+      if (!w || !w.location || typeof w.location.assign !== "function") return unavailable();
+      w.location.assign("/api/auth/sso/" + provider + "/start?returnTo=/app");
+      return Promise.resolve({ status: "redirect" });
+    };
+  }
+
   function createSignInAdapter() {
     return {
       continueWithPasskey: function () { return unavailable(); },
-      continueWithGoogle: function () { return unavailable(); },
-      continueWithMicrosoft: function () { return unavailable(); },
+      continueWithGoogle: startProvider("google", "google"),
+      continueWithMicrosoft: startProvider("microsoft", "microsoft"),
       sendSignInLink: function () { return unavailable(); },
     };
   }
