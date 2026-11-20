@@ -16,6 +16,7 @@ import type { Writable } from "node:stream";
 import type { Db } from "./db/index.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerStepUpRoutes } from "./routes/auth-stepup.js";
+import { registerSsoRoutes } from "./routes/auth-sso.js";
 import { registerPasswordChangeGate } from "./auth/password-change-gate.js";
 import { stagingDoorOpen } from "./auth/staging-runtime.js";
 import { registerStagingSignInRoutes } from "./routes/staging-signin.js";
@@ -323,6 +324,7 @@ export async function buildApp(
   registerSignInPreviewRoutes(app);
   registerAuthRoutes(app, db);
   registerStepUpRoutes(app, db);
+  registerSsoRoutes(app, db, ["google"]);
   /* The routes do not exist unless the shared staging door is open
      for registration (STAGING exactly "1"). Host is checked again
      on each request. The role buttons also require the demo shop.

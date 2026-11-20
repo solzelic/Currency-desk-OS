@@ -54,6 +54,9 @@ describe("step-up and owner recovery", () => {
   });
 
   it("enrolls an authenticator only after step-up and stores recovery codes as hashes", async () => {
+    const ownerId = `${DEMO.tenantId}:j.masri`;
+    await handle.db.delete(schema.staffTotp).where(eq(schema.staffTotp.staffUserId, ownerId));
+    await handle.db.delete(schema.staffRecoveryCodes).where(eq(schema.staffRecoveryCodes.staffUserId, ownerId));
     const cookie = await login("j.masri");
     const early = await app.inject({ method: "POST", url: "/api/auth/mfa/enroll/start", headers: { cookie } });
     expect(early.statusCode).toBe(403);

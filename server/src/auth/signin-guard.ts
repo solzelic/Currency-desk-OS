@@ -176,8 +176,17 @@ async function releaseSuccess(db: Db, accountKey: string, accountCount: number, 
   await db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${ipKey} AND failures <= 0`);
 }
 
+/** One OIDC callback attempt. Separate buckets from password guesses.
+    The attempt that passes the cap is locked. A success is not given back:
+    callbacks are not password checks. */
+export async function chargeSignInBucket(db: Db, bucket: string, max: number): Promise<SignInDecision> {
+  const row = await bump(db, bucket);
+  const scope = bucket.startsWith("sso-ip:") ? "ip" : "account";
+  return lockFrom(row, max, scope, true) ?? { result: "pass" };
+}
+
 /** An owner, a manager, or a break-glass reset. The address counter stays.
-    No row is a finished clear, not a failure: they were not locked. */
+   No row is a finished clear, not a failure: they were not locked. */
 export async function clearSignInLock(db: Db, userId: string): Promise<void> {
   await db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, `acct:${userId}`));
 }

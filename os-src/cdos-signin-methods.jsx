@@ -163,6 +163,7 @@
 .cd-set .tabbar{display:flex;height:64px;border-top:1px solid #D9D2C4;padding:6px 8px 10px}
 .cd-set .tabbar span{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#6E675E}
 .cd-set .tabbar span.on{color:#17140F}
+html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4;--paper:#14120E;--white:#221F1A;--graph:#C9C1B4;--mute:#A39B90;--faint:#8A8278;--hair:#3A342C;--field:#4A433A;--soft:#1C3A2C;--warn-bg:#3A2E18;--warn-text:#E6C98A;--positive-text:#B7E4C7;--positive-bg:#163528;background:var(--paper);color:var(--ink)}
 .cd-si .staging{position:absolute;left:64px;bottom:64px;display:grid;gap:8px;width:280px}
 .cd-si.is-phone .staging{position:relative;left:auto;bottom:auto;width:auto;margin:12px 0 24px}
 `;
@@ -412,7 +413,7 @@
                 <div className="meta">{m.meta}</div>
                 {blocked ? <div className="hint" id={"why-" + m.id}>{blockedReason}</div> : null}
               </div>
-              <button type="button" className="act" disabled={blocked} aria-describedby={blocked ? "why-" + m.id : undefined} onClick={() => onAction(m)}>{m.action}</button>
+              {m.action ? <button type="button" className="act" disabled={blocked} aria-describedby={blocked ? "why-" + m.id : undefined} onClick={() => onAction(m)}>{m.action}</button> : <span />}
             </div>
           );
         })}
@@ -459,6 +460,7 @@
     const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
     const [code, setCode] = useState("");
+    const [shops, setShops] = useState([]);
     const [backup, setBackup] = useState(false);
     const [quick, setQuick] = useState(false);
     const authRef = useRef(null);
@@ -469,6 +471,22 @@
       : (typeof window !== "undefined" && window.innerWidth <= 500 ? "390" : "1280");
     const motion = props.motion || "still";
     useHairline(rootRef, device, motion, state);
+
+    useEffect(() => {
+      if (preview || typeof window === "undefined") return undefined;
+      const q = new URLSearchParams(window.location.search);
+      const sso = q.get("sso");
+      if (sso === "refused") setNotice(SAME_MISS);
+      if (sso === "confirm") setState("d");
+      if (sso === "shops") {
+        setState("f");
+        fetch("/api/auth/sso/shops", { credentials: "same-origin" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (d && Array.isArray(d.shops)) setShops(d.shops); })
+          .catch(() => {});
+      }
+      return undefined;
+    }, [preview]);
 
     useEffect(() => {
       if (preview) return undefined;
@@ -589,18 +607,39 @@
         </form>
       );
     } else if (state === "d") {
+      const submitCode = async (e) => {
+        e.preventDefault();
+        if (preview) return;
+        const value = (backup ? code : code).trim();
+        if (value.length < 6) return;
+        setBusy(true);
+        try {
+          const res = await fetch("/api/auth/sso/confirm", {
+            method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin",
+            body: JSON.stringify({ code: value }),
+          });
+          const data = await res.json().catch(() => null);
+          setBusy(false);
+          if (!res.ok) { setNotice(SAME_MISS); setCode(""); return; }
+          window.location.assign((data && data.returnTo) || "/app");
+        } catch (err) {
+          setBusy(false);
+          setNotice("Sign-in is having trouble. Try again in a minute.");
+        }
+      };
       right = (
-        <div>
+        <form onSubmit={submitCode}>
           <div className="eyebrow">Confirm it is you</div>
           <h2 className="step-title">Confirm it's you.</h2>
           <p className="step-lead">Use a passkey or the 6-digit code from your authenticator app.</p>
           <button type="button" className="btn primary" data-cd-target="1" onClick={() => onStub("continueWithPasskey")}><IcoPasskey /><span className="lbl">Continue with a passkey</span></button>
           <button type="button" className="btn sec wide" style={{ marginTop: 16 }} onClick={() => setBackup(false)}>Enter your 6-digit code</button>
           <div className="cancel-row"><button type="button" className="linkish" onClick={() => setBackup(true)}>Use a backup code</button></div>
-          {backup ? <div className="field" style={{ marginTop: 8 }}><input aria-label="Backup code" autoComplete="off" placeholder="Backup code" /></div> : null}
-          <p className="signed-as">Signed in with Google as <b>jordan@yorkfx.ca</b></p>
+          <div className="field" style={{ marginTop: 8 }}><input aria-label={backup ? "Backup code" : "Authenticator code"} autoComplete="one-time-code" placeholder={backup ? "Backup code" : "6-digit code"} value={code} onChange={(e) => setCode(e.target.value)} /></div>
+          <button type="submit" className="btn primary" style={{ marginTop: 12 }} disabled={busy || code.trim().length < 6}><span className="lbl">Continue</span></button>
+          {preview ? <p className="signed-as">Signed in with Google as <b>jordan@yorkfx.ca</b></p> : <p className="signed-as">This sign-in still needs your authenticator or a backup code.</p>}
           {notice ? <p className="hold" role="status">{notice}</p> : null}
-        </div>
+        </form>
       );
     } else if (state === "e") {
       right = (
@@ -627,8 +666,19 @@
           <h2 className="step-title">Choose a shop</h2>
           <p className="step-lead">This account is linked to 2 shops.</p>
           <div className="shop-list">
-            <button type="button" className="shop-card" data-cd-target="1"><span className="ico"><IcoShop /></span><span><b>York Currency Exchange</b><small>214 Queen St W, Toronto</small></span></button>
-            <button type="button" className="shop-card"><span className="ico"><IcoShop /></span><span><b>Harbourfront Desk</b><small>88 Queens Quay W, Toronto</small></span></button>
+            {(preview ? [{ staffUserId: "york", name: "York Currency Exchange" }, { staffUserId: "harbour", name: "Harbourfront Desk" }] : shops).map((shop, index) => (
+              <button type="button" className="shop-card" data-cd-target={index === 0 ? "1" : undefined} key={shop.staffUserId} onClick={async () => {
+                if (preview) return;
+                const res = await fetch("/api/auth/sso/pick", {
+                  method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin",
+                  body: JSON.stringify({ staffUserId: shop.staffUserId }),
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) { setNotice(SAME_MISS); return; }
+                if (data && data.step === "confirm") { setState("d"); return; }
+                window.location.assign((data && data.returnTo) || "/app");
+              }}><span className="ico"><IcoShop /></span><span><b>{shop.name}</b></span></button>
+            ))}
           </div>
         </div>
       );
@@ -734,10 +784,42 @@
 
   function SignInMethodsSettings() {
     const [notice, setNotice] = useState("");
+    const [methods, setMethods] = useState([]);
+    useEffect(() => {
+      let live = true;
+      fetch("/api/auth/methods", { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!live || !d || !Array.isArray(d.methods)) return;
+          setMethods(d.methods.filter((m) => m.id === "password" || m.id === "google" || m.id === "microsoft").map((m) => ({
+            id: m.id,
+            name: m.name,
+            meta: m.connected ? "Connected" : "Not connected",
+            connected: m.connected,
+            action: m.id === "password" ? "" : (m.connected ? "Remove" : "Connect"),
+            icon: m.id === "google" ? "google" : m.id === "microsoft" ? "microsoft" : "mail",
+          })));
+        })
+        .catch(() => {});
+      return () => { live = false; };
+    }, []);
     const onAction = async (method) => {
-      if (adapter().removalBlocked(PREVIEW_METHODS, method.id)) return;
-      const result = await adapter().createSignInAdapter().continueWithPasskey();
-      if (!result || result.status === "not_available") setNotice(NOT_READY);
+      if (!method.action) return;
+      if (method.action === "Remove" && adapter().removalBlocked(methods, method.id)) return;
+      if (method.action === "Connect") {
+        const flags = adapter().flagsFromWindow(window);
+        if ((method.id === "google" && !flags.google) || (method.id === "microsoft" && !flags.microsoft)) {
+          setNotice(NOT_READY);
+          return;
+        }
+        window.location.assign("/api/auth/sso/link/" + method.id + "/start");
+        return;
+      }
+      const res = await fetch("/api/auth/sso/" + method.id + "/unlink", { method: "POST", credentials: "same-origin" });
+      if (res.status === 403) { setNotice("Confirm it's you before removing this."); return; }
+      if (res.status === 409) { setNotice("Add another way to sign in before removing this one."); return; }
+      if (!res.ok) { setNotice(NOT_READY); return; }
+      window.location.assign("/login");
     };
     return (
       <div>
@@ -745,7 +827,7 @@
         <h2 style={{ fontFamily: "Archivo, sans-serif", fontSize: 22, margin: "0 0 8px" }}>Sign-in methods</h2>
         <p style={{ color: "#45403A", fontSize: 14, marginTop: 0 }}>Ways you can open the desk. The last remaining method stays until you add another.</p>
         <div className="cd-set" style={{ width: "auto", height: "auto", background: "transparent" }}>
-          <MethodsList methods={PREVIEW_METHODS} onAction={onAction} />
+          <MethodsList methods={methods} onAction={onAction} />
           <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
           {notice ? <p className="hold" role="status">{notice}</p> : null}
         </div>
