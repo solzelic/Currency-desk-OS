@@ -35,7 +35,7 @@ These already exist. There is no tenant id in the environment.
 | `MICROSOFT_CLIENT_ID` | Microsoft app registration, `common` accounts |
 | `MICROSOFT_CLIENT_SECRET` | Microsoft app registration |
 | `SIGNIN_GOOGLE` | `1`, `true`, `yes`, or `on`. Anything else is off. |
-| `SIGNIN_MICROSOFT` | Same parser. Off until the Microsoft routes are enabled for a test. |
+| `SIGNIN_MICROSOFT` | Same parser. Off until Sol turns it on for a test. |
 | `SIGNIN_PASSKEY` | Off. Passkey sign-in is not wired. |
 | `WEBAUTHN_RP_ID` | Passkey relying party. Not used for Google or Microsoft. |
 | `WEBAUTHN_ORIGINS` | Comma-separated https origins for that relying party. |

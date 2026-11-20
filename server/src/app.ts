@@ -324,7 +324,7 @@ export async function buildApp(
   registerSignInPreviewRoutes(app);
   registerAuthRoutes(app, db);
   registerStepUpRoutes(app, db);
-  registerSsoRoutes(app, db, ["google"]);
+  registerSsoRoutes(app, db, ["google", "microsoft"]);
   /* The routes do not exist unless the shared staging door is open
      for registration (STAGING exactly "1"). Host is checked again
      on each request. The role buttons also require the demo shop.

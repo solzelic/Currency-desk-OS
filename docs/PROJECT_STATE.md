@@ -1,6 +1,10 @@
+## Microsoft sign-in and link (CD-276, 20 November 2026)
+
+`SIGNIN_MICROSOFT` uses the same callback paths as Google. The authorize URL is the `common` authority. A returning person matches `tid` plus `oid` only. `sub`, email, and `preferred_username` are not keys. `tenants.ms_tenant_allowlist` null leaves that check off. A list refuses any other tenant id. The same oid linked in two shops returns a shop list and does not choose one. The flag still defaults off. With it off, `/login` does not show Microsoft and the Microsoft routes answer 503.
+
 ## Google sign-in and link (CD-275, 20 November 2026)
 
-With `SIGNIN_GOOGLE` off, `GET /api/auth/sso/google/start` and `/auth/sso/callback` answer 503 and `/login` is unchanged. With the flag on, and `SSO_SIGNIN_REDIRECT_URI` set to the exact staging callback, a linked teller finishes in `completeSignIn`. A missing account, an inactive account, the demo shop, and an owner who has not enrolled an authenticator or passkey plus a recovery code all get the same refusal and no new staff row. An owner who is ready is not given a session until the authenticator or a backup code is entered. Linking needs a signed-in session and a step-up from the last five minutes, then `SSO_LINK_REDIRECT_URI`. Unlinking revokes that person's sessions. The client stub navigates only when the flag is on. Microsoft routes are not registered yet. The env names and the three redirect URIs are in `docs/SIGNIN.md`.
+With `SIGNIN_GOOGLE` off, `GET /api/auth/sso/google/start` and `/auth/sso/callback` answer 503 and `/login` is unchanged. With the flag on, and `SSO_SIGNIN_REDIRECT_URI` set to the exact staging callback, a linked teller finishes in `completeSignIn`. A missing account, an inactive account, the demo shop, and an owner who has not enrolled an authenticator or passkey plus a recovery code all get the same refusal and no new staff row. An owner who is ready is not given a session until the authenticator or a backup code is entered. Linking needs a signed-in session and a step-up from the last five minutes, then `SSO_LINK_REDIRECT_URI`. Unlinking revokes that person's sessions. The client stub navigates only when the flag is on. The env names and the three redirect URIs are in `docs/SIGNIN.md`.
 
 ## Step-up and owner recovery codes (CD-273, 20 November 2026)
 
