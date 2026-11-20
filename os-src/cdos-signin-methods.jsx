@@ -8,6 +8,8 @@
   const adapter = () => window.CDOS.signInAdapter;
   const NOT_READY = "This way in is not available yet.";
   const SAME_MISS = "That email or password does not match. Try again.";
+  const SSO_MISS = "That sign-in didn't go through. Try again, or use email.";
+  const SSO_SLOW = "Too many sign-in tries. Wait a few minutes and try again.";
 
   /* Module scope so a test can see that continuing with email does not
      call the network. Any non-empty address opens the password step. */
@@ -476,7 +478,8 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       if (preview || typeof window === "undefined") return undefined;
       const q = new URLSearchParams(window.location.search);
       const sso = q.get("sso");
-      if (sso === "refused") setNotice(SAME_MISS);
+      if (sso === "refused") setNotice(SSO_MISS);
+      if (sso === "slow") setNotice(SSO_SLOW);
       if (sso === "confirm") setState("d");
       if (sso === "shops") {
         setState("f");
@@ -620,7 +623,8 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           });
           const data = await res.json().catch(() => null);
           setBusy(false);
-          if (!res.ok) { setNotice(SAME_MISS); setCode(""); return; }
+          if (res.status === 429) { setNotice(SSO_SLOW); setCode(""); return; }
+          if (!res.ok) { setNotice(SSO_MISS); setCode(""); return; }
           window.location.assign((data && data.returnTo) || "/app");
         } catch (err) {
           setBusy(false);
@@ -631,8 +635,8 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         <form onSubmit={submitCode}>
           <div className="eyebrow">Confirm it is you</div>
           <h2 className="step-title">Confirm it's you.</h2>
-          <p className="step-lead">Use a passkey or the 6-digit code from your authenticator app.</p>
-          <button type="button" className="btn primary" data-cd-target="1" onClick={() => onStub("continueWithPasskey")}><IcoPasskey /><span className="lbl">Continue with a passkey</span></button>
+          <p className="step-lead">{showPasskey ? "Use a passkey or the 6-digit code from your authenticator app." : "Use the 6-digit code from your authenticator app."}</p>
+          {showPasskey ? <button type="button" className="btn primary" data-cd-target="1" onClick={() => onStub("continueWithPasskey")}><IcoPasskey /><span className="lbl">Continue with a passkey</span></button> : null}
           <button type="button" className="btn sec wide" style={{ marginTop: 16 }} onClick={() => setBackup(false)}>Enter your 6-digit code</button>
           <div className="cancel-row"><button type="button" className="linkish" onClick={() => setBackup(true)}>Use a backup code</button></div>
           <div className="field" style={{ marginTop: 8 }}><input aria-label={backup ? "Backup code" : "Authenticator code"} autoComplete="one-time-code" placeholder={backup ? "Backup code" : "6-digit code"} value={code} onChange={(e) => setCode(e.target.value)} /></div>
@@ -674,7 +678,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
                   body: JSON.stringify({ staffUserId: shop.staffUserId }),
                 });
                 const data = await res.json().catch(() => null);
-                if (!res.ok) { setNotice(SAME_MISS); return; }
+                if (!res.ok) { setNotice(SSO_MISS); return; }
                 if (data && data.step === "confirm") { setState("d"); return; }
                 window.location.assign((data && data.returnTo) || "/app");
               }}><span className="ico"><IcoShop /></span><span><b>{shop.name}</b></span></button>

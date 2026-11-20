@@ -197,12 +197,18 @@ export async function releaseSignInSuccess(db: Db, accountKey: string, accountCo
 }
 
 /** One OIDC callback attempt. Separate buckets from password guesses.
-    The attempt that passes the cap is locked. A success is not given back:
-    callbacks are not password checks. */
+    The attempt that passes the cap is locked. A completed sign-in, shop
+    choice, owner confirm, or link gives this increment back. */
 export async function chargeSignInBucket(db: Db, bucket: string, max: number): Promise<SignInDecision> {
   const row = await bump(db, bucket);
   const scope = bucket.startsWith("sso-ip:") ? "ip" : "account";
   return lockFrom(row, max, scope, true) ?? { result: "pass" };
+}
+
+/** Take back one callback increment after the sign-in actually completed. */
+export async function releaseSignInIp(db: Db, ipKey: string): Promise<void> {
+  await db.execute(sql`UPDATE signin_failures SET failures = failures - 1 WHERE bucket = ${ipKey} AND failures > 0`);
+  await db.execute(sql`DELETE FROM signin_failures WHERE bucket = ${ipKey} AND failures <= 0`);
 }
 
 /** An owner, a manager, or a break-glass reset. The address counter stays.
