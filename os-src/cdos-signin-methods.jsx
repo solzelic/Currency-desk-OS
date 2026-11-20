@@ -172,9 +172,9 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     const width = Math.round(h * (200 / 140));
     return (
       <svg className="mark" viewBox="0 0 200 140" width={width} height={h} aria-hidden="true">
-        <circle cx="60" cy="70" r="48" fill="#17140F" />
-        <path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="#17140F" />
-        <rect x="60" y="64.5" width="92" height="11" fill="#F7F4ED" />
+        <circle cx="60" cy="70" r="48" fill="var(--ink)" />
+        <path d="M116,22 H136 A48,48 0 0 1 136,118 H116 Z" fill="var(--ink)" />
+        <rect x="60" y="64.5" width="92" height="11" fill="var(--paper)" />
         <circle cx="112" cy="70" r="6.5" fill="#1D6B45" />
       </svg>
     );

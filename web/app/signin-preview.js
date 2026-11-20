@@ -268,16 +268,16 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       cx: "60",
       cy: "70",
       r: "48",
-      fill: "#17140F"
+      fill: "var(--ink)"
     }), /*#__PURE__*/React.createElement("path", {
       d: "M116,22 H136 A48,48 0 0 1 136,118 H116 Z",
-      fill: "#17140F"
+      fill: "var(--ink)"
     }), /*#__PURE__*/React.createElement("rect", {
       x: "60",
       y: "64.5",
       width: "92",
       height: "11",
-      fill: "#F7F4ED"
+      fill: "var(--paper)"
     }), /*#__PURE__*/React.createElement("circle", {
       cx: "112",
       cy: "70",
