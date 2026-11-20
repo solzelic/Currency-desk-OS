@@ -7,7 +7,7 @@ import { writeFileSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { createDb, schema } from "../src/db/index.js";
 import { buildApp } from "../src/app.js";
-import { formatLockClock, ipBucket } from "../src/auth/signin-guard.js";
+import { formatLockClock, ipBucket, SIGNIN_ACCOUNT_MAX } from "../src/auth/signin-guard.js";
 
 const outArg = process.argv[2];
 if (!outArg) throw new Error("missing result path");
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     await handle.db.delete(schema.signinFailures).where(eq(schema.signinFailures.bucket, ipBucket(ip)));
     const staffId = `tz.lock.${Date.now()}`;
     let last: Awaited<ReturnType<typeof app.inject>> | undefined;
-    for (let n = 0; n < 5; n++) {
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX; n++) {
       last = await app.inject({
         method: "POST",
         url: "/api/auth/login/start",

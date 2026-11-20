@@ -34,7 +34,12 @@ mail from an unverified domain lands in spam, and burning a fresh domain's
 reputation on the founding cohort is not recoverable.
 
 Until the variables are set, dev and test write the send to the server
-log so a sign-in code can be read back in a suite. Production does not.
+log so a legacy sign-in code can be read back in a suite. Production does not.
+Sensitive sends also refuse this simulation in every environment. The new
+`/api/auth/login/password` path marks codes sensitive; its tests inject a
+synthetic mailbox at the test boundary and never return or log the code.
+The legacy staging on-screen code exception remains on password-bearing
+`/api/auth/login/start` only. See [returning password sign-in](SIGNIN_RETURNING_PASSWORD.md).
 If `RESEND_API_KEY` or `EMAIL_FROM` is missing and `NODE_ENV` is
 `production`, the send is refused. One missing name, the warning says
 `is not set`. Both missing, it says

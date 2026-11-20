@@ -11,9 +11,10 @@
 
    The desk door and the platform-admin door both call this. Two copies
    would eventually resolve the same typed name to two different people. */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, or, sql } from "drizzle-orm";
 import { schema, type Db } from "../db/index.js";
 import { looksLikeCdId, normalizeCdId } from "./cdid.js";
+import { CD_ID_RE } from "../enquiries/cd-id.js";
 
 export const isEmail = (s: string): boolean => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 
@@ -44,4 +45,42 @@ export async function findStaffForLogin(db: Db, staffId: string, tenantId: strin
      to the wrong desk is worse than not signing them in. */
   const anywhere = await db.select().from(schema.staffUsers).where(sameStaffId(staffId)).limit(2);
   return anywhere.length === 1 ? anywhere[0] : undefined;
+}
+
+/** Returning desk login adds only the unambiguous, fully spelled v2 ID.
+ * Keep the platform door and legacy username resolver unchanged. Compact
+ * and prefix-free spellings overlap legal usernames; CTO policy is pending. */
+export async function findReturningStaff(db: Db, identifier: string, tenantId: string, anywhere = false) {
+  if (!CD_ID_RE.test(normalizeCdId(identifier))) return findStaffForLogin(db, identifier, tenantId, { anywhere });
+  // A full ID must not select a different desk through a legacy username.
+  // Resolve the union; two distinct people are a miss, never a precedence rule.
+  const matches = await db.select().from(schema.staffUsers).where(or(
+    eq(schema.staffUsers.cdId, normalizeCdId(identifier)), sameStaffId(identifier),
+  )).limit(2);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** Enrolment candidates never authorize a returning sign-in. The activation
+ * contract binds CD-ID, enquiry, onboarding tenant and the provisioned owner.
+ * Use the current staff hash, not the enrolment copy: resets change it. A
+ * contact email alone is not ownership and is never used as an alias. */
+export async function returningPasswordEligible(db: Db, user: typeof schema.staffUsers.$inferSelect | undefined): Promise<boolean> {
+  if (!user?.active) return false;
+  if (!user.cdId) return true; // established legacy staff account
+  const rows = await db.select({ account: schema.signupAccounts, enquiry: schema.enquiries, onboarding: schema.onboarding })
+    .from(schema.enquiries)
+    .leftJoin(schema.signupAccounts, eq(schema.signupAccounts.enquiryId, schema.enquiries.id))
+    .leftJoin(schema.onboarding, eq(schema.onboarding.enquiryId, schema.enquiries.id))
+    .where(eq(schema.enquiries.cdId, user.cdId)).limit(1);
+  const row = rows[0];
+  if (!row) return true; // staff-issued legacy ID, not a signup reservation
+  if (row.account?.state !== "active" || !row.account.emailVerifiedAt
+    || row.enquiry.tenantId !== user.tenantId || row.onboarding?.tenantId !== user.tenantId
+    || row.enquiry.email.trim().toLowerCase() !== user.staffId.trim().toLowerCase()
+    || user.id !== `${user.tenantId}:${row.enquiry.email.trim().toLowerCase()}`) return false;
+  const credential = await db.select({ id: schema.signupCredentials.id }).from(schema.signupCredentials).where(and(
+    eq(schema.signupCredentials.enquiryId, row.enquiry.id), eq(schema.signupCredentials.kind, "password"),
+    isNotNull(schema.signupCredentials.verifiedAt), isNotNull(schema.signupCredentials.passwordHash),
+  )).limit(1);
+  return credential.length === 1;
 }

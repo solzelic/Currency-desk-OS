@@ -10,7 +10,7 @@
    Login answers are deliberately uniform ("invalid credentials")
    so staff IDs can't be enumerated; every attempt is audited.
    Password guesses are counted in Postgres (see auth/signin-guard.ts):
-   five on the account or twenty from one address, then the same
+   ten on the account or ten from one address, then the same
    "Too many tries" sentence for a real id and an unknown one.
    The emailed-code step uses that same sentence for an unknown id
    and a wrong code, and it will not compare a code until this browser
@@ -18,25 +18,28 @@
    Platform-operator TOTP is a different door (/api/admin/login). This
    file stays the desk: a staff id that is not an email is password-only.
    ============================================================ */
-import type { FastifyInstance } from "fastify";
-import { asc, eq, sql } from "drizzle-orm";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { schema } from "../db/index.js";
 import type { Db } from "../db/index.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isStagingRuntime, type StagingDoorHeaders } from "../auth/staging-runtime.js";
-import { stagingTestOwnerOnScreen } from "./staging-fresh-shop.js";
+import { stagingFixtureOwner } from "../onboarding/signup-staging.js";
 import { createSession, replaceSession, resolveSession, resolveSessionState, revokeAllSessions, revokeSession, SessionReplacedError, sessionIsRevoked, SESSION_COOKIE } from "../auth/sessions.js";
 import { clearStagingCookie, STAGING_COOKIE } from "./staging-signin.js";
 import { pinDeskName } from "../auth/desk-name.js";
 import { clearPinAttempts, lockState, reservePinAttempt } from "./pin.js";
 import { stagingTestShop } from "../staging/pin-reset.js";
 import { audit } from "../audit.js";
-import { findStaffForLogin, isEmail } from "../auth/login-user.js";
+import { findStaffForLogin, findReturningStaff, returningPasswordEligible, isEmail } from "../auth/login-user.js";
+import { CD_ID_RE } from "../enquiries/cd-id.js";
+import { looksLikeCdId, normalizeCdId } from "../auth/cdid.js";
 import { tenantPlan } from "./tenant.js";
 import { makeCode, hashCode, codeMatches, sendEmail, loginCodeEmail, passwordResetEmail } from "../email.js";
 import pg from "pg";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { waitBefore, sent as markSent, tooSoon } from "../cooldown.js";
 import { clientIp } from "../auth/client-ip.js";
 import {
@@ -49,6 +52,9 @@ import {
   deleteLoginProof,
   judgeSignIn,
   loadLoginProof,
+  consumeLoginProof,
+  identifierStartLock,
+  noteIdentifierStartMiss,
   lockBody,
   noteWrongCode,
   staffMatches,
@@ -65,6 +71,11 @@ const loginBody = z.object({
   tenantId: z.string().min(1).max(120).optional(),
 });
 const DEFAULT_LOGIN_TENANT = "tnt-yorkfx";
+const identifier = z.string().trim().min(1).max(254);
+const identifierBody = z.object({ identifier }).strict();
+const passwordBody = identifierBody.extend({ password: z.string().min(1).max(512) }).strict();
+const START_DELAY_MS = 150;
+const WRONG_PASSWORD = "That password didn’t work. Try again, or reset it.";
 
 const switchBody = z.object({
   staffId: z.string().min(1).max(120),
@@ -76,7 +87,7 @@ const changePasswordBody = z.object({
   newPassword: z.string().min(8, "password: at least 8 characters").max(512),
 });
 const verifyLoginBody = z.object({
-  staffId: z.string().min(1).max(120),
+  staffId: z.string().min(1).max(254),
   code: z.string().trim().min(4).max(10),
   tenantId: z.string().min(1).max(120).default("tnt-yorkfx"),
 });
@@ -168,23 +179,35 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   /* One refusal for both doors. A lock and a wrong password are different
      sentences on purpose; a missing account and a real one are not.
      The audit row names the lock, never the password. */
-  async function passwordRefusal(user: typeof schema.staffUsers.$inferSelect | undefined, decision: SignInDecision, tenantId: string) {
+  async function passwordRefusal(user: typeof schema.staffUsers.$inferSelect | undefined, decision: SignInDecision, tenantId: string, req: FastifyRequest, pack = false) {
     if (decision.result === "pass") throw new Error("passwordRefusal called after the password matched.");
-    if (user) {
-      await audit(db, {
-        tenantId: user.tenantId,
-        legalEntityId: user.legalEntityId,
-        branchId: user.branchId,
-        actorId: user.id,
-        action: decision.result === "locked" ? "auth.login_locked" : "auth.login_failed",
-        detail: decision.result === "locked" ? { scope: decision.scope, retryAfter: decision.retryAfter } : {},
-      });
-    }
+    if (user) await audit(db, {
+      tenantId: user.tenantId,
+      legalEntityId: user.legalEntityId,
+      branchId: user.branchId,
+      actorId: user.id,
+      action: decision.result === "locked" ? "auth.login_locked" : "auth.login_failed",
+      detail: { reason: decision.result === "locked" ? "password_limit" : "invalid_credentials",
+        accountHash: createHash("sha256").update(user.id).digest("hex"),
+        ...(decision.result === "locked" ? { scope: decision.scope, retryAfter: decision.retryAfter } : {}) },
+    });
+    else req.log.warn({ reason: decision.result === "locked" ? "password_limit" : "invalid_credentials" }, "sign-in refused");
+    if (pack) return decision.result === "locked"
+      ? { status: 429 as const, body: { error: "too_many_attempts", detail: "Too many tries. Wait 15 minutes, or reset your password.", retryAfter: decision.retryAfter } }
+      : { status: 401 as const, body: { error: "invalid_credentials", detail: WRONG_PASSWORD } };
     if (decision.result === "locked") return { status: 429 as const, body: lockBody(decision, await branchZone(user, tenantId)) };
     return { status: 401 as const, body: { error: "invalid_credentials" as const } };
   }
 
-  app.post("/api/auth/login", async (req, reply) => {
+  // Driver errors may include SQL parameters. Do not echo/log identifiers,
+  // hashes or provider payloads; retain an observable, bounded failure reason.
+  const authErrors = { errorHandler: (err: unknown, req: FastifyRequest, reply: FastifyReply) => {
+    const clientError = z.object({ statusCode: z.union([z.literal(400), z.literal(413), z.literal(415)]) }).safeParse(err);
+    if (clientError.success) return reply.code(clientError.data.statusCode).send({ error: "invalid_request" });
+    req.log.error({ reason: "signin_dependency_failed" }, "sign-in unavailable");
+    return reply.code(503).send({ error: "temporarily_unavailable" });
+  } };
+  app.post("/api/auth/login", authErrors, async (req, reply) => {
     const parsed = loginBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_request" });
@@ -192,16 +215,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const { staffId, password } = parsed.data;
     const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
 
-    const user = await findStaffForLogin(db, staffId, tenantId, { anywhere: !parsed.data.tenantId });
+    const user = await findReturningStaff(db, staffId, tenantId, !parsed.data.tenantId);
     const decision = await judgeSignIn(db, {
       password,
       storedHash: user?.passwordHash ?? null,
       accountKey: accountKeyFor(user?.id, tenantId, staffId),
       ip: clientIp(req),
-      eligible: !!user && user.active,
+      eligible: await returningPasswordEligible(db, user),
     });
     if (decision.result !== "pass") {
-      const refused = await passwordRefusal(user, decision, tenantId);
+      const refused = await passwordRefusal(user, decision, tenantId, req);
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
@@ -243,7 +266,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   });
 
   // shared response shape for a signed-in user
-  const userPayload = async (user: typeof schema.staffUsers.$inferSelect) => ({
+  const userPayload = async (user: typeof schema.staffUsers.$inferSelect, reader: Db = db) => ({
     id: user.staffId,
     name: user.name,
     role: user.role,
@@ -252,13 +275,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     branchId: user.branchId,
     authorizedBranchIds: user.authorizedBranchIds,
     mustChangePassword: user.mustChangePassword,
-    plan: await tenantPlan(db, user.tenantId),
+    plan: await tenantPlan(reader, user.tenantId),
   });
   // resolve a staff user by staff id — shared with the platform-admin door
   // so the two cannot drift into two different people. Case folds the same
   // way the failure counter does.
   async function findLoginUser(staffId: string, tenantId: string, anywhere = false) {
-    return findStaffForLogin(db, staffId, tenantId, { anywhere });
+    return findReturningStaff(db, staffId, tenantId, anywhere);
   }
 
   /* An owner or a manager clears the account counter. A teller does not.
@@ -290,8 +313,9 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
   // Step 1 of an email-verified sign-in: prove the password, then email a code.
   // Users without an email on file (e.g. seeded staff ids) sign in on the
   // password alone — there's nowhere to send a code.
-  app.post("/api/auth/login/start", async (req, reply) => {
-    const parsed = loginBody.safeParse(req.body);
+  async function passwordLogin(req: FastifyRequest, reply: FastifyReply, pack: boolean) {
+    const parsed = pack ? passwordBody.transform(({ identifier, password }) => ({ staffId: identifier, password, tenantId: undefined })).safeParse(req.body)
+      : loginBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const { staffId, password } = parsed.data;
     const tenantId = parsed.data.tenantId ?? DEFAULT_LOGIN_TENANT;
@@ -301,10 +325,10 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       storedHash: user?.passwordHash ?? null,
       accountKey: accountKeyFor(user?.id, tenantId, staffId),
       ip: clientIp(req),
-      eligible: !!user && user.active,
+      eligible: await returningPasswordEligible(db, user),
     });
     if (decision.result !== "pass") {
-      const refused = await passwordRefusal(user, decision, tenantId);
+      const refused = await passwordRefusal(user, decision, tenantId, req, pack);
       return reply.code(refused.status).send(refused.body);
     }
     if (!user) throw new Error("Sign-in passed without a staff user.");
@@ -316,7 +340,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
       await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
       reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
       clearStagingCookie(reply, cookieOpts.secure);
-      return { ok: true, needsCode: false, user: await userPayload(user) };
+      return { ok: true, needsCode: false, ...(pack ? { next: "authenticated" } : {}), user: await userPayload(user) };
     }
     /* Pressing "Send my code" twice used to send two, and only the second
        one worked — so the code somebody read off the first email was the
@@ -330,12 +354,13 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     /* A staging test owner has no inbox. The same code step still runs.
        The code is in this response only. Live keeps emailing and does
        not receive the code field. */
-    const onScreen = await stagingTestOwnerOnScreen(db, req.headers as StagingDoorHeaders, user.staffId, user.tenantId);
+    const onScreen = !pack && await stagingFixtureOwner(db, req.headers as StagingDoorHeaders, user.staffId, user.tenantId);
     if (!onScreen) {
       const mail = loginCodeEmail(code, user.name);
-      const sent = await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html });
+      const sent = await sendEmail(recipient, mail.subject, { text: mail.text, html: mail.html, ...(pack ? { sensitive: true } : {}) });
       if (sent === "failed") {
         await deleteLoginProof(db, proof.tokenHash);
+        req.log.warn({ reason: "signin_mail_failed" }, "sign-in refused");
         return reply.code(503).send({
           error: "email_unavailable",
           detail: "We couldn't send a sign-in code. Try again in a moment.",
@@ -347,45 +372,108 @@ export function registerAuthRoutes(app: FastifyInstance, db: Db) {
     const shown = {
       ok: true as const,
       needsCode: true as const,
+      ...(pack ? { next: "code" } : {}),
       maskedEmail: maskEmail(recipient),
       user: { id: user.staffId, name: user.name, role: user.role, tenantId: user.tenantId, mustChangePassword: user.mustChangePassword },
     };
     if (onScreen) return { ...shown, code };
     return shown;
+  }
+  app.post("/api/auth/login/password", authErrors, (req, reply) => passwordLogin(req, reply, true));
+  app.post("/api/auth/login/start", authErrors, async (req, reply) => {
+    // An explicit union preserves established password callers. A mixed body
+    // cannot fall through to either contract and silently discard fields.
+    if (!req.body || typeof req.body !== "object" || !("identifier" in req.body)) return passwordLogin(req, reply, false);
+    const parsed = identifierBody.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    const began = performance.now();
+    try {
+      const typed = normalizeCdId(parsed.data.identifier);
+      const isId = looksLikeCdId(typed) || CD_ID_RE.test(typed);
+      if (isId) {
+        const limited = await identifierStartLock(db, typed, clientIp(req));
+        if (limited?.result === "locked") {
+          req.log.warn({ reason: "identifier_start_limit" }, "sign-in refused");
+          reply.code(429);
+          return { error:"too_many_attempts", retryAfter:limited.retryAfter };
+        }
+      }
+      // Exactly one minimal lookup for every identifier, including emails and
+      // misses. No account state, name, initials or address is selected.
+      const rows = await db.select({ shopName: schema.tenants.name }).from(schema.staffUsers)
+        .innerJoin(schema.tenants, eq(schema.staffUsers.tenantId, schema.tenants.id))
+        .where(and(eq(schema.staffUsers.cdId, typed), eq(schema.staffUsers.active, true), eq(schema.tenants.suspended, false),
+          sql`NOT EXISTS (SELECT 1 FROM staff_users collision WHERE lower(collision.staff_id) = ${typed.toLowerCase()} AND collision.id <> ${schema.staffUsers.id})`,
+        )).limit(1);
+      if (isId && !rows[0]) {
+        const limited = await noteIdentifierStartMiss(db, typed, clientIp(req));
+        if (limited?.result === "locked") {
+          req.log.warn({ reason: "identifier_start_limit" }, "sign-in refused");
+          reply.code(429);
+          return { error:"too_many_attempts", retryAfter:limited.retryAfter };
+        }
+      }
+      return { next: "password", ...(isId && rows[0] ? { shopName: rows[0].shopName } : {}) };
+    } finally {
+      // A floor hides ordinary DB variation; outages/slow queries are not
+      // promised a constant upper bound. The error path is padded too.
+      await delay(Math.max(0, START_DELAY_MS - (performance.now() - began)));
+    }
   });
 
   /* Step 2. The code is compared only when the password marker is present.
      Without it, an unknown id and a known id take the same path: one dummy
      compare, no staff lookup, the same 401. */
-  app.post("/api/auth/login/verify", async (req, reply) => {
+  app.post("/api/auth/login/verify", authErrors, async (req, reply) => {
     const parsed = verifyLoginBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     const { staffId, code } = parsed.data;
     codeMatches(code, DUMMY_CODE_HASH);
-    const proof = await loadLoginProof(db, req.cookies[LOGIN_PROOF_COOKIE]);
-    if (proof.state === "expired") {
+    const proofToken = req.cookies[LOGIN_PROOF_COOKIE];
+    if (!proofToken) return reply.code(401).send(CODE_REFUSAL);
+    const outcome = await db.transaction(async (tx) => {
+      // Bound each lock acquisition; contention rolls back through authErrors.
+      // This setting ends with the transaction, not the pooled connection.
+      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+      const proof = await loadLoginProof(tx, proofToken);
+      if (proof.state !== "ready") return proof;
+      // Lock authoritative identity and suspension through session commit.
+      // The supplied tenant never chooses the session's shop.
+      const user = (await tx.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, proof.userId)).limit(1).for("share"))[0];
+      if (!user || !user.active || !staffMatches(user, staffId)) return { state: "absent" } as const;
+      const tenant = (await tx.select().from(schema.tenants).where(eq(schema.tenants.id, user.tenantId)).limit(1).for("share"))[0];
+      if (!tenant) return { state: "absent" } as const;
+      if (tenant.suspended) return { state: "suspended" } as const;
+      const correct = codeMatches(code, proof.codeHash);
+      const written = correct ? await consumeLoginProof(tx, proof.tokenHash) : await noteWrongCode(tx, proof.tokenHash);
+      if (!written) {
+        // This transaction owns the row: only wall-clock expiry can change
+        // eligibility since the locked read. Delete the terminal proof too.
+        await deleteLoginProof(tx, proof.tokenHash);
+        return { state: "expired" } as const;
+      }
+      if (!correct) return { state: "absent" } as const;
+      const session = await createSession(tx, user.id);
+      await audit(tx, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
+      const payload = await userPayload(user, tx);
+      return { state: "accepted", session, payload } as const;
+    });
+    // No cookie mutation before COMMIT: dependency failure rolls everything
+    // back and authErrors returns the bounded 503 without SQL or secrets.
+    if (outcome.state === "expired") {
       reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
       return reply.code(410).send({ error: "expired", detail: "That code expired. Sign in again." });
     }
-    if (proof.state === "exhausted") {
+    if (outcome.state === "exhausted") {
       reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
       return reply.code(429).send({ error: "too_many_attempts", detail: "Too many tries. Sign in again." });
     }
-    if (proof.state !== "ready") return reply.code(401).send(CODE_REFUSAL);
-    const user = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, proof.userId)).limit(1))[0];
-    if (!user || !user.active || !staffMatches(user, staffId)) return reply.code(401).send(CODE_REFUSAL);
-    if (await tenantSuspended(user.tenantId)) return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
-    if (!codeMatches(code, proof.codeHash)) {
-      await noteWrongCode(db, proof.tokenHash, proof.attempts);
-      return reply.code(401).send(CODE_REFUSAL);
-    }
-    await deleteLoginProof(db, proof.tokenHash);
+    if (outcome.state === "suspended") return reply.code(403).send({ error: "suspended", detail: "This desk is suspended. Contact CurrencyDesk." });
+    if (outcome.state !== "accepted") return reply.code(401).send(CODE_REFUSAL);
     reply.clearCookie(LOGIN_PROOF_COOKIE, cookieOpts);
-    const { token, expiresAt } = await createSession(db, user.id);
-    await audit(db, { tenantId: user.tenantId, legalEntityId: user.legalEntityId, branchId: user.branchId, actorId: user.id, action: "auth.login" });
-    reply.setCookie(SESSION_COOKIE, token, { ...cookieOpts, expires: expiresAt });
+    reply.setCookie(SESSION_COOKIE, outcome.session.token, { ...cookieOpts, expires: outcome.session.expiresAt });
     clearStagingCookie(reply, cookieOpts.secure);
-    return { user: await userPayload(user) };
+    return { user: outcome.payload };
   });
 
   app.post("/api/auth/change-password", async (req, reply) => {

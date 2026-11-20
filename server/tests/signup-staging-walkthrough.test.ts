@@ -22,6 +22,8 @@ import { loadAccount } from "../src/onboarding/signup-account.js";
 import { openStagingDesk, SERVICE_AGREEMENT_SOURCE_HASH } from "../src/onboarding/signup-open.js";
 import { moveTo } from "../src/onboarding/pipeline.js";
 import { databaseMarkedStaging, stagingFixtureOwner, stagingFixtureRow } from "../src/onboarding/signup-staging.js";
+import { forget as forgetCooldown } from "../src/cooldown.js";
+import * as emailTransport from "../src/email.js";
 import { hashCode } from "../src/email.js";
 import * as billing from "../src/billing/stripe.js";
 
@@ -205,16 +207,47 @@ describe("the staging walkthrough, signup to desk to sign out and back in", () =
     /* sign out, then the existing staging sign-in for a test owner */
     expect((await call(jar, "POST", "/api/auth/logout", {})).statusCode).toBeLessThan(300);
     expect((await call(jar, "GET", "/api/tenant")).statusCode).toBe(401);
-    const startLogin = await call(jar, "POST", "/api/auth/login/start", { staffId: email, password: PASSWORD });
+    // Direct auth callsite regressions: every failed provenance gate must
+    // withhold the code, even with the right password and a test-shop flag.
+    const returningStart = (headers: Record<string, string> = { host: HOST }) => call(jar, "POST", "/api/auth/login/start", { staffId: cdId, password: PASSWORD }, headers);
+    const noDisclosure = async (headers?: Record<string, string>, status = 200) => {
+      forgetCooldown("login:" + owner.id);
+      const response = await returningStart(headers);
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).not.toHaveProperty("code");
+      expect(response.cookies.some(c => c.name === "cdos_session")).toBe(false);
+    };
+    const delivery = vi.spyOn(emailTransport, "sendEmail").mockResolvedValue("sent");
+    await mark([]); await noDisclosure(); await mark(["staging"]);
+    await noDisclosure({ host: "www.currencydeskos.com", "x-forwarded-host": HOST });
+    await handle.db.update(schema.tenants).set({ siteSlug: "wrong-slug" }).where(eq(schema.tenants.id, tenantId));
+    await noDisclosure();
+    await handle.db.update(schema.tenants).set({ siteSlug: String(row.details?.slug), isTestShop: false }).where(eq(schema.tenants.id, tenantId));
+    await noDisclosure();
+    await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, tenantId));
+    for (const change of [{ status: "invited" as const }, { tenantId: "tnt-yorkfx" }, { doNotContactReason: "operator" }, { details: { ...row.details, stagingFresh: false } }]) {
+      await handle.db.update(schema.enquiries).set(change).where(eq(schema.enquiries.id, row.id));
+      await noDisclosure(undefined, "tenantId" in change ? 401 : 200); // existing activation guard rejects the wrong tenant
+      await handle.db.update(schema.enquiries).set({ status: "accepted", tenantId, doNotContactReason: row.doNotContactReason, details: row.details }).where(eq(schema.enquiries.id, row.id));
+    }
+    delivery.mockRestore();
+    forgetCooldown("login:" + owner.id);
+    const startLogin = await returningStart(); // canonical CD-ID; helper must receive resolved email
+
     expect(startLogin.statusCode, startLogin.body).toBe(200);
-    const loginCode = startLogin.json().code as string;
+    const oldProof = { ...jar };
+    forgetCooldown("login:" + owner.id); // test-only clock boundary, real replacement
+    const replacement = await returningStart();
+    expect(replacement.statusCode).toBe(200);
+    expect((await call(oldProof, "POST", "/api/auth/login/verify", { staffId: cdId, code: startLogin.json().code })).statusCode).toBe(401);
+    const loginCode = replacement.json().code as string;
     expect(loginCode).toMatch(/^\d{6}$/);
     expect((await call(jar, "POST", "/api/auth/login/verify", { staffId: email, code: loginCode })).statusCode).toBe(200);
     expect((await call(jar, "GET", "/api/tenant")).statusCode).toBe(200);
 
     /* nothing was mailed, logged or sent to a provider */
     const said = [...logs, ...consoleLines].join("\n");
-    for (const code of [first, second]) expect(said).not.toContain(code);
+    for (const code of [first, second, loginCode]) expect(said).not.toContain(code);
     expect(said).not.toContain("[email");
     expect(fetched.filter((u) => !u.startsWith("https://api.pwnedpasswords.com/"))).toEqual([]);
   });

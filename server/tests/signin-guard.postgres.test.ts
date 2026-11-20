@@ -5,6 +5,7 @@
    The Postgres cases run only with TEST_DATABASE_URL, the same gate as
    the other invariant files. The log case does not need a database and
    runs either way. */
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { hashPassword } from "../src/auth/password.js";
 import { sendEmail } from "../src/email.js";
-import { CODE_REFUSAL, LOGIN_PROOF_COOKIE, SIGNIN_ACCOUNT_MAX, accountKeyFor, formatLockClock, ipBucket } from "../src/auth/signin-guard.js";
+import { CODE_REFUSAL, LOGIN_PROOF_COOKIE, SIGNIN_ACCOUNT_MAX, SIGNIN_IP_MAX, accountKeyFor, formatLockClock, ipBucket } from "../src/auth/signin-guard.js";
 import { isCloudflareIp } from "../src/auth/cloudflare-ips.js";
 import { clientIp } from "../src/auth/client-ip.js";
 import { applyResetStaffPassword } from "../src/auth/break-glass.js";
@@ -216,19 +217,20 @@ postgres("shop sign-in against Postgres", () => {
     delete process.env.DATABASE_URL;
   });
 
-  it("locks the account on the fifth wrong password and keeps the lock after a new process", async () => {
-    for (let n = 1; n <= 4; n++) {
+  it("locks the account on the tenth wrong password and keeps the lock after a new process", async () => {
+    for (let n = 1; n < SIGNIN_ACCOUNT_MAX; n++) {
       const res = await guess("r.limit", "wrong-password");
       expect(res.statusCode, `attempt ${n}`).toBe(401);
       expect(res.json()).toEqual({ error: "invalid_credentials" });
     }
-    const fifth = await guess("r.limit", "wrong-password");
-    expect(fifth.statusCode).toBe(429);
-    expect(fifth.json().detail).toBe("Too many tries. Try again in 15 minutes.");
-    expect(fifth.json().error).toBe("too_many_attempts");
+    const tenth = await guess("r.limit", "wrong-password");
+    expect(tenth.statusCode).toBe(429);
+    expect(tenth.json().detail).toBe("Too many tries. Try again in 15 minutes.");
+    expect(tenth.json().error).toBe("too_many_attempts");
 
-    const events = await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.actorId, accountId));
-    expect(events.filter((event) => event.action === "auth.login_failed").length).toBeGreaterThanOrEqual(4);
+    const events = (await handle.db.select().from(schema.auditEvents).where(eq(schema.auditEvents.tenantId, TENANT)))
+      .filter(event => event.detail.accountHash === createHash("sha256").update(accountId).digest("hex"));
+    expect(events.filter(event => event.action === "auth.login_failed").length).toBeGreaterThanOrEqual(SIGNIN_ACCOUNT_MAX - 1);
     const locked = events.filter((event) => event.action === "auth.login_locked");
     expect(locked.length).toBeGreaterThanOrEqual(1);
     expect(locked[0]?.detail).toMatchObject({ scope: "account" });
@@ -236,7 +238,7 @@ postgres("shop sign-in against Postgres", () => {
     expect(JSON.stringify(locked)).not.toContain(PASS);
 
     const stored = await handle.db.select().from(schema.signinFailures).where(eq(schema.signinFailures.bucket, accountKeyFor(accountId, TENANT, "r.limit")));
-    expect(stored[0]?.failures).toBeGreaterThanOrEqual(5);
+    expect(stored[0]?.failures).toBeGreaterThanOrEqual(SIGNIN_ACCOUNT_MAX);
 
     await app.close();
     app = await buildApp(handle.db);
@@ -254,7 +256,7 @@ postgres("shop sign-in against Postgres", () => {
   it("an unknown id locks with the same sentence", async () => {
     const unknown = "nobody-signin@example.com";
     let last: { statusCode: number; body: { detail?: string; error?: string } } | undefined;
-    for (let n = 0; n < 5; n++) {
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX; n++) {
       const res = await guess(unknown, "wrong-password", "203.0.113.11");
       last = { statusCode: res.statusCode, body: res.json() };
     }
@@ -301,7 +303,7 @@ postgres("shop sign-in against Postgres", () => {
   it("counts the address, including the hop a proxy appended", async () => {
     await handle.db.insert(schema.signinFailures).values({
       bucket: ipBucket("203.0.113.20"),
-      failures: 19,
+      failures: SIGNIN_IP_MAX - 1,
       windowStartedAt: new Date(),
     });
     const locked = await guess("fresh-ip@example.com", "wrong-password", "203.0.113.20");
@@ -327,8 +329,9 @@ postgres("shop sign-in against Postgres", () => {
 
   it("opens the window again after fifteen minutes, and a success clears the account", async () => {
     await handle.db.update(schema.signinFailures)
-      .set({ windowStartedAt: new Date(Date.now() - 16 * 60 * 1000), failures: 5 })
+      .set({ windowStartedAt: new Date(Date.now() - 16 * 60 * 1000), failures: SIGNIN_ACCOUNT_MAX })
       .where(eq(schema.signinFailures.bucket, accountKeyFor(accountId, TENANT, "r.limit")));
+    await handle.db.update(schema.signinFailures).set({ windowStartedAt: new Date(Date.now() - 16 * 60 * 1000) }).where(eq(schema.signinFailures.bucket, ipBucket(ACCOUNT_IP)));
     const reset = await guess("r.limit", "wrong-password");
     expect(reset.statusCode).toBe(401);
     const row = (await handle.db.select().from(schema.signinFailures).where(eq(schema.signinFailures.bucket, accountKeyFor(accountId, TENANT, "r.limit"))))[0];
@@ -531,7 +534,7 @@ postgres("shop sign-in against Postgres", () => {
 
   it("keeps counting the socket when a header rotates and nothing is in front", async () => {
     const socket = "203.0.113.70";
-    for (let n = 1; n <= 20; n++) {
+    for (let n = 1; n <= SIGNIN_IP_MAX; n++) {
       const res = await app.inject({
         method: "POST",
         url: "/api/auth/login/start",
@@ -542,7 +545,7 @@ postgres("shop sign-in against Postgres", () => {
         },
         payload: { staffId: `rotate-${n}@example.com`, password: "wrong-password", tenantId: TENANT },
       });
-      expect(res.statusCode, `header ${n}`).toBe(n === 20 ? 429 : 401);
+      expect(res.statusCode, `header ${n}`).toBe(n === SIGNIN_IP_MAX ? 429 : 401);
     }
     const buckets = (await pool.query("SELECT bucket FROM signin_failures WHERE bucket LIKE 'ip:%'")).rows.map((row) => row.bucket);
     expect(buckets).toContain(`ip:${socket}`);
@@ -637,9 +640,9 @@ postgres("shop sign-in against Postgres", () => {
 
   it("counts R.LIMIT and r.limit as the same account", async () => {
     await pool.query("DELETE FROM signin_failures WHERE bucket = $1 OR bucket LIKE 'miss:%r.limit'", [`acct:${accountId}`]);
-    for (let n = 0; n < 4; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.15")).statusCode).toBe(401);
-    const fifth = await guess("R.LIMIT", "wrong-password", "203.0.113.15");
-    expect(fifth.statusCode).toBe(429);
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX - 1; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.15")).statusCode).toBe(401);
+    const tenth = await guess("R.LIMIT", "wrong-password", "203.0.113.15");
+    expect(tenth.statusCode).toBe(429);
     const rows = await pool.query("SELECT bucket, failures FROM signin_failures WHERE bucket = $1 OR bucket LIKE 'miss:%r.limit'", [`acct:${accountId}`]);
     expect(rows.rows.map((row) => row.bucket)).toEqual([`acct:${accountId}`]);
     const correct = await guess("R.LIMIT", PASS, "203.0.113.15");
@@ -648,7 +651,7 @@ postgres("shop sign-in against Postgres", () => {
 
   it("lets an owner or a manager unlock, and refuses a teller", async () => {
     await pool.query("DELETE FROM signin_failures WHERE bucket = $1", [`acct:${accountId}`]);
-    for (let n = 0; n < 5; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.16")).statusCode).toBe(n === 4 ? 429 : 401);
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.16")).statusCode).toBe(n === SIGNIN_ACCOUNT_MAX - 1 ? 429 : 401);
     const ipBefore = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [ipBucket("203.0.113.16")]);
 
     const sign = async (staffId: string) => {
@@ -674,7 +677,7 @@ postgres("shop sign-in against Postgres", () => {
     const teller = await unlock(await sign("m.costa"));
     expect(teller.statusCode).toBe(403);
     const still = await pool.query("SELECT failures FROM signin_failures WHERE bucket = $1", [`acct:${accountId}`]);
-    expect(Number(still.rows[0]?.failures)).toBeGreaterThanOrEqual(5);
+    expect(Number(still.rows[0]?.failures)).toBeGreaterThanOrEqual(SIGNIN_ACCOUNT_MAX);
 
     const manager = await unlock(await sign("r.haddad"));
     expect(manager.statusCode).toBe(200);
@@ -685,10 +688,11 @@ postgres("shop sign-in against Postgres", () => {
     const audit = await pool.query("SELECT action, detail FROM audit_events WHERE action = 'auth.login_unlocked' AND detail->>'staffId' = 'r.limit'");
     expect(audit.rows.length).toBeGreaterThan(0);
 
-    for (let n = 0; n < 5; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.18")).statusCode).toBe(n === 4 ? 429 : 401);
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX; n++) expect((await guess("r.limit", "wrong-password", "203.0.113.18")).statusCode).toBe(n === SIGNIN_ACCOUNT_MAX - 1 ? 429 : 401);
     const owner = await unlock(await sign("j.masri"));
     expect(owner.statusCode).toBe(200);
-    const open = await guess("r.limit", PASS, "203.0.113.18");
+    expect((await guess("r.limit", PASS, "203.0.113.18")).statusCode).toBe(429); // connection remains locked
+    const open = await guess("r.limit", PASS, "203.0.113.19");
     expect(open.statusCode).toBe(200);
   });
 
@@ -750,7 +754,7 @@ postgres("shop sign-in against Postgres", () => {
       { id: "br-signin-other", tenantId: otherTenant, legalEntityId: "le-signin-other", name: "First branch", timezone: "America/Toronto", createdAt: new Date("2026-01-01T12:00:00Z") },
     ]);
     let last: Awaited<ReturnType<typeof app.inject>> | undefined;
-    for (let n = 0; n < 5; n++) {
+    for (let n = 0; n < SIGNIN_ACCOUNT_MAX; n++) {
       last = await app.inject({
         method: "POST",
         url: "/api/auth/login/start",

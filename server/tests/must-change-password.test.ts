@@ -160,6 +160,14 @@ describe("must-change-password is enforced on the server", () => {
     expect(again.statusCode).toBe(200);
     expect(again.json().user.mustChangePassword).toBe(true);
 
+    const returning = await app.inject({ method: "POST", url: "/api/auth/login/password", cookies: owner,
+      payload: { identifier: "j.masri", password: DEMO.password } });
+    expect(returning.statusCode).toBe(200);
+    expect(returning.json().user.mustChangePassword).toBe(true);
+    const protectedRead = await app.inject({ method: "GET", url: "/api/staff", cookies: cookieOf(returning) });
+    expect(protectedRead.statusCode).toBe(403);
+    expect(protectedRead.json()).toEqual(REFUSAL);
+
     const stranger = await app.inject({ method: "GET", url: "/api/staff" });
     expect(stranger.statusCode).toBe(401);
   });

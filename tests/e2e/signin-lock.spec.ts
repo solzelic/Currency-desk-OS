@@ -1,9 +1,9 @@
 /* A locked password step on a phone.
 
-   The account counter trips at five, so each size spends five guesses
-   on an id that is not a person at the desk and then stops. It does
-   not sign in as a seeded teller. A second run of the suite gets a
-   fresh in-memory database, so these five do not pile onto a later run.
+   Both counters trip at ten. Spend at most ten guesses on an id that
+   is not a person at the desk. Each real-lock case restores its own
+   persistent counters so later specs do not inherit a locked connection.
+   No seeded teller is locked. These cases need a disposable Postgres DB.
 
    While the lock holds, the button reads Sign in and is disabled.
    A staff id with no @ comes back as Sign in. An email address
@@ -11,7 +11,43 @@
    The sentence names that time once, without a zone label.
    A 503 is intercepted, so it does not spend a guess. */
 import type { Locator, Page } from "@playwright/test";
+import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { test, expect } from "./fixtures";
+
+type Counter = { bucket: string; failures: number; window_started_at: string };
+const requireFromServer = createRequire(path.join(process.cwd(), "server", "package.json"));
+const { Client } = requireFromServer("pg") as {
+  Client: new (options: { connectionString: string }) => {
+    connect(): Promise<void>; end(): Promise<void>;
+    query(sql: string, values?: unknown[]): Promise<{ rows: Counter[] }>;
+  };
+};
+
+const lockTest = test.extend<{ lockStaffId: string }>({
+  lockStaffId: async ({}, use) => {
+    test.skip(!process.env.SEAM_DATABASE_URL, "real lock isolation needs disposable PostgreSQL via SEAM_DATABASE_URL");
+    const id = "lock" + randomUUID().replaceAll("-", "");
+    // Matches the real loopback peer and default tenant in the seam config.
+    // Do not reset the table or unrelated accounts, and retain microseconds.
+    const buckets = ["ip:127.0.0.1", `miss:tnt-yorkfx:${id}`];
+    const client = new Client({ connectionString: process.env.SEAM_DATABASE_URL! });
+    await client.connect();
+    try {
+      const before = await client.query("SELECT bucket, failures, window_started_at::text FROM signin_failures WHERE bucket = ANY($1::text[])", [buckets]);
+      try { await use(id); }
+      finally {
+        await client.query("BEGIN");
+        try {
+          await client.query("DELETE FROM signin_failures WHERE bucket = ANY($1::text[])", [buckets]);
+          for (const row of before.rows) await client.query("INSERT INTO signin_failures(bucket,failures,window_started_at) VALUES ($1,$2,$3::timestamptz)", [row.bucket, row.failures, row.window_started_at]);
+          await client.query("COMMIT");
+        } catch (error) { await client.query("ROLLBACK"); throw error; }
+      }
+    } finally { await client.end(); }
+  },
+});
 
 const SENTENCE = /Too many tries\. Try again at \d{1,2}:\d{2} (AM|PM)\./;
 
@@ -40,13 +76,13 @@ async function openPassword(page: Page, staffId: string): Promise<void> {
 
 test.describe("locked sign-in", () => {
   for (const width of [360, 390]) {
-    test(`the lock ends on screen at ${width}`, async ({ page }) => {
+    lockTest(`the lock ends on screen at ${width}`, async ({ page, lockStaffId }) => {
       await page.clock.install();
       await page.setViewportSize({ width, height: width === 360 ? 780 : 844 });
-      await openPassword(page, `lock${width}${Date.now().toString(36)}`);
+      await openPassword(page, lockStaffId);
       const password = page.locator('input[type="password"]');
       const send = page.getByRole("button", { name: "Sign in" });
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 10; attempt++) {
         if (await page.getByText(SENTENCE).isVisible()) break;
         await password.fill("wrong-password-lock");
         const pending = page.waitForResponse(
@@ -85,6 +121,14 @@ test.describe("locked sign-in", () => {
       await expect(page.getByRole("button", { name: /send my code/i })).toHaveCount(0);
     });
   }
+
+  test("a real cashier can sign in after the lock UI cases", async ({ request }) => {
+    const response = await request.post("/api/auth/login", {
+      data: { staffId: "m.costa", password: "yorkville" },
+    });
+    expect(response.status()).toBe(200);
+    expect(response.headers()["set-cookie"]).toContain("cdos_session=");
+  });
 
   test("a password-only cashier signs in", async ({ page }) => {
     await page.clock.install();
