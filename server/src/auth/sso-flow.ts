@@ -6,9 +6,12 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { schema, type Db } from "../db/index.js";
+import { PLATFORM_TENANT } from "../admin-bootstrap.js";
 import { audit } from "../audit.js";
 import { completeSignIn, type DeskSignInMethod } from "./complete-sign-in.js";
 import { SIGN_IN_AUDIT, signInAuditDetail } from "./signin-audit.js";
+import { recordSignInAttempt, type SignInDecision } from "./signin-guard.js";
+import { verifyOwnerFactor } from "./owner-mfa.js";
 import { ownerSecondStepReady, listSignInMethods, removalBlocked } from "./methods.js";
 import { revokeAllSessions } from "./sessions.js";
 import { sendIdentityMail } from "./signin-mail.js";
@@ -27,6 +30,16 @@ import {
 import { CHALLENGE_TTL_MS } from "./webauthn.js";
 
 const DEMO_TENANT = "tnt-yorkfx";
+const CONFIRM_SPEND_AT = 3;
+
+async function tenantForChallenge(db: Db, staffUserId?: string | null): Promise<string> {
+  if (staffUserId) {
+    const user = (await db.select({ tenantId: schema.staffUsers.tenantId }).from(schema.staffUsers).where(eq(schema.staffUsers.id, staffUserId)).limit(1))[0];
+    if (user) return user.tenantId;
+  }
+  await db.insert(schema.tenants).values({ id: PLATFORM_TENANT, name: "CurrencyDesk Platform" }).onConflictDoNothing();
+  return PLATFORM_TENANT;
+}
 const b64url = (buf: Buffer): string => buf.toString("base64url");
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -51,8 +64,10 @@ export async function beginSso(
   const state = b64url(randomBytes(32));
   const verifier = b64url(randomBytes(32));
   const nonce = b64url(randomBytes(16));
+  const tenantId = await tenantForChallenge(db, opts.staffUserId);
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
+    tenantId,
     purpose: purpose === "link" ? "oidc_link" : "oidc_signin",
     challengeHash: sha256(state),
     nonce,
@@ -146,8 +161,10 @@ export async function microsoftTenantAllowed(db: Db, tenantId: string, tid: stri
 
 async function pending(db: Db, identity: SignInIdentity, staffUserId: string | null, returnTo: string): Promise<string> {
   const token = b64url(randomBytes(32));
+  const tenantId = await tenantForChallenge(db, staffUserId);
   await db.insert(schema.authChallenges).values({
     id: `chl-${randomUUID()}`,
+    tenantId,
     purpose: "oidc_signin",
     challengeHash: sha256(token),
     provider: identity.provider,
@@ -254,18 +271,36 @@ export async function pickShop(db: Db, pendingToken: string, staffUserId: string
   return { ok: true, kind: "session", token: done.token, expiresAt: done.expiresAt, returnTo };
 }
 
-export async function confirmOwner(db: Db, pendingToken: string, code: string, ip: string): Promise<CallbackResult> {
+/** One writer wins. A second spend of the same pending sign-in returns false. */
+export async function spendPendingChallenge(db: Db, id: string, tenantId: string): Promise<boolean> {
+  const spent = await db.update(schema.authChallenges).set({ usedAt: new Date() }).where(and(
+    eq(schema.authChallenges.id, id),
+    eq(schema.authChallenges.tenantId, tenantId),
+    isNull(schema.authChallenges.usedAt),
+  )).returning();
+  return spent.length === 1;
+}
+
+export type ConfirmOwnerResult =
+  | Extract<CallbackResult, { ok: true; kind: "session" }>
+  | { ok: false; reason: "refused" }
+  | { ok: false; reason: "locked"; locked: Extract<SignInDecision, { result: "locked" }> };
+
+export async function confirmOwner(db: Db, pendingToken: string, code: string, ip: string): Promise<ConfirmOwnerResult> {
   const row = await loadPending(db, pendingToken);
   if (!row?.staffUserId || !row.provider) return { ok: false, reason: "refused" };
   const user = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, row.staffUserId)).limit(1))[0];
-  if (!user || user.role !== "administrator" || !(await ownerSecondStepReady(db, user))) return { ok: false, reason: "refused" };
-  const { verifyOwnerFactor } = await import("./owner-mfa.js");
-  const factor = await verifyOwnerFactor(db, user, code);
-  if (!factor) return { ok: false, reason: "refused" };
-  await db.update(schema.authChallenges).set({ usedAt: new Date() }).where(and(
-    eq(schema.authChallenges.id, row.id),
-    isNull(schema.authChallenges.usedAt),
-  ));
+  if (!user || user.tenantId !== row.tenantId || user.role !== "administrator" || !(await ownerSecondStepReady(db, user))) {
+    return { ok: false, reason: "refused" };
+  }
+  const factor = await verifyOwnerFactor(db, user, code, ip);
+  if (!factor.ok) {
+    const pending = await recordSignInAttempt(db, `sso-pending:${row.id}`);
+    if (pending.failures >= CONFIRM_SPEND_AT) await spendPendingChallenge(db, row.id, user.tenantId);
+    if (factor.error === "locked") return { ok: false, reason: "locked", locked: factor.locked };
+    return { ok: false, reason: "refused" };
+  }
+  if (!(await spendPendingChallenge(db, row.id, user.tenantId))) return { ok: false, reason: "refused" };
   const done = await completeSignIn(db, user, row.provider as DeskSignInMethod, { ip, issuer: row.issuer });
   if (!done.ok) return { ok: false, reason: "refused" };
   await audit(db, {
@@ -274,7 +309,7 @@ export async function confirmOwner(db: Db, pendingToken: string, code: string, i
     branchId: user.branchId,
     actorId: user.id,
     action: SIGN_IN_AUDIT.login,
-    detail: signInAuditDetail({ method: factor, result: "owner_second_step", issuer: row.issuer ?? undefined, staffId: user.staffId, shop: user.tenantId, ip }),
+    detail: signInAuditDetail({ method: factor.factor, result: "owner_second_step", issuer: row.issuer ?? undefined, staffId: user.staffId, shop: user.tenantId, ip }),
   });
   return { ok: true, kind: "session", token: done.token, expiresAt: done.expiresAt, returnTo: allowReturnTo(row.returnTo) };
 }
@@ -298,7 +333,7 @@ export async function finishLinkCallback(
   }
   if (!identity) return { ok: false, reason: "refused" };
   const user = (await db.select().from(schema.staffUsers).where(eq(schema.staffUsers.id, row.staffUserId)).limit(1))[0];
-  if (!user || !user.active || user.tenantId === DEMO_TENANT) return { ok: false, reason: "refused" };
+  if (!user || !user.active || user.tenantId !== row.tenantId || user.tenantId === DEMO_TENANT) return { ok: false, reason: "refused" };
   if (identity.provider === "microsoft" && !(await microsoftTenantAllowed(db, user.tenantId, identity.msTid))) {
     return { ok: false, reason: "refused" };
   }

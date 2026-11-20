@@ -475,7 +475,8 @@ export const staffIdentities = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex("staff_identities_link_idx").on(t.provider, t.issuer, t.subject, t.staffUserId),
+    uniqueIndex("staff_identities_tenant_subject_idx").on(t.tenantId, t.issuer, t.subject),
+    uniqueIndex("staff_identities_user_provider_idx").on(t.staffUserId, t.provider),
     index("staff_identities_subject_idx").on(t.provider, t.subject),
     index("staff_identities_ms_tid_idx").on(t.provider, t.msTid, t.subject),
   ],
@@ -511,6 +512,7 @@ export const authChallenges = pgTable(
   "auth_challenges",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
     purpose: text("purpose").notNull(),
     challengeHash: text("challenge_hash").notNull(),
     nonce: text("nonce"),
@@ -534,6 +536,7 @@ export const staffRecoveryCodes = pgTable(
   "staff_recovery_codes",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().references(() => tenants.id),
     staffUserId: text("staff_user_id").notNull().references(() => staffUsers.id, { onDelete: "cascade" }),
     codeHash: text("code_hash").notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
