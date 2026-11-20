@@ -1,6 +1,6 @@
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 
-`SIGNIN_MICROSOFT` uses the same callback paths as Google. The authorize URL is the `common` authority. A returning person matches `tid` plus `oid` only. `sub`, email, and `preferred_username` are not keys. `tenants.ms_tenant_allowlist` null leaves that check off. A list refuses any other tenant id. The same oid linked in two shops returns a shop list and does not choose one. The flag still defaults off. With it off, `/login` does not show Microsoft and the Microsoft routes answer 503.
+`SIGNIN_MICROSOFT` uses the same callback paths as Google. The authorize URL is the `common` authority. A returning person matches `tid` plus `oid` only. `sub`, email, and `preferred_username` are not keys. `tenants.ms_tenant_allowlist` null leaves that check off. A list refuses any other tenant id. The same oid linked in two shops returns a shop list and does not choose one. The flag still defaults off. With it off, `/login` does not show Microsoft and the Microsoft routes answer 503. When Google and Microsoft are both on, their buttons stack in one column so the Microsoft button stays inside the sign-in column at 1280.
 
 ## Google sign-in and link (CD-275, 20 November 2026)
 
