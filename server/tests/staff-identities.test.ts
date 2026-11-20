@@ -34,7 +34,7 @@ describe("staff sign-in identity tables", () => {
       tenantId: "tnt-yorkfx",
       provider: "google",
       issuer: "https://accounts.google.com",
-      subject: "sub-shared",
+      subject: `sub-${randomUUID()}`,
     };
     await handle.db.insert(schema.staffIdentities).values({
       id: `idn-${randomUUID()}`,
