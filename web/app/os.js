@@ -39504,7 +39504,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, isExchange && shownOut == null ? 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange && shownOut == null ? quoteStale ? 'Not set' : 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,

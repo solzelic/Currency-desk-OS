@@ -291,7 +291,8 @@ for (const width of [390, 1280] as const) {
     await expect(alert).toContainText("The rate board is out of date.");
     await expect(page.locator(".cd-tx-rate-line .cd-tx-rate-shown")).toHaveText("");
     await expect(page.locator(".cd-tx-kicker .cd-tx-rate-shown")).toHaveText("");
-    await expect(page.locator(".cd-tx-receive")).not.toHaveText(/\d/);
+    await expect(page.locator(".cd-tx-receive")).toHaveText("Not set");
+    await expect(page.locator(".cd-tx-ticket-get")).toHaveText("Not set");
     await expect(primary).toBeDisabled();
 
     mkdirSync(SHOTS, { recursive: true });
