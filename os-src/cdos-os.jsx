@@ -831,6 +831,10 @@
     const settingsRef = useRef(null);
     const hydratedRef = useRef(false);              // per-tenant state loaded once per sign-in
     const [me, setMe] = useState(STAFF[0]);
+    /* null: the server list has not arrived (show only the signed-in person).
+       false: no server (the saved directory, still without inactive rows).
+       string[]: staff ids the server says are active. */
+    const [liveIds, setLiveIds] = useState(null);
 
     /* The book and the client roster. There is no seed any more: a desk that
        has posted nothing shows nothing, rather than 38 invented deals and 18
@@ -1704,9 +1708,31 @@
       if (pickTill) { setStage('station'); return; }
       setCashVersion(v => v + 1);
     };
+    useEffect(() => {
+      if (stage !== 'desktop') return undefined;
+      let live = true;
+      fetch('/api/auth/colleagues', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!live) return;
+          if (!d || !Array.isArray(d.staff)) { setLiveIds(false); return; }
+          setLiveIds(d.staff.map((s) => String(s.staffId || '').toLowerCase()));
+        })
+        .catch(() => { if (live) setLiveIds(false); });
+      return () => { live = false; };
+    }, [stage]);
+    const switchRoster = () => {
+      const local = (settings.employees && settings.employees.length ? settings.employees : STAFF).filter((s) => s.active !== false);
+      if (liveIds === false) return local;
+      if (!Array.isArray(liveIds)) return local.filter((s) => s.name === me.name);
+      const allow = new Set(liveIds);
+      return local.filter((s) => allow.has(String(s.code || s.staffId || '').toLowerCase()));
+    };
     const switchTo = (s) => {
       setAcctMenu(false);
-      if (s.name === me.name) return;
+      if (!s || s.name === me.name) return;
+      const code = String(s.code || s.staffId || '').toLowerCase();
+      if (s.active === false || (Array.isArray(liveIds) && !liveIds.includes(code))) return;
       askPin({
         title: 'Switch account',
         sub: 'Enter ' + s.name + '’s PIN to continue',
@@ -2623,7 +2649,7 @@
             {canSettings && <button className="mb-menu-row" onClick={() => { openApp('settings'); setAcctMenu(false); }}><Ic n="gear" s={16} /> <span className="mb-menu-lbl">Account settings</span></button>}
             <div className="mb-menu-div"></div>
             <div className="mb-menu-cap">Switch account</div>
-            {(settings.employees && settings.employees.length ? settings.employees : STAFF).filter(s => s.active !== false).map(s => (
+            {switchRoster().map(s => (
               <button key={s.name} className={'mb-menu-row' + (s.name === me.name ? ' active' : '')} onClick={() => switchTo(s)}>
                 <span className="mb-menu-dot">{inits(s.name)}</span>
                 <span className="mb-menu-lbl">{s.name} <i>· {s.role}</i></span>
@@ -2642,7 +2668,7 @@
         onSwitch={() => { setDeskLocked(false); setHandover(true); }}
         onSignout={() => { setDeskLocked(false); logout(); }} />, document.body)}
       {/* C · operator handover — pass the desk to a colleague, on the record */}
-      {handover && ReactDOM.createPortal(<Handover operators={(settings.employees && settings.employees.length ? settings.employees : STAFF)} current={me}
+      {handover && ReactDOM.createPortal(<Handover operators={switchRoster()} current={me}
         onCancel={() => setHandover(false)}
         onConfirm={(op, switched) => { setHandover(false); finishSwitch(switched, 'handover'); log && log('operator.handover', { to: op.name }); }} />, document.body)}
       {/* MENU BAR */}

@@ -1849,8 +1849,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           const isCustom = (e) => { const rc = ROLE_CAPS[e.role] || {}; const capsMatch = CAPS.every(([k]) => !!(e.caps || {})[k] === !!rc[k]); const ra = ROLE_APPS[e.role] || DEF_APPS; const apps = Array.isArray(e.apps) ? e.apps : DEF_APPS; const appsMatch = apps.length === ra.length && ra.every(a => apps.includes(a)); return !(capsMatch && appsMatch); };
 
           // ---- roster row: click to open the account ----
+          const blockedOf = (e) => e.active === false || !!(e.code && srvStaff && srvStaff[String(e.code).trim()] && srvStaff[String(e.code).trim()].active === false);
           const empRow = (e) => {
-            const asg = assignmentOf(e.name); const blocked = e.active === false;
+            const asg = assignmentOf(e.name); const blocked = blockedOf(e);
             return (<button key={e.id} onClick={() => setEmpSel(e.id)} className="w-full flex items-center gap-3 px-3 py-2.5 text-left" style={{ border: `1px solid ${CD.line}`, borderRadius: 11, background: CD.panel, marginBottom: 8, opacity: blocked ? 0.62 : 1 }}>
               <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: '50%', background: blocked ? CD.lineSoft : CD.ink, color: blocked ? CD.mute : 'var(--cd-on-ink)', fontSize: 11.5, fontWeight: 700, fontFamily: 'Space Mono, monospace' }}>{inits(e.name)}</span>
               <span className="flex-1 min-w-0"><span className="block text-[13.5px] font-semibold truncate" style={{ color: CD.ink }}>{e.name}</span><span className="block text-[11px] truncate" style={{ color: CD.faint }}>{e.role}{e.email ? ' · ' + e.email : ''}</span></span>
@@ -1861,7 +1862,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
 
           // ---- full account / profile editor ----
           const empDetail = (e) => {
-            const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = e.active === false;
+            const asg = assignmentOf(e.name); const apps = Array.isArray(e.apps) ? e.apps : null; const isOwner = e.role === 'Owner'; const blocked = blockedOf(e);
             /* Their server sign-in. A profile finds its account by username, so a
                username typed here that already belongs to somebody else would read
                as this person's — with that person's reset, disable, block and PIN

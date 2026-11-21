@@ -945,4 +945,21 @@ postgres("a second teller takes a held till by counting it", () => {
     );
     expect(audits.rows[0].n).toBe(1);
   });
+
+  it("a handoff to an inactive id is refused", async () => {
+    const costa = await login("m.costa");
+    await handle.db.update(staffUsers).set({ active: false }).where(eq(staffUsers.staffId, "m.costa"));
+    try {
+      const taken = await handover(costa, BLIND, "inactive-costa");
+      expect(taken.statusCode, taken.body).toBe(401);
+      expect(taken.json().code).toBe("AUTHENTICATION_REQUIRED");
+      const sessions = await pool.query(
+        "SELECT count(*)::int AS n FROM ledger_till_sessions WHERE opened_by=$1",
+        [idOf("m.costa")],
+      );
+      expect(sessions.rows[0].n).toBe(0);
+    } finally {
+      await handle.db.update(staffUsers).set({ active: true }).where(eq(staffUsers.staffId, "m.costa"));
+    }
+  });
 });
