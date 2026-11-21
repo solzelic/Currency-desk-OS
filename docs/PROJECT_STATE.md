@@ -1,3 +1,7 @@
+## Stale exchange rate preview (CD-45 / #810)
+
+When the server refuses a preview because the published rate board is stale, New Transaction clears Pending, tells the teller to ask for a new publication, and permits a retry without discarding the deal details. It does not create a new quote from stale or fallback pricing. The server freshness guard, frozen quote expiry and financial controls are unchanged.
+
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 
 `SIGNIN_MICROSOFT` uses the same callback paths as Google. The authorize URL is the `common` authority. A returning person matches `tid` plus `oid` only. `sub`, email, and `preferred_username` are not keys. `tenants.ms_tenant_allowlist` null leaves that check off. A list refuses any other tenant id. The same oid linked in two shops returns a shop list and does not choose one. The flag still defaults off. With it off, `/login` does not show Microsoft and the Microsoft routes answer 503. When Google and Microsoft are both on, their buttons stack in one column so the Microsoft button stays inside the sign-in column at 1280.

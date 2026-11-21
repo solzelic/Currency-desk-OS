@@ -37301,6 +37301,8 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     const [tqOpen, setTqOpen] = useState(false);
     const [serverQuote, setServerQuote] = useState(null);
     const [preview, setPreview] = useState(null);
+    const [stalePreviewKey, setStalePreviewKey] = useState(null);
+    const [previewAttempt, setPreviewAttempt] = useState(0);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [serverHeld, setServerHeld] = useState(false);
@@ -37417,7 +37419,10 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       setServerQuote(null);
       setServerError('');
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
+    // Associate refusals with the form inputs that the server actually priced.
+    const previewKey = JSON.stringify([isExchange, inCcy, outCcy, inAmt, fee, home, previewAttempt]);
     useEffect(() => {
+      setStalePreviewKey(null);
       if (!isExchange || !(parseFloat(inAmt) > 0) || !window.CDOS.Backend || !window.CDOS.Backend.previewQuote) {
         setPreview(null);
         return undefined;
@@ -37433,15 +37438,17 @@ tr.void td{opacity:.5;text-decoration:line-through;}
           direction: inCcy === home ? 'customer_buy_foreign' : outCcy === home ? 'customer_sell_foreign' : 'customer_cross'
         }).then(q => {
           if (!dead) setPreview(q);
-        }).catch(() => {
-          if (!dead) setPreview(null);
+        }).catch(error => {
+          if (dead) return;
+          setPreview(null);
+          if (error && error.code === 'RATE_PUBLICATION_STALE') setStalePreviewKey(previewKey);
         });
       }, 80);
       return () => {
         dead = true;
         clearTimeout(timer);
       };
-    }, [isExchange, inCcy, outCcy, inAmt, fee, home]);
+    }, [previewKey]);
 
     // cheque fee/hold from shared schedule
     const _K = window.CDOS._cheques;
@@ -37489,7 +37496,9 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       rounded: false
     };
     const exchangeRateLine = liveFace.text ? '1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy : heldRateText ? '1 ' + inCcy + ' = ' + heldRateText + ' ' + outCcy : '';
-    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText);
+    // A frozen server quote follows its own expiry; a stale board blocks a new quote.
+    const quoteStale = !frozenQuote && isExchange && stalePreviewKey === previewKey;
+    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText && !quoteStale);
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -37866,7 +37875,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, []);
     const getServerQuote = async () => {
-      if (!canSave || !window.CDOS.Backend) return;
+      if (!canSave || quoteStale || !window.CDOS.Backend) return;
       setServerBusy(true);
       setServerError('');
       try {
@@ -38614,7 +38623,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       }
     }, dealSide === 'buy' ? `We buy ${inCcy}` : dealSide === 'sell' ? `We sell ${outCcy}` : dealSide === 'cross' ? 'Cross' : 'Rate'), /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-rate-shown"
-    }, exchangeRateLine || (quotePending ? 'Pending' : '')), /*#__PURE__*/React.createElement("button", {
+    }, quoteStale ? '' : exchangeRateLine || (quotePending ? 'Pending' : '')), /*#__PURE__*/React.createElement("button", {
       onClick: swap,
       title: "Swap",
       "aria-label": "Swap",
@@ -38630,7 +38639,20 @@ tr.void td{opacity:.5;text-decoration:line-through;}
     }))), /*#__PURE__*/React.createElement(SheetRateNote, {
       on: liveFace.rounded,
       hold: quotePending
-    })), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
+    }), quoteStale && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "exchange-stale-rate",
+      className: "mt-2 rounded px-2.5 py-2 text-[12px]",
+      style: {
+        background: CD.flagSoft,
+        color: CD.flag
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      role: "alert"
+    }, "The rate board is out of date. Ask someone with rates access to publish fresh rates, then retry."), ' ', /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "cd-tx-hit font-semibold underline",
+      onClick: () => setPreviewAttempt(n => n + 1)
+    }, "Retry rate"))), /*#__PURE__*/React.createElement(Lbl, null, "Customer receives"), /*#__PURE__*/React.createElement(Money, {
       value: shownOut ? unitText(shownOut, outCcy) : 'Not set',
       ccy: outCcy,
       onCcy: v => {
@@ -38654,7 +38676,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line
       }
     }, /*#__PURE__*/React.createElement("input", {
-      value: override ? manualRate : heldRateText || serverRateText || 'Rate unavailable',
+      value: override ? manualRate : heldRateText || serverRateText || (quoteStale ? '' : 'Rate unavailable'),
       onFocus: () => {
         if (!override && !lockLive) {
           setManualRate(serverRateText);
@@ -39482,7 +39504,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
         color: '#7fd1a3',
         lineHeight: 1.1
       }
-    }, isExchange && shownOut == null ? 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
+    }, isExchange && shownOut == null ? quoteStale ? 'Not set' : 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : /*#__PURE__*/React.createElement(React.Fragment, null, shownOut ? unitText(shownOut, out.ccy) : '0', " ", /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 500,
         fontSize: 15,
@@ -39502,7 +39524,7 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       className: "cd-tx-kicker"
     }, isExchange ? /*#__PURE__*/React.createElement("span", {
       className: "cd-tx-rate-shown"
-    }, exchangeRateLine || (quotePending ? 'Pending' : '')) : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), isSend && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
+    }, quoteStale ? '' : exchangeRateLine || (quotePending ? 'Pending' : '')) : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'), /*#__PURE__*/React.createElement("span", null, isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee')), isSend && pricedRate(amtN, out.amt, out.ccy).rounded ? /*#__PURE__*/React.createElement("div", {
       className: "cd-rate-note",
       style: {
         fontSize: 11,
@@ -39663,12 +39685,12 @@ tr.void td{opacity:.5;text-decoration:line-through;}
       c: "currentColor"
     }), " ", stepsLabel) : /*#__PURE__*/React.createElement("button", {
       onClick: serverQuote ? postServerQuote : getServerQuote,
-      disabled: !canSave || serverBusy || quotePending,
+      disabled: !canSave || serverBusy || quotePending || quoteStale,
       className: "cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold",
       style: {
         borderRadius: 9,
-        background: !canSave || serverBusy || quotePending ? CD.line : CD.ink,
-        color: !canSave || serverBusy || quotePending ? CD.faint : 'var(--cd-on-ink)'
+        background: !canSave || serverBusy || quotePending || quoteStale ? CD.line : CD.ink,
+        color: !canSave || serverBusy || quotePending || quoteStale ? CD.faint : 'var(--cd-on-ink)'
       }
     }, /*#__PURE__*/React.createElement(Ic, {
       n: serverQuote ? 'check' : 'lock',

@@ -530,6 +530,8 @@
     const [tqOpen, setTqOpen] = useState(false);
     const [serverQuote, setServerQuote] = useState(null);
     const [preview, setPreview] = useState(null);
+    const [stalePreviewKey, setStalePreviewKey] = useState(null);
+    const [previewAttempt, setPreviewAttempt] = useState(0);
     const [serverBusy, setServerBusy] = useState(false);
     const [serverError, setServerError] = useState('');
     const [serverHeld, setServerHeld] = useState(false);
@@ -629,7 +631,10 @@
       setServerQuote(null);
       setServerError('');
     }, [customer, inCcy, outCcy, inAmt, fee, override, manualRate, lock && lock.rate]);
+    // Associate refusals with the form inputs that the server actually priced.
+    const previewKey = JSON.stringify([isExchange, inCcy, outCcy, inAmt, fee, home, previewAttempt]);
     useEffect(() => {
+      setStalePreviewKey(null);
       if (!isExchange || !(parseFloat(inAmt) > 0) || !window.CDOS.Backend || !window.CDOS.Backend.previewQuote) {
         setPreview(null);
         return undefined;
@@ -643,10 +648,14 @@
           inputAmount: window.CDOS.Backend.asMoney(parseFloat(inAmt) || 0),
           feeCad: window.CDOS.Backend.asMoney(parseFloat(fee) || 0),
           direction: inCcy === home ? 'customer_buy_foreign' : outCcy === home ? 'customer_sell_foreign' : 'customer_cross',
-        }).then((q) => { if (!dead) setPreview(q); }).catch(() => { if (!dead) setPreview(null); });
+        }).then((q) => { if (!dead) setPreview(q); }).catch((error) => {
+          if (dead) return;
+          setPreview(null);
+          if (error && error.code === 'RATE_PUBLICATION_STALE') setStalePreviewKey(previewKey);
+        });
       }, 80);
       return () => { dead = true; clearTimeout(timer); };
-    }, [isExchange, inCcy, outCcy, inAmt, fee, home]);
+    }, [previewKey]);
 
     // cheque fee/hold from shared schedule
     const _K = window.CDOS._cheques;
@@ -676,7 +685,9 @@
     const serverRateText = liveQuote && liveQuote.customerRate != null ? String(liveQuote.customerRate) : '';
     const liveFace = typedRate ? { text: typedRate, rounded: false } : (liveQuote && window.CDOS.frozenRateFace ? window.CDOS.frozenRateFace(liveQuote.customerRate, liveQuote.inputAmount, liveQuote.outputAmount) : { text: '', rounded: false });
     const exchangeRateLine = liveFace.text ? ('1 ' + inCcy + ' = ' + liveFace.text + ' ' + outCcy) : (heldRateText ? ('1 ' + inCcy + ' = ' + heldRateText + ' ' + outCcy) : '');
-    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText);
+    // A frozen server quote follows its own expiry; a stale board blocks a new quote.
+    const quoteStale = !frozenQuote && isExchange && stalePreviewKey === previewKey;
+    const quotePending = !!(isExchange && amtN > 0 && !liveQuote && !heldRateText && !quoteStale);
 
     // Home value of the cash the customer hands over (threshold basis).
     const toHome = (amount, ccy) => cashInHome(amount, ccy, home);
@@ -883,7 +894,7 @@
     useEffect(() => { const p = window.__cdosTqPrefill; if (p) { window.__cdosTqPrefill = null; applyTqWith(String(p)); } }, []);
 
     const getServerQuote = async () => {
-      if (!canSave || !window.CDOS.Backend) return;
+      if (!canSave || quoteStale || !window.CDOS.Backend) return;
       setServerBusy(true);
       setServerError('');
       try {
@@ -1257,15 +1268,19 @@
                   <div className="py-2">
                     <div className="cd-tx-rate-line flex items-center justify-center gap-2">
                       <span data-side={dealSide || ''} className="cd-tx-side text-[10px] px-2 py-0.5 font-semibold uppercase tracking-wide" style={{ borderRadius: 5, background: dealSide === 'buy' ? CD.flagSoft : dealSide === 'sell' ? CD.greenSoft : CD.lineSoft, color: dealSide === 'buy' ? CD.flag : dealSide === 'sell' ? CD.green : CD.mute, fontFamily: 'Space Mono, monospace' }}>{dealSide === 'buy' ? `We buy ${inCcy}` : dealSide === 'sell' ? `We sell ${outCcy}` : (dealSide === 'cross' ? 'Cross' : 'Rate')}</span>
-                      <span className="cd-tx-rate-shown">{exchangeRateLine || (quotePending ? 'Pending' : '')}</span>
+                      <span className="cd-tx-rate-shown">{quoteStale ? '' : (exchangeRateLine || (quotePending ? 'Pending' : ''))}</span>
                       <button onClick={swap} title="Swap" aria-label="Swap" className="cd-tx-hit cd-tx-swap p-1" style={{ border: `1px solid ${CD.line}`, borderRadius: 7 }}><Ic n="swap" s={13} c={CD.mute} /></button>
                     </div>
                     <SheetRateNote on={liveFace.rounded} hold={quotePending} />
+                    {quoteStale && <div data-testid="exchange-stale-rate" className="mt-2 rounded px-2.5 py-2 text-[12px]" style={{ background: CD.flagSoft, color: CD.flag }}>
+                      <span role="alert">The rate board is out of date. Ask someone with rates access to publish fresh rates, then retry.</span>{' '}
+                      <button type="button" className="cd-tx-hit font-semibold underline" onClick={() => setPreviewAttempt(n => n + 1)}>Retry rate</button>
+                    </div>}
                   </div>
                   <Lbl>Customer receives</Lbl>
                   <Money value={shownOut ? unitText(shownOut, outCcy) : 'Not set'} ccy={outCcy} onCcy={(v) => { setOutCcy(v); resetPricing(); }} readOnly accent={CD.green} mark="cd-tx-receive" big />
                   <div className="grid grid-cols-2 gap-2 mt-3">
-                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || 'Rate unavailable')} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
+                    <div className="cd-tx-rate-field"><Lbl hint={override ? 'hand-priced' : lockLive ? 'held' : 'as published · tap to edit'}>Board rate</Lbl><div className="flex items-center" style={{ ...inSty, borderColor: lockLive && !override ? CD.amber : override ? CD.ink : CD.line }}><input value={override ? manualRate : (heldRateText || serverRateText || (quoteStale ? '' : 'Rate unavailable'))} onFocus={() => { if (!override && !lockLive) { setManualRate(serverRateText); setOverride(true); } }} onChange={e => { setLock(null); setOverride(true); setManualRate(e.target.value); }} inputMode="decimal" title="Type to hand-price this deal" className="cd-tx-rate w-full text-sm px-2.5 py-2 outline-none text-right bg-transparent" style={{ fontVariantNumeric: 'tabular-nums', color: CD.ink, cursor: 'text' }} />{lockLive && !override && <span className="px-1.5 flex-none flex items-center gap-1 text-[10px]" style={{ color: CD.amber, fontFamily: 'Space Mono, monospace' }}><Ic n="lock" s={11} c={CD.amber} />{lockClock}</span>}</div></div>
                     <div><Lbl>Fee ({home})</Lbl><input value={fee} onChange={e => { setFeeTyped(true); setFee(e.target.value); }} inputMode="decimal" placeholder="0.00" className="cd-tx-fee w-full text-sm px-2.5 py-2 outline-none text-right" style={{ ...inSty, fontVariantNumeric: 'tabular-nums' }} /></div>
                   </div>
                   <div className="flex items-center justify-between gap-1.5 mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}>
@@ -1447,11 +1462,11 @@
                   {(isExchange || isSend || isCheque) && <div className="flex items-center gap-2 py-1" style={{ color: 'var(--cd-on-ink-faint)' }}><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span><Ic n="arrowdown" s={13} c="var(--cd-on-ink-soft)" /><span style={{ flex: 1, borderTop: '1px dashed var(--cd-on-ink-faint)' }}></span></div>}
                   <div style={{ paddingTop: 8 }}>
                     <div style={{ fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>{isExchange ? 'Customer receives' : isSend ? `${benName || 'Beneficiary'} gets` : isCheque ? 'Cash out' : isReceive ? 'Recipient gets' : isMO ? 'Money order' : 'To biller'}</div>
-                    <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{isExchange && shownOut == null ? 'Pending' : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : <>{shownOut ? unitText(shownOut, out.ccy) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
+                    <div className="cd-tx-ticket-get" style={{ fontWeight: 800, fontSize: 26, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', color: '#7fd1a3', lineHeight: 1.1 }}>{isExchange && shownOut == null ? (quoteStale ? 'Not set' : 'Pending') : phoneSheet ? phoneMoney(shownOut || 0, out.ccy) : <>{shownOut ? unitText(shownOut, out.ccy) : '0'} <span style={{ fontWeight: 500, fontSize: 15, color: 'rgba(127,209,163,0.7)' }}>{out.ccy}</span></>}</div>
                   </div>
                   <div style={{ borderTop: '1px solid var(--cd-on-ink-faint)', marginTop: 12, paddingTop: 10, fontSize: 11, color: 'var(--cd-on-ink-soft)' }}>
                     <div className="flex items-center justify-between">
-                      <span className="cd-tx-kicker">{isExchange ? <span className="cd-tx-rate-shown">{exchangeRateLine || (quotePending ? 'Pending' : '')}</span> : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
+                      <span className="cd-tx-kicker">{isExchange ? <span className="cd-tx-rate-shown">{quoteStale ? '' : (exchangeRateLine || (quotePending ? 'Pending' : ''))}</span> : isSend ? rateShown(home, out.ccy, amtN, out.amt) : isCheque ? `${chequeType.holdDays || 0}d hold` : 'Face value'}</span>
                       <span>{isCheque ? `fee ${fmt(chequeFee, home)}` : feeN > 0 ? `fee ${fmt(feeN, home)}` : 'no fee'}</span>
                     </div>
                     {isSend && pricedRate(amtN, out.amt, out.ccy).rounded ? <div className="cd-rate-note" style={{ fontSize: 11, lineHeight: '14px', color: 'var(--cd-note-on-ink)', marginTop: 4 }}>{RATE_NOTE}</div> : null}
@@ -1503,7 +1518,7 @@
                   {serverError && <div role="alert" className="px-3 py-2 text-[11px]" style={{ background: CD.flagSoft, borderRadius: 9, color: CD.flag }}>{serverError}</div>}
                   {phoneSheet && !allGreen
                     ? <button type="button" onClick={showMissing} disabled={quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: quotePending ? CD.line : CD.ink, color: quotePending ? CD.faint : 'var(--cd-on-ink)' }}><Ic n="lock" s={15} c="currentColor" /> {stepsLabel}</button>
-                    : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy || quotePending} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy || quotePending) ? CD.line : CD.ink, color: (!canSave || serverBusy || quotePending) ? CD.faint : 'var(--cd-on-ink)' }}>
+                    : <button onClick={serverQuote ? postServerQuote : getServerQuote} disabled={!canSave || serverBusy || quotePending || quoteStale} className="cd-tx-go w-full flex items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold" style={{ borderRadius: 9, background: (!canSave || serverBusy || quotePending || quoteStale) ? CD.line : CD.ink, color: (!canSave || serverBusy || quotePending || quoteStale) ? CD.faint : 'var(--cd-on-ink)' }}>
                         <Ic n={serverQuote ? 'check' : 'lock'} s={15} c="currentColor" /> {serverBusy ? 'Working…' : serverQuote ? 'Post frozen quote' : allGreen ? 'Get server quote' : `${remaining} to complete`}
                       </button>}
                 </> : phoneSheet && !allGreen
