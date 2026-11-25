@@ -711,7 +711,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       originalRecordId: str(row, "original_record_id"),
       dealId: str(row, "deal_id"),
       deals,
-      statusLine: statusLine(result, method, stamp.date, rowTest, { expiredStamp, returningStamp }),
+      statusLine: statusLine(result, method, stamp.date, rowTest, { expiredStamp, returningStamp }, Boolean(last) && row.number_unavailable !== true),
     };
   });
   return {
@@ -905,6 +905,7 @@ export function idFileStanding(latest: StandingInput | null): IdFileStanding {
 function statusLine(
   result: string, method: CheckMethod, date: string, test: boolean,
   extra: { expiredStamp: string | null; returningStamp: string | null },
+  onFile = true,
 ): string {
   if (extra.expiredStamp) return extra.expiredStamp;
   if (result === "needs_review") return underReviewLine(date);
@@ -913,7 +914,7 @@ function statusLine(
   if (result === "expired") return extra.expiredStamp ?? "Expired";
   if (result === "returning_confirmed" || method === "returning_client") return extra.returningStamp ?? "Returning client";
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
-  if (result === "pass" && method === "id_and_selfie") return verifiedScanChip(date, test);
+  if (result === "pass" && method === "id_and_selfie") return onFile ? verifiedScanChip(date, test) : "Missing ID";
   return PROGRESS_LINE;
 }
 

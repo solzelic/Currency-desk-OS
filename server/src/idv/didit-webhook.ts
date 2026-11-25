@@ -18,7 +18,7 @@ function statusWord(result: IdvResult): string {
 }
 
 function checkResult(result: IdvResult): CheckResult {
-  const selfie = result.outcome === "approved" ? "approved" : null;
+  const selfie = result.outcome === "approved" && result.checksPassed === true ? "approved" : null;
   return classifyCheck(result.outcome, selfie).result;
 }
 
@@ -46,14 +46,16 @@ export async function finishDiditWebhook(
       [result.eventId, result.provider, result.providerRef, located.referenceId, located.shopId, located.branchId, located.tellerId, result.outcome],
     );
     if (!inserted.rows.length) return "duplicate" as const;
-    await q.query(
+    const updated = await q.query(
       `UPDATE idv_inquiries SET status = $1
         WHERE provider = $2 AND provider_ref = $3
           AND status NOT IN ('approved', 'declined', 'failed', 'expired')
-          AND NOT (status = 'needs review' AND $1 = 'in progress')`,
+          AND NOT (status = 'needs review' AND $1 = 'in progress')
+        RETURNING reference_id`,
       [next, result.provider, result.providerRef],
     );
-    if (RECORDABLE.has(result.outcome) && located.clientId) {
+    /* A later status that does not replace the stored one writes no check row. */
+    if (updated.rows.length && RECORDABLE.has(result.outcome) && located.clientId) {
       const tier = located.requestedTier === "4" ? "4" : "3";
       await writePersonaRecord(tx, {
         recordId: `idc_${randomUUID()}`,
@@ -76,14 +78,14 @@ export async function finishDiditWebhook(
         birth: null,
         address: null,
         result: checkResult(result),
-        providerChecks: "ID, liveness, face match",
+        providerChecks: result.checksLine ?? "ID not passed, liveness not passed, face match not passed",
         governmentId: null,
         selfieId: null,
         templateId: null,
         templateVersion: null,
         provider: "didit",
-        method: tier === "4" ? "id_selfie_database" : "id_and_selfie",
-        databaseStep: tier === "4" ? "not_applicable" : "not_applicable",
+        method: "id_and_selfie",
+        databaseStep: tier === "4" ? "off" : "not_applicable",
       });
     }
     return "stored" as const;

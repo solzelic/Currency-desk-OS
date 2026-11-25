@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { schema, type Db } from "../db/index.js";
-import { diditAmlConfigured, diditRefIssue, diditSelection } from "./providers/didit.js";
+import { diditRefIssue, diditSelection } from "./providers/didit.js";
 import { defaultIdvProvider, idvProvider } from "./providers/index.js";
 import { personaRefIssue } from "./providers/persona.js";
 
@@ -177,7 +177,7 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db, env?: 
     return {
       ...config,
       diditSelectable: selection.ok,
-      tier4: config.provider === "didit" && !diditAmlConfigured(readEnv()) ? "unavailable" as const : null,
+      tier4: config.provider === "didit" ? "unavailable" as const : null,
     };
   };
   const load = async (shopId: string): Promise<IdvShopConfig> => {

@@ -15,6 +15,9 @@ export type IdvResult = {
   inquiryStatus?: "in progress" | "needs review";
   /* A watchlist event is acknowledged and not stored. */
   ignore?: boolean;
+  /* Didit only. A pass needs ID, liveness, and face match, not the session status alone. */
+  checksPassed?: boolean;
+  checksLine?: string;
 };
 
 export type IdvStart = {

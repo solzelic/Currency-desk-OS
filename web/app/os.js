@@ -54054,7 +54054,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, "ID, selfie and database. not available yet"), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, "ID, selfie and database is not available yet"), more.length > 0 && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",

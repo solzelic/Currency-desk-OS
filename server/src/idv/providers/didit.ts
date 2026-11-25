@@ -69,22 +69,41 @@ export function diditConfigured(env: NodeJS.ProcessEnv): boolean {
     && UUID.test(trimmed(env, "DIDIT_WORKFLOW_ID"));
 }
 
-export function diditAmlConfigured(env: NodeJS.ProcessEnv): boolean {
-  return UUID.test(trimmed(env, "DIDIT_AML_WORKFLOW_ID"));
-}
-
+/* Tier 4 is off in this slice. DIDIT_AML_WORKFLOW_ID is not read. */
 export function diditWorkflowForTier(
   tier: string | null | undefined,
   env: NodeJS.ProcessEnv,
 ): { ok: true; workflowId: string } | { ok: false; reason: "not_available" | "tier_unavailable" } {
   if (!diditConfigured(env)) return { ok: false, reason: "not_available" };
-  if (tier === "4") {
-    const aml = trimmed(env, "DIDIT_AML_WORKFLOW_ID");
-    if (!UUID.test(aml)) return { ok: false, reason: "tier_unavailable" };
-    return { ok: true, workflowId: aml };
-  }
-  if (tier === "1" || tier === "2") return { ok: false, reason: "tier_unavailable" };
+  if (tier === "1" || tier === "2" || tier === "4") return { ok: false, reason: "tier_unavailable" };
   return { ok: true, workflowId: trimmed(env, "DIDIT_WORKFLOW_ID") };
+}
+
+const FEATURE_PASS = "Approved";
+
+function featureStatuses(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const status = obj(item).status;
+    return typeof status === "string" ? status : "";
+  });
+}
+
+function featurePassed(statuses: string[]): boolean {
+  return statuses.length > 0 && statuses.every((status) => status === FEATURE_PASS);
+}
+
+/* Status words only. Names, numbers, and images stay in the decision. */
+export function diditDecisionChecks(decision: unknown): { passed: boolean; line: string } {
+  const record = obj(decision);
+  const id = featurePassed(featureStatuses(record.id_verifications));
+  const liveness = featurePassed(featureStatuses(record.liveness_checks));
+  const face = featurePassed(featureStatuses(record.face_matches));
+  const word = (ok: boolean) => ok ? "passed" : "not passed";
+  return {
+    passed: id && liveness && face,
+    line: `ID ${word(id)}, liveness ${word(liveness)}, face match ${word(face)}`,
+  };
 }
 
 /* An env-shaped name is allowed. A raw secret is not stored. */
@@ -198,12 +217,15 @@ export function parseDiditWebhook(body: unknown): IdvResult | null {
   const named = STATUS[status];
   if (!UUID.test(sessionId) || !named) return null;
   const referenceId = typeof record.vendor_data === "string" ? record.vendor_data : "";
+  const checks = diditDecisionChecks(record.decision);
   return {
     eventId: `didit:${sessionId}:${status}`,
     provider: "didit",
     providerRef: sessionId,
     referenceId,
     outcome: named.outcome,
+    checksPassed: checks.passed,
+    checksLine: checks.line,
     ...(named.inquiryStatus ? { inquiryStatus: named.inquiryStatus } : {}),
   };
 }

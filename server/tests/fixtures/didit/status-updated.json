@@ -5,6 +5,9 @@
   "vendor_data": "ref-didit-1",
   "decision": {
     "full_name": "Fixture Person",
-    "document_number": "FIXTURE0001"
+    "document_number": "FIXTURE0001",
+    "id_verifications": [{ "status": "Approved" }],
+    "liveness_checks": [{ "status": "Approved" }],
+    "face_matches": [{ "status": "Approved" }]
   }
 }

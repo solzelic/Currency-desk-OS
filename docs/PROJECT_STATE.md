@@ -6,8 +6,10 @@ checks off, until an owner of a test shop selects Didit. A shop that is not
 a test shop cannot select it. On a live host Didit stays unselectable unless
 `DIDIT_LIVE_ALLOWED` is exactly `1`, and that variable stays unset. Missing
 `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, or `DIDIT_WORKFLOW_ID` answers 503
-`not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 stays
-`not available yet` until `DIDIT_AML_WORKFLOW_ID` is set. A failed, abandoned,
+`not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 is off even
+when `DIDIT_AML_WORKFLOW_ID` is set. A pass needs ID, liveness, and face
+match each passed. A test pass with no stored number reads Missing ID.
+A failed, abandoned,
 or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
 It checks the raw-body signature and a 300-second timestamp, and it is
 idempotent on session id plus status. The decision body, the secret, and the

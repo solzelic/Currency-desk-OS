@@ -176,13 +176,11 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     }, options?.cap ?? IDV_SHOP_CAP);
     if (reserved.kind === "capped") return reply.code(409).send({ code: "IDV_CAP", message: CAP });
     const activeId = reserved.referenceId;
-    const tierFields = provider.name === "didit" && tier === "4"
-      ? { tier: "4" as const, method: "ID, selfie and database" }
-      : tier === "4"
-        ? { tier: "4" as const, databaseStep: "off" as const, message: "The database step is not on yet. This check runs ID and selfie." }
-        : tier === "3"
-          ? { tier: "3" as const, method: "ID and selfie" }
-          : {};
+    const tierFields = tier === "4"
+      ? { tier: "4" as const, databaseStep: "off" as const, message: "The database step is not on yet. This check runs ID and selfie." }
+      : tier === "3"
+        ? { tier: "3" as const, method: "ID and selfie" }
+        : {};
     if (tier) {
       await db.execute(sql`UPDATE idv_inquiries SET requested_tier = ${tier} WHERE reference_id = ${activeId}`);
     }

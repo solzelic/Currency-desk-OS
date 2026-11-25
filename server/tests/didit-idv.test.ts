@@ -9,7 +9,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import {
-  chargeForDiditOutcome, createDiditProvider, diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
+  chargeForDiditOutcome, createDiditProvider, diditDecisionChecks, diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
 } from "../src/idv/providers/didit.js";
 
 const SECRET = "fixture-didit-secret";
@@ -161,9 +161,12 @@ describe("didit provider", () => {
   it("maps tier 3 to the basic workflow and leaves tier 4 unavailable", () => {
     expect(diditWorkflowForTier("3", ENV)).toEqual({ ok: true, workflowId: WORKFLOW });
     expect(diditWorkflowForTier("4", ENV)).toEqual({ ok: false, reason: "tier_unavailable" });
-    expect(diditWorkflowForTier("4", { ...ENV, DIDIT_AML_WORKFLOW_ID: AML })).toEqual({ ok: true, workflowId: AML });
+    expect(diditWorkflowForTier("4", { ...ENV, DIDIT_AML_WORKFLOW_ID: AML })).toEqual({ ok: false, reason: "tier_unavailable" });
+    expect(diditWorkflowForTier("3", { ...ENV, DIDIT_AML_WORKFLOW_ID: AML })).toEqual(diditWorkflowForTier("3", ENV));
     expect(diditWorkflowForTier("1", ENV).ok).toBe(false);
     expect(diditWorkflowForTier("3", {}).ok).toBe(false);
+    const routes = readFileSync(join(import.meta.dirname, "../src/idv/routes.ts"), "utf8");
+    expect(routes).not.toContain("ID, selfie and database");
   });
 
   it("is absent when the key or secret is missing, including on a live host", () => {
@@ -184,14 +187,23 @@ describe("didit provider", () => {
     expect(calls[0]?.key).toBe(KEY);
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({ workflow_id: WORKFLOW, vendor_data: "ref-didit-1" });
     expect(calls[0]?.body).not.toContain("Fixture Person");
-    const aml = await startDiditCheck({
-      referenceId: "ref-aml", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "4",
-    }, { env: { ...ENV, DIDIT_AML_WORKFLOW_ID: AML }, fetch: fetchStub, sleep: async () => {} });
-    expect(aml.providerRef).toBe(SESSION);
-    expect(JSON.parse(calls[1]?.body ?? "{}").workflow_id).toBe(AML);
+    const before = calls.length;
     await expect(startDiditCheck({
-      referenceId: "ref-no", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "4",
-    }, { env: ENV, fetch: fetchStub })).rejects.toThrow("tier_unavailable");
+      referenceId: "ref-aml", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "4",
+    }, { env: { ...ENV, DIDIT_AML_WORKFLOW_ID: AML }, fetch: fetchStub, sleep: async () => {} })).rejects.toThrow("tier_unavailable");
+    expect(calls).toHaveLength(before);
+    const passed = diditDecisionChecks({
+      id_verifications: [{ status: "Approved", full_name: "Fixture Person" }],
+      liveness_checks: [{ status: "Approved" }],
+      face_matches: [{ status: "Approved" }],
+    });
+    expect(passed).toEqual({ passed: true, line: "ID passed, liveness passed, face match passed" });
+    expect(passed.line).not.toContain("Fixture Person");
+    expect(diditDecisionChecks({
+      id_verifications: [{ status: "Approved" }],
+      liveness_checks: [{ status: "Approved" }],
+      face_matches: [{ status: "Declined" }],
+    }).passed).toBe(false);
   });
 });
 
@@ -290,8 +302,83 @@ describe("didit routes", () => {
     const record = await handle.db.execute(sql`
       SELECT name_on_id, provider, result, document_number_ciphertext FROM idv_check_records WHERE persona_inquiry_id = ${SESSION}
     `);
-    expect(record.rows[0]).toMatchObject({ name_on_id: null, provider: "didit", result: "pass", document_number_ciphertext: null });
+    expect(record.rows[0]).toMatchObject({
+      name_on_id: null, provider: "didit", result: "pass", document_number_ciphertext: null,
+    });
     expect(JSON.stringify(record.rows)).not.toContain("FIXTURE0001");
+    const file = await app.inject({
+      method: "GET", url: "/api/idv/clients/cli-didit/checks", cookies: cookies.teller,
+    });
+    expect(file.statusCode, file.body).toBe(200);
+    const shown = file.json() as { standing: { chip: string }; records: Array<{ statusLine: string }> };
+    expect(shown.standing.chip).toBe("Missing ID");
+    expect(shown.records[0]?.statusLine).toBe("Missing ID");
+    expect(file.body).not.toContain("ID verified, scan and selfie");
+  });
+
+  it("does not record a pass when a later Approved status is skipped", async () => {
+    const session = "33333333-4444-4555-8666-777777777777";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status)
+      VALUES ('ref-declined', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-didit', '3', 'declined')
+    `);
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Approved",
+      vendor_data: "ref-declined",
+      decision: {
+        id_verifications: [{ status: "Approved" }],
+        liveness_checks: [{ status: "Approved" }],
+        face_matches: [{ status: "Approved" }],
+      },
+    }));
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const rows = await handle.db.execute(sql`SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${session}`);
+    expect(rows.rows).toEqual([]);
+    const status = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE provider_ref = ${session}`);
+    expect(status.rows[0]).toMatchObject({ status: "declined" });
+  });
+
+  it("passes only when ID, liveness, and face match each passed", async () => {
+    const session = "55555555-6666-4777-8888-999999999999";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status)
+      VALUES ('ref-face', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-didit', '4', 'starting')
+    `);
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Approved",
+      vendor_data: "ref-face",
+      decision: {
+        full_name: "Fixture Person",
+        id_verifications: [{ status: "Approved" }],
+        liveness_checks: [{ status: "Approved" }],
+        face_matches: [{ status: "Declined" }],
+      },
+    }));
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const row = await handle.db.execute(sql`
+      SELECT result, method, database_step, provider_checks FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(row.rows[0]).toMatchObject({
+      result: "method_not_completed",
+      method: "id_and_selfie",
+      database_step: "off",
+      provider_checks: "ID passed, liveness passed, face match not passed",
+    });
+    expect(String(row.rows[0]?.provider_checks)).not.toContain("database");
+    expect(String(row.rows[0]?.method)).not.toContain("database");
+    expect(JSON.stringify(row.rows[0])).not.toContain("Fixture Person");
   });
 
   it("rejects a bad signature and a stale replay before any write", async () => {
@@ -327,6 +414,7 @@ describe("didit routes", () => {
     });
     expect(plus.statusCode).toBe(409);
     expect(plus.json()).toMatchObject({ code: "IDV_TIER", message: "not available yet" });
+    expect(plus.body).not.toContain("ID, selfie and database");
     expect(calls).toHaveLength(0);
     const started = await app.inject({
       method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { tier: "3", clientId: "cli-didit" },

@@ -8,7 +8,7 @@ import { isStagingRuntime } from "../auth/staging-runtime.js";
 import type { Db } from "../db/index.js";
 import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoticeCopy, diditSelfieConsentCopy, noticeCopy, privacyReady, selfieConsentCopy } from "./consent-copy.js";
 import { generateOneTimeLink } from "./persona-calls.js";
-import { diditAmlConfigured, diditConfigured, diditSelection, diditSessionLink } from "./providers/didit.js";
+import { diditConfigured, diditSelection, diditSessionLink } from "./providers/didit.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
@@ -60,7 +60,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       notice: didit ? diditNoticeCopy(fill) : noticeCopy(fill),
       selfieConsent: didit ? diditSelfieConsentCopy(fill) : selfieConsentCopy(fill),
       provider: didit ? "didit" : "persona",
-      tier4: didit && !diditAmlConfigured(env()) ? "unavailable" : null,
+      tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,
       counterLine: gate.line,
