@@ -129,6 +129,8 @@ export const migrations: readonly Migration[] = [
   ["086_idv_counter_scan", "src/db/migrations/086_idv_counter_scan.sql"],
   /* 087 adds the remote pre-verify method. 086 is the counter scan. */
   ["087_idv_customer_preverify", "src/db/migrations/087_idv_customer_preverify.sql"],
+  /* 088 stores the face-match statement version. */
+  ["088_idv_face_match_version", "src/db/migrations/088_idv_face_match_version.sql"],
 ] as const;
 
 type MigrationReader = {

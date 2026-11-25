@@ -6,7 +6,9 @@ import type { Db } from "../db/index.js";
 import { dbQuery, writePersonaRecord, type DeskActor, type Step } from "./records.js";
 import { diditSelection } from "./providers/didit.js";
 
-export const FACE_MATCH_STATEMENT = "I compared the customer's face to the ID photo";
+const faceMatch = require("../../../shared/face-match-attestation.js") as { version: string; statement: string };
+export const FACE_MATCH_STATEMENT = faceMatch.statement;
+export const FACE_MATCH_VERSION = faceMatch.version;
 
 export type FaceAttestation = {
   staffUserId: string;
@@ -14,6 +16,7 @@ export type FaceAttestation = {
   role: string;
   attestedAt: string;
   statement: string;
+  statementVersion: string;
 };
 
 type InquiryRow = {
@@ -34,7 +37,7 @@ export async function latestFaceAttestation(
   db: Db, tenantId: string, shopId: string, referenceId: string,
 ): Promise<FaceAttestation | null> {
   const found = await dbQuery(db).query(
-    `SELECT staff_user_id, staff_id, role, attested_at, statement
+    `SELECT staff_user_id, staff_id, role, attested_at, statement, statement_version
        FROM idv_face_attestations
       WHERE tenant_id = $1 AND legal_entity_id = $2 AND reference_id = $3
       ORDER BY attested_at DESC
@@ -49,6 +52,7 @@ export async function latestFaceAttestation(
     role: String(row.role),
     attestedAt: new Date(String(row.attested_at)).toISOString(),
     statement: String(row.statement),
+    statementVersion: String(row.statement_version ?? ""),
   };
 }
 
@@ -59,12 +63,12 @@ async function insertAttestation(db: Db, input: {
   const inserted = await dbQuery(db).query(
     `INSERT INTO idv_face_attestations (
        attestation_id, tenant_id, legal_entity_id, branch_id, client_id, reference_id,
-       staff_user_id, staff_id, role, statement
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       staff_user_id, staff_id, role, statement, statement_version
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING attested_at`,
     [
       `att_${randomUUID()}`, input.tenantId, input.shopId, input.branchId, input.clientId, input.referenceId,
-      input.staffUserId, input.staffId, input.role, FACE_MATCH_STATEMENT,
+      input.staffUserId, input.staffId, input.role, FACE_MATCH_STATEMENT, FACE_MATCH_VERSION,
     ],
   );
   return {
@@ -73,6 +77,7 @@ async function insertAttestation(db: Db, input: {
     role: input.role,
     attestedAt: new Date(String(inserted.rows[0]?.attested_at)).toISOString(),
     statement: FACE_MATCH_STATEMENT,
+    statementVersion: FACE_MATCH_VERSION,
   };
 }
 

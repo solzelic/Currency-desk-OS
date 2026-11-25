@@ -754,11 +754,18 @@ describe("didit routes", () => {
       attestation_staff_id: `${DEMO.tenantId}:m.costa`,
       attestation_role: "teller",
       inspector_staff_id: "m.costa",
-      attestation: "I compared the customer's face to the ID photo",
+      attestation: "The customer is in front of me. I compared their face with the photo on this ID and they are the same person.",
       not_future: true,
       recent: true,
     });
     expect(JSON.stringify(record.rows)).not.toContain("Fixture Person");
+    const words = await handle.db.execute(sql`
+      SELECT statement, statement_version FROM idv_face_attestations WHERE reference_id = 'ref-scan'
+    `);
+    expect(words.rows[0]).toMatchObject({
+      statement: "The customer is in front of me. I compared their face with the photo on this ID and they are the same person.",
+      statement_version: "face-match-v1",
+    });
     const file = await app.inject({
       method: "GET", url: "/api/idv/clients/cli-scan/checks", cookies: cookies.teller,
     });
@@ -877,6 +884,55 @@ describe("didit routes", () => {
     expect((await scanWebhook("17171717-1818-4545-8616-212121212121", "ref-then-review", "Approved", approved)).statusCode).toBe(200);
     expect((await scanWebhook("17171717-1818-4545-8616-212121212121", "ref-then-review", "In Review", approved)).statusCode).toBe(200);
     await expectKept("17171717-1818-4545-8616-212121212121", "needs review");
+  });
+
+  it("writes a later negative result over an attested pass without changing that pass", async () => {
+    const sentence = "The customer is in front of me. I compared their face with the photo on this ID and they are the same person.";
+    async function passedScan(reference: string, session: string) {
+      await handle.db.execute(sql`
+        INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+        VALUES (${reference}, ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+      `);
+      expect((await scanWebhook(session, reference, "Approved", { id_verifications: [{ status: "Approved" }] })).statusCode).toBe(200);
+      const saved = await app.inject({
+        method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+        payload: { clientId: "cli-scan", providerRef: session, attested: true },
+      });
+      expect(saved.statusCode, saved.body).toBe(200);
+    }
+    async function expectSuperseded(session: string, result: string) {
+      const latest = await handle.db.execute(sql`
+        SELECT result, attestation FROM idv_check_records
+         WHERE persona_inquiry_id = ${session}
+         ORDER BY verified_at DESC, record_id DESC
+         LIMIT 1
+      `);
+      expect(latest.rows[0]?.result).toBe(result);
+      expect(latest.rows[0]?.result).not.toBe("pass");
+      const passes = await handle.db.execute(sql`
+        SELECT attestation FROM idv_check_records
+         WHERE persona_inquiry_id = ${session} AND result = 'pass'
+      `);
+      expect(passes.rows).toHaveLength(1);
+      expect(passes.rows[0]).toMatchObject({ attestation: sentence });
+      const audited = await handle.db.execute(sql`
+        SELECT action FROM audit_events
+         WHERE action = 'idv.counter_scan_superseded'
+           AND detail->>'referenceId' = (SELECT reference_id FROM idv_inquiries WHERE provider_ref = ${session})
+      `);
+      expect(audited.rows).toHaveLength(1);
+    }
+    await passedScan("ref-after-declined", "18181818-1919-4545-8616-222222222222");
+    expect((await scanWebhook("18181818-1919-4545-8616-222222222222", "ref-after-declined", "Declined", { id_verifications: [{ status: "Declined" }] })).statusCode).toBe(200);
+    await expectSuperseded("18181818-1919-4545-8616-222222222222", "declined");
+
+    await passedScan("ref-after-expired", "19191919-2020-4545-8616-232323232323");
+    expect((await scanWebhook("19191919-2020-4545-8616-232323232323", "ref-after-expired", "Expired", {})).statusCode).toBe(200);
+    await expectSuperseded("19191919-2020-4545-8616-232323232323", "method_not_completed");
+
+    await passedScan("ref-after-review", "20202020-2121-4545-8616-242424242424");
+    expect((await scanWebhook("20202020-2121-4545-8616-242424242424", "ref-after-review", "In Review", { id_verifications: [{ status: "Approved" }] })).statusCode).toBe(200);
+    await expectSuperseded("20202020-2121-4545-8616-242424242424", "needs_review");
   });
 
   it("still requires liveness and face match on the ID and selfie path", async () => {
