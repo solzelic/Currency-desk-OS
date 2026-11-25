@@ -136,17 +136,110 @@ for (const width of [390, 1280]) {
     const box = await page.getByTestId("id-check-send").boundingBox();
     expect(box && box.x >= 0 && box.x + box.width <= width + 1).toBe(true);
     await page.getByTestId("id-check-send-email-btn").click();
-    await expect(page.getByTestId("id-check-send-email-btn")).toHaveText("Email sent.");
+    await expect(page.getByTestId("id-check-send-email-btn").locator("[data-label]")).toHaveText("Email sent.");
     await page.getByTestId("id-check-copy-link").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(LINK);
-    await expect(page.getByTestId("id-check-copy-link")).toHaveText("Link copied.");
+    await expect(page.getByTestId("id-check-copy-link").locator("[data-label]")).toHaveText("Link copied.");
     await page.getByTestId("id-check-copy-text").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(TEXT);
-    await expect(page.getByTestId("id-check-copy-text")).toHaveText("Text copied.");
+    await expect(page.getByTestId("id-check-copy-text").locator("[data-label]")).toHaveText("Text copied.");
     await expect(page.getByTestId("id-check-link-how")).toHaveCount(0);
     await expect(page.getByText("Hand the counter device")).toHaveCount(0);
   });
 }
+
+function label(page: import("@playwright/test").Page, testId: string) {
+  return page.getByTestId(testId).locator("[data-label]");
+}
+
+async function box(page: import("@playwright/test").Page, testId: string) {
+  const found = await page.getByTestId(testId).boundingBox();
+  if (!found) throw new Error(`${testId} has no box`);
+  return found;
+}
+
+test("confirmations revert after 2000 ms, restart, and keep the button size", async ({ page }) => {
+  const start = new Date("2026-11-25T12:00:00Z");
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(start);
+  await openLink(page, 1280, false);
+  expect(await page.evaluate(() => (window as unknown as { CDOS: { IdCheck: { buttonFeedbackMs: number } } }).CDOS.IdCheck.buttonFeedbackMs)).toBe(2000);
+
+  const send = page.getByTestId("id-check-send-email-btn");
+  const link = page.getByTestId("id-check-copy-link");
+  const text = page.getByTestId("id-check-copy-text");
+  const status = page.getByRole("status");
+  const sendIdle = await box(page, "id-check-send-email-btn");
+  const linkIdle = await box(page, "id-check-copy-link");
+  const textIdle = await box(page, "id-check-copy-text");
+  const sendColour = await send.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const linkColour = await link.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+  await send.click();
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Email sent.");
+  await expect(send).toBeFocused();
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveAttribute("aria-live", "polite");
+  await expect(status).toHaveText("Email sent.");
+  await expect(send.locator("svg")).toHaveCount(0);
+  expect(await send.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(sendColour);
+  const sendShown = await box(page, "id-check-send-email-btn");
+  const linkAfterSend = await box(page, "id-check-copy-link");
+  expect(Math.round(sendShown.width)).toBe(Math.round(sendIdle.width));
+  expect(Math.round(sendShown.height)).toBe(Math.round(sendIdle.height));
+  expect(Math.round(linkAfterSend.x)).toBe(Math.round(linkIdle.x));
+  expect(Math.round(linkAfterSend.y)).toBe(Math.round(linkIdle.y));
+
+  await page.clock.fastForward(1999);
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Email sent.");
+  await page.clock.fastForward(1);
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Send");
+
+  await send.click();
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Email sent.");
+  await page.clock.fastForward(1500);
+  await send.click();
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Email sent.");
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveText("Email sent.");
+  await page.clock.fastForward(1500);
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Email sent.");
+  await page.clock.fastForward(500);
+  await expect(label(page, "id-check-send-email-btn")).toHaveText("Send");
+
+  await link.click();
+  await expect(label(page, "id-check-copy-link")).toHaveText("Link copied.");
+  await expect(link).toBeFocused();
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveText("Link copied.");
+  await expect(link.locator("svg")).toHaveCount(0);
+  expect(await link.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(linkColour);
+  const linkShown = await box(page, "id-check-copy-link");
+  const textAfterLink = await box(page, "id-check-copy-text");
+  expect(Math.round(linkShown.width)).toBe(Math.round(linkIdle.width));
+  expect(Math.round(linkShown.height)).toBe(Math.round(linkIdle.height));
+  expect(Math.round(textAfterLink.x)).toBe(Math.round(textIdle.x));
+  expect(Math.round(textAfterLink.y)).toBe(Math.round(textIdle.y));
+  await page.clock.fastForward(2000);
+  await expect(label(page, "id-check-copy-link")).toHaveText("Copy link");
+
+  await text.click();
+  await expect(label(page, "id-check-copy-text")).toHaveText("Text copied.");
+  await expect(text).toBeFocused();
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveText("Text copied.");
+  const textShown = await box(page, "id-check-copy-text");
+  expect(Math.round(textShown.width)).toBe(Math.round(textIdle.width));
+  expect(Math.round(textShown.height)).toBe(Math.round(textIdle.height));
+  await page.clock.fastForward(1000);
+  await text.click();
+  await expect(label(page, "id-check-copy-text")).toHaveText("Text copied.");
+  await expect(status).toHaveText("Text copied.");
+  await page.clock.fastForward(1000);
+  await expect(label(page, "id-check-copy-text")).toHaveText("Text copied.");
+  await page.clock.fastForward(1000);
+  await expect(label(page, "id-check-copy-text")).toHaveText("Copy text");
+});
 
 test("Didit link screen shows the email error", async ({ page }) => {
   await openLink(page, 390, true);

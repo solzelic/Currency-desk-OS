@@ -2,7 +2,7 @@
    the one-time link, the badge, the masked number, and the reveal.
    The words come from the server. Sandbox only. No price and no charge. */
 (function () {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
   const { CD } = window.CDOS;
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const REVEAL = { supervisor: true, branch_manager: true, compliance_officer: true, administrator: true };
@@ -57,6 +57,15 @@
     flex: "1 1 160px", minHeight: 44, padding: "0 16px", borderRadius: 8, border: `1px solid ${CD.line}`,
     background: CD.paper, color: CD.ink, fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600,
   };
+  const BUTTON_FEEDBACK_MS = 2000;
+  function shownLabel(shown, longest) {
+    return (
+      <span style={{ display: "grid" }}>
+        <span data-sizer="true" aria-hidden="true" style={{ gridArea: "1 / 1", visibility: "hidden", whiteSpace: "nowrap" }}>{longest}</span>
+        <span data-label="true" style={{ gridArea: "1 / 1", whiteSpace: "nowrap" }}>{shown}</span>
+      </span>
+    );
+  }
 
   function linesOf(text) { return String(text || "").split("\n").filter(Boolean); }
   function inquiryLine(status) {
@@ -202,6 +211,42 @@
     const [stepsOpen, setStepsOpen] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
     const [textCopied, setTextCopied] = useState(false);
+    const [liveMessage, setLiveMessage] = useState("");
+    const feedbackTimers = useRef({ send: 0, link: 0, text: 0 });
+    const mounted = useRef(true);
+    const sendBtn = useRef(null);
+    const linkBtn = useRef(null);
+    const textBtn = useRef(null);
+    const clearFeedbackTimer = (key) => {
+      const id = feedbackTimers.current[key];
+      if (id) window.clearTimeout(id);
+      feedbackTimers.current[key] = 0;
+    };
+    const armFeedback = (key, message, hide) => {
+      clearFeedbackTimer(key);
+      setLiveMessage(message);
+      feedbackTimers.current[key] = window.setTimeout(() => {
+        feedbackTimers.current[key] = 0;
+        if (!mounted.current) return;
+        hide();
+        setLiveMessage((cur) => (cur === message ? "" : cur));
+      }, BUTTON_FEEDBACK_MS);
+    };
+    useEffect(() => () => {
+      mounted.current = false;
+      clearFeedbackTimer("send");
+      clearFeedbackTimer("link");
+      clearFeedbackTimer("text");
+    }, []);
+    useEffect(() => {
+      if (sendNote === "Email sent." && !busy && sendBtn.current) sendBtn.current.focus();
+    }, [sendNote, busy]);
+    useEffect(() => {
+      if (linkCopied && linkBtn.current) linkBtn.current.focus();
+    }, [linkCopied]);
+    useEffect(() => {
+      if (textCopied && textBtn.current) textBtn.current.focus();
+    }, [textCopied]);
 
     useEffect(() => holdSheet(), []);
     useEffect(() => {
@@ -394,12 +439,15 @@
     const sendEmailLink = async () => {
       const client = api();
       if (!client || !inquiryId || busy || !emailOk(sendTo)) return;
+      clearFeedbackTimer("send");
       setBusy(true);
       setSendError("");
       setSendNote("");
+      setLiveMessage((cur) => (cur === "Email sent." ? "" : cur));
       try {
         await client.sendLink(inquiryId, { email: sendTo.trim() });
         setSendNote("Email sent.");
+        armFeedback("send", "Email sent.", () => setSendNote(""));
       } catch (err) {
         setSendNote("");
         setSendError((err && err.message) || "The email didn't go. Try again, or use Copy link.");
@@ -409,39 +457,42 @@
     const copyLink = async () => {
       const client = api();
       if (!client || !inquiryId || !linkUrl) return;
+      clearFeedbackTimer("link");
+      setLinkCopied(false);
       setSendError("");
-      setSendNote("");
+      setLiveMessage((cur) => (cur === "Link copied." ? "" : cur));
       try {
         await client.noteLink(inquiryId, { kind: "link" });
         await copyValue(linkUrl);
         setLinkCopied(true);
-        setSendNote("");
+        armFeedback("link", "Link copied.", () => setLinkCopied(false));
       } catch (err) {
         setLinkCopied(false);
-        setSendNote("");
         setSendError((err && err.message) || "The link was not copied. Try again.");
       }
     };
     const copyText = async () => {
       const client = api();
       if (!client || !inquiryId || !linkUrl) return;
+      clearFeedbackTimer("text");
+      setTextCopied(false);
       setSendError("");
-      setSendNote("");
+      setLiveMessage((cur) => (cur === "Text copied." ? "" : cur));
       try {
         const noted = await client.noteLink(inquiryId, { kind: "text" });
         const shop = noted && noted.shop;
         const contact = noted && noted.contact;
         const text = (noted && noted.text) || (shop && contact ? linkMessage(shop, linkUrl, contact) : "");
         if (!text) {
+          setTextCopied(false);
           setSendError("The text was not copied. Try again.");
           return;
         }
         await copyValue(text);
         setTextCopied(true);
-        setSendNote("");
+        armFeedback("text", "Text copied.", () => setTextCopied(false));
       } catch (err) {
         setTextCopied(false);
-        setSendNote("");
         setSendError((err && err.message) || "The text was not copied. Try again.");
       }
     };
@@ -532,10 +583,11 @@
         </label>
         {emailBad && <div data-testid="id-check-email-invalid" className="text-[13px]" style={{ color: CD.flag }}>That email is not valid.</div>}
         <div className="flex flex-wrap gap-2">
-          <button type="button" data-testid="id-check-send-email-btn" disabled={busy || !emailOk(sendTo)} onClick={sendEmailLink} style={btnStyle(busy || !emailOk(sendTo))}>{busy ? "Sending" : sendNote === "Email sent." ? "Email sent." : "Send"}</button>
-          <button type="button" data-testid="id-check-copy-link" onClick={copyLink} style={ghost}>{linkCopied ? "Link copied." : "Copy link"}</button>
-          <button type="button" data-testid="id-check-copy-text" onClick={copyText} style={ghost}>{textCopied ? "Text copied." : "Copy text"}</button>
+          <button ref={sendBtn} type="button" data-testid="id-check-send-email-btn" disabled={busy || !emailOk(sendTo)} onClick={sendEmailLink} style={btnStyle(busy || !emailOk(sendTo))}>{shownLabel(busy ? "Sending" : sendNote === "Email sent." ? "Email sent." : "Send", "Email sent.")}</button>
+          <button ref={linkBtn} type="button" data-testid="id-check-copy-link" onClick={copyLink} style={ghost}>{shownLabel(linkCopied ? "Link copied." : "Copy link", "Link copied.")}</button>
+          <button ref={textBtn} type="button" data-testid="id-check-copy-text" onClick={copyText} style={ghost}>{shownLabel(textCopied ? "Text copied." : "Copy text", "Text copied.")}</button>
         </div>
+        <div role="status" aria-live="polite" data-testid="id-check-confirm" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>{liveMessage}</div>
         {emailFailed && <div data-testid="id-check-send-error" className="space-y-2">
           <div className="text-[13px]" style={{ color: CD.flag }}>The email didn't go. Try again, or use Copy link.</div>
           <button type="button" data-testid="id-check-try-again" onClick={sendEmailLink} style={ghost}>Try again</button>
@@ -884,5 +936,5 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { IdCheck: { Panel, Flow, DealBar, Settings, customerSteps, shopFromLine } });
+  window.CDOS = Object.assign(window.CDOS || {}, { IdCheck: { Panel, Flow, DealBar, Settings, customerSteps, shopFromLine, buttonFeedbackMs: BUTTON_FEEDBACK_MS } });
 })();

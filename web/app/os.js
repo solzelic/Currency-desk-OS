@@ -53212,7 +53212,8 @@ ${(filing.map || []).map(blockHTML).join('')}
 (function () {
   const {
     useState,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD
@@ -53326,6 +53327,28 @@ ${(filing.map || []).map(blockHTML).join('')}
     fontSize: 14,
     fontWeight: 600
   };
+  const BUTTON_FEEDBACK_MS = 2000;
+  function shownLabel(shown, longest) {
+    return /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "grid"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      "data-sizer": "true",
+      "aria-hidden": "true",
+      style: {
+        gridArea: "1 / 1",
+        visibility: "hidden",
+        whiteSpace: "nowrap"
+      }
+    }, longest), /*#__PURE__*/React.createElement("span", {
+      "data-label": "true",
+      style: {
+        gridArea: "1 / 1",
+        whiteSpace: "nowrap"
+      }
+    }, shown));
+  }
   function linesOf(text) {
     return String(text || "").split("\n").filter(Boolean);
   }
@@ -53567,6 +53590,46 @@ ${(filing.map || []).map(blockHTML).join('')}
     const [stepsOpen, setStepsOpen] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
     const [textCopied, setTextCopied] = useState(false);
+    const [liveMessage, setLiveMessage] = useState("");
+    const feedbackTimers = useRef({
+      send: 0,
+      link: 0,
+      text: 0
+    });
+    const mounted = useRef(true);
+    const sendBtn = useRef(null);
+    const linkBtn = useRef(null);
+    const textBtn = useRef(null);
+    const clearFeedbackTimer = key => {
+      const id = feedbackTimers.current[key];
+      if (id) window.clearTimeout(id);
+      feedbackTimers.current[key] = 0;
+    };
+    const armFeedback = (key, message, hide) => {
+      clearFeedbackTimer(key);
+      setLiveMessage(message);
+      feedbackTimers.current[key] = window.setTimeout(() => {
+        feedbackTimers.current[key] = 0;
+        if (!mounted.current) return;
+        hide();
+        setLiveMessage(cur => cur === message ? "" : cur);
+      }, BUTTON_FEEDBACK_MS);
+    };
+    useEffect(() => () => {
+      mounted.current = false;
+      clearFeedbackTimer("send");
+      clearFeedbackTimer("link");
+      clearFeedbackTimer("text");
+    }, []);
+    useEffect(() => {
+      if (sendNote === "Email sent." && !busy && sendBtn.current) sendBtn.current.focus();
+    }, [sendNote, busy]);
+    useEffect(() => {
+      if (linkCopied && linkBtn.current) linkBtn.current.focus();
+    }, [linkCopied]);
+    useEffect(() => {
+      if (textCopied && textBtn.current) textBtn.current.focus();
+    }, [textCopied]);
     useEffect(() => holdSheet(), []);
     useEffect(() => {
       const client = api();
@@ -53809,14 +53872,17 @@ ${(filing.map || []).map(blockHTML).join('')}
     const sendEmailLink = async () => {
       const client = api();
       if (!client || !inquiryId || busy || !emailOk(sendTo)) return;
+      clearFeedbackTimer("send");
       setBusy(true);
       setSendError("");
       setSendNote("");
+      setLiveMessage(cur => cur === "Email sent." ? "" : cur);
       try {
         await client.sendLink(inquiryId, {
           email: sendTo.trim()
         });
         setSendNote("Email sent.");
+        armFeedback("send", "Email sent.", () => setSendNote(""));
       } catch (err) {
         setSendNote("");
         setSendError(err && err.message || "The email didn't go. Try again, or use Copy link.");
@@ -53826,26 +53892,29 @@ ${(filing.map || []).map(blockHTML).join('')}
     const copyLink = async () => {
       const client = api();
       if (!client || !inquiryId || !linkUrl) return;
+      clearFeedbackTimer("link");
+      setLinkCopied(false);
       setSendError("");
-      setSendNote("");
+      setLiveMessage(cur => cur === "Link copied." ? "" : cur);
       try {
         await client.noteLink(inquiryId, {
           kind: "link"
         });
         await copyValue(linkUrl);
         setLinkCopied(true);
-        setSendNote("");
+        armFeedback("link", "Link copied.", () => setLinkCopied(false));
       } catch (err) {
         setLinkCopied(false);
-        setSendNote("");
         setSendError(err && err.message || "The link was not copied. Try again.");
       }
     };
     const copyText = async () => {
       const client = api();
       if (!client || !inquiryId || !linkUrl) return;
+      clearFeedbackTimer("text");
+      setTextCopied(false);
       setSendError("");
-      setSendNote("");
+      setLiveMessage(cur => cur === "Text copied." ? "" : cur);
       try {
         const noted = await client.noteLink(inquiryId, {
           kind: "text"
@@ -53854,15 +53923,15 @@ ${(filing.map || []).map(blockHTML).join('')}
         const contact = noted && noted.contact;
         const text = noted && noted.text || (shop && contact ? linkMessage(shop, linkUrl, contact) : "");
         if (!text) {
+          setTextCopied(false);
           setSendError("The text was not copied. Try again.");
           return;
         }
         await copyValue(text);
         setTextCopied(true);
-        setSendNote("");
+        armFeedback("text", "Text copied.", () => setTextCopied(false));
       } catch (err) {
         setTextCopied(false);
-        setSendNote("");
         setSendError(err && err.message || "The text was not copied. Try again.");
       }
     };
@@ -54190,22 +54259,40 @@ ${(filing.map || []).map(blockHTML).join('')}
       }, "That email is not valid."), /*#__PURE__*/React.createElement("div", {
         className: "flex flex-wrap gap-2"
       }, /*#__PURE__*/React.createElement("button", {
+        ref: sendBtn,
         type: "button",
         "data-testid": "id-check-send-email-btn",
         disabled: busy || !emailOk(sendTo),
         onClick: sendEmailLink,
         style: btnStyle(busy || !emailOk(sendTo))
-      }, busy ? "Sending" : sendNote === "Email sent." ? "Email sent." : "Send"), /*#__PURE__*/React.createElement("button", {
+      }, shownLabel(busy ? "Sending" : sendNote === "Email sent." ? "Email sent." : "Send", "Email sent.")), /*#__PURE__*/React.createElement("button", {
+        ref: linkBtn,
         type: "button",
         "data-testid": "id-check-copy-link",
         onClick: copyLink,
         style: ghost
-      }, linkCopied ? "Link copied." : "Copy link"), /*#__PURE__*/React.createElement("button", {
+      }, shownLabel(linkCopied ? "Link copied." : "Copy link", "Link copied.")), /*#__PURE__*/React.createElement("button", {
+        ref: textBtn,
         type: "button",
         "data-testid": "id-check-copy-text",
         onClick: copyText,
         style: ghost
-      }, textCopied ? "Text copied." : "Copy text")), emailFailed && /*#__PURE__*/React.createElement("div", {
+      }, shownLabel(textCopied ? "Text copied." : "Copy text", "Text copied."))), /*#__PURE__*/React.createElement("div", {
+        role: "status",
+        "aria-live": "polite",
+        "data-testid": "id-check-confirm",
+        style: {
+          position: "absolute",
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: "hidden",
+          clip: "rect(0, 0, 0, 0)",
+          whiteSpace: "nowrap",
+          border: 0
+        }
+      }, liveMessage), emailFailed && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-send-error",
         className: "space-y-2"
       }, /*#__PURE__*/React.createElement("div", {
@@ -55189,7 +55276,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       DealBar,
       Settings,
       customerSteps,
-      shopFromLine
+      shopFromLine,
+      buttonFeedbackMs: BUTTON_FEEDBACK_MS
     }
   });
 })();
