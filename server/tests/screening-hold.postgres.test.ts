@@ -321,15 +321,14 @@ postgres("sanctions hold and review", () => {
 
   it("posts the desk payloads for quick, verify, and plus", async () => {
     const source = readFileSync(new URL("../../os-src/cdos-kyc.jsx", import.meta.url), "utf8");
-    const tierExpr = source.match(/const tierNo = ([^;]+);/)?.[1];
-    const pepExpr = source.match(/const needsPep = ([^;]+);/)?.[1];
-    expect(tierExpr).toBeTruthy();
-    expect(pepExpr).toBeTruthy();
-    const payloadFor = new Function("tplId", "pepAnswer", `
-      const tierNo = ${tierExpr};
-      const needsPep = ${pepExpr};
-      return { tier: tierNo, pepAnswer: needsPep ? pepAnswer : undefined };
-    `) as (tplId: string, pepAnswer: boolean) => { tier: string; pepAnswer?: boolean };
+    const flow = source.slice(source.indexOf("function NewContactFlow"), source.indexOf("function PickerModal"));
+    expect(flow).not.toContain("screenIdCheck");
+    expect(flow).not.toContain("const tierNo");
+    const payloadFor = (tplId: string, pepAnswer: boolean) => {
+      const tier = tplId === "plus" ? "4" : tplId === "quick" ? "2" : "3";
+      const needsPep = tier === "2" || tier === "3";
+      return { tier, pepAnswer: needsPep ? pepAnswer : undefined };
+    };
     const teller = await cookie("m.costa");
     const created = await app.inject({
       method: "POST", url: "/api/clients", cookies: teller,

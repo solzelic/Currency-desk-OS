@@ -115,5 +115,11 @@ export default defineConfig({
       ...devices["Desktop Chrome"],
       ...(process.env.TZ ? { timezoneId: process.env.TZ } : {}),
     },
+  }, {
+    /* The PIN pad bug showed up in Safari: a click left focus in the
+       field behind the pad. This file is the regression for that. */
+    name: "webkit",
+    testMatch: /add-contact-close\.spec\.ts/,
+    use: { ...devices["Desktop Safari"] },
   }],
 });

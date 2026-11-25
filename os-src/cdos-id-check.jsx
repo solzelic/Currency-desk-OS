@@ -49,7 +49,7 @@
   const inputStyle = { border: `1px solid ${CD.line}`, borderRadius: 8, background: "var(--cd-panel)", color: CD.ink, width: "100%", fontFamily: '"Archivo", system-ui, sans-serif', minHeight: 44, padding: "0 12px" };
   const btnStyle = (disabled) => ({
     flex: "1 1 160px", minHeight: 44, padding: "0 16px", borderRadius: 8, border: "0",
-    background: disabled ? "#E4E1D8" : CD.ink, color: disabled ? "#3F3C36" : "var(--cd-on-ink)",
+    background: disabled ? "var(--cd-disabled)" : CD.ink, color: disabled ? "var(--cd-mute)" : "var(--cd-on-ink)",
     fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600,
     cursor: disabled ? "not-allowed" : "pointer",
   });
@@ -535,6 +535,23 @@
     </Portal>);
   }
 
+  function retentionSentence(latest, typedOnly) {
+    if (!latest) {
+      return typedOnly ? "ID typed by hand, not checked. Check the ID to record it." : "";
+    }
+    if (latest.numberUnavailable) return "No ID number was recorded for this check.";
+    if (latest.method === "in_person" && latest.maskedNumber) {
+      return "The ID number is stored encrypted. Only the last 4 are shown.";
+    }
+    if (latest.maskedNumber) {
+      return "ID details from this check are kept on the server. Only the last 4 of the number are shown.";
+    }
+    if (latest.method === "id_and_selfie" || latest.method === "id_selfie_database") {
+      return "ID scanned. No ID number stored.";
+    }
+    return "No ID number was recorded for this check.";
+  }
+
   function Panel({ clientId, canEdit, dealId }) {
     const [pack, setPack] = useState(null);
     const [status, setStatus] = useState("");
@@ -604,6 +621,7 @@
     const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
     const advised = !!(pack && pack.advice);
     const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || (latest && (latest.result === "pass" || latest.result === "returning_confirmed")));
+    const sentence = loaded ? retentionSentence(latest, typedOnly) : "";
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -635,7 +653,7 @@
         {CROP[role] && latest && latest.photoOnFile && <button type="button" onClick={showPhoto} className="text-[12px] font-medium" style={quietBtn}>Show the photo</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from a finished check are kept on the server. This screen shows the last 4 of the number.</div>
+      {sentence ? <div data-testid="id-check-retention" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{sentence}</div> : null}
       {latest && latest.photoOnFile && <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye.</div>}
       {open && <Flow clientId={clientId} dealId={dealId} initialStep={startAt} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={() => { window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId } })); setTick((n) => n + 1); }} />}
       {reveal && latest && <Reveal record={latest} onClose={() => setReveal(false)} />}

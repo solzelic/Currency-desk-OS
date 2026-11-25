@@ -194,12 +194,12 @@ async function openClientCard(page: Page, name: string) {
    the path most contacts are actually made through. */
 async function addContact(page: Page, name: string) {
   await page.getByRole("button", { name: /^New contact$/ }).click();
-  const skipId = page.getByText(/^Skip — add ID later$/);
+  const skipId = page.getByText(/^Skip\. Add the ID later$/);
   if (await skipId.isVisible({ timeout: 5_000 }).catch(() => false)) await skipId.click();
   const field = page.getByPlaceholder("Jane Doe");
   await field.waitFor({ state: "visible", timeout: 15_000 });
   await field.fill(name);
-  await page.getByText(/^Save without verifying$/).click();
+  await page.getByRole("button", { name: "Save contact" }).click();
   /* The PROFILE opens on the new contact, and it is the profile this
      waits for — not merely the name, which is also on the grid card
      sitting behind it. Waiting for the name let this return while the
