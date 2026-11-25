@@ -200,14 +200,15 @@
         const created = await client.create(Object.assign(
           { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
           client.fromDeskFields(rec)));
-        /* Add contact closes as soon as create answers. The document and
-           the list refresh keep going. Record the ID still waits. */
-        const after = Promise.all([
-          applyDocument(created.clientId, rec).catch(() => {}),
-          load(true).catch(() => {}),
-        ]);
-        if (opts && opts.wait === false) return created;
-        await after;
+        /* Add contact closes as soon as create answers. Record the ID
+           still waits, and the document is stored before the list is read. */
+        if (opts && opts.wait === false) {
+          void applyDocument(created.clientId, rec).catch(() => {});
+          void load(true).catch(() => {});
+          return created;
+        }
+        await applyDocument(created.clientId, rec);
+        await load(true);
         return created;
       },
       /* Fold what a verification read off the document into a file that

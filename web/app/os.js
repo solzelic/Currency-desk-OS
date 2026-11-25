@@ -25232,11 +25232,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           legalName: String(name).trim(),
           kind: rec.kind === 'corporate' ? 'business' : 'individual'
         }, client.fromDeskFields(rec)));
-        /* Add contact closes as soon as create answers. The document and
-           the list refresh keep going. Record the ID still waits. */
-        const after = Promise.all([applyDocument(created.clientId, rec).catch(() => {}), load(true).catch(() => {})]);
-        if (opts && opts.wait === false) return created;
-        await after;
+        /* Add contact closes as soon as create answers. Record the ID
+           still waits, and the document is stored before the list is read. */
+        if (opts && opts.wait === false) {
+          void applyDocument(created.clientId, rec).catch(() => {});
+          void load(true).catch(() => {});
+          return created;
+        }
+        await applyDocument(created.clientId, rec);
+        await load(true);
         return created;
       },
       /* Fold what a verification read off the document into a file that
@@ -78026,8 +78030,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (window.CDOS) window.CDOS.clientRoster = clients;
     });
     const [standingPulse, setStandingPulse] = useState(0);
-    const knownChecks = useRef(new Set());
-    const seenPulse = useRef(0);
     useEffect(() => {
       const onStanding = () => setStandingPulse(n => n + 1);
       window.addEventListener("cdos-id-standing", onStanding);
@@ -78041,14 +78043,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const id = clients[name] && clients[name].clientId;
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
-      const fresh = standingPulse !== seenPulse.current;
-      seenPulse.current = standingPulse;
-      const wanted = fresh ? ids : ids.filter(id => !knownChecks.current.has(id));
-      if (!wanted.length) return undefined;
+      if (!ids.length) return undefined;
       let live = true;
       let retryTimer = 0;
       const pull = () => {
-        Promise.all(wanted.map(id => api.checks(id).then(body => ({
+        Promise.all(ids.map(id => api.checks(id).then(body => ({
           id,
           body,
           failed: false
@@ -78058,12 +78057,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           failed: true
         })))).then(pairs => {
           if (!live) return;
-          pairs.forEach(({
-            id,
-            failed
-          }) => {
-            if (!failed) knownChecks.current.add(id);
-          });
           let retry = false;
           setClients(prev => {
             let changed = false;

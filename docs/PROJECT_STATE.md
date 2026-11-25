@@ -1,6 +1,6 @@
 ## Add contact saves, then the real ID check (25 November 2026)
 
-Add a contact no longer offers the old priced verify step. The footer is Save contact and Save and check ID. Save contact closes when the server has created the file. The document write and the client list refresh continue after that. A desk that is not on the server saves and closes without an ID check. Save and check ID opens the teller ID check for the new client. A request that does not answer in 15 seconds fails into the save error instead of leaving the sheet open. The PIN pad ignores keys while the cursor is in a field, and while the pad is not the top layer. Sign-up and Early Access were not edited.
+Add a contact no longer offers the old priced verify step. The footer is Save contact and Save and check ID. Save contact closes when the server has created the file. The document write and the client list refresh continue after that. A desk that is not on the server saves and closes without an ID check. Save and check ID opens the teller ID check for the new client. A request that does not answer in 15 seconds fails into the save error instead of leaving the sheet open. Recording an ID still stores the document before the list is read again. The PIN pad ignores keys while the cursor is in a field, and while the pad is not the top layer. Sign-up and Early Access were not edited.
 
 ## Didit identity check, sandbox only (25 November 2026)
 
