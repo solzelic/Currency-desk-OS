@@ -20,6 +20,21 @@
       return "";
     }
   }
+  function safeDiditLink(value) {
+    try {
+      const url = new URL(String(value || "").trim());
+      if (url.protocol !== "https:") return "";
+      if (url.username || url.password) return "";
+      if (url.port && url.port !== "443") return "";
+      if (url.hostname.toLowerCase() !== "verify.didit.me") return "";
+      return url.toString();
+    } catch (e) {
+      return "";
+    }
+  }
+  function safeCheckLink(value) {
+    return safePersonaLink(value) || safeDiditLink(value);
+  }
   const REASONS = [
     ["fintrac_request", "FINTRAC request"],
     ["report_filing", "Report filing"],
@@ -233,7 +248,7 @@
         const link = await client.link(started.providerRef);
         setInquiryId(started.providerRef);
         setConsentId(saved.consentId);
-        setLinkUrl(safePersonaLink(link.url));
+        setLinkUrl(safeCheckLink(link.url));
         setDatabaseMessage(started.message || "");
         setStep("link");
       } catch (err) {
@@ -352,6 +367,7 @@
           <div className="text-[16px] font-semibold">{primary.label}</div>
           <div className="text-[13px] mt-1" style={{ color: "var(--cd-on-ink)", opacity: 0.82 }}>{primary.note}</div>
         </button>
+        {copy.tier4 === "unavailable" && <div data-testid="id-check-tier4" className="text-[13px]" style={{ color: CD.mute }}>ID, selfie and database. not available yet</div>}
         {more.length > 0 && <div data-testid="id-check-more">
           <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)} className="w-full" style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: `1px solid ${CD.line}`, background: "transparent", color: CD.ink, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600 }}>
             <span>More options</span>
@@ -674,8 +690,9 @@
         privacyPhone: row.privacyPhone || null,
         privacyPolicyUrl: row.privacyPolicyUrl || null,
       };
-      if (row.templateId) payload.templateId = row.templateId;
-      if (row.apiKeyRef) payload.apiKeyRef = row.apiKeyRef;
+      if (row.diditSelectable === true && row.provider) payload.provider = row.provider;
+      if (row.provider !== "didit" && row.templateId) payload.templateId = row.templateId;
+      if (row.provider !== "didit" && row.apiKeyRef) payload.apiKeyRef = row.apiKeyRef;
       try {
         const body = await client.saveSettings(payload);
         setRow(body);
@@ -686,6 +703,8 @@
     };
     return (<div data-testid="id-check-settings" className="mb-4 p-3.5" style={card}>
       <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>Identity check</div>
+      {row.diditSelectable === true && <label className="block text-[12px] mt-2" style={{ color: CD.mute }}>Identity provider<select data-testid="id-check-provider" value={row.provider === "didit" ? "didit" : "persona"} onChange={(e) => set("provider", e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle}><option value="persona">Persona</option><option value="didit">Didit</option></select></label>}
+      {row.diditSelectable === true && <div className="text-[11.5px] mt-1" style={{ color: CD.mute }}>Didit is only for a staging test shop.</div>}
       <div className="text-[11.5px] mt-1 mb-2" style={{ color: CD.mute }}>A small photo from the ID is kept for comparison by eye. It is on unless you turn it off.</div>
       <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]" style={{ color: CD.ink }}><span>Identity checks</span><button type="button" role="switch" aria-checked={row.checksEnabled === true} aria-label="Identity checks" onClick={() => set("checksEnabled", row.checksEnabled !== true)} className="w-11 h-6 relative flex-none" style={{ background: row.checksEnabled === true ? CD.ink : "var(--cd-disabled)", borderRadius: 999, border: "none", padding: 0 }}><span className="absolute top-0.5 w-5 h-5" style={{ left: row.checksEnabled === true ? 22 : 2, background: "var(--cd-panel)", borderRadius: 999 }} /></button></div>
       <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]" style={{ color: CD.ink }}><span>Small photo from the ID</span><button type="button" role="switch" data-testid="id-check-crop-switch" aria-checked={row.faceCropEnabled !== false} aria-label="Small photo from the ID" onClick={() => set("faceCropEnabled", row.faceCropEnabled === false)} className="w-11 h-6 relative flex-none" style={{ background: row.faceCropEnabled !== false ? CD.ink : "var(--cd-disabled)", borderRadius: 999, border: "none", padding: 0 }}><span className="absolute top-0.5 w-5 h-5" style={{ left: row.faceCropEnabled !== false ? 22 : 2, background: "var(--cd-panel)", borderRadius: 999 }} /></button></div>

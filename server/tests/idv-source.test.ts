@@ -54,6 +54,18 @@ describe("idv source locks", () => {
     }
   });
 
+  it("names the Didit secrets only in the Didit adapter", () => {
+    const adapter = join(root, "idv/providers/didit.ts");
+    const names = ["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "DIDIT_WORKFLOW_ID", "DIDIT_AML_WORKFLOW_ID", "DIDIT_LIVE_ALLOWED"];
+    const hits = files(root).filter((path) => path !== adapter).filter((path) => {
+      const text = readFileSync(path, "utf8");
+      return names.some((name) => text.includes(name));
+    });
+    const text = readFileSync(adapter, "utf8");
+    for (const name of names) expect(text).toContain(name);
+    expect(hits).toEqual([]);
+  });
+
   it("compares the webhook signature with timingSafeEqual", () => {
     const text = readFileSync(join(root, "idv/providers/persona/index.ts"), "utf8");
     const body = text.slice(text.indexOf("function setOk"), text.indexOf("function verify"));

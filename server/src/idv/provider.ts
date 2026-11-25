@@ -25,6 +25,7 @@ export type IdvStart = {
   apiKeyRef?: string | null;
   templateId?: string | null;
   shopCode?: string;
+  tier?: string | null;
 };
 
 /* The ledger connection, when client files live there rather than on the app database. */

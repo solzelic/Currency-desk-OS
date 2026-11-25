@@ -1,0 +1,10 @@
+{
+  "webhook_type": "status.updated",
+  "session_id": "11111111-2222-4333-8444-555555555555",
+  "status": "Approved",
+  "vendor_data": "ref-didit-1",
+  "decision": {
+    "full_name": "Fixture Person",
+    "document_number": "FIXTURE0001"
+  }
+}

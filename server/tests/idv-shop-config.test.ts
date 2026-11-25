@@ -81,6 +81,7 @@ afterAll(async () => {
 const EXTRA = {
   templateIdTier3: null, templateIdTier4: null, privacyContact: null, privacyEmail: null,
   privacyPhone: null, privacyPolicyUrl: null, faceCropEnabled: true,
+  diditSelectable: false, tier4: null,
 };
 
 describe("per-shop identity verification settings", () => {
@@ -189,8 +190,8 @@ describe("per-shop identity verification settings", () => {
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json().apiKeyRef).toBe(own);
     expect(Object.keys(saved.json()).sort()).toEqual([
-      "apiKeyRef", "checksEnabled", "faceCropEnabled", "privacyContact", "privacyEmail", "privacyPhone",
-      "privacyPolicyUrl", "provider", "retentionDays", "shopId", "templateId", "templateIdTier3", "templateIdTier4",
+      "apiKeyRef", "checksEnabled", "diditSelectable", "faceCropEnabled", "privacyContact", "privacyEmail", "privacyPhone",
+      "privacyPolicyUrl", "provider", "retentionDays", "shopId", "templateId", "templateIdTier3", "templateIdTier4", "tier4",
     ]);
     expect((await read("owner")).json().apiKeyRef).toBe(own);
     const sharedSave = await write("owner", { apiKeyRef: shared });

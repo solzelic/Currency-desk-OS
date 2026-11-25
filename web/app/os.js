@@ -53466,6 +53466,21 @@ ${(filing.map || []).map(blockHTML).join('')}
       return "";
     }
   }
+  function safeDiditLink(value) {
+    try {
+      const url = new URL(String(value || "").trim());
+      if (url.protocol !== "https:") return "";
+      if (url.username || url.password) return "";
+      if (url.port && url.port !== "443") return "";
+      if (url.hostname.toLowerCase() !== "verify.didit.me") return "";
+      return url.toString();
+    } catch (e) {
+      return "";
+    }
+  }
+  function safeCheckLink(value) {
+    return safePersonaLink(value) || safeDiditLink(value);
+  }
   const REASONS = [["fintrac_request", "FINTRAC request"], ["report_filing", "Report filing"], ["id_mismatch", "ID mismatch"], ["client_request", "Client request"]];
   const REASON_LABEL = {
     fintrac_request: "FINTRAC request",
@@ -53803,7 +53818,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         const link = await client.link(started.providerRef);
         setInquiryId(started.providerRef);
         setConsentId(saved.consentId);
-        setLinkUrl(safePersonaLink(link.url));
+        setLinkUrl(safeCheckLink(link.url));
         setDatabaseMessage(started.message || "");
         setStep("link");
       } catch (err) {
@@ -54033,7 +54048,13 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: "var(--cd-on-ink)",
           opacity: 0.82
         }
-      }, primary.note)), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, primary.note)), copy.tier4 === "unavailable" && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-tier4",
+        className: "text-[13px]",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database. not available yet"), more.length > 0 && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -54931,8 +54952,9 @@ ${(filing.map || []).map(blockHTML).join('')}
         privacyPhone: row.privacyPhone || null,
         privacyPolicyUrl: row.privacyPolicyUrl || null
       };
-      if (row.templateId) payload.templateId = row.templateId;
-      if (row.apiKeyRef) payload.apiKeyRef = row.apiKeyRef;
+      if (row.diditSelectable === true && row.provider) payload.provider = row.provider;
+      if (row.provider !== "didit" && row.templateId) payload.templateId = row.templateId;
+      if (row.provider !== "didit" && row.apiKeyRef) payload.apiKeyRef = row.apiKeyRef;
       try {
         const body = await client.saveSettings(payload);
         setRow(body);
@@ -54950,7 +54972,27 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Identity check"), /*#__PURE__*/React.createElement("div", {
+    }, "Identity check"), row.diditSelectable === true && /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px] mt-2",
+      style: {
+        color: CD.mute
+      }
+    }, "Identity provider", /*#__PURE__*/React.createElement("select", {
+      "data-testid": "id-check-provider",
+      value: row.provider === "didit" ? "didit" : "persona",
+      onChange: e => set("provider", e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    }, /*#__PURE__*/React.createElement("option", {
+      value: "persona"
+    }, "Persona"), /*#__PURE__*/React.createElement("option", {
+      value: "didit"
+    }, "Didit"))), row.diditSelectable === true && /*#__PURE__*/React.createElement("div", {
+      className: "text-[11.5px] mt-1",
+      style: {
+        color: CD.mute
+      }
+    }, "Didit is only for a staging test shop."), /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1 mb-2",
       style: {
         color: CD.mute

@@ -2,6 +2,7 @@
    The small-photo sentence is included only while this shop keeps the face crop. */
 
 export const CONSENT_VERSION = "consent-v0.3.9-draft";
+export const DIDIT_CONSENT_VERSION = "didit-consent-sandbox-v0";
 
 export const ID_DETAILS_LINE = "Your ID details are kept for at least 5 years because the law requires it.";
 
@@ -69,6 +70,31 @@ export function selfieConsentCopy(fill: ConsentFill): string {
     "Optional face match",
     `To check that you are the person on your ID, ${shop} can compare a selfie with the photo on your ID. This uses the shape of your face, which is biometric information.`,
     `The match is done for ${shop} by CurrencyDesk using its provider Persona. Your selfie and ID images are processed and stored in the United States and may be accessed by courts, law enforcement and national security authorities there. They are deleted within 30 days.${crop} ${ID_DETAILS_LINE}`,
+    "You do not have to agree. You can show your ID to staff at the counter instead.",
+    "I agree to the face match.",
+    `Questions: ${privacy(fill)}.`,
+  ].join("\n");
+}
+
+export function diditNoticeCopy(fill: ConsentFill): string {
+  const shop = shopName(fill);
+  return [
+    "Before we check your ID",
+    `${shop} ("we") must verify your identity under Canada's anti-money laundering law for some transactions. We use CurrencyDesk, our software provider, and its identity verification provider Didit to do this for us.`,
+    "What we collect: photos of your ID, the details on it, a selfie if you agree, and information about your device. This desk does not keep the ID photos or the selfie.",
+    "Why: to confirm your identity, to detect fraud in this check, and to keep the records the law requires.",
+    `How long: ${ID_DETAILS_LINE}`,
+    "Your choice: you can show your ID to staff at the counter instead.",
+    `Your rights: to see or correct your information, or to ask a question, contact ${privacy(fill)}. Privacy policy: ${link(fill.privacyPolicyUrl)}.`,
+  ].join("\n");
+}
+
+export function diditSelfieConsentCopy(fill: ConsentFill): string {
+  const shop = shopName(fill);
+  return [
+    "Optional face match",
+    `To check that you are the person on your ID, ${shop} can compare a selfie with the photo on your ID. This uses the shape of your face, which is biometric information.`,
+    `The match is done for ${shop} by CurrencyDesk using its provider Didit. This desk does not keep the selfie or the ID photos. ${ID_DETAILS_LINE}`,
     "You do not have to agree. You can show your ID to staff at the counter instead.",
     "I agree to the face match.",
     `Questions: ${privacy(fill)}.`,

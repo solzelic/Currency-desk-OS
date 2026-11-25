@@ -5,15 +5,16 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
 import { normaliseForWrite, resolveIdType } from "../clients/id-document-types.js";
 import { screenSubject } from "../screening/gate.js";
-import { CONSENT_VERSION, type ConsentFill } from "./consent-copy.js";
+import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, type ConsentFill } from "./consent-copy.js";
 import { decryptSecret, encryptSecret, KEY_VERSION, last4, maskDocumentNumber, PURPOSE_CROP, PURPOSE_NUMBER, type SecretBind } from "./id-number.js";
 import { isSmallCrop } from "./face-crop.js";
+import { diditLiveAllowed } from "./providers/didit.js";
 import { personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import type { ClientLookup } from "./provider.js";
 import { clientOnShop } from "./store.js";
 import {
-  ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE,
+  ADVISE_LINE, DETAIL_LINE, DUE_LINE, INCOMPLETE_LINE, METHOD_LABEL, NO_PHOTO_LINE, methodLabel,
   NONE_LINE, PROGRESS_LINE, REVIEW_LINE, DECLINED_LINE, HAND_TYPED_LINE, TOO_OLD_LINE,
   branchStamp, civilDateWords, expiredLine, expiredNextDealLine, idCheckedLine, notPassedLine, seenInPersonLine, underReviewLine,
   verifiedScanChip,
@@ -103,6 +104,7 @@ async function clientOwned(q: Q, actor: DeskActor, clientId: string): Promise<bo
 }
 
 export type ShopIdv = {
+  provider: string;
   faceCrop: boolean;
   apiKeyRef: string | null;
   templateId: string | null;
@@ -117,7 +119,7 @@ export type ShopIdv = {
 
 export async function loadShopIdv(db: Db, shopId: string): Promise<ShopIdv> {
   const found = await dbQuery(db).query(
-    `SELECT face_crop_enabled, api_key_ref, template_id, template_id_tier3, template_id_tier4,
+    `SELECT provider, face_crop_enabled, api_key_ref, template_id, template_id_tier3, template_id_tier4,
             checks_enabled, privacy_contact, privacy_email, privacy_phone, privacy_policy_url
        FROM idv_shop_config WHERE shop_id = $1`,
     [shopId],
@@ -125,11 +127,13 @@ export async function loadShopIdv(db: Db, shopId: string): Promise<ShopIdv> {
   const row = found.rows[0];
   if (!row) {
     return {
+      provider: "persona",
       faceCrop: true, apiKeyRef: null, templateId: null, templateIdTier3: null, templateIdTier4: null,
       checksEnabled: false, privacyContact: null, privacyEmail: null, privacyPhone: null, privacyPolicyUrl: null,
     };
   }
   return {
+    provider: str(row, "provider") ?? "persona",
     faceCrop: row.face_crop_enabled !== false,
     apiKeyRef: str(row, "api_key_ref"),
     templateId: str(row, "template_id"),
@@ -218,6 +222,7 @@ type InsertRecord = {
   verifiedAt?: string | null;
   recordId?: string;
   numberUnavailable?: boolean;
+  provider?: "persona" | "didit";
 };
 
 async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: InsertRecord): Promise<string> {
@@ -232,14 +237,15 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       template_id, template_version, staff_id, inspector_staff_id, attestation,
       confirmed_by_staff_id, original_record_id, consent_id, counter_check_chosen, deal_id,
       address_line, date_of_birth, database_step, face_crop_ciphertext, face_crop_retained_until, verified_at,
-      key_version, retain_until, number_unavailable
+      key_version, retain_until, number_unavailable, provider
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
       CASE WHEN $34::text IS NULL THEN NULL ELSE now() + interval '5 years' END,
       COALESCE($35::timestamptz, now()),
       ${KEY_VERSION},
       COALESCE($35::timestamptz, now()) + interval '5 years',
-      $36
+      $36,
+      COALESCE($37, 'persona')
     )`,
     [
       id, actor.tenantId, actor.legalEntityId, actor.branchId, clientId, row.tier, row.method,
@@ -252,6 +258,7 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       row.dealId ?? null, row.addressLine ?? null, row.dateOfBirth ?? null,
       row.databaseStep ?? plan.databaseStep, row.cropCipher ?? null, row.verifiedAt ?? null,
       row.numberUnavailable === true,
+      row.provider ?? null,
     ],
   );
   await linkDeal(q, actor, id, clientId, row.dealId ?? null);
@@ -270,7 +277,10 @@ export async function storeConsent(db: Db, actor: DeskActor, input: {
   const language = input.language.trim().toLowerCase();
   if (!/^[a-z]{2}(-[a-z]{2})?$/.test(language)) return fail(400, "invalid_request", "The consent language is not valid.");
   const shop = await loadShopIdv(db, actor.legalEntityId);
-  if (input.copyVersion !== CONSENT_VERSION || input.faceCropShown !== shop.faceCrop) {
+  const versionOk = shop.provider === "didit"
+    ? input.copyVersion === DIDIT_CONSENT_VERSION
+    : input.copyVersion === CONSENT_VERSION;
+  if (!versionOk || input.faceCropShown !== shop.faceCrop) {
     return fail(409, "consent_copy_changed", "The notice changed. Read it again before you choose.");
   }
   const id = `cns_${randomUUID()}`;
@@ -508,6 +518,9 @@ export async function writePersonaRecord(db: Db, input: {
   providerChecks: string | null; governmentId: string | null; selfieId: string | null;
   templateId: string | null; templateVersion: string | null;
   numberUnavailable?: boolean;
+  provider?: "persona" | "didit";
+  method?: CheckMethod;
+  databaseStep?: "off" | "not_applicable";
 }): Promise<void> {
   const plan = tierMethod(input.tier === "4" ? "4" : "3");
   const actor: DeskActor = {
@@ -517,7 +530,7 @@ export async function writePersonaRecord(db: Db, input: {
   await insertRecord(dbQuery(db), actor, input.clientId, {
     recordId: input.recordId,
     tier: input.tier === "4" ? "4" : "3",
-    method: "id_and_selfie",
+    method: input.method ?? "id_and_selfie",
     result: input.result,
     nameOnId: input.textName,
     documentType: input.documentType,
@@ -535,7 +548,8 @@ export async function writePersonaRecord(db: Db, input: {
     selfieVerificationId: input.selfieId,
     templateId: input.templateId,
     templateVersion: input.templateVersion,
-    databaseStep: input.tier === "4" ? "off" : plan.databaseStep,
+    databaseStep: input.databaseStep ?? (input.tier === "4" ? "off" : plan.databaseStep),
+    provider: input.provider ?? "persona",
     cropCipher: input.cropCipher,
     numberUnavailable: input.numberUnavailable === true,
   });
@@ -561,7 +575,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
             r.document_number_last4, (r.document_number_ciphertext IS NOT NULL) AS number_stored,
             r.number_unavailable, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
             r.provider_checks, r.persona_inquiry_id, r.staff_id, r.inspector_staff_id, r.original_record_id, r.consent_id,
-            r.counter_check_chosen, r.deal_id, r.database_step,
+            r.counter_check_chosen, r.deal_id, r.database_step, r.provider,
             (r.face_crop_ciphertext IS NOT NULL AND r.face_crop_retained_until > now()) AS has_crop,
             r.verified_at > now() - interval '5 years' AS within_five_years,
             o.verified_at AS original_verified_at, o.method AS original_method, o.result AS original_result,
@@ -603,6 +617,9 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const when = new Date(String(row.verified_at));
     const stamp = branchStamp(when, facts.timeZone);
     const method = String(row.method) as CheckMethod;
+    const providerName = str(row, "provider") === "didit" ? "didit" : "persona";
+    const rowTest = providerName === "didit" ? !diditLiveAllowed(env) : test;
+    const label = methodLabel(method, providerName);
     const hasCrop = row.has_crop === true && shop.faceCrop;
     const last = str(row, "document_number_last4");
     const expiryIso = day(row.expiry_date);
@@ -620,7 +637,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
         : result === "needs_review" ? underReviewLine(stamp.date)
           : result === "method_not_completed" ? INCOMPLETE_LINE
             : returningStamp ?? (result === "pass"
-              ? idCheckedLine(stamp.date, METHOD_LABEL[method], test && method === "id_and_selfie")
+              ? idCheckedLine(stamp.date, label, rowTest && method === "id_and_selfie")
               : PROGRESS_LINE));
     const originalExpiry = day(row.original_expiry);
     const originalType = str(row, "original_document_type");
@@ -644,7 +661,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       documentType: docType,
       expiryIso,
       sameShop: true,
-      testPass: test && method === "id_and_selfie" && result === "pass",
+      testPass: rowTest && method === "id_and_selfie" && result === "pass",
       original: method === "returning_client" || result === "returning_confirmed" ? {
         result: str(row, "original_result") ?? "",
         method: originalMethod,
@@ -673,7 +690,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       recordId: row.record_id,
       tier: row.tier,
       method,
-      methodLabel: METHOD_LABEL[method],
+      methodLabel: label,
       result: row.result,
       standingInput,
       line,
@@ -694,7 +711,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       originalRecordId: str(row, "original_record_id"),
       dealId: str(row, "deal_id"),
       deals,
-      statusLine: statusLine(result, method, stamp.date, test, { expiredStamp, returningStamp }),
+      statusLine: statusLine(result, method, stamp.date, rowTest, { expiredStamp, returningStamp }),
     };
   });
   return {

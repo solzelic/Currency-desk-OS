@@ -359,7 +359,7 @@ export async function buildApp(
   registerRatePageRoutes(app, db);
   registerBillingRoutes(app, db);
   /* Per-shop identity-verification settings. Off until an owner turns them on. */
-  registerIdvShopConfigRoutes(app, db);
+  registerIdvShopConfigRoutes(app, db, idv?.env);
   if (ledgerDatabaseUrl) {
     registerLedgerRoutes(app, db, ledgerDatabaseUrl);
     registerQuoteRoutes(app, db, ledgerDatabaseUrl);

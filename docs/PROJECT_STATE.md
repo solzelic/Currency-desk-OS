@@ -1,3 +1,19 @@
+## Didit identity check, sandbox only (25 November 2026)
+
+Didit sits behind the existing `IdvProvider` adapter. Persona is still the
+default and still handles its own webhook. A shop stays on Persona, with
+checks off, until an owner of a test shop selects Didit. A shop that is not
+a test shop cannot select it. On a live host Didit stays unselectable unless
+`DIDIT_LIVE_ALLOWED` is exactly `1`, and that variable stays unset. Missing
+`DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, or `DIDIT_WORKFLOW_ID` answers 503
+`not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 stays
+`not available yet` until `DIDIT_AML_WORKFLOW_ID` is set. A failed, abandoned,
+or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
+It checks the raw-body signature and a 300-second timestamp, and it is
+idempotent on session id plus status. The decision body, the secret, and the
+ID photos are not stored and not logged. Names and the sandbox workflow id
+are in `docs/IDV.md`.
+
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 
 `SIGNIN_MICROSOFT` uses the same callback paths as Google. The authorize URL is the `common` authority. A returning person matches `tid` plus `oid` only. `sub`, email, and `preferred_username` are not keys. `tenants.ms_tenant_allowlist` null leaves that check off. A list refuses any other tenant id. The same oid linked in two shops returns a shop list and does not choose one. The flag still defaults off. With it off, `/login` does not show Microsoft and the Microsoft routes answer 503. When Google and Microsoft are both on, their buttons stack in one column so the Microsoft button stays inside the sign-in column at 1280.

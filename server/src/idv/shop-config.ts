@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { schema, type Db } from "../db/index.js";
+import { diditAmlConfigured, diditRefIssue, diditSelection } from "./providers/didit.js";
 import { defaultIdvProvider, idvProvider } from "./providers/index.js";
 import { personaRefIssue } from "./providers/persona.js";
 
@@ -75,7 +76,7 @@ const reject = (status: 400 | 422, message: string): Parsed => ({ ok: false, sta
 
 /* shopId is allowed and ignored. A field left out stays unchanged.
    Null clears the key name, the template, and the retention. */
-export function parseIdvShopConfig(body: unknown, shopCode: string): Parsed {
+export function parseIdvShopConfig(body: unknown, shopCode: string, currentProvider?: string): Parsed {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return reject(400, BAD_BODY);
   const raw = body as Record<string, unknown>;
   const folded = (key: string) => key.toLowerCase().replace(/-/g, "");
@@ -87,12 +88,15 @@ export function parseIdvShopConfig(body: unknown, shopCode: string): Parsed {
     if (!PROVIDER_SHAPE.test(raw.provider) || !idvProvider(raw.provider)) return reject(422, PROVIDER);
     patch.provider = idvProvider(raw.provider)!.id;
   }
-  const provider = idvProvider(patch.provider ?? defaultIdvProvider().id)!;
+  const provider = idvProvider(patch.provider ?? currentProvider ?? defaultIdvProvider().id) ?? defaultIdvProvider();
 
   if ("apiKeyRef" in raw) {
     if (raw.apiKeyRef === null) patch.apiKeyRef = null;
     else if (typeof raw.apiKeyRef !== "string") return reject(400, BAD_NAME);
-    else {
+    else if (provider.id === "didit") {
+      if (diditRefIssue(raw.apiKeyRef) === "key") return reject(400, KEY_VALUE);
+      patch.apiKeyRef = raw.apiKeyRef;
+    } else {
       const kind = personaRefIssue(raw.apiKeyRef, shopCode);
       if (kind === "key") return reject(400, KEY_VALUE);
       if (kind === "name") return reject(400, BAD_NAME);
@@ -164,7 +168,18 @@ export function parseIdvShopConfig(body: unknown, shopCode: string): Parsed {
   return { ok: true, patch };
 }
 
-export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void {
+export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db, env?: NodeJS.ProcessEnv): void {
+  const readEnv = () => env ?? process.env;
+  const present = async (shopId: string, tenantId: string) => {
+    const config = await load(shopId);
+    const tenant = (await db.select({ isTestShop: schema.tenants.isTestShop }).from(schema.tenants).where(eq(schema.tenants.id, tenantId)).limit(1))[0];
+    const selection = diditSelection(readEnv(), tenant?.isTestShop === true);
+    return {
+      ...config,
+      diditSelectable: selection.ok,
+      tier4: config.provider === "didit" && !diditAmlConfigured(readEnv()) ? "unavailable" as const : null,
+    };
+  };
   const load = async (shopId: string): Promise<IdvShopConfig> => {
     const row = (await db.select().from(schema.idvShopConfig).where(eq(schema.idvShopConfig.shopId, shopId)).limit(1))[0];
     return {
@@ -192,15 +207,15 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void 
 
   app.get("/api/settings/idv", async (req, reply) => {
     const who = await owner(req, reply);
-    return who ? load(who.legalEntityId) : undefined;
+    return who ? present(who.legalEntityId, who.tenantId) : undefined;
   });
 
   app.put("/api/settings/idv", async (req, reply) => {
     const who = await owner(req, reply);
     if (!who) return undefined;
-    const parsed = parseIdvShopConfig(req.body, await shopEnvCodeFor(db, who.tenantId));
-    if (!parsed.ok) return reply.code(parsed.status).send({ code: "IDV_CONFIG_INVALID", message: parsed.message });
     const current = await load(who.legalEntityId);
+    const parsed = parseIdvShopConfig(req.body, await shopEnvCodeFor(db, who.tenantId), current.provider);
+    if (!parsed.ok) return reply.code(parsed.status).send({ code: "IDV_CONFIG_INVALID", message: parsed.message });
     const next: Stored = {
       provider: parsed.patch.provider ?? current.provider,
       apiKeyRef: parsed.patch.apiKeyRef !== undefined ? parsed.patch.apiKeyRef : current.apiKeyRef,
@@ -215,10 +230,15 @@ export function registerIdvShopConfigRoutes(app: FastifyInstance, db: Db): void 
       retentionDays: parsed.patch.retentionDays !== undefined ? parsed.patch.retentionDays : current.retentionDays,
       checksEnabled: parsed.patch.checksEnabled !== undefined ? parsed.patch.checksEnabled : current.checksEnabled,
     };
+    if (next.provider === "didit") {
+      const tenant = (await db.select({ isTestShop: schema.tenants.isTestShop }).from(schema.tenants).where(eq(schema.tenants.id, who.tenantId)).limit(1))[0];
+      const selection = diditSelection(readEnv(), tenant?.isTestShop === true);
+      if (!selection.ok) return reply.code(422).send({ code: "IDV_CONFIG_INVALID", message: selection.message });
+    }
     await db.insert(schema.idvShopConfig).values({ shopId: who.legalEntityId, ...next }).onConflictDoUpdate({
       target: schema.idvShopConfig.shopId,
       set: next,
     });
-    return { shopId: who.legalEntityId, ...next };
+    return present(who.legalEntityId, who.tenantId);
   });
 }

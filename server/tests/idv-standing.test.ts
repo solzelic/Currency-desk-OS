@@ -125,7 +125,8 @@ describe("ID on file from the check record", () => {
     expect(idFileStanding({ ...pass, testPass: true }).chip).toBe("ID verified, scan and selfie (test), 16 Nov 2026");
     const records = readFileSync(new URL("../src/idv/records.ts", import.meta.url), "utf8");
     expect(records).toContain("return verifiedScanChip(date, test);");
-    expect(records).toContain("testPass: test && method === \"id_and_selfie\" && result === \"pass\"");
+    expect(records).toContain("const rowTest = providerName === \"didit\" ? !diditLiveAllowed(env) : test");
+    expect(records).toContain("testPass: rowTest && method === \"id_and_selfie\" && result === \"pass\"");
     const pending = { ...pass, result: "in_progress", line: "ID check in progress" };
     const failed = { ...pass, result: "declined", line: "Not passed 16 Nov 2026" };
     const otherShop = { ...pass, sameShop: false };

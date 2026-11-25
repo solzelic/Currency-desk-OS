@@ -123,6 +123,8 @@ export const migrations: readonly Migration[] = [
   ["083_staff_sign_in_identities", "src/db/migrations/083_staff_sign_in_identities.sql"],
   /* 084 seeds the platform tenant. Sign-in reads it and does not insert it. */
   ["084_platform_tenant", "src/db/migrations/084_platform_tenant.sql"],
+  /* 085 names the identity provider on a check record. Existing rows stay persona. */
+  ["085_idv_didit_provider", "src/db/migrations/085_idv_didit_provider.sql"],
 ] as const;
 
 type MigrationReader = {
