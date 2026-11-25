@@ -16,7 +16,10 @@ liveness, and face match each passed. A counter ID scan
 `DIDIT_DOC_WORKFLOW_ID` only, never the Basic KYC workflow. If that id is
 unset the start answers 409 `DOC_WORKFLOW_UNSET`. A pass needs the ID
 feature Approved and a server attestation: the staff user id, the role,
-and the database clock. Without the attestation it is not verified.
+and the database clock. The attestation is refused with 409 unless that
+scan is still in progress with the ID approved. A later declined, expired,
+or review result clears that flag and cannot be attested into a pass.
+Without the attestation it is not verified.
 `counter_full` ("Full check at the counter") is the Basic KYC workflow and
 still needs ID, liveness, and face match. Failed and declined scans are
 not billed, on every method. The webhook signature checks and the live
