@@ -54146,18 +54146,28 @@ ${(filing.map || []).map(blockHTML).join('')}
         strokeLinecap: "round",
         strokeLinejoin: "round"
       }))), moreOpen && /*#__PURE__*/React.createElement("div", {
-        className: "space-y-2 mt-2"
+        "data-testid": "id-check-more-list",
+        className: "space-y-2 mt-2",
+        style: {
+          height: "auto",
+          overflow: "visible"
+        }
       }, more.map(item => /*#__PURE__*/React.createElement("button", {
         key: item.id,
         type: "button",
+        "data-testid": "id-check-more-" + item.id,
         onClick: () => pick(item.id),
-        className: "w-full text-left px-4",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
         style: {
           minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
           border: `1px solid ${CD.line}`,
           borderRadius: 10,
           background: CD.paper,
-          color: CD.ink
+          color: CD.ink,
+          whiteSpace: "normal"
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[14px] font-semibold"
@@ -54168,25 +54178,31 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, item.note))), tier4Off && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-tier4",
-        className: "w-full min-w-0 text-left px-4 py-2.5",
         "aria-disabled": "true",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
         style: {
+          minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
           border: `1px solid ${CD.line}`,
           borderRadius: 10,
           background: CD.paper,
-          boxSizing: "border-box"
+          color: CD.mute,
+          whiteSpace: "normal",
+          cursor: "default"
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[14px] font-semibold",
         style: {
-          color: CD.ink
+          color: CD.mute
         }
       }, "ID, selfie and database"), /*#__PURE__*/React.createElement("div", {
         className: "text-[12px] mt-0.5",
         style: {
           color: CD.mute
         }
-      }, "ID, selfie and database checks are not available yet"))))));
+      }, "ID, selfie and database checks are not available yet."))))));
     }
     if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-loading",

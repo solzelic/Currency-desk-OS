@@ -401,16 +401,16 @@
             <span>More options</span>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" style={{ flex: "none", transform: moreOpen ? "rotate(180deg)" : "none" }}><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          {moreOpen && <div className="space-y-2 mt-2">
+          {moreOpen && <div data-testid="id-check-more-list" className="space-y-2 mt-2" style={{ height: "auto", overflow: "visible" }}>
             {more.map((item) => (
-              <button key={item.id} type="button" onClick={() => pick(item.id)} className="w-full text-left px-4" style={{ minHeight: 44, border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink }}>
+              <button key={item.id} type="button" data-testid={"id-check-more-" + item.id} onClick={() => pick(item.id)} className="w-full min-w-0 text-left px-4 py-2.5" style={{ minHeight: 44, height: "auto", overflow: "visible", boxSizing: "border-box", border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink, whiteSpace: "normal" }}>
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{item.note}</div>
               </button>
             ))}
-            {tier4Off && <div data-testid="id-check-tier4" className="w-full min-w-0 text-left px-4 py-2.5" aria-disabled="true" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, boxSizing: "border-box" }}>
-              <div className="text-[14px] font-semibold" style={{ color: CD.ink }}>ID, selfie and database</div>
-              <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID, selfie and database checks are not available yet</div>
+            {tier4Off && <div data-testid="id-check-tier4" aria-disabled="true" className="w-full min-w-0 text-left px-4 py-2.5" style={{ minHeight: 44, height: "auto", overflow: "visible", boxSizing: "border-box", border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.mute, whiteSpace: "normal", cursor: "default" }}>
+              <div className="text-[14px] font-semibold" style={{ color: CD.mute }}>ID, selfie and database</div>
+              <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID, selfie and database checks are not available yet.</div>
             </div>}
           </div>}
         </div>}
