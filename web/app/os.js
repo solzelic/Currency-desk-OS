@@ -52638,7 +52638,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       "data-testid": "add-contact-idv-note",
       className: "flex items-start gap-1.5 mt-2 mb-3",
       style: {
-        color: CD.mute
+        color: CD.mute,
+        flexWrap: "nowrap"
       }
     }, /*#__PURE__*/React.createElement("span", {
       className: "flex-none",
@@ -52652,7 +52653,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     })), /*#__PURE__*/React.createElement("span", {
       className: "text-[12px]",
       style: {
-        lineHeight: 1.45
+        lineHeight: 1.45,
+        minWidth: 0
       }
     }, lead)), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",

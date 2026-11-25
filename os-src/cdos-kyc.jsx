@@ -764,9 +764,9 @@
         <div className="flex-1 overflow-auto px-5 py-4">
           {step === 'id' && (<div>
             <div className="text-[12.5px]" style={{ color: CD.mute }}>Capture the customer's government ID. Nothing is read off the document.</div>
-            <div data-testid="add-contact-idv-note" className="flex items-start gap-1.5 mt-2 mb-3" style={{ color: CD.mute }}>
+            <div data-testid="add-contact-idv-note" className="flex items-start gap-1.5 mt-2 mb-3" style={{ color: CD.mute, flexWrap: "nowrap" }}>
               <span className="flex-none" style={{ marginTop: 1 }}><Ic n="info" s={14} c={CD.mute} /></span>
-              <span className="text-[12px]" style={{ lineHeight: 1.45 }}>{lead}</span>
+              <span className="text-[12px]" style={{ lineHeight: 1.45, minWidth: 0 }}>{lead}</span>
             </div>
             {photo ? (
               <div className="relative" style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${CD.line}` }}>
