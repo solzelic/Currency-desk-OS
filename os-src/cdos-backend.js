@@ -85,6 +85,7 @@
         "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
+      if (typeof body.error === "string" && body.error) error.reason = body.error;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
       throw error;

@@ -107,7 +107,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await page.getByText("Save without verifying").click();
   const file = page.getByTestId("client-identity");
   await expect(file).toBeVisible();
-  await expect(file.getByTestId("persona-not-connected")).toHaveText("Persona is not connected yet.");
+  await expect(file.getByTestId("persona-not-connected")).toHaveText("Identity checks are off.");
   await expect(file.getByText(/Background & ID checks via/i)).toHaveCount(0);
   await expect(file.getByText(/screened against/i)).toHaveCount(0);
   await expect(file.getByText(/Verify identity/i)).toHaveCount(0);

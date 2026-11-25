@@ -1018,6 +1018,8 @@
   }
 
   function SettingsView({ perms, setPerms, settings, setSettings, me, serverRole, serverStaffId, log, tickerCfg, setTicker, branches, setBranches, branchMoves, setBranchMoves, jump, rows, setRows, clients, setClients, onOpenLedger, askPin, reqPin }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const idvLeadText = window.CDOS.idvLead(idvShop);
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -1634,7 +1636,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               return (<div className="flex items-center justify-between p-3 mb-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="shield" s={16} c={CD.mute} /></span>
-                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Verification provider <window.CDOS.InfoTip title="Verification provider" body="Persona is not connected yet. No background check or ID verification is sent." /></div><div className="text-[11px]" style={{ color: CD.mute }}>Persona is not connected yet. No check is sent.</div></div>
+                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Verification provider <window.CDOS.InfoTip title="Verification provider" body={idvLeadText + " No background check or ID verification is sent."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} No check is sent.</div></div>
                 </div>
                 <div className="relative flex items-center">
                   <select value={cur} onChange={e => setProv(e.target.value)} className="text-[13px] font-semibold outline-none appearance-none cursor-pointer" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink, padding: '8px 30px 8px 12px' }}>
@@ -1647,7 +1649,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <div className="flex items-center justify-between p-3 mb-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="id" s={16} c={CD.mute} /></span>
-                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body="Persona is not connected yet. No background check is sent and nothing is charged." /></div><div className="text-[11px]" style={{ color: CD.mute }}>Persona is not connected yet. Nothing is charged.</div></div>
+                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body={idvLeadText + " No background check is sent and nothing is charged."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} Nothing is charged.</div></div>
                 </div>
                 <div className="text-right"><div className="text-[13px] font-semibold" style={{ color: CD.mute }}>Not connected</div></div>
               </div>); })()}
@@ -2448,13 +2450,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           {/* ---- identity verification policy — one engine, everywhere the nudge appears ---- */}
           <div className="mt-6 mb-5" style={{ border: `1.5px solid ${CD.ink}`, borderRadius: 14, background: 'var(--cd-chip)', padding: '16px 18px' }}>
             <div className="flex items-center gap-2 font-semibold mb-0.5" style={{ color: CD.ink }}><Ic n="id" s={16} /> Identity verification policy</div>
-            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 520 }}>Persona is not connected yet. No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one.</div>
+            <div className="text-[11px] mb-3" style={{ color: CD.mute, maxWidth: 520 }}>{idvLeadText} No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one.</div>
 
             <div className="p-3 mb-3" style={{ background: 'var(--cd-panel)', border: `1px solid ${CD.line}`, borderRadius: 11 }}>
               <CadenceLadder recheckDays={recheckDays} reverifyDays={reverifyDays} escalate={escalateHighRisk} />
             </div>
 
-            <Row title="Suggest a quick re-screen after" desc="Persona is not connected yet, so this reminder does not screen a list. It only appears inside New Transaction after this many days."><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
+            <Row title="Suggest a quick re-screen after" desc={idvLeadText + " This reminder does not screen a list. It only appears inside New Transaction after this many days."}><select value={recheckDays} onChange={e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[90, 180, 270, 365].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Require full re-verification after" desc="Past this many days — or sooner if the ID on file expires — the nudge becomes a hard stop until a full Verified check runs."><select value={reverifyDays} onChange={e => set('reverifyDays', +e.target.value, `re-verify required ${e.target.value}d`)} className="text-sm px-2.5 py-2 outline-none" style={{ ...inSty, width: 140 }}>{[180, 365, 545, 730].map(d => <option key={d} value={d}>{d} days</option>)}</select></Row>
             <Row title="Escalate high-risk clients to Verified Plus" desc="When a client is flagged high-risk, upgrade any recommended check to the deepest tier automatically."><Sw on={escalateHighRisk} click={() => toggleSet('escalateHighRisk', 'Escalate high-risk to Plus')} /></Row>
             <Row title="Mandatory check on large deals" desc={`Every deal at or above your reportable threshold (${reportLabel}) requires this check before committing — even on a verified profile.`}><Seg value={settings.largeTxCheck || 'off'} onPick={v => set('largeTxCheck', v, `large-deal check ${v}`)} opts={[['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]} /></Row>

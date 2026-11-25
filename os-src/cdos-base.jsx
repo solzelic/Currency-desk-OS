@@ -1388,7 +1388,24 @@
   }
 
 
+  function useIdvShop() {
+    const [shop, setShop] = React.useState(null);
+    React.useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.copy) return undefined;
+      let live = true;
+      api.copy().then((body) => { if (live) setShop(body); }).catch(() => {});
+      return () => { live = false; };
+    }, []);
+    return shop;
+  }
+  function idvLead(shop) {
+    const fn = window.CDOS && window.CDOS.idvProviderCopy;
+    return fn ? fn(shop) : "Identity checks are off.";
+  }
+
   window.CDOS = Object.assign(window.CDOS || {}, {
+    useIdvShop, idvLead,
     CD, ICONS, Ic, TYPES, CCY, TODAY, STAFF, ROLE_CAPS, ROLE_SCOPE, auditFx, RISK_TIERS, normalizeRisk, riskTone,
     COUNTER_CASH, counterCashIn, counterCashOut, dealHome, sumDealHome,
     CD_THEMES, theme: { get: themePref, set: setThemePref, resolve: resolveTheme, apply: applyTheme },

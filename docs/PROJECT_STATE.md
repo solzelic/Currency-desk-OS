@@ -1,3 +1,7 @@
+## Which identity provider, and why a check stopped (25 November 2026)
+
+`GET /api/idv/clients/:clientId` answers any signed-in desk role with `provider` (`persona` or `didit`) and `ready`: `off`, `not_test_shop`, `not_configured`, `privacy_missing`, or `ok`. It still returns `checksEnabled`. The same `ready` is on the consent read. The teller ID check shows that reason when a start or a link stops: checks off, the server's privacy sentence, Didit not set up, or the provider, key, cap, and tier sentences. Shop screens name Persona, Didit, or say identity checks are off. Customer consent no longer prints a bracket placeholder. An empty privacy contact reads "the staff at this counter". With no policy URL the privacy-policy sentence is left out. An empty shop name reads "This shop". That fallback wording is draft for Compliance review (CD-219). Staging still refuses a customer link until `privacyReady` is true. The live lock and tier 4 are unchanged.
+
 ## Didit identity check, sandbox only (25 November 2026)
 
 Didit sits behind the existing `IdvProvider` adapter. Persona is still the

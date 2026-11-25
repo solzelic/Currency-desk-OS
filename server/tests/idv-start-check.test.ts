@@ -215,7 +215,29 @@ describe("sandbox start-check", () => {
     const otherShop = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_a", cookies: cookies.b });
     expect(otherShop.statusCode).toBe(404);
     const empty = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
-    expect(empty.json()).toMatchObject({ status: null });
+    expect(empty.json()).toMatchObject({ status: null, provider: "persona", ready: "off", checksEnabled: false });
+  });
+
+  it("tells a teller the provider and why a check is not ready", async () => {
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli_idv_b', ${B.tenantId}, ${B.legalEntityId}, 'Bea Client')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    const off = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
+    expect(off.statusCode, off.body).toBe(200);
+    expect(off.json()).toMatchObject({ provider: "persona", ready: "off", checksEnabled: false });
+    await enable(B.legalEntityId, true);
+    await handle.db.execute(sql`
+      UPDATE idv_shop_config SET provider = 'didit', checks_enabled = true WHERE shop_id = ${B.legalEntityId}
+    `);
+    const notTest = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
+    expect(notTest.json()).toMatchObject({ provider: "didit", ready: "not_test_shop", checksEnabled: true });
+    await handle.db.execute(sql`UPDATE tenants SET is_test_shop = true WHERE id = ${B.tenantId}`);
+    const missing = await app.inject({ method: "GET", url: "/api/idv/clients/cli_idv_b", cookies: cookies.b });
+    expect(missing.json()).toMatchObject({ provider: "didit", ready: "not_configured", checksEnabled: true });
+    await handle.db.execute(sql`UPDATE tenants SET is_test_shop = false WHERE id = ${B.tenantId}`);
+    await enable(B.legalEntityId, false);
   });
 
   it("reads the client from the ledger connection when that is where the file lives", async () => {

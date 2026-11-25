@@ -10,9 +10,12 @@ export const US_REGION_LINE = "Your information is stored and processed in the U
 
 export const CROP_LINE = "We also keep a small photo of your face from your ID for 5 years, so staff can compare it with you by eye.";
 
-export const PLACEHOLDER_SHOP = "[Shop legal name]";
-export const PLACEHOLDER_PRIVACY = "[Shop privacy officer name or title, email, phone]";
-export const PLACEHOLDER_LINK = "[link]";
+/* Shown to a customer when the shop has not filled the field.
+   Draft wording for Compliance review (CD-219). A bracket placeholder
+   is never shown. privacyReady still requires the real fields, so a
+   staging customer link stays blocked until the owner sets them. */
+export const FALLBACK_SHOP = "This shop";
+export const FALLBACK_PRIVACY = "the staff at this counter";
 
 export type ConsentFill = {
   legalName: string | null;
@@ -26,7 +29,7 @@ export type ConsentFill = {
 
 function shopName(fill: ConsentFill): string {
   const name = fill.legalName?.trim() ?? "";
-  return name || PLACEHOLDER_SHOP;
+  return name || FALLBACK_SHOP;
 }
 
 function shownPhone(value: string): string {
@@ -39,12 +42,17 @@ function shownPhone(value: string): string {
 function privacy(fill: ConsentFill): string {
   const phone = fill.privacyPhone?.trim() ? shownPhone(fill.privacyPhone) : "";
   const parts = [fill.privacyContact?.trim() ?? "", fill.privacyEmail?.trim() ?? "", phone].filter(Boolean);
-  return parts.length ? parts.join(", ") : PLACEHOLDER_PRIVACY;
+  return parts.length ? parts.join(", ") : FALLBACK_PRIVACY;
 }
 
-function link(value: string | null | undefined): string {
-  const trimmed = value?.trim() ?? "";
-  return trimmed || PLACEHOLDER_LINK;
+function policySentence(fill: ConsentFill): string {
+  const url = fill.privacyPolicyUrl?.trim() ?? "";
+  return url ? ` Privacy policy: ${url}.` : "";
+}
+
+function personaNoticeSentence(fill: ConsentFill): string {
+  const url = fill.personaNoticeUrl?.trim() ?? "";
+  return url ? ` Persona's privacy notice: ${url}.` : "";
 }
 
 export function noticeCopy(fill: ConsentFill): string {
@@ -59,7 +67,7 @@ export function noticeCopy(fill: ConsentFill): string {
     "Fraud prevention by Persona: Persona may also use your information to prevent fraud.",
     `How long: ID photos and selfies are deleted within 30 days.${crop} ${ID_DETAILS_LINE} Persona may keep some device information longer to prevent fraud.`,
     "Your choice: you can show your ID to staff at the counter instead.",
-    `Your rights: to see or correct your information, or to ask a question, contact ${privacy(fill)}. Privacy policy: ${link(fill.privacyPolicyUrl)}. Persona's privacy notice: ${link(fill.personaNoticeUrl)}.`,
+    `Your rights: to see or correct your information, or to ask a question, contact ${privacy(fill)}.${policySentence(fill)}${personaNoticeSentence(fill)}`,
   ].join("\n");
 }
 
@@ -85,7 +93,7 @@ export function diditNoticeCopy(fill: ConsentFill): string {
     "Why: to confirm your identity, to detect fraud in this check, and to keep the records the law requires.",
     `How long: ${ID_DETAILS_LINE}`,
     "Your choice: you can show your ID to staff at the counter instead.",
-    `Your rights: to see or correct your information, or to ask a question, contact ${privacy(fill)}. Privacy policy: ${link(fill.privacyPolicyUrl)}.`,
+    `Your rights: to see or correct your information, or to ask a question, contact ${privacy(fill)}.${policySentence(fill)}`,
   ].join("\n");
 }
 

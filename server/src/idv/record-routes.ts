@@ -15,6 +15,7 @@ import {
   agreedConsent, consentFill, dbQuery, inquiryClientId, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
   recordReturning, revealNumber, storeConsent, supersedeRecord, viewFaceCrop, type DeskActor,
 } from "./records.js";
+import { readIdvReady } from "./ready.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import { counterOnly } from "./tiers.js";
 
@@ -54,12 +55,14 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       [actor.branchId, actor.legalEntityId],
     );
     const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
+    const readiness = await readIdvReady(db, actor, env());
     return {
       version: didit ? DIDIT_CONSENT_VERSION : CONSENT_VERSION,
       faceCrop: fill.faceCrop,
       notice: didit ? diditNoticeCopy(fill) : noticeCopy(fill),
       selfieConsent: didit ? diditSelfieConsentCopy(fill) : selfieConsentCopy(fill),
-      provider: didit ? "didit" : "persona",
+      provider: readiness.provider,
+      ready: readiness.ready,
       tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,

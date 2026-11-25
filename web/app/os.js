@@ -2717,7 +2717,28 @@
       c: CD.mute
     }), back, 'ghost')))), document.body);
   }
+  function useIdvShop() {
+    const [shop, setShop] = React.useState(null);
+    React.useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.copy) return undefined;
+      let live = true;
+      api.copy().then(body => {
+        if (live) setShop(body);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
+    return shop;
+  }
+  function idvLead(shop) {
+    const fn = window.CDOS && window.CDOS.idvProviderCopy;
+    return fn ? fn(shop) : "Identity checks are off.";
+  }
   window.CDOS = Object.assign(window.CDOS || {}, {
+    useIdvShop,
+    idvLead,
     CD,
     ICONS,
     Ic,
@@ -3475,6 +3496,7 @@
         "The ledger server rejected this request. Nothing was posted.");
       error.code = body.code || "REQUEST_FAILED";
       error.status = response.status;
+      if (typeof body.error === "string" && body.error) error.reason = body.error;
       if (typeof body.next === "string" && body.next) error.next = body.next;
       if (typeof body.stays === "string" && body.stays) error.stays = body.stays;
       throw error;
@@ -8648,6 +8670,8 @@ if (typeof module !== "undefined" && module.exports) {
     askPin,
     reqPin
   }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const idvLeadText = window.CDOS.idvLead(idvShop);
     /* Re-render when the ledger's pack and lines arrive. Without this the
        compliance tab paints Canada's names and never replaces them. */
     const deskFacts = window.CDOS.useDeskFacts ? window.CDOS.useDeskFacts() : 0;
@@ -10196,13 +10220,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Verification provider ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Verification provider",
-          body: "Persona is not connected yet. No background check or ID verification is sent."
+          body: idvLeadText + " No background check or ID verification is sent."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, "Persona is not connected yet. No check is sent."))), /*#__PURE__*/React.createElement("div", {
+        }, idvLeadText, " No check is sent."))), /*#__PURE__*/React.createElement("div", {
           className: "relative flex items-center"
         }, /*#__PURE__*/React.createElement("select", {
           value: cur,
@@ -10258,13 +10282,13 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Identity verifications",
-          body: "Persona is not connected yet. No background check is sent and nothing is charged."
+          body: idvLeadText + " No background check is sent and nothing is charged."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
             color: CD.mute
           }
-        }, "Persona is not connected yet. Nothing is charged."))), /*#__PURE__*/React.createElement("div", {
+        }, idvLeadText, " Nothing is charged."))), /*#__PURE__*/React.createElement("div", {
           className: "text-right"
         }, /*#__PURE__*/React.createElement("div", {
           className: "text-[13px] font-semibold",
@@ -13375,7 +13399,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           color: CD.mute,
           maxWidth: 520
         }
-      }, "Persona is not connected yet. No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one."), /*#__PURE__*/React.createElement("div", {
+      }, idvLeadText, " No check is sent. A reminder can still appear inside New Transaction. The client file does not offer one."), /*#__PURE__*/React.createElement("div", {
         className: "p-3 mb-3",
         style: {
           background: 'var(--cd-panel)',
@@ -13388,7 +13412,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         escalate: escalateHighRisk
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Suggest a quick re-screen after",
-        desc: "Persona is not connected yet, so this reminder does not screen a list. It only appears inside New Transaction after this many days."
+        desc: idvLeadText + " This reminder does not screen a list. It only appears inside New Transaction after this many days."
       }, /*#__PURE__*/React.createElement("select", {
         value: recheckDays,
         onChange: e => set('recheckDays', +e.target.value, `re-screen nudge ${e.target.value}d`),
@@ -50738,7 +50762,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
-    tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.',
+    tagline: 'This desk screens the name here. Nothing is sent out.',
     price: 3.99,
     channel: 'instant',
     icon: 'search',
@@ -50749,7 +50773,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'verify',
     label: 'Verified',
-    tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.',
+    tagline: 'This desk screens the name here. It does not authenticate an ID.',
     price: 6.99,
     channel: 'link',
     icon: 'id',
@@ -50760,7 +50784,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'plus',
     label: 'Verified Plus',
-    tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.',
+    tagline: 'This desk screens the name here. It does not run a biometric.',
     price: 14.99,
     channel: 'link',
     icon: 'shield',
@@ -51355,6 +51379,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     onCapture,
     recommended
   }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     const t = tmpl(tplId);
     const m = mode || (hasId ? 'inperson' : 'link');
     const list = verified ? TEMPLATES : TEMPLATES.filter(t => t.id !== 'quick');
@@ -51429,7 +51455,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, tt.tagline)), /*#__PURE__*/React.createElement("div", {
+      }, lead, " ", tt.tagline)), /*#__PURE__*/React.createElement("div", {
         className: "text-right flex-none"
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[14px] font-bold",
@@ -51570,6 +51596,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     onClose,
     initialTpl
   }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     rec = rec || {};
     const verified = (() => {
       try {
@@ -51662,7 +51690,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 11,
       c: CD.mute
-    }), " Persona is not connected yet. No check is sent.")), /*#__PURE__*/React.createElement("button", {
+    }), " ", lead, " No check is sent.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -51705,7 +51733,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+    }, lead), /*#__PURE__*/React.createElement("div", {
       className: "text-[13px] font-semibold leading-none",
       style: {
         color: CD.mute
@@ -51754,7 +51782,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+    }, lead), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
@@ -52089,6 +52117,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [idvShop, setIdvShop] = useState(null);
     const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
@@ -52100,6 +52129,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           if (!live || !body) return;
           setIdvStatus(typeof body.status === 'string' ? body.status : '');
           setChecksOn(!!body.checksEnabled);
+          setIdvShop(body);
         }).catch(() => {});
       }
       if (!checksApi || !checksApi.checks) {
@@ -52131,6 +52161,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       expired: 'Expired'
     }[idvStatus] || '';
     const configured = checksOn || !!idvStatus;
+    const lead = window.CDOS.idvLead(idvShop);
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -52188,14 +52219,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Identity verification ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
       title: "Identity verification",
-      body: configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
+      body: configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : lead + " Sanctions screening is not connected yet. Check clients against your government's official lists yourself."
     })), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       "data-testid": configured ? 'persona-connection' : 'persona-not-connected',
       style: {
         color: CD.mute
       }
-    }, configured ? checks.length ? idvWords || 'Identity checks are on for this shop.' : 'Identity checks are on for this shop.' : 'Persona is not connected yet.'), /*#__PURE__*/React.createElement("div", {
+    }, configured ? checks.length ? idvWords || 'Identity checks are on for this shop.' : 'Identity checks are on for this shop.' : lead), /*#__PURE__*/React.createElement("div", {
       className: "text-[11px]",
       "data-testid": "client-not-screened",
       style: {
@@ -52269,7 +52300,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.faint
       }
-    }, configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'));
+    }, configured ? 'No verifications on file.' : 'No verifications on file. ' + lead));
   }
 
   /* ====================================================================
@@ -52290,6 +52321,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     requireId
   }) {
     const store = useStore();
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     const [step, setStep] = useState('id'); // id | details | verifying | done
     const [photo, setPhoto] = useState(null);
     const [name, setName] = useState(initialName || '');
@@ -52566,7 +52599,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet.")), /*#__PURE__*/React.createElement("button", {
+    }, lead)), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -52611,7 +52644,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
+    }, "Capture the customer's government ID. ", lead, " Nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",
       style: {
         borderRadius: 12,
@@ -52713,7 +52746,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in."), /*#__PURE__*/React.createElement("div", {
+    }, "Just the basics to create the contact. ", lead, " It does not fill the file in."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex mb-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -52792,7 +52825,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "send",
       s: 11,
       c: CD.faint
-    }), " Persona is not connected yet. Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(VerifyChooserBody, {
+    }), " ", lead, " Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(VerifyChooserBody, {
       subject: name.trim() || 'this contact',
       hasId: !!photo,
       verified: false,
@@ -52869,7 +52902,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
+    }, lead), /*#__PURE__*/React.createElement("div", {
       className: "text-[12.5px] mt-1 mx-auto",
       style: {
         color: CD.mute,
@@ -53026,7 +53059,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.faint
         }
-      }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
+      }, lead), /*#__PURE__*/React.createElement("div", {
         className: "text-[13px] font-semibold leading-none",
         style: {
           color: CD.mute
@@ -53549,6 +53582,31 @@ ${(filing.map || []).map(blockHTML).join('')}
   function linesOf(text) {
     return String(text || "").split("\n").filter(Boolean);
   }
+  /* The teller sees which provider this shop uses, or that checks are off.
+     ready comes from GET /api/idv/clients/:id and from the consent read. */
+  function idvProviderCopy(shop) {
+    if (!shop || shop.ready === "off") return "Identity checks are off.";
+    if (shop.provider === "didit") {
+      if (shop.ready === "not_configured") return "Didit is not set up on this server.";
+      if (shop.ready === "not_test_shop") return "Didit can be used only on a staging test shop.";
+      if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
+      return "Didit is the identity provider for this shop.";
+    }
+    if (shop.ready === "not_configured") return "Persona is not set up on this server.";
+    if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
+    return "Persona is the identity provider for this shop.";
+  }
+  function stopLine(err) {
+    const code = err && err.code;
+    const message = err && err.message || "";
+    if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
+    if (code === "PRIVACY_CONTACT") return message || "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Didit is not set up on this server.";
+    if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
+      return message || "The ID check did not finish. Try again, or check the ID in person.";
+    }
+    return "The ID check did not finish. Try again, or check the ID in person.";
+  }
   function inquiryLine(status) {
     if (status === "Check passed" || status === "Check passed (test)") return status;
     if (status === "starting" || status === "in progress") return "ID check in progress";
@@ -53882,7 +53940,10 @@ ${(filing.map || []).map(blockHTML).join('')}
         } else if (err && (err.code === "COUNTER_ONLY" || /Inspect the original ID/.test(err.message || ""))) {
           setCounterLine(err.message || "");
           setStep("chooser");
-        } else setStep("failed");
+        } else {
+          setError(stopLine(err));
+          setStep("failed");
+        }
       }
       setBusy(false);
     };
@@ -54028,7 +54089,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, "Close")), /*#__PURE__*/React.createElement("div", {
       "data-testid": testid,
       className: "px-5 py-4"
-    }, body), error && /*#__PURE__*/React.createElement("div", {
+    }, body), error && step !== "failed" && step !== "incomplete" && /*#__PURE__*/React.createElement("div", {
       role: "alert",
       "data-testid": "id-check-storage",
       className: "text-[13px] px-5 pb-4",
@@ -54270,7 +54331,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "The ID check did not finish. Try again, or check the ID in person."), /*#__PURE__*/React.createElement("button", {
+    }, error || "The ID check did not finish. Try again, or check the ID in person."), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "id-check-error-in-person",
       onClick: () => {
@@ -55157,12 +55218,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, note));
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
+    idvProviderCopy,
     IdCheck: {
       Panel,
       Flow,
       DealBar,
       Settings,
-      customerSteps
+      customerSteps,
+      stopLine
     }
   });
 })();
@@ -67237,6 +67300,24 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const h = Math.round(m / 60);
     return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
   };
+  let idvLeadText = 'Identity checks are off.';
+  function useIdvLead() {
+    const [lead, setLead] = useState(idvLeadText);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.copy) return undefined;
+      let live = true;
+      api.copy().then(body => {
+        if (!live) return;
+        idvLeadText = window.CDOS.idvLead(body);
+        setLead(idvLeadText);
+      }).catch(() => {});
+      return () => {
+        live = false;
+      };
+    }, []);
+    return lead;
+  }
   const phDigits = p => (p || '').replace(/\D/g, '').slice(-10);
   const DEF_TG = {
     desk: 'YORK FX',
@@ -67257,7 +67338,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     tpl: {
       quote: '{desk}: {amount} {ccy} = ${total} CAD at {rate}. This is our live counter rate. Reply Y and we’ll hold it for {mins} min — N to pass.',
       hold: 'Done — {rate} is held for you until {time}. Your ref is {ref} — give it at the counter. Bring one piece of government photo ID.',
-      verify: 'Persona is not connected yet. No identity check is sent.',
+      verify: 'Identity checks are off. No identity check is sent.',
       ready: 'Give ref {ref} at the counter — your rate stays locked until {time}.',
       nudge: 'Heads up — your held rate (ref {ref}) expires in 10 minutes.',
       closed: 'No problem. Today’s rates are always live at {site} — text back any time.',
@@ -67381,7 +67462,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       rate: 0.0248,
       total: 1984,
       holdUntil: n + 6 * 60000,
-      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Persona is not connected yet. No identity check is sent.'), sys('Persona is not connected yet. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
+      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Identity checks are off. No identity check is sent.'), sys('Identity checks are off. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
     }, {
       id: 'r6',
       ref: 'TQ-1041',
@@ -67477,7 +67558,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       kind: 'System',
       dir: 'sys',
       to: '+1 416 555 0158',
-      detail: 'Persona is not connected yet. No identity check was sent.'
+      detail: 'Identity checks are off. No identity check was sent.'
     }, {
       t: n - 69 * m,
       kind: 'Hold',
@@ -68065,6 +68146,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     contacts,
     onClose
   }) {
+    const lead = useIdvLead();
     const scroller = useRef(null);
     const [sending, setSending] = useState(false);
     const [etaD, setEtaD] = useState(r.etaDays || 2);
@@ -68550,7 +68632,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.faint
       }
-    }, "Persona is not connected yet. Key ", /*#__PURE__*/React.createElement("b", {
+    }, lead, " Key ", /*#__PURE__*/React.createElement("b", {
       style: {
         fontFamily: 'Space Mono'
       }
@@ -68786,6 +68868,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     setTg,
     setTpl
   }) {
+    const lead = useIdvLead();
     const ctx = useMemo(() => {
       const rate = sellRate('USD');
       const until = Date.now() + tg.holdMins * 60000;
@@ -68806,11 +68889,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const preview = useMemo(() => {
       const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))];
       if (tg.verifyStep) {
-        msgs.push(out(render(tg.tpl.verify, ctx)), sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctx)));
+        msgs.push(out(render(tg.tpl.verify, ctx)), sys(lead + ' No identity check was sent.'), out(render(tg.tpl.ready, ctx)));
       }
       if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx)));
       return msgs;
-    }, [tg, ctx]);
+    }, [tg, ctx, lead]);
     return /*#__PURE__*/React.createElement("div", {
       className: "p-4 grid gap-5",
       style: {
@@ -68873,7 +68956,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       n: "3",
       title: "ID verify invite",
       trigKind: "auto",
-      trig: "Persona is not connected yet. This step does not send a check.",
+      trig: lead + " This step does not send a check.",
       on: tg.verifyStep,
       toggle: /*#__PURE__*/React.createElement(Toggle, {
         small: true,
@@ -68891,7 +68974,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       n: "4",
       title: "Ready confirmation",
       trigKind: "auto",
-      trig: "Persona is not connected yet. This does not clear an ID.",
+      trig: lead + " This does not clear an ID.",
       on: tg.verifyStep
     }, /*#__PURE__*/React.createElement(MsgEditor, {
       v: tg.tpl.ready,
@@ -69796,6 +69879,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     }, desc)), children);
   }
   function TextsSettings() {
+    const lead = useIdvLead();
     const [tg, setTgRaw] = useState(() => {
       const b = load(TGKEY, null);
       return b ? {
@@ -70157,7 +70241,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.faint
       }
-    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. Persona is not connected yet. No identity check is billed.")), /*#__PURE__*/React.createElement("div", {
+    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. ", lead, " No identity check is billed.")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] px-1",
       style: {
         color: CD.faint
@@ -70330,7 +70414,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         upd(id, r => ({
           ...r,
           status: 'verified',
-          thread: [...r.thread, sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))]
+          thread: [...r.thread, sys(idvLeadText + ' No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))]
         }));
         bump(1);
         if (r0) {

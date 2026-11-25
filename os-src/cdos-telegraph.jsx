@@ -25,6 +25,22 @@
   const boardRate = (ccy) => { try { const r = crossRate(ccy, 'CAD'); return r && isFinite(r) && r > 0 ? r : 1; } catch (e) { return 1; } };
   const sellRate = (ccy) => +(boardRate(ccy) * 1.0175).toFixed(4);
   const ago = (ts) => { const m = Math.max(0, Math.round((Date.now() - ts) / 60000)); if (m < 1) return 'now'; if (m < 60) return m + 'm ago'; const h = Math.round(m / 60); return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago'; };
+  let idvLeadText = 'Identity checks are off.';
+  function useIdvLead() {
+    const [lead, setLead] = useState(idvLeadText);
+    useEffect(() => {
+      const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
+      if (!api || !api.copy) return undefined;
+      let live = true;
+      api.copy().then((body) => {
+        if (!live) return;
+        idvLeadText = window.CDOS.idvLead(body);
+        setLead(idvLeadText);
+      }).catch(() => {});
+      return () => { live = false; };
+    }, []);
+    return lead;
+  }
 
   const phDigits = (p) => (p || '').replace(/\D/g, '').slice(-10);
   const DEF_TG = {
@@ -34,7 +50,7 @@
     tpl: {
       quote: '{desk}: {amount} {ccy} = ${total} CAD at {rate}. This is our live counter rate. Reply Y and we’ll hold it for {mins} min — N to pass.',
       hold: 'Done — {rate} is held for you until {time}. Your ref is {ref} — give it at the counter. Bring one piece of government photo ID.',
-      verify: 'Persona is not connected yet. No identity check is sent.',
+      verify: 'Identity checks are off. No identity check is sent.',
       ready: 'Give ref {ref} at the counter — your rate stays locked until {time}.',
       nudge: 'Heads up — your held rate (ref {ref}) expires in 10 minutes.',
       closed: 'No problem. Today’s rates are always live at {site} — text back any time.',
@@ -55,7 +71,7 @@
       { id: 'r3', ref: 'TQ-1044', kind: 'quote', phone: '+1 905 555 0121', name: 'P. Osei', site: 'yorkfx.ca', br: 'Yonge St', ccy: 'USD', amount: 2500, at: n - 26 * 60000, status: 'held', rate: 1.3958, total: 3489.5, holdUntil: n + 14 * 60000, thread: [sys('Quote requested on yorkfx.ca — 2,500 USD'), out(q(2500, 'USD', 3489.5, 1.3958, 30)), inn('Y'), out(`Done — 1.3958 is held for you until ${hhmm(n + 14 * 60000)}. Your ref is TQ-1044 — give it at the counter. Bring one piece of government photo ID.`), out('Want to skip the wait? Verify your ID before you arrive: desk.cd/v/tq-1044')] },
       { id: 'r9', ref: 'TO-2011', kind: 'order', phone: '+1 905 555 0177', name: '', site: 'yorkfx.ca', br: 'Scarborough', ccy: 'ZAR', amount: 20000, at: n - 22 * 3600000, status: 'order_placed', etaDays: 2, thread: [sys('Currency order on yorkfx.ca — 20,000 ZAR · pickup Scarborough'), out('YORK FX: we can order 20,000 ZAR for you — usually 2 business days. We’ll text you the moment it arrives. Your ref is TO-2011.')] },
       { id: 'r4', ref: 'TQ-1043', kind: 'quote', phone: '+1 437 555 0163', name: '', site: 'yorkfx.ca', br: 'Scarborough', ccy: 'INR', amount: 150000, at: n - 38 * 60000, status: 'quoted', rate: 0.0167, total: 2505, thread: [sys('Quote requested on yorkfx.ca — 150,000 INR · pickup Scarborough'), out(q(150000, 'INR', 2505, 0.0167, 30))] },
-      { id: 'r5', ref: 'TQ-1042', kind: 'quote', phone: '+1 416 555 0158', name: 'A. Reyes', site: 'yorkfx.ca', br: 'Yonge St', ccy: 'PHP', amount: 80000, at: n - 71 * 60000, status: 'verified', rate: 0.0248, total: 1984, holdUntil: n + 6 * 60000, thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Persona is not connected yet. No identity check is sent.'), sys('Persona is not connected yet. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)] },
+      { id: 'r5', ref: 'TQ-1042', kind: 'quote', phone: '+1 416 555 0158', name: 'A. Reyes', site: 'yorkfx.ca', br: 'Yonge St', ccy: 'PHP', amount: 80000, at: n - 71 * 60000, status: 'verified', rate: 0.0248, total: 1984, holdUntil: n + 6 * 60000, thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Identity checks are off. No identity check is sent.'), sys('Identity checks are off. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)] },
       { id: 'r6', ref: 'TQ-1041', kind: 'quote', phone: '+1 289 555 0102', name: '', site: 'yorkfx.ca', br: 'Yonge St', ccy: 'USD', amount: 800, at: n - 3.2 * 3600000, status: 'collected', rate: 1.3952, total: 1116.16, thread: [sys('Quote requested on yorkfx.ca — 800 USD'), out(q(800, 'USD', 1116.16, 1.3952, 30)), inn('Y'), out(`Done — 1.3952 is held for you until ${hhmm(n - 2.7 * 3600000)}. Your ref is TQ-1041 — give it at the counter. Bring one piece of government photo ID.`), sys('Collected at the counter · till 2')] },
       { id: 'r7', ref: 'TQ-1039', kind: 'quote', phone: '+1 647 555 0114', name: '', site: 'yorkfx.ca', br: 'Scarborough', ccy: 'GBP', amount: 400, at: n - 26 * 3600000, status: 'expired', rate: 1.744, total: 697.6, thread: [sys('Quote requested on yorkfx.ca — 400 GBP · pickup Scarborough'), out(q(400, 'GBP', 697.6, 1.744, 30)), inn('Y'), sys('Hold expired — no visit')] }
     ];
@@ -72,7 +88,7 @@
       { t: n - 26 * m, kind: 'Request', dir: 'in', to: '+1 905 555 0121', detail: 'Quote request — 2,500 USD · yorkfx.ca' },
       { t: n - 37 * m, kind: 'Quote', dir: 'out', to: '+1 437 555 0163', detail: 'TQ-1043 — 150,000 INR = $2,505.00 at 0.0167' },
       { t: n - 55 * m, kind: 'Ready', dir: 'out', to: '+1 416 555 0158', detail: 'TQ-1042 — verified, locked until pickup' },
-      { t: n - 55 * m, kind: 'System', dir: 'sys', to: '+1 416 555 0158', detail: 'Persona is not connected yet. No identity check was sent.' },
+      { t: n - 55 * m, kind: 'System', dir: 'sys', to: '+1 416 555 0158', detail: 'Identity checks are off. No identity check was sent.' },
       { t: n - 69 * m, kind: 'Hold', dir: 'out', to: '+1 416 555 0158', detail: 'TQ-1042 — 0.0248 held 30 min + verify link' },
       { t: n - 70 * m, kind: 'Quote', dir: 'out', to: '+1 416 555 0158', detail: 'TQ-1042 — 80,000 PHP = $1,984.00 at 0.0248' },
       { t: n - 2.9 * h, kind: 'System', dir: 'sys', to: '+1 289 555 0102', detail: 'TQ-1041 collected at the counter · till 2' },
@@ -192,6 +208,7 @@
     </div>);
   }
   function RequestModal({ r, tg, acts, onStartTx, contacts, onClose }) {
+    const lead = useIdvLead();
     const scroller = useRef(null);
     const [sending, setSending] = useState(false);
     const [etaD, setEtaD] = useState(r.etaDays || 2);
@@ -295,7 +312,7 @@
             <button onClick={() => acts.collect(r.id)} className="tg-send px-3.5 py-2 text-[12px] font-semibold text-white" style={{ background: '#1D6B45', borderRadius: 8 }}>Mark collected</button>
           </div>); })()}
           {r.status === 'verified' && <div className="flex items-center gap-2">
-            <span className="text-[11px] flex-1" style={{ color: CD.faint }}>Persona is not connected yet. Key <b style={{ fontFamily: 'Space Mono' }}>{r.ref}</b> into the transaction at the counter.</span>
+            <span className="text-[11px] flex-1" style={{ color: CD.faint }}>{lead} Key <b style={{ fontFamily: 'Space Mono' }}>{r.ref}</b> into the transaction at the counter.</span>
             {onStartTx && <button onClick={() => { onClose(); onStartTx(r.ref); }} className="tg-send px-3.5 py-2 text-[12px] font-semibold text-white" style={{ background: CD.ink, borderRadius: 8 }}>Start transaction</button>}
             <button onClick={() => acts.collect(r.id)} className="tg-send px-3.5 py-2 text-[12px] font-semibold text-white" style={{ background: '#1D6B45', borderRadius: 8 }}>Mark collected</button>
           </div>}
@@ -355,8 +372,9 @@
     </div>);
   }
   function Journey({ tg, setTg, setTpl }) {
+    const lead = useIdvLead();
     const ctx = useMemo(() => { const rate = sellRate('USD'); const until = Date.now() + tg.holdMins * 60000; return { desk: tg.desk, amount: '1,000', ccy: 'USD', total: num(Math.round(1000 * rate * 100) / 100), rate: rate.toFixed(4), mins: tg.holdMins, ref: 'TQ-1047', time: hhmm(until), link: 'desk.cd/v/tq-1047', site: 'yorkfx.ca', days: 2 }; }, [tg]);
-    const preview = useMemo(() => { const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))]; if (tg.verifyStep) { msgs.push(out(render(tg.tpl.verify, ctx)), sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctx))); } if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx))); return msgs; }, [tg, ctx]);
+    const preview = useMemo(() => { const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))]; if (tg.verifyStep) { msgs.push(out(render(tg.tpl.verify, ctx)), sys(lead + ' No identity check was sent.'), out(render(tg.tpl.ready, ctx))); } if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx))); return msgs; }, [tg, ctx, lead]);
     return (<div className="p-4 grid gap-5" style={{ gridTemplateColumns: 'minmax(0,1fr) 296px' }}>
       <div>
         <div className="mb-3"><div className="text-sm font-semibold" style={{ color: CD.ink }}>The text-a-quote journey</div><div className="text-[11px]" style={{ color: CD.mute }}>What happens after someone requests a quote on your website. Every message is yours to edit.</div></div>
@@ -366,10 +384,10 @@
         <Step n="2" title="Hold confirmation" trigKind="reply" trig="they replied Y — the ref redeems the rate at the counter" toggle={<label className="flex items-center gap-1.5 text-[11px]" style={{ color: CD.mute }}>Hold for<input type="number" min="5" max="120" value={tg.holdMins} onChange={e => setTg({ holdMins: Math.max(5, Math.min(120, +e.target.value || 30)) })} className="w-12 text-center outline-none py-0.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 6, fontFamily: 'Space Mono', fontSize: 11 }} />min</label>}>
           <MsgEditor v={tg.tpl.hold} onChange={v => setTpl('hold', v)} fields={['rate', 'time', 'ref']} ctx={ctx} />
         </Step>
-        <Step n="3" title="ID verify invite" trigKind="auto" trig="Persona is not connected yet. This step does not send a check." on={tg.verifyStep} toggle={<Toggle small on={tg.verifyStep} click={() => setTg({ verifyStep: !tg.verifyStep })} />}>
+        <Step n="3" title="ID verify invite" trigKind="auto" trig={lead + " This step does not send a check."} on={tg.verifyStep} toggle={<Toggle small on={tg.verifyStep} click={() => setTg({ verifyStep: !tg.verifyStep })} />}>
           <MsgEditor v={tg.tpl.verify} onChange={v => setTpl('verify', v)} fields={['link']} ctx={ctx} />
         </Step>
-        <Step n="4" title="Ready confirmation" trigKind="auto" trig="Persona is not connected yet. This does not clear an ID." on={tg.verifyStep}>
+        <Step n="4" title="Ready confirmation" trigKind="auto" trig={lead + " This does not clear an ID."} on={tg.verifyStep}>
           <MsgEditor v={tg.tpl.ready} onChange={v => setTpl('ready', v)} fields={['ref', 'time']} ctx={ctx} />
         </Step>
         <Step n="5" title="Expiry reminder" trigKind="timer" trig="10 minutes before the hold lapses" on={tg.nudge} toggle={<Toggle small on={tg.nudge} click={() => setTg({ nudge: !tg.nudge })} />}>
@@ -573,6 +591,7 @@
   /* ===================== SETTINGS › TEXTS (lives in the Settings app) ===================== */
   function SetRow({ title, desc, children }) { return (<div className="flex items-center gap-3 py-2.5" style={{ borderTop: `1px solid ${CD.lineSoft}` }}><div className="flex-1 min-w-0"><div className="text-[13px] font-medium" style={{ color: CD.ink }}>{title}</div>{desc && <div className="text-[11px]" style={{ color: CD.mute }}>{desc}</div>}</div>{children}</div>); }
   function TextsSettings() {
+    const lead = useIdvLead();
     const [tg, setTgRaw] = useState(() => { const b = load(TGKEY, null); return b ? { ...DEF_TG, ...b, tpl: { ...DEF_TG.tpl, ...(b.tpl || {}) } } : DEF_TG; });
     const [sites, setSitesRaw] = useState(() => load(SKEY2, DEF_SITES));
     const [preview, setPreview] = useState(false);
@@ -644,7 +663,7 @@
       <div className="p-3.5 mb-3" style={cardSty}>
         <div className="flex items-center justify-between mb-1"><span className="text-sm font-semibold" style={{ color: CD.ink }}>This month</span><span className="text-[11px]" style={{ color: CD.mute, fontFamily: 'Space Mono', fontVariantNumeric: 'tabular-nums' }}>{num(tg.monthSent)} of {num(tg.monthIncl)} texts</span></div>
         <div style={{ height: 8, background: CD.lineSoft, borderRadius: 999, overflow: 'hidden' }}><div style={{ width: pct + '%', height: '100%', background: pct > 90 ? CD.flag : ACC, borderRadius: 999 }}></div></div>
-        <div className="text-[10px] mt-1.5" style={{ color: CD.faint }}>Texting is included in every plan — even Basic. Past {num(tg.monthIncl)}, overage is 1.5¢ per text. Persona is not connected yet. No identity check is billed.</div>
+        <div className="text-[10px] mt-1.5" style={{ color: CD.faint }}>Texting is included in every plan — even Basic. Past {num(tg.monthIncl)}, overage is 1.5¢ per text. {lead} No identity check is billed.</div>
       </div>
       <div className="text-[10px] px-1" style={{ color: CD.faint }}>Consent, quiet hours and instant STOP handling follow CASL. Every message is kept in the Texts app’s History.</div>
       {preview && <WidgetModal tg={tg} onClose={() => setPreview(false)} onTry={() => { try { window.dispatchEvent(new Event('cdos_tg_try')); } catch (e) {} }} />}
@@ -678,7 +697,7 @@
     const acts = {
       quote: (id, rateOv) => { const r0 = byId(id); const rateQ = rateOv && +rateOv > 0 ? +(+rateOv).toFixed(4) : sellRate(r0 ? r0.ccy : 'USD'); upd(id, r => { const rate = rateOv && +rateOv > 0 ? rateQ : sellRate(r.ccy); const total = Math.round(r.amount * rate * 100) / 100; const nr = { ...r, rate, total, status: 'quoted', holdUntil: null, nudged: false }; return { ...nr, thread: [...r.thread, out(render(tg.tpl.quote, ctxFor(nr)))] }; }); bump(1); if (r0) { addLog('Quote', 'out', r0.phone, `${r0.ref} — ${num(r0.amount)} ${r0.ccy} at ${rateQ.toFixed(4)}`); log && log('Quote texted', r0.ref + ' · ' + r0.phone); } },
       reply: (id, yn) => { const r0 = byId(id); upd(id, r => { if (yn === 'N') return { ...r, status: 'closed', thread: [...r.thread, inn('N'), out(render(tg.tpl.closed, ctxFor(r)))] }; const holdUntil = Date.now() + tg.holdMins * 60000; const nr = { ...r, status: 'held', holdUntil, nudged: false }; const th = [...r.thread, inn('Y'), out(render(tg.tpl.hold, ctxFor(nr)))]; if (tg.verifyStep) th.push(out(render(tg.tpl.verify, ctxFor(nr)))); return { ...nr, thread: th }; }); bump(yn === 'Y' ? (tg.verifyStep ? 2 : 1) : 1); if (r0) addLog(yn === 'Y' ? 'Hold' : 'Reply', yn === 'Y' ? 'out' : 'in', r0.phone, yn === 'Y' ? `${r0.ref} — held ${tg.holdMins} min${tg.verifyStep ? ' + verify link' : ''}` : 'N — passed on the quote'); if (r0) log && log(yn === 'Y' ? 'Rate held by text' : 'Quote declined by text', r0.ref); },
-      verify: (id) => { const r0 = byId(id); upd(id, r => ({ ...r, status: 'verified', thread: [...r.thread, sys('Persona is not connected yet. No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))] })); bump(1); if (r0) { addLog('Ready', 'out', r0.phone, `${r0.ref} — verified, locked until pickup`); log && log('Customer verified ahead of visit', r0.ref); } },
+      verify: (id) => { const r0 = byId(id); upd(id, r => ({ ...r, status: 'verified', thread: [...r.thread, sys(idvLeadText + ' No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))] })); bump(1); if (r0) { addLog('Ready', 'out', r0.phone, `${r0.ref} — verified, locked until pickup`); log && log('Customer verified ahead of visit', r0.ref); } },
       collect: (id) => { const r0 = byId(id); upd(id, r => ({ ...r, status: 'collected', thread: [...r.thread, sys('Collected at the counter')] })); if (r0) { addLog('System', 'sys', r0.phone, `${r0.ref} collected at the counter`); log && log('Held rate collected', r0.ref); } },
       dismiss: (id) => { const r0 = byId(id); upd(id, r => ({ ...r, status: 'closed', thread: [...r.thread, sys('Dismissed — no reply sent')] })); if (r0) addLog('System', 'sys', r0.phone, `${r0.ref} dismissed — no reply sent`); },
       placeOrder: (id, days) => { const r0 = byId(id); upd(id, r => { const nr = { ...r, status: 'order_placed', etaDays: days }; return { ...nr, thread: [...r.thread, out(render(tg.tpl.orderq, ctxFor(nr)))] }; }); bump(1); if (r0) { addLog('Order', 'out', r0.phone, `${r0.ref} — ${num(r0.amount)} ${r0.ccy}, ~${days} business days`); log && log('Currency order placed', r0.ref + ' · ' + num(r0.amount) + ' ' + r0.ccy); } },

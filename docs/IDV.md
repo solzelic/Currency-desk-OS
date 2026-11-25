@@ -66,9 +66,18 @@ and the DPA are signed. These five items are still open:
    `https://currencydesk-staging.onrender.com/api/webhooks/idv/didit`
    for `status.updated` and `data.updated`, version v3.
 4. Start an ID and selfie check. The counter shows a `verify.didit.me` link.
-   The same screen lists five steps: share a link or a QR code, the customer
-   scans their ID, the customer takes a selfie, the result comes back, and
-   there is no charge if the check fails. A Persona shop does not show them.
+
+`GET /api/idv/clients/:clientId` also returns `provider` and `ready`
+(`off`, `not_test_shop`, `not_configured`, `privacy_missing`, `ok`) to any
+signed-in desk role. The consent read returns the same `ready`. A stopped
+check on the desk says why. Customer consent uses "the staff at this counter"
+when the privacy contact is empty, and drops the privacy-policy sentence when
+there is no URL. Staging still blocks the customer link until the privacy
+fields are set. That fallback wording is draft for Compliance review (CD-219).
+
+The same screen lists five steps: share a link or a QR code, the customer
+scans their ID, the customer takes a selfie, the result comes back, and
+there is no charge if the check fails. A Persona shop does not show them.
 
 ## References
 
