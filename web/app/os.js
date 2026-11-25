@@ -2536,7 +2536,20 @@
       setPin(p => p.slice(0, -1));
     };
     React.useEffect(() => {
+      const typing = target => {
+        if (!target || typeof target.tagName !== "string") return false;
+        const tag = target.tagName.toUpperCase();
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+        return target.isContentEditable === true;
+      };
+      const padOnTop = () => {
+        const pad = document.querySelector("[data-pin-pad]");
+        if (!pad) return false;
+        const top = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
+        return !!(top && (top === pad || pad.contains(top)));
+      };
       const h = e => {
+        if (typing(e.target) || !padOnTop()) return;
         if (e.key === 'Escape') {
           onCancel && onCancel();
           return;
@@ -2590,6 +2603,7 @@
       }, label);
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      "data-pin-pad": "open",
       style: {
         position: 'fixed',
         inset: 0,
@@ -3425,6 +3439,13 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    var timer = 0;
+    var controller = null;
+    if (!init.signal && typeof AbortController === "function") {
+      controller = new AbortController();
+      init.signal = controller.signal;
+      timer = setTimeout(function () { controller.abort(); }, 15000);
+    }
     try {
       response = await fetch(path, init);
     } catch (cause) {
@@ -3432,6 +3453,8 @@
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     var body = {};
@@ -25201,7 +25224,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          EXISTING customer is what the picker is for.
           Returns the created record, or null when this desk is not
          server-backed. */
-      async open(name, deskRecord) {
+      async open(name, deskRecord, opts) {
         const client = api();
         if (!client || mode === 'local') return null;
         const rec = deskRecord || {};
@@ -25209,8 +25232,11 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           legalName: String(name).trim(),
           kind: rec.kind === 'corporate' ? 'business' : 'individual'
         }, client.fromDeskFields(rec)));
-        await applyDocument(created.clientId, rec);
-        await load(true);
+        /* Add contact closes as soon as create answers. The document and
+           the list refresh keep going. Record the ID still waits. */
+        const after = Promise.all([applyDocument(created.clientId, rec).catch(() => {}), load(true).catch(() => {})]);
+        if (opts && opts.wait === false) return created;
+        await after;
         return created;
       },
       /* Fold what a verification read off the document into a file that
@@ -52286,21 +52312,14 @@ ${(filing.map || []).map(blockHTML).join('')}
     by,
     setClients,
     onClose,
-    onDone,
-    requireId
+    onDone
   }) {
-    const store = useStore();
-    const [step, setStep] = useState('id'); // id | details | verifying | done
+    const [step, setStep] = useState('id');
     const [photo, setPhoto] = useState(null);
     const [name, setName] = useState(initialName || '');
     const [kind, setKind] = useState('individual');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
-    const [tplId, setTplId] = useState('verify');
-    const [mode, setMode] = useState(null);
-    const [via, setVia] = useState('sms');
-    const [checkId, setCheckId] = useState(null);
-    const applied = useRef(false);
     const onFile = async file => {
       if (!file) return;
       const taken = await window.CDOS.intakeIdImage(file); // see cdos-base.jsx
@@ -52404,91 +52423,58 @@ ${(filing.map || []).map(blockHTML).join('')}
       return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', err && err.message || err));
     };
     const [saving, setSaving] = useState(false);
-    /* Escape hatch: create the contact without running (or paying for) a
-       verification.
-        This ONE path waits for the server, unlike the mid-transaction
-       paths above. What happens immediately afterwards is that the new
-       file is opened on screen, and the single most important thing a
-       brand-new file can say — that somebody else on this desk already
-       has that name — is a fact only the server holds. Handing the
-       teller the browser's copy meant handing them a file with that
-       warning missing, which is the exact defect these records moved to
-       the server to end. One round-trip at the end of the wizard, and
-       the button says it is working. */
-    const saveManual = async () => {
-      const nm = name.trim();
-      if (!nm || saving) return;
-      writeContact(nm);
-      setSaving(true);
-      try {
-        await publishContact(nm);
-      } finally {
-        setSaving(false);
+    const [saveNote, setSaveNote] = useState('');
+    const openIdCheck = clientId => {
+      const Flow = window.CDOS.IdCheck && window.CDOS.IdCheck.Flow;
+      if (!Flow || !clientId || !window.ReactDOM || !window.ReactDOM.createRoot) return;
+      let host = document.getElementById('cdos-id-flow-host');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'cdos-id-flow-host';
+        document.body.appendChild(host);
       }
-      if (onDone) onDone(nm);
-      onClose();
+      if (!openIdCheck.root) openIdCheck.root = window.ReactDOM.createRoot(host);
+      const close = () => {
+        if (openIdCheck.root) openIdCheck.root.render(null);
+      };
+      openIdCheck.root.render(React.createElement(Flow, {
+        clientId: clientId,
+        onClose: close
+      }));
     };
-    /* The choose step's button used to start a check, wait, and then write
-       an invented address and ID number onto the contact as "Pulled from
-       the ID". Persona is not connected, so the contact is saved and that
-       is all. */
-    const tierNo = tplId === 'plus' ? '4' : tplId === 'quick' ? '2' : '3';
-    const needsPep = tierNo === '2' || tierNo === '3';
-    const [pepAnswer, setPepAnswer] = useState(null);
-    const [checkNote, setCheckNote] = useState('');
-    const startCheck = async () => {
+    /* Close as soon as the server has the file. The document write and
+       the list refresh keep going. A desk with no server just saves. */
+    const saveContact = async andCheck => {
       const nm = name.trim();
       if (!nm || saving) return;
-      if (needsPep && pepAnswer === null) return;
       writeContact(nm);
-      setSaving(true);
-      try {
-        const created = await publishContact(nm);
-        const clientId = created && created.clientId;
-        if (clientId && window.CDOS.Backend && window.CDOS.Backend.screenIdCheck) {
-          const answer = await window.CDOS.Backend.screenIdCheck({
-            clientId: clientId,
-            tier: tierNo,
-            pepAnswer: needsPep ? pepAnswer : undefined
-          });
-          if (answer && answer.state === 'needs_review') {
-            setCheckNote('This needs review. Your compliance officer will review this.');
-            return;
-          }
-        }
-      } catch (err) {
-        setCheckNote('This needs review. Your compliance officer will review this.');
+      const shared = window.CDOS.ClientRecords;
+      if (!shared || !shared.serverBacked()) {
+        if (onDone) onDone(nm);
+        onClose();
         return;
-      } finally {
+      }
+      setSaving(true);
+      setSaveNote('');
+      try {
+        const created = await shared.open(nm, {
+          kind: kind,
+          phone: phone.trim(),
+          email: email.trim(),
+          photo: photo
+        }, {
+          wait: false
+        });
+        const clientId = created && created.clientId;
+        if (onDone) onDone(nm);
+        onClose();
+        if (andCheck && clientId) openIdCheck(clientId);
+      } catch (err) {
+        setSaveNote(err && err.message || 'The contact could not be saved.');
         setSaving(false);
       }
-      if (onDone) onDone(nm);
-      onClose();
     };
-
-    // when the verification finishes, fold the extracted identity into the contact
-    const check = checkId ? store[checkId] : null;
-    useEffect(() => {
-      if (step === 'verifying' && check && check.status === 'completed' && !applied.current) {
-        applied.current = true;
-        const ex = check.result.extracted;
-        if (ex && setClients) setClients(c => ({
-          ...c,
-          [name.trim()]: {
-            ...(c[name.trim()] || {}),
-            ...ex,
-            kind,
-            idVerifiedAt: check.result.completedAt
-          }
-        }));
-        /* What the provider read off the document belongs on the
-           server record too, or the desk's proof of who it identified
-           lives in one browser. */
-        if (ex) publishContact(name.trim(), ex);
-        setStep('done');
-      }
-    }, [check && check.status]);
-    const si = step === 'id' ? 0 : step === 'details' ? 1 : 2; // which of the 3 stepper dots is current
+    const si = step === 'id' ? 0 : 1;
     const Step = ({
       n,
       label
@@ -52516,9 +52502,8 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, label));
     };
-    const ex = check && check.result ? check.result.extracted : null;
-    const dm = check && check.result ? decisionMeta(check.result.decision) : null;
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "add-contact",
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
@@ -52566,7 +52551,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Persona is not connected yet.")), /*#__PURE__*/React.createElement("button", {
+    }, "Save the contact, then check the ID if you need to.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -52595,15 +52580,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), /*#__PURE__*/React.createElement(Step, {
       n: 2,
       label: "Details"
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        flex: 1,
-        height: 1,
-        background: CD.line
-      }
-    }), /*#__PURE__*/React.createElement(Step, {
-      n: 3,
-      label: "Verify"
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto px-5 py-4"
     }, step === 'id' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -52611,7 +52587,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Capture the customer's government ID. Persona is not connected yet, so nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
+    }, "Capture the customer's government ID. Nothing is read off the document until you check the ID."), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",
       style: {
         borderRadius: 12,
@@ -52713,7 +52689,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Just the basics to create the contact. Persona is not connected yet, so it does not fill the file in."), /*#__PURE__*/React.createElement("div", {
+    }, "Just the basics to create the contact."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex mb-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -52783,172 +52759,12 @@ ${(filing.map || []).map(blockHTML).join('')}
         borderRadius: 8,
         background: 'var(--cd-panel)'
       }
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-3 flex items-center gap-1.5",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "send",
-      s: 11,
-      c: CD.faint
-    }), " Persona is not connected yet. Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(VerifyChooserBody, {
-      subject: name.trim() || 'this contact',
-      hasId: !!photo,
-      verified: false,
-      tplId: tplId,
-      setTplId: setTplId,
-      mode: mode,
-      setMode: setMode,
-      via: via,
-      setVia: setVia,
-      email: email,
-      setEmail: setEmail,
-      phone: phone,
-      setPhone: setPhone,
-      onScanMore: () => setStep('id'),
-      onCapture: setPhoto
-    }), needsPep && /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 text-[12.5px]",
-      "data-testid": "pep-client-answer",
+    }))), saveNote && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mt-3",
       style: {
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("div", null, "The client's own answer."), /*#__PURE__*/React.createElement("div", {
-      className: "mt-1"
-    }, "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?"), /*#__PURE__*/React.createElement("div", {
-      className: "flex gap-2 mt-2"
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setPepAnswer(true),
-      className: "px-3 py-1.5 text-[12px]",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        background: pepAnswer === true ? CD.ink : 'transparent',
-        color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink
-      }
-    }, "Yes"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setPepAnswer(false),
-      className: "px-3 py-1.5 text-[12px]",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        background: pepAnswer === false ? CD.ink : 'transparent',
-        color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink
-      }
-    }, "No"))), checkNote && /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 text-[13px]",
-      "data-testid": "kyc-needs-review",
-      style: {
-        color: CD.ink
-      }
-    }, checkNote)), step === 'verifying' && /*#__PURE__*/React.createElement("div", {
-      className: "text-center py-8"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center mx-auto mb-4",
-      style: {
-        width: 56,
-        height: 56,
-        borderRadius: '50%',
-        background: CD.brassSoft
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "kyc-spin",
-      style: {
-        width: 24,
-        height: 24,
-        border: `3px solid ${CD.brass}`,
-        borderTopColor: 'transparent',
-        borderRadius: '50%',
-        display: 'inline-block'
-      }
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "text-[15px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, "Persona is not connected yet."), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px] mt-1 mx-auto",
-      style: {
-        color: CD.mute,
-        maxWidth: 360
-      }
-    }, "This desk does not send the ID out, and it does not screen a sanctions list."), /*#__PURE__*/React.createElement("div", {
-      className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 999,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 13,
-      c: CD.mute
-    }), " Not connected")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5 mb-3"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center flex-none",
-      style: {
-        width: 40,
-        height: 40,
-        borderRadius: '50%',
-        background: dm ? dm.bg : CD.greenSoft
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: dm ? dm.icon : 'checkcircle',
-      s: 20,
-      c: dm ? dm.c : CD.green
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[15px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, name.trim(), " added", dm && dm.label === 'Verified' ? ' & verified' : ''), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px]",
-      style: {
-        color: dm ? dm.c : CD.mute
-      }
-    }, dm ? dm.label : 'Verified', " \xB7 saved to your contacts"))), ex && /*#__PURE__*/React.createElement("div", {
-      className: "p-3",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 11
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 12,
-      c: CD.faint
-    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
-      key: l,
-      className: "flex items-center justify-between py-1.5 text-[12.5px]",
-      style: {
-        borderTop: `1px solid ${CD.lineSoft}`
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.mute
-      }
-    }, l), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.ink,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, v))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px] mt-2",
-      style: {
-        color: CD.faint
-      }
-    }, "Saved to the contact \u2014 review and edit anytime in Clients.")))), /*#__PURE__*/React.createElement("div", {
+    }, saveNote))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-5 py-3.5 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -52983,89 +52799,33 @@ ${(filing.map || []).map(blockHTML).join('')}
         borderRadius: 9,
         color: CD.mute
       }
-    }, "Back"), !requireId && /*#__PURE__*/React.createElement("button", {
-      onClick: saveManual,
+    }, "Back"), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1"
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "add-contact-save",
+      onClick: () => saveContact(false),
       disabled: !name.trim() || saving,
-      title: "Skip verification \u2014 not recommended",
-      className: "px-2.5 py-2.5 text-[12px] font-medium",
+      className: "px-3.5 py-2.5 text-sm font-semibold",
       style: {
-        color: CD.faint,
-        textDecoration: 'underline',
-        textUnderlineOffset: 2,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        color: CD.ink,
+        background: CD.paper,
         cursor: name.trim() && !saving ? 'pointer' : 'not-allowed'
       }
-    }, saving ? 'Saving…' : 'Save without verifying'), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1"
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setStep('choose'),
-      disabled: !name.trim(),
-      className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white",
+    }, saving ? 'Saving…' : 'Save contact'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "add-contact-check",
+      onClick: () => saveContact(true),
+      disabled: !name.trim() || saving,
+      className: "px-3.5 py-2.5 text-sm font-semibold text-white",
       style: {
-        background: name.trim() ? CD.ink : 'var(--cd-disabled)',
+        background: name.trim() && !saving ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 9,
-        cursor: name.trim() ? 'pointer' : 'not-allowed'
+        cursor: name.trim() && !saving ? 'pointer' : 'not-allowed'
       }
-    }, "Continue ", /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 14,
-      c: "var(--cd-on-ink)"
-    }))), step === 'choose' && (() => {
-      const del = deliveryFor({
-        tplId,
-        mode,
-        via,
-        email,
-        phone,
-        hasId: !!photo,
-        subject: name.trim()
-      });
-      return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-        className: "flex-1"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "text-[11px]",
-        style: {
-          color: CD.faint
-        }
-      }, "Persona is not connected yet"), /*#__PURE__*/React.createElement("div", {
-        className: "text-[13px] font-semibold leading-none",
-        style: {
-          color: CD.mute
-        }
-      }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
-        onClick: () => setStep('details'),
-        className: "px-3.5 py-2.5 text-sm font-medium",
-        style: {
-          border: `1px solid ${CD.line}`,
-          borderRadius: 9,
-          color: CD.mute
-        }
-      }, "Back"), /*#__PURE__*/React.createElement("button", {
-        onClick: startCheck,
-        disabled: del.missing || needsPep && pepAnswer === null,
-        className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white",
-        style: {
-          background: del.missing || needsPep && pepAnswer === null ? 'var(--cd-disabled)' : CD.ink,
-          borderRadius: 9,
-          cursor: del.missing || needsPep && pepAnswer === null ? 'not-allowed' : 'pointer'
-        }
-      }, /*#__PURE__*/React.createElement(Ic, {
-        n: "send",
-        s: 14,
-        c: "var(--cd-on-ink)"
-      }), " ", del.label));
-    })(), step === 'done' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1"
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        if (onDone) onDone(name.trim());
-        onClose();
-      },
-      className: "px-5 py-2.5 text-sm font-semibold text-white",
-      style: {
-        background: CD.ink,
-        borderRadius: 9
-      }
-    }, "Done")))), cam && /*#__PURE__*/React.createElement("div", {
+    }, saving ? 'Saving…' : 'Save and check ID')))), cam && /*#__PURE__*/React.createElement("div", {
       onClick: e => e.stopPropagation(),
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -78266,6 +78026,8 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       if (window.CDOS) window.CDOS.clientRoster = clients;
     });
     const [standingPulse, setStandingPulse] = useState(0);
+    const knownChecks = useRef(new Set());
+    const seenPulse = useRef(0);
     useEffect(() => {
       const onStanding = () => setStandingPulse(n => n + 1);
       window.addEventListener("cdos-id-standing", onStanding);
@@ -78279,11 +78041,14 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         const id = clients[name] && clients[name].clientId;
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
-      if (!ids.length) return undefined;
+      const fresh = standingPulse !== seenPulse.current;
+      seenPulse.current = standingPulse;
+      const wanted = fresh ? ids : ids.filter(id => !knownChecks.current.has(id));
+      if (!wanted.length) return undefined;
       let live = true;
       let retryTimer = 0;
       const pull = () => {
-        Promise.all(ids.map(id => api.checks(id).then(body => ({
+        Promise.all(wanted.map(id => api.checks(id).then(body => ({
           id,
           body,
           failed: false
@@ -78293,6 +78058,12 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           failed: true
         })))).then(pairs => {
           if (!live) return;
+          pairs.forEach(({
+            id,
+            failed
+          }) => {
+            if (!failed) knownChecks.current.add(id);
+          });
           let retry = false;
           setClients(prev => {
             let changed = false;

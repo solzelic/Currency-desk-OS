@@ -112,7 +112,7 @@ async function addContact(page: Page, name: string): Promise<void> {
   const skipId = page.getByText(/^Skip — add ID later$/);
   if (await skipId.isVisible({ timeout: 5_000 }).catch(() => false)) await skipId.click();
   await page.getByPlaceholder("Jane Doe").fill(name);
-  await page.getByText(/^Save without verifying$/).click();
+  await page.getByRole("button", { name: "Save contact" }).click();
   const profile = page.locator("div.fixed.inset-0").filter({ hasText: name }).first();
   await profile.waitFor({ state: "visible", timeout: 20_000 });
   /* The profile covers the desk. A click outside it is how it closes. */

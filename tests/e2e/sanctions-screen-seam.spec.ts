@@ -104,7 +104,7 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await clients.getByRole("button", { name: "New contact" }).click();
   await page.getByRole("button", { name: "Skip — add ID later" }).click();
   await page.getByPlaceholder("Jane Doe").fill("Ada Chen");
-  await page.getByText("Save without verifying").click();
+  await page.getByRole("button", { name: "Save contact" }).click();
   const file = page.getByTestId("client-identity");
   await expect(file).toBeVisible();
   await expect(file.getByTestId("persona-not-connected")).toHaveText("Persona is not connected yet.");

@@ -35,6 +35,13 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    var timer = 0;
+    var controller = null;
+    if (!init.signal && typeof AbortController === "function") {
+      controller = new AbortController();
+      init.signal = controller.signal;
+      timer = setTimeout(function () { controller.abort(); }, 15000);
+    }
     try {
       response = await fetch(path, init);
     } catch (cause) {
@@ -42,6 +49,8 @@
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     var body = {};

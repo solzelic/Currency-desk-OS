@@ -193,15 +193,21 @@
 
          Returns the created record, or null when this desk is not
          server-backed. */
-      async open(name, deskRecord) {
+      async open(name, deskRecord, opts) {
         const client = api();
         if (!client || mode === 'local') return null;
         const rec = deskRecord || {};
         const created = await client.create(Object.assign(
           { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
           client.fromDeskFields(rec)));
-        await applyDocument(created.clientId, rec);
-        await load(true);
+        /* Add contact closes as soon as create answers. The document and
+           the list refresh keep going. Record the ID still waits. */
+        const after = Promise.all([
+          applyDocument(created.clientId, rec).catch(() => {}),
+          load(true).catch(() => {}),
+        ]);
+        if (opts && opts.wait === false) return created;
+        await after;
         return created;
       },
       /* Fold what a verification read off the document into a file that

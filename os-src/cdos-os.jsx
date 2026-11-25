@@ -843,6 +843,8 @@
     useEffect(() => { try { localStorage.setItem('cdos_clients_v1', JSON.stringify(clientsForDisk(clients))); } catch (e) {} }, [clients]);
     useEffect(() => { if (window.CDOS) window.CDOS.clientRoster = clients; });
     const [standingPulse, setStandingPulse] = useState(0);
+    const knownChecks = useRef(new Set());
+    const seenPulse = useRef(0);
     useEffect(() => {
       const onStanding = () => setStandingPulse((n) => n + 1);
       window.addEventListener("cdos-id-standing", onStanding);
@@ -856,12 +858,16 @@
         const id = clients[name] && clients[name].clientId;
         if (id && ids.indexOf(id) < 0) ids.push(id);
       });
-      if (!ids.length) return undefined;
+      const fresh = standingPulse !== seenPulse.current;
+      seenPulse.current = standingPulse;
+      const wanted = fresh ? ids : ids.filter((id) => !knownChecks.current.has(id));
+      if (!wanted.length) return undefined;
       let live = true;
       let retryTimer = 0;
       const pull = () => {
-        Promise.all(ids.map((id) => api.checks(id).then((body) => ({ id, body, failed: false })).catch(() => ({ id, body: null, failed: true })))).then((pairs) => {
+        Promise.all(wanted.map((id) => api.checks(id).then((body) => ({ id, body, failed: false })).catch(() => ({ id, body: null, failed: true })))).then((pairs) => {
           if (!live) return;
+          pairs.forEach(({ id, failed }) => { if (!failed) knownChecks.current.add(id); });
           let retry = false;
           setClients((prev) => {
             let changed = false;

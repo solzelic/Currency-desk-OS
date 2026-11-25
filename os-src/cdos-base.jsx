@@ -1343,7 +1343,20 @@
     const press = (dgt) => { if (lockedRef.current) return; setErr(''); setPin(p => { if (p.length >= 4) return p; const n = p + dgt; if (n.length === 4) setTimeout(() => submit(n), 90); return n; }); };
     const back = () => { if (lockedRef.current) return; setErr(''); setPin(p => p.slice(0, -1)); };
     React.useEffect(() => {
+      const typing = (target) => {
+        if (!target || typeof target.tagName !== "string") return false;
+        const tag = target.tagName.toUpperCase();
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+        return target.isContentEditable === true;
+      };
+      const padOnTop = () => {
+        const pad = document.querySelector("[data-pin-pad]");
+        if (!pad) return false;
+        const top = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
+        return !!(top && (top === pad || pad.contains(top)));
+      };
       const h = (e) => {
+        if (typing(e.target) || !padOnTop()) return;
         if (e.key === 'Escape') { onCancel && onCancel(); return; }
         if (lockedRef.current) return;
         if (e.key === 'Backspace') { e.preventDefault(); back(); return; }
@@ -1363,7 +1376,7 @@
       </button>
     ); };
     return ReactDOM.createPortal(
-      <div style={{ position: 'fixed', inset: 0, background: 'var(--cd-scrim)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={() => onCancel && onCancel()}>
+      <div data-pin-pad="open" style={{ position: 'fixed', inset: 0, background: 'var(--cd-scrim)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onMouseDown={() => onCancel && onCancel()}>
         <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 320, background: CD.paper, border: `1px solid ${CD.ink}`, borderRadius: 18, boxShadow: '0 30px 70px var(--cd-scrim)', padding: '24px 22px 18px', textAlign: 'center', animation: shake ? 'cdosPinShake .42s' : 'none' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: CD.faint, fontFamily: 'Space Mono, monospace', border: `1px solid ${CD.line}`, borderRadius: 999, padding: '3px 9px', marginBottom: 14 }}><Ic n="lock" s={10} c={CD.faint} /> PIN required</div>
           <div style={{ width: 52, height: 52, borderRadius: '50%', background: CD.ink, color: 'var(--cd-on-ink)', display: 'grid', placeItems: 'center', fontFamily: 'Space Mono, monospace', fontWeight: 700, fontSize: 16, margin: '0 auto 10px' }}>{ini(name)}</div>
