@@ -97,9 +97,9 @@
         <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer does</div>
         <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
           {CUSTOMER_STEPS.map((line, i) => (
-            <li key={line} className="flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
+            <li key={line} className="id-check-step flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
               <span className="flex-none" style={{ width: 18, color: CD.mute, fontFamily: '"Space Mono", ui-monospace, monospace', fontSize: 12, lineHeight: 1.45 }}>{i + 1}.</span>
-              <span className="min-w-0 flex-1" style={{ overflowWrap: "anywhere" }}>{line}</span>
+              <span className="id-check-step-text min-w-0 flex-1">{line}</span>
             </li>
           ))}
         </ol>

@@ -53607,7 +53607,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, CUSTOMER_STEPS.map((line, i) => /*#__PURE__*/React.createElement("li", {
       key: line,
-      className: "flex items-start gap-2 min-w-0 text-[13px]",
+      className: "id-check-step flex items-start gap-2 min-w-0 text-[13px]",
       style: {
         color: CD.ink,
         lineHeight: 1.45
@@ -53622,10 +53622,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         lineHeight: 1.45
       }
     }, i + 1, "."), /*#__PURE__*/React.createElement("span", {
-      className: "min-w-0 flex-1",
-      style: {
-        overflowWrap: "anywhere"
-      }
+      className: "id-check-step-text min-w-0 flex-1"
     }, line)))), /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-customer-billing",
       className: "text-[12px] mt-2",

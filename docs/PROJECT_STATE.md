@@ -17,11 +17,14 @@ or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
 It checks the raw-body signature and a 300-second timestamp, and it is
 idempotent on session id plus status. The decision body, the secret, and the
 ID photos are not stored and not logged. Names and the sandbox workflow id
-are in `docs/IDV.md`. On the teller ID check, a Didit shop shows five steps:
-you share a link or a QR code, the customer scans their ID, the customer
-takes a selfie, the result comes back to you, and there is no charge if the
-check fails. A Persona shop does not show those steps. A counter only shop
-does not show them either.
+are in `docs/IDV.md`. On the teller ID check, a Didit shop shows
+"What the customer does": "Open the link on the counter device, or send it
+to the customer's phone." "The customer reads the notice and chooses whether
+to go ahead. If they say no, check the ID at the counter." "The customer
+scans their ID and takes a selfie with Didit." "The result comes back to
+this screen." Under that list: "Your shop is not billed for a check that is
+declined, abandoned or expired." A Persona shop does not show those steps.
+A counter only shop does not show them either.
 
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 
