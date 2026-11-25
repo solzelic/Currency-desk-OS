@@ -412,6 +412,15 @@
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}
       <div data-testid="id-check-result-wait" className="space-y-2 mt-3" aria-busy="true"><Skel width="58%" /><Skel width="36%" /><Skel width="24%" /></div>
     </div>));
+    if (step === "attest") {
+      const words = window.CDOS.faceMatchAttestation.statement;
+      return shell("id-check-attest", "Compare the face", (<div className="space-y-3">
+        <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}>
+          <input data-testid="id-check-attest-box" type="checkbox" />
+          <span>{words}</span>
+        </label>
+      </div>));
+    }
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", (<div data-testid="id-check-error" className="space-y-3">
       <div className="text-[13px]" style={{ color: CD.ink }}>The ID check did not finish. Try again, or check the ID in person.</div>
       <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>

@@ -17,8 +17,12 @@ liveness, and face match each passed. A counter ID scan
 unset the start answers 409 `DOC_WORKFLOW_UNSET`. A pass needs the ID
 feature Approved and a server attestation: the staff user id, the role,
 and the database clock. The attestation is refused with 409 unless that
-scan is still in progress with the ID approved. A later declined, expired,
-or review result clears that flag and cannot be attested into a pass.
+scan is still in progress with the ID approved. The stored words are
+face-match-v1: "The customer is in front of me. I compared their face with
+the photo on this ID and they are the same person." A later declined,
+expired, or review result clears that flag and cannot be attested into a
+pass. After a pass, that later result writes a new not-a-pass row and
+leaves the pass row as it was.
 Without the attestation it is not verified.
 `counter_full` ("Full check at the counter") is the Basic KYC workflow and
 still needs ID, liveness, and face match. Failed and declined scans are
