@@ -4377,8 +4377,13 @@
     checks: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId) + "/checks"); },
     copy: function () { return request("/api/idv/consent-copy"); },
     consent: function (body) { return request("/api/idv/consents", { method: "POST", body: JSON.stringify(body) }); },
-    start: function (clientId, tier) {
-      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId, tier: tier }) });
+    start: function (clientId, tier, method) {
+      var body = { clientId: clientId, tier: tier };
+      if (method) body.method = method;
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify(body) });
+    },
+    attest: function (body) {
+      return request("/api/idv/checks/counter-scan/attest", { method: "POST", body: JSON.stringify(body) });
     },
     link: function (inquiryId) {
       return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });
@@ -53432,7 +53437,8 @@ ${(filing.map || []).map(blockHTML).join('')}
 (function () {
   const {
     useState,
-    useEffect
+    useEffect,
+    useRef
   } = React;
   const {
     CD
@@ -53707,6 +53713,10 @@ ${(filing.map || []).map(blockHTML).join('')}
       pep: ""
     });
     const [moreOpen, setMoreOpen] = useState(false);
+    const [scanKind, setScanKind] = useState("");
+    const [faceCompared, setFaceCompared] = useState(false);
+    const [sdkOn, setSdkOn] = useState(false);
+    const scanMounted = useRef(false);
     useEffect(() => holdSheet(), []);
     useEffect(() => {
       const client = api();
@@ -53725,7 +53735,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       };
     }, [clientId]);
     useEffect(() => {
-      if (step !== "link" || !inquiryId) return undefined;
+      if (step !== "link" && step !== "wait" || !inquiryId) return undefined;
       let live = true;
       let timer = 0;
       const waitMs = window.CDOS && window.CDOS.idCheckWaitMs || 90000;
@@ -53766,9 +53776,11 @@ ${(filing.map || []).map(blockHTML).join('')}
       };
     }, [step, inquiryId, clientId, dealId, onDone]);
     const counter = !!(copy && copy.counterOnly);
+    const docScan = !!(copy && copy.docScan) && !counter;
     const pick = next => {
       setError("");
-      setTier(next);
+      setTier(next === "scan" || next === "full" ? "3" : next);
+      if (next === "scan") setScanKind("counter_id_scan");else if (next === "full") setScanKind("counter_full");else setScanKind("");
       if (next === "1") setStep("inperson");else if (next === "2") {
         if (!pack) {
           setError("Reading the earlier check.");
@@ -53776,7 +53788,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
         const full = (pack.records || []).some(item => item.result === "pass" && item.method !== "returning_client");
         setStep(pack.due || !full ? "blocked" : "returning");
-      } else if (next === "4") return;else setStep("notice");
+      } else if (next === "4") return;else if (next === "scan") setStep("noselfie");else if (next === "full") setStep("notice");else setStep("notice");
     };
     useEffect(() => {
       const onKey = event => {
@@ -53788,19 +53800,20 @@ ${(filing.map || []).map(blockHTML).join('')}
         const target = event.target;
         if (target && target.closest && target.closest("button, a, input, select, textarea")) return;
         event.preventDefault();
-        pick(counter ? "1" : "3");
+        pick(counter ? "1" : docScan ? "scan" : "3");
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
-    }, [step, counter, onClose, pack]);
-    const agree = async () => {
+    }, [step, counter, docScan, onClose, pack]);
+    const agree = async method => {
       const client = api();
+      const chosen = typeof method === "string" ? method : scanKind || "";
       if (!client || busy || !agreed) return;
       setBusy(true);
       setError("");
       setStep("opening");
       try {
-        const started = await client.start(clientId, tier);
+        const started = await client.start(clientId, tier || "3", chosen || undefined);
         if (started && started.connected === false) {
           setError(started.message || "Identity checks are not connected.");
           setStep("consent");
@@ -53820,7 +53833,10 @@ ${(filing.map || []).map(blockHTML).join('')}
         setConsentId(saved.consentId);
         setLinkUrl(safeCheckLink(link.url));
         setDatabaseMessage(started.message || "");
-        setStep("link");
+        setScanKind(chosen);
+        scanMounted.current = false;
+        setSdkOn(false);
+        setStep(chosen === "counter_id_scan" || chosen === "counter_full" ? "scan" : "link");
       } catch (err) {
         if (err && (err.code === "consent_copy_changed" || /notice changed/i.test(err && err.message || ""))) {
           const fresh = await client.copy().catch(() => null);
@@ -53930,6 +53946,52 @@ ${(filing.map || []).map(blockHTML).join('')}
       ...cur,
       [key]: value
     }));
+    useEffect(() => {
+      if (step !== "scan" || !linkUrl || scanMounted.current) return undefined;
+      const sdk = window.DiditSDK && window.DiditSDK.DiditSdk && window.DiditSDK.DiditSdk.shared;
+      if (!sdk || typeof sdk.startVerification !== "function") return undefined;
+      scanMounted.current = true;
+      setSdkOn(true);
+      sdk.onComplete = result => {
+        const type = result && result.type;
+        if (type === "cancelled" || type === "failed") setStep("failed");else if (scanKind === "counter_id_scan") setStep("attest");else setStep("wait");
+      };
+      sdk.startVerification({
+        url: linkUrl,
+        configuration: {
+          embedded: true,
+          embeddedContainerId: "didit-counter-scan",
+          defaultDocumentCamera: "back"
+        }
+      });
+      return () => {
+        if (sdk) sdk.onComplete = null;
+      };
+    }, [step, linkUrl, scanKind]);
+    const sendAttest = async () => {
+      const client = api();
+      if (!client || busy || !faceCompared || !inquiryId) return;
+      setBusy(true);
+      setError("");
+      try {
+        const saved = await client.attest({
+          clientId,
+          providerRef: inquiryId,
+          attested: true
+        });
+        if (saved && saved.verified && saved.recordId) {
+          const body = await client.checks(clientId);
+          const found = (body.records || []).find(item => item.recordId === saved.recordId) || null;
+          setPack(body);
+          setRecord(found);
+          setStep(found && found.result === "method_not_completed" ? "failed" : "done");
+          if (found && onDone) onDone(found);
+        } else setStep("wait");
+      } catch (err) {
+        setError(err && err.message || "The comparison could not be saved.");
+      }
+      setBusy(false);
+    };
     const shell = (testid, title, body) => /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-flow",
       tabIndex: -1,
@@ -54001,12 +54063,21 @@ ${(filing.map || []).map(blockHTML).join('')}
         id: "1",
         label: "In person",
         note: "Staff inspect the original ID. No photo is taken."
+      } : docScan ? {
+        id: "scan",
+        label: "Scan the ID at the counter",
+        note: "The teller scans the ID on this device. No selfie. No hand-off."
       } : {
         id: "3",
         label: "ID and selfie",
         note: "Document check and a selfie."
       };
       const more = [];
+      if (docScan) more.push({
+        id: "full",
+        label: "Full check at the counter",
+        note: "ID, selfie, and face match on this device."
+      });
       if (!counter && primary.id !== "1") more.push({
         id: "1",
         label: "In person",
@@ -54096,6 +54167,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }, more.map(item => /*#__PURE__*/React.createElement("button", {
         key: item.id,
         type: "button",
+        "data-testid": "id-check-option-" + item.id,
         onClick: () => pick(item.id),
         className: "w-full text-left px-4",
         style: {
@@ -54123,6 +54195,28 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), /*#__PURE__*/React.createElement(Skel, {
       width: "42%"
     })));
+    if (step === "noselfie") return shell("id-check-no-selfie", "ID scan, no selfie", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
+      text: copy.noSelfieConsent,
+      omit: ["I agree to this ID scan. No selfie is taken."]
+    }), /*#__PURE__*/React.createElement("label", {
+      className: "flex items-start gap-2 mt-3 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      "data-testid": "id-check-noselfie-box",
+      type: "checkbox",
+      checked: agreed,
+      onChange: e => setAgreed(e.target.checked)
+    }), /*#__PURE__*/React.createElement("span", null, "I agree to this ID scan. No selfie is taken.")), /*#__PURE__*/React.createElement("div", {
+      className: "mt-3"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-noselfie-continue",
+      disabled: !agreed || busy,
+      onClick: () => agree("counter_id_scan"),
+      style: btnStyle(!agreed || busy)
+    }, busy ? "Starting" : "Scan the ID"))));
     if (step === "notice") return shell("id-check-notice", "Before we check your ID", /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CopyBlock, {
       text: copy.notice
     }), /*#__PURE__*/React.createElement("div", {
@@ -54211,6 +54305,85 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), /*#__PURE__*/React.createElement(Skel, {
       width: "24%"
     }))));
+    if (step === "scan" || step === "wait") {
+      const counterScan = scanKind === "counter_id_scan";
+      return shell(step === "wait" ? "id-check-wait" : "id-check-scan", counterScan ? "Scan the ID" : "Full check", /*#__PURE__*/React.createElement("div", {
+        className: "space-y-2"
+      }, /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-scan-copy",
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, counterScan ? "You scan the customer's ID on this device. Do not hand the device over. There is no selfie." : "This check runs on this device. ID, a selfie, and a face match. Keep the device at the counter."), /*#__PURE__*/React.createElement("div", {
+        id: "didit-counter-scan",
+        "data-testid": "id-check-scan-mount",
+        style: {
+          minHeight: sdkOn ? 240 : 0
+        }
+      }), !sdkOn && (linkUrl ? /*#__PURE__*/React.createElement("iframe", {
+        title: "ID scan",
+        "data-testid": "id-check-hosted",
+        src: linkUrl,
+        style: {
+          width: "100%",
+          height: 360,
+          border: `1px solid ${CD.line}`,
+          borderRadius: 12
+        }
+      }) : /*#__PURE__*/React.createElement("div", {
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, "The ID scan could not be opened.")), !sdkOn && linkUrl && /*#__PURE__*/React.createElement("a", {
+        "data-testid": "id-check-scan-open",
+        href: linkUrl,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        className: "text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, "Open the scan on this device"), step === "scan" && /*#__PURE__*/React.createElement("button", {
+        type: "button",
+        "data-testid": "id-check-scan-done",
+        onClick: () => setStep(counterScan ? "attest" : "wait"),
+        style: btnStyle(false)
+      }, counterScan ? "The ID is scanned" : "The check is done"), step === "wait" && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-result-wait",
+        className: "space-y-2",
+        "aria-busy": "true"
+      }, /*#__PURE__*/React.createElement(Skel, {
+        width: "58%"
+      }), /*#__PURE__*/React.createElement(Skel, {
+        width: "36%"
+      }))));
+    }
+    if (step === "attest") return shell("id-check-attest", "Compare the face", /*#__PURE__*/React.createElement("div", {
+      className: "space-y-3"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Look at the customer and the photo on the ID. The law requires the person to match that photo."), /*#__PURE__*/React.createElement("label", {
+      className: "flex items-start gap-2 text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      "data-testid": "id-check-attest-box",
+      type: "checkbox",
+      checked: faceCompared,
+      onChange: e => setFaceCompared(e.target.checked)
+    }), /*#__PURE__*/React.createElement("span", null, "I compared the customer's face to the ID photo")), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-attest-save",
+      disabled: !faceCompared || busy,
+      onClick: sendAttest,
+      style: btnStyle(!faceCompared || busy)
+    }, busy ? "Saving" : "Record the comparison")));
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-error",
       className: "space-y-3"
@@ -54464,7 +54637,21 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, record.photoLine), /*#__PURE__*/React.createElement("div", {
+    }, record.photoLine), record && record.attestationDate && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-attest-when",
+      className: "text-[12.5px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Face compared ", record.attestationDate, ", ", record.attestationTime), record && record.result === "declined" && /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-error-in-person",
+      onClick: () => {
+        setError("");
+        setStep("inperson");
+      },
+      style: btnStyle(false)
+    }, "Check the ID in person"), /*#__PURE__*/React.createElement("div", {
       className: "mt-2"
     }, /*#__PURE__*/React.createElement("button", {
       type: "button",

@@ -72,6 +72,9 @@ and the DPA are signed. These five items are still open:
    `https://currencydesk-staging.onrender.com/api/webhooks/idv/didit`
    for `status.updated` and `data.updated`, version v3.
 4. Start an ID and selfie check. The counter shows a `verify.didit.me` link.
+   When `DIDIT_DOC_WORKFLOW_ID` is set, the customer file offers "Scan the ID
+   at the counter" first. That scan stays on the shop device. There is no
+   selfie and no hand-off. The teller then confirms the face matches the photo.
 
 ## References
 
