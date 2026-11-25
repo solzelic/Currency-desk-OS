@@ -2,7 +2,7 @@
    the one-time link, the badge, the masked number, and the reveal.
    The words come from the server. Sandbox only. No price and no charge. */
 (function () {
-  const { useState, useEffect } = React;
+  const { useState, useEffect, useRef } = React;
   const { CD } = window.CDOS;
   const Portal = ({ children }) => ReactDOM.createPortal(children, document.body);
   const REVEAL = { supervisor: true, branch_manager: true, compliance_officer: true, administrator: true };
@@ -162,6 +162,10 @@
     const [form, setForm] = useState({ nameOnId: "", documentType: "", documentNumber: "", issuingJurisdiction: "", issuingCountry: "CA", expiryDate: "", attested: false });
     const [ret, setRet] = useState({ noDoubts: false, detailsChanged: false, doubtReason: "", pep: "" });
     const [moreOpen, setMoreOpen] = useState(false);
+    const [scanKind, setScanKind] = useState("");
+    const [faceCompared, setFaceCompared] = useState(false);
+    const [sdkOn, setSdkOn] = useState(false);
+    const scanMounted = useRef(false);
 
     useEffect(() => holdSheet(), []);
     useEffect(() => {
@@ -174,7 +178,7 @@
     }, [clientId]);
 
     useEffect(() => {
-      if (step !== "link" || !inquiryId) return undefined;
+      if ((step !== "link" && step !== "wait") || !inquiryId) return undefined;
       let live = true;
       let timer = 0;
       const waitMs = (window.CDOS && window.CDOS.idCheckWaitMs) || 90000;
@@ -204,15 +208,21 @@
     }, [step, inquiryId, clientId, dealId, onDone]);
 
     const counter = !!(copy && copy.counterOnly);
+    const docScan = !!(copy && copy.docScan) && !counter;
     const pick = (next) => {
       setError("");
-      setTier(next);
+      setTier(next === "scan" || next === "full" ? "3" : next);
+      if (next === "scan") setScanKind("counter_id_scan");
+      else if (next === "full") setScanKind("counter_full");
+      else setScanKind("");
       if (next === "1") setStep("inperson");
       else if (next === "2") {
         if (!pack) { setError("Reading the earlier check."); return; }
         const full = (pack.records || []).some((item) => item.result === "pass" && item.method !== "returning_client");
         setStep(pack.due || !full ? "blocked" : "returning");
       } else if (next === "4") return;
+      else if (next === "scan") setStep("noselfie");
+      else if (next === "full") setStep("notice");
       else setStep("notice");
     };
     useEffect(() => {
@@ -222,19 +232,20 @@
         const target = event.target;
         if (target && target.closest && target.closest("button, a, input, select, textarea")) return;
         event.preventDefault();
-        pick(counter ? "1" : "3");
+        pick(counter ? "1" : docScan ? "scan" : "3");
       };
       window.addEventListener("keydown", onKey);
       return () => window.removeEventListener("keydown", onKey);
-    }, [step, counter, onClose, pack]);
-    const agree = async () => {
+    }, [step, counter, docScan, onClose, pack]);
+    const agree = async (method) => {
       const client = api();
+      const chosen = typeof method === "string" ? method : (scanKind || "");
       if (!client || busy || !agreed) return;
       setBusy(true);
       setError("");
       setStep("opening");
       try {
-        const started = await client.start(clientId, tier);
+        const started = await client.start(clientId, tier || "3", chosen || undefined);
         if (started && started.connected === false) {
           setError(started.message || "Identity checks are not connected.");
           setStep("consent");
@@ -250,7 +261,10 @@
         setConsentId(saved.consentId);
         setLinkUrl(safeCheckLink(link.url));
         setDatabaseMessage(started.message || "");
-        setStep("link");
+        setScanKind(chosen);
+        scanMounted.current = false;
+        setSdkOn(false);
+        setStep(chosen === "counter_id_scan" || chosen === "counter_full" ? "scan" : "link");
       } catch (err) {
         if (err && (err.code === "consent_copy_changed" || /notice changed/i.test((err && err.message) || ""))) {
           const fresh = await client.copy().catch(() => null);
@@ -335,6 +349,48 @@
       setBusy(false);
     };
     const setField = (key, value) => setForm((cur) => ({ ...cur, [key]: value }));
+    useEffect(() => {
+      if (step !== "scan" || !linkUrl || scanMounted.current) return undefined;
+      const sdk = window.DiditSDK && window.DiditSDK.DiditSdk && window.DiditSDK.DiditSdk.shared;
+      if (!sdk || typeof sdk.startVerification !== "function") return undefined;
+      scanMounted.current = true;
+      setSdkOn(true);
+      sdk.onComplete = (result) => {
+        const type = result && result.type;
+        if (type === "cancelled" || type === "failed") setStep("failed");
+        else if (scanKind === "counter_id_scan") setStep("attest");
+        else setStep("wait");
+      };
+      sdk.startVerification({
+        url: linkUrl,
+        configuration: {
+          embedded: true,
+          embeddedContainerId: "didit-counter-scan",
+          defaultDocumentCamera: "back",
+        },
+      });
+      return () => { if (sdk) sdk.onComplete = null; };
+    }, [step, linkUrl, scanKind]);
+    const sendAttest = async () => {
+      const client = api();
+      if (!client || busy || !faceCompared || !inquiryId) return;
+      setBusy(true);
+      setError("");
+      try {
+        const saved = await client.attest({ clientId, providerRef: inquiryId, attested: true });
+        if (saved && saved.verified && saved.recordId) {
+          const body = await client.checks(clientId);
+          const found = (body.records || []).find((item) => item.recordId === saved.recordId) || null;
+          setPack(body);
+          setRecord(found);
+          setStep(found && found.result === "method_not_completed" ? "failed" : "done");
+          if (found && onDone) onDone(found);
+        } else setStep("wait");
+      } catch (err) {
+        setError((err && err.message) || "The comparison could not be saved.");
+      }
+      setBusy(false);
+    };
     const shell = (testid, title, body) => (
       <Portal>
         <div data-testid="id-check-flow" tabIndex={-1} className="fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6" style={{ background: "var(--cd-scrim)", zIndex: 9400 }}>
@@ -357,8 +413,11 @@
       const full = records.some((item) => item.result === "pass" && item.method !== "returning_client");
       const primary = counter
         ? { id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." }
-        : { id: "3", label: "ID and selfie", note: "Document check and a selfie." };
+        : docScan
+          ? { id: "scan", label: "Scan the ID at the counter", note: "The teller scans the ID on this device. No selfie. No hand-off." }
+          : { id: "3", label: "ID and selfie", note: "Document check and a selfie." };
       const more = [];
+      if (docScan) more.push({ id: "full", label: "Full check at the counter", note: "ID, selfie, and face match on this device." });
       if (!counter && primary.id !== "1") more.push({ id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." });
       if (!counter && full) more.push({ id: "2", label: "Returning client", note: "Reuse the check on file." });
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-3" style={{ paddingBottom: 16 }}>
@@ -375,7 +434,7 @@
           </button>
           {moreOpen && <div className="space-y-2 mt-2">
             {more.map((item) => (
-              <button key={item.id} type="button" onClick={() => pick(item.id)} className="w-full text-left px-4" style={{ minHeight: 44, border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink }}>
+              <button key={item.id} type="button" data-testid={"id-check-option-" + item.id} onClick={() => pick(item.id)} className="w-full text-left px-4" style={{ minHeight: 44, border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink }}>
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{item.note}</div>
               </button>
@@ -385,6 +444,14 @@
       </div>));
     }
     if (step === "opening") return shell("id-check-opening", "ID and selfie", (<div data-testid="id-check-loading" className="space-y-3" aria-busy="true"><Skel /><Skel width="78%" /><Skel width="42%" /></div>));
+    if (step === "noselfie") return shell("id-check-no-selfie", "ID scan, no selfie", (<div>
+      <CopyBlock text={copy.noSelfieConsent} omit={["I agree to this ID scan. No selfie is taken."]} />
+      <label className="flex items-start gap-2 mt-3 text-[13px]" style={{ color: CD.ink }}>
+        <input data-testid="id-check-noselfie-box" type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+        <span>I agree to this ID scan. No selfie is taken.</span>
+      </label>
+      <div className="mt-3"><button type="button" data-testid="id-check-noselfie-continue" disabled={!agreed || busy} onClick={() => agree("counter_id_scan")} style={btnStyle(!agreed || busy)}>{busy ? "Starting" : "Scan the ID"}</button></div>
+    </div>));
     if (step === "notice") return shell("id-check-notice", "Before we check your ID", (<div>
       <CopyBlock text={copy.notice} />
       <div className="mt-3"><button type="button" onClick={() => { setAgreed(false); setStep("consent"); }} style={btnStyle(false)}>Continue</button></div>
@@ -412,15 +479,29 @@
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}
       <div data-testid="id-check-result-wait" className="space-y-2 mt-3" aria-busy="true"><Skel width="58%" /><Skel width="36%" /><Skel width="24%" /></div>
     </div>));
-    if (step === "attest") {
-      const words = window.CDOS.faceMatchAttestation.statement;
-      return shell("id-check-attest", "Compare the face", (<div className="space-y-3">
-        <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}>
-          <input data-testid="id-check-attest-box" type="checkbox" />
-          <span>{words}</span>
-        </label>
+    if (step === "scan" || step === "wait") {
+      const counterScan = scanKind === "counter_id_scan";
+      return shell(step === "wait" ? "id-check-wait" : "id-check-scan", counterScan ? "Scan the ID" : "Full check", (<div className="space-y-2">
+        <div data-testid="id-check-scan-copy" className="text-[13px]" style={{ color: CD.ink }}>{counterScan
+          ? "You scan the customer's ID on this device. Do not hand the device over. There is no selfie."
+          : "This check runs on this device. ID, a selfie, and a face match. Keep the device at the counter."}</div>
+        <div id="didit-counter-scan" data-testid="id-check-scan-mount" style={{ minHeight: sdkOn ? 240 : 0 }} />
+        {!sdkOn && (linkUrl
+          ? <iframe title="ID scan" data-testid="id-check-hosted" src={linkUrl} style={{ width: "100%", height: 360, border: `1px solid ${CD.line}`, borderRadius: 12 }} />
+          : <div className="text-[13px]" style={{ color: CD.ink }}>The ID scan could not be opened.</div>)}
+        {!sdkOn && linkUrl && <a data-testid="id-check-scan-open" href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-[13px]" style={{ color: CD.ink }}>Open the scan on this device</a>}
+        {step === "scan" && <button type="button" data-testid="id-check-scan-done" onClick={() => setStep(counterScan ? "attest" : "wait")} style={btnStyle(false)}>{counterScan ? "The ID is scanned" : "The check is done"}</button>}
+        {step === "wait" && <div data-testid="id-check-result-wait" className="space-y-2" aria-busy="true"><Skel width="58%" /><Skel width="36%" /></div>}
       </div>));
     }
+    if (step === "attest") return shell("id-check-attest", "Compare the face", (<div className="space-y-3">
+      <div className="text-[13px]" style={{ color: CD.ink }}>Look at the customer and the photo on the ID. The law requires the person to match that photo.</div>
+      <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}>
+        <input data-testid="id-check-attest-box" type="checkbox" checked={faceCompared} onChange={(e) => setFaceCompared(e.target.checked)} />
+        <span>{window.CDOS.faceMatchAttestation.statement}</span>
+      </label>
+      <button type="button" data-testid="id-check-attest-save" disabled={!faceCompared || busy} onClick={sendAttest} style={btnStyle(!faceCompared || busy)}>{busy ? "Saving" : "Record the comparison"}</button>
+    </div>));
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", (<div data-testid="id-check-error" className="space-y-3">
       <div className="text-[13px]" style={{ color: CD.ink }}>The ID check did not finish. Try again, or check the ID in person.</div>
       <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>
@@ -472,6 +553,8 @@
       <div className="text-[12px]" style={{ color: CD.mute }}>{(pack && pack.detail) || "Shows the check done on this date. Not a guarantee of identity."}</div>
       {record && record.maskedNumber && <div className="id-check-figure text-[13px]" style={{ color: CD.ink, fontFamily: "Space Mono, monospace" }}>{record.maskedNumber}</div>}
       {record && record.photoLine && <div className="text-[12.5px]" style={{ color: CD.mute }}>{record.photoLine}</div>}
+      {record && record.attestationDate && <div data-testid="id-check-attest-when" className="text-[12.5px]" style={{ color: CD.mute }}>Face compared {record.attestationDate}, {record.attestationTime}</div>}
+      {record && record.result === "declined" && <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>}
       <div className="mt-2"><button type="button" onClick={onClose} style={btnStyle(false)}>Done</button></div>
     </div>));
   }

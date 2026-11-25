@@ -987,8 +987,13 @@
     checks: function (clientId) { return request("/api/idv/clients/" + encodeURIComponent(clientId) + "/checks"); },
     copy: function () { return request("/api/idv/consent-copy"); },
     consent: function (body) { return request("/api/idv/consents", { method: "POST", body: JSON.stringify(body) }); },
-    start: function (clientId, tier) {
-      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify({ clientId: clientId, tier: tier }) });
+    start: function (clientId, tier, method) {
+      var body = { clientId: clientId, tier: tier };
+      if (method) body.method = method;
+      return request("/api/idv/start-check", { method: "POST", body: JSON.stringify(body) });
+    },
+    attest: function (body) {
+      return request("/api/idv/checks/counter-scan/attest", { method: "POST", body: JSON.stringify(body) });
     },
     link: function (inquiryId) {
       return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });

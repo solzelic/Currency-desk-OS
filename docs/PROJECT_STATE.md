@@ -25,7 +25,11 @@ pass. After a pass, that later result writes a new not-a-pass row and
 leaves the pass row as it was.
 Without the attestation it is not verified.
 `counter_full` ("Full check at the counter") is the Basic KYC workflow and
-still needs ID, liveness, and face match. Failed and declined scans are
+still needs ID, liveness, and face match. On a Didit test shop with the
+document workflow set, the customer file offers "Scan the ID at the counter"
+first. The scan stays on the shop device. The copy says there is no selfie
+and no hand-off. The teller then confirms they compared the customer's face
+to the ID photo. Full check at the counter and in person stay available. Failed and declined scans are
 not billed, on every method. The webhook signature checks and the live
 gate are unchanged. A test pass with no stored number reads Missing ID.
 A failed, abandoned,
