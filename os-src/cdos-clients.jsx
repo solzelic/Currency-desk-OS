@@ -193,13 +193,22 @@
 
          Returns the created record, or null when this desk is not
          server-backed. */
-      async open(name, deskRecord) {
+      async open(name, deskRecord, opts) {
         const client = api();
         if (!client || mode === 'local') return null;
         const rec = deskRecord || {};
         const created = await client.create(Object.assign(
           { legalName: String(name).trim(), kind: rec.kind === 'corporate' ? 'business' : 'individual' },
           client.fromDeskFields(rec)));
+        /* Add contact closes as soon as create answers. Record the ID
+           still waits, and the document is stored before the list is read. */
+        if (opts && opts.wait === false) {
+          void applyDocument(created.clientId, rec).then(() => load(true)).catch((err) => {
+            trouble = (err && err.message) || "The ID was not saved on this contact.";
+            announce();
+          });
+          return created;
+        }
         await applyDocument(created.clientId, rec);
         await load(true);
         return created;

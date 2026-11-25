@@ -32,7 +32,7 @@ test("the client file hides Start while identity checks are off", async ({ page 
   const block = page.getByTestId("identity-check");
   await expect(block).toBeVisible();
   await expect(block).not.toContainText("Only a small photo from the ID is kept");
-  await expect(block).toContainText("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
+  await expect(block.getByTestId("id-check-retention")).toHaveCount(0);
   await expect(block.getByRole("button", { name: "Start identity check" })).toHaveCount(0);
   await expect(block).not.toContainText("Approved");
 });
@@ -69,7 +69,7 @@ test("a stored check does not say Persona is not connected", async ({ page }) =>
     await page.getByText("Passed Check Client", { exact: true }).click();
     const file = page.locator(".client-file");
     await expect(file.getByTestId("identity-check")).toContainText("Check passed");
-    await expect(file.getByTestId("identity-check")).toContainText("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
+    await expect(file.getByTestId("id-check-retention")).toHaveCount(0);
     await expect(file.getByTestId("identity-check").getByRole("button", { name: "Start identity check" })).toHaveCount(0);
     await expect(file.getByTestId("client-identity")).not.toContainText("Persona is not connected");
     await expect(file).toContainText("Missing ID");
