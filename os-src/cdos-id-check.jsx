@@ -371,7 +371,7 @@
       setBusy(false);
     };
     const setField = (key, value) => setForm((cur) => ({ ...cur, [key]: value }));
-    const linkMessage = (url) => `Check your ID at this link:\n${url}\n\nIf you did not ask for this, you can ignore it.`;
+    const linkMessage = (shop, url, contact) => `${shop} sent you this link to complete your ID check:\n${url}\n\nIf you did not ask for this, you can ignore it, or contact ${shop} at ${contact}.`;
     const copyValue = async (value, okLine, failLine) => {
       setSendError("");
       try {
@@ -395,6 +395,39 @@
         setSendError((err && err.message) || "The message was not sent. Try again.");
       }
       setBusy(false);
+    };
+    const copyLink = async () => {
+      const client = api();
+      if (!client || !inquiryId || !linkUrl) return;
+      setSendError("");
+      setSendNote("");
+      try {
+        await client.noteLink(inquiryId, { kind: "link" });
+        await copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again.");
+      } catch (err) {
+        setSendNote("");
+        setSendError((err && err.message) || "The link was not copied. Try again.");
+      }
+    };
+    const copyText = async () => {
+      const client = api();
+      if (!client || !inquiryId || !linkUrl) return;
+      setSendError("");
+      setSendNote("");
+      try {
+        const noted = await client.noteLink(inquiryId, { kind: "text" });
+        const shop = noted && noted.shop;
+        const contact = noted && noted.contact;
+        const text = (noted && noted.text) || (shop && contact ? linkMessage(shop, linkUrl, contact) : "");
+        if (!text) {
+          setSendError("The text was not copied. Try again.");
+          return;
+        }
+        await copyValue(text, "The text was copied.", "The text was not copied. Try again.");
+      } catch (err) {
+        setSendNote("");
+        setSendError((err && err.message) || "The text was not copied. Try again.");
+      }
     };
     const shell = (testid, title, body) => (
       <Portal>
@@ -475,13 +508,14 @@
       {copy && copy.provider === "didit" && <div data-testid="id-check-link-how" className="text-[13px]" style={{ color: CD.ink }}>The link goes to the customer's email, or they get a copied message or the Copy link.</div>}
       {customerSteps(copy, counter)}
       {copy && copy.provider === "didit" && linkUrl && <div data-testid="id-check-send" className="space-y-2 min-w-0">
+        {copy.shopName ? <div data-testid="id-check-from-shop" className="text-[13px]" style={{ color: CD.ink }}>This email comes from {copy.shopName}.</div> : null}
         <label className="block text-[12px]" style={{ color: CD.mute }}>Email
           <input data-testid="id-check-send-email" value={sendTo} onChange={(e) => setSendTo(e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} />
         </label>
         <div className="flex flex-wrap gap-2">
           <button type="button" data-testid="id-check-send-email-btn" disabled={busy || !sendTo.trim()} onClick={sendEmailLink} style={btnStyle(busy || !sendTo.trim())}>{busy ? "Sending" : "Send"}</button>
-          <button type="button" data-testid="id-check-copy-link" onClick={() => copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again.")} style={ghost}>Copy link</button>
-          <button type="button" data-testid="id-check-copy-text" onClick={() => copyValue(linkMessage(linkUrl), "The text was copied.", "The text was not copied. Try again.")} style={ghost}>Copy text</button>
+          <button type="button" data-testid="id-check-copy-link" onClick={copyLink} style={ghost}>Copy link</button>
+          <button type="button" data-testid="id-check-copy-text" onClick={copyText} style={ghost}>Copy text</button>
         </div>
         {sendNote && <div data-testid="id-check-send-sent" className="text-[13px]" style={{ color: CD.ink }}>{sendNote}</div>}
         {sendError && <div data-testid="id-check-send-error" className="text-[13px]" style={{ color: CD.ink }}>{sendError}</div>}

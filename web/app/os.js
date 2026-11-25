@@ -4438,6 +4438,9 @@
     sendLink: function (inquiryId, body) {
       return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/send-link", { method: "POST", body: JSON.stringify(body) });
     },
+    noteLink: function (inquiryId, body) {
+      return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/link-note", { method: "POST", body: JSON.stringify(body) });
+    },
     inPerson: function (body) { return request("/api/idv/checks/in-person", { method: "POST", body: JSON.stringify(body) }); },
     returning: function (body) { return request("/api/idv/checks/returning", { method: "POST", body: JSON.stringify(body) }); },
     reveal: function (recordId, body) {
@@ -53772,7 +53775,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       ...cur,
       [key]: value
     }));
-    const linkMessage = url => `Check your ID at this link:\n${url}\n\nIf you did not ask for this, you can ignore it.`;
+    const linkMessage = (shop, url, contact) => `${shop} sent you this link to complete your ID check:\n${url}\n\nIf you did not ask for this, you can ignore it, or contact ${shop} at ${contact}.`;
     const copyValue = async (value, okLine, failLine) => {
       setSendError("");
       try {
@@ -53798,6 +53801,43 @@ ${(filing.map || []).map(blockHTML).join('')}
         setSendError(err && err.message || "The message was not sent. Try again.");
       }
       setBusy(false);
+    };
+    const copyLink = async () => {
+      const client = api();
+      if (!client || !inquiryId || !linkUrl) return;
+      setSendError("");
+      setSendNote("");
+      try {
+        await client.noteLink(inquiryId, {
+          kind: "link"
+        });
+        await copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again.");
+      } catch (err) {
+        setSendNote("");
+        setSendError(err && err.message || "The link was not copied. Try again.");
+      }
+    };
+    const copyText = async () => {
+      const client = api();
+      if (!client || !inquiryId || !linkUrl) return;
+      setSendError("");
+      setSendNote("");
+      try {
+        const noted = await client.noteLink(inquiryId, {
+          kind: "text"
+        });
+        const shop = noted && noted.shop;
+        const contact = noted && noted.contact;
+        const text = noted && noted.text || (shop && contact ? linkMessage(shop, linkUrl, contact) : "");
+        if (!text) {
+          setSendError("The text was not copied. Try again.");
+          return;
+        }
+        await copyValue(text, "The text was copied.", "The text was not copied. Try again.");
+      } catch (err) {
+        setSendNote("");
+        setSendError(err && err.message || "The text was not copied. Try again.");
+      }
     };
     const shell = (testid, title, body) => /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-flow",
@@ -54089,7 +54129,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, "The link goes to the customer's email, or they get a copied message or the Copy link."), customerSteps(copy, counter), copy && copy.provider === "didit" && linkUrl && /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-send",
       className: "space-y-2 min-w-0"
-    }, /*#__PURE__*/React.createElement("label", {
+    }, copy.shopName ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-from-shop",
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "This email comes from ", copy.shopName, ".") : null, /*#__PURE__*/React.createElement("label", {
       className: "block text-[12px]",
       style: {
         color: CD.mute
@@ -54111,12 +54157,12 @@ ${(filing.map || []).map(blockHTML).join('')}
     }, busy ? "Sending" : "Send"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "id-check-copy-link",
-      onClick: () => copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again."),
+      onClick: copyLink,
       style: ghost
     }, "Copy link"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "id-check-copy-text",
-      onClick: () => copyValue(linkMessage(linkUrl), "The text was copied.", "The text was not copied. Try again."),
+      onClick: copyText,
       style: ghost
     }, "Copy text")), sendNote && /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-send-sent",

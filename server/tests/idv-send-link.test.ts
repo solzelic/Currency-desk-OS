@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { resetIdvSendLimits, idvLinkMessage, IDV_LINK_SUBJECT } from "../src/idv/send-link.js";
+import { resetIdvSendLimits, idvLinkMessage, idvLinkSubject, PRIVACY_CONTACT_MESSAGE } from "../src/idv/send-link.js";
 import { PROVINCE_LINE, QUEBEC_LINE } from "../src/idv/tiers.js";
 
 const KEYS = {
@@ -17,6 +17,11 @@ const KEYS = {
 const SESSION = "66666666-7777-4888-8999-aaaaaaaaaaaa";
 const URL = "https://verify.didit.me/session/fixturetoken";
 const EMAIL = "a.client@staging.invalid";
+const SHOP = "York Currency Exchange Inc.";
+const CONTACT = "Privacy officer";
+const REPLY = "privacy@staging.invalid";
+const SUBJECT = `Your ID check link from ${SHOP}`;
+const BODY = `${SHOP} sent you this link to complete your ID check:\n${URL}\n\nIf you did not ask for this, you can ignore it, or contact ${SHOP} at ${CONTACT}.`;
 const fetchStub: typeof fetch = async (input) => {
   const url = String(input);
   if (!url.endsWith("/decision/")) return new Response("no", { status: 404 });
@@ -31,7 +36,7 @@ let bare: FastifyInstance;
 let off: FastifyInstance;
 let live: FastifyInstance;
 let staging: FastifyInstance;
-const sent: Array<{ to: string; subject: string; text: string }> = [];
+const sent: Array<{ to: string; subject: string; text: string; replyTo?: string }> = [];
 let clock = 1_700_000_000_000;
 const cookies: Record<string, { cdos_session: string }> = {};
 
@@ -46,8 +51,8 @@ async function signIn(target: FastifyInstance, staffId: string) {
   expect(res.statusCode, res.body).toBe(200);
   return cookieOf(res);
 }
-const mail = async (to: string, subject: string, text: string) => {
-  sent.push({ to, subject, text });
+const mail = async (to: string, subject: string, text: string, replyTo?: string) => {
+  sent.push({ to, subject, text, replyTo });
   return "sent" as const;
 };
 
@@ -58,9 +63,9 @@ beforeAll(async () => {
   await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
   await handle.db.execute(sql`
     INSERT INTO idv_shop_config (shop_id, provider, checks_enabled, privacy_contact, privacy_email, privacy_phone, privacy_policy_url)
-    VALUES (${DEMO.legalEntityId}, 'didit', true, 'Privacy officer', 'privacy@example.com', '416-555-0100', 'https://example.com/privacy')
+    VALUES (${DEMO.legalEntityId}, 'didit', true, 'Privacy officer', 'privacy@staging.invalid', '416-555-0100', 'https://example.com/privacy')
     ON CONFLICT (shop_id) DO UPDATE SET provider = 'didit', checks_enabled = true,
-      privacy_contact = 'Privacy officer', privacy_email = 'privacy@example.com',
+      privacy_contact = 'Privacy officer', privacy_email = 'privacy@staging.invalid',
       privacy_phone = '416-555-0100', privacy_policy_url = 'https://example.com/privacy'
   `);
   await handle.db.execute(sql`
@@ -194,8 +199,9 @@ describe("send the Didit link by email", () => {
     const first = await post(app, cookies.teller, SESSION, `  ${EMAIL}  `);
     expect(first.statusCode, first.body).toBe(200);
     expect(first.json()).toEqual({ sent: true });
-    expect(sent).toEqual([{ to: EMAIL, subject: IDV_LINK_SUBJECT, text: idvLinkMessage(URL) }]);
-    expect(idvLinkMessage(URL)).toBe(`Check your ID at this link:\n${URL}\n\nIf you did not ask for this, you can ignore it.`);
+    expect(idvLinkSubject(SHOP)).toBe(SUBJECT);
+    expect(idvLinkMessage(SHOP, URL, CONTACT)).toBe(BODY);
+    expect(sent).toEqual([{ to: EMAIL, subject: SUBJECT, text: BODY, replyTo: REPLY }]);
     const again = await post(app, cookies.teller, SESSION, EMAIL);
     expect(again.statusCode).toBe(429);
     expect(again.json().message).toBe("Wait a moment, then send it again.");
@@ -237,5 +243,54 @@ describe("send the Didit link by email", () => {
     const blocked = await post(app, cookies.teller, SESSION, EMAIL);
     expect(blocked.statusCode).toBe(429);
     expect(sent).toHaveLength(20);
+  });
+
+  it("refuses a missing privacy contact and writes the copy and failure audits", async () => {
+    try {
+      await handle.db.execute(sql`UPDATE idv_shop_config SET privacy_contact = NULL WHERE shop_id = ${DEMO.legalEntityId}`);
+      const refused = await post(app, cookies.teller, SESSION, EMAIL);
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toEqual({ error: "PRIVACY_CONTACT", message: PRIVACY_CONTACT_MESSAGE });
+      expect(refused.body).not.toContain(URL);
+      expect(refused.body).not.toContain("sent you this link");
+      expect(sent).toHaveLength(0);
+      const failed = await handle.db.execute(sql`
+        SELECT detail FROM audit_events WHERE action = 'idv.link_failed' ORDER BY at DESC
+      `);
+      const failDetail = failed.rows[0]?.detail as { channel?: string; destination?: string; staffId?: string };
+      expect(failDetail).toEqual({ channel: "email", destination: "a•••@s•••", staffId: "m.costa" });
+      expect(JSON.stringify(failDetail)).not.toContain(URL);
+      expect(JSON.stringify(failDetail)).not.toContain(EMAIL);
+    } finally {
+      await handle.db.execute(sql`
+        UPDATE idv_shop_config SET privacy_contact = 'Privacy officer' WHERE shop_id = ${DEMO.legalEntityId}
+      `);
+    }
+
+    const copiedLink = await app.inject({
+      method: "POST",
+      url: `/api/idv/inquiries/${SESSION}/link-note`,
+      cookies: cookies.teller,
+      payload: { kind: "link" },
+    });
+    expect(copiedLink.statusCode, copiedLink.body).toBe(200);
+    expect(copiedLink.json()).toEqual({ recorded: true });
+    const copiedText = await app.inject({
+      method: "POST",
+      url: `/api/idv/inquiries/${SESSION}/link-note`,
+      cookies: cookies.teller,
+      payload: { kind: "text" },
+    });
+    expect(copiedText.statusCode, copiedText.body).toBe(200);
+    expect(copiedText.json().text).toBe(BODY);
+    const notes = await handle.db.execute(sql`
+      SELECT detail->>'channel' AS channel, detail FROM audit_events WHERE action = 'idv.link_copied' ORDER BY at
+    `);
+    const channels = notes.rows.map((row) => (row as { channel?: string }).channel);
+    expect(channels).toEqual(["copy_link", "copy_text"]);
+    const dumped = JSON.stringify(notes.rows);
+    expect(dumped).not.toContain(URL);
+    expect(dumped).not.toContain(EMAIL);
+    expect(dumped).not.toContain("fixturetoken");
   });
 });

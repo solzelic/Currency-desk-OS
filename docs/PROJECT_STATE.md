@@ -47,9 +47,15 @@ declined, abandoned or expired." The link step says "The link goes to the
 customer's email, or they get a copied message or the Copy link." A Persona shop does not show those steps.
 A counter only shop does not show them either. Send on that screen posts
 the Didit link by email. Copy link and Copy text stay on the same screen.
-Text is copied, not sent. Staging email goes only to an @staging.invalid
+Text is copied, not sent. The email subject is "Your ID check link from"
+the shop legal name. The message says that shop sent the link to complete
+the ID check, then the link, then to ignore it or contact that shop at its
+privacy contact. A missing privacy contact is refused and no message is
+sent. The reply-to is the shop privacy email. The send panel says the email
+comes from the shop by name. Staging email goes only to an @staging.invalid
 address. A missing Didit setup or a missing mail setup answers 503 and the
-desk says the message was not sent.
+desk says the message was not sent. Quebec and a branch with no province
+are refused with 409 before any email is sent.
 
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 

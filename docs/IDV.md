@@ -80,7 +80,10 @@ and the DPA are signed. These five items are still open:
    at the counter." "The customer scans their ID and takes a selfie with
    Didit." "The result comes back to this screen." Under that list: "Your
    shop is not billed for a check that is declined, abandoned or expired."
-   A Persona shop does not show them.
+   A Persona shop does not show them. The email subject is "Your ID check
+   link from" the shop legal name. The message says that shop sent the link
+   to complete the ID check, then the link, then to ignore it or contact
+   that shop at its privacy contact. A missing privacy contact is refused.
 
 ## References
 

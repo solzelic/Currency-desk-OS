@@ -72,7 +72,9 @@ ReactDOM.createRoot(document.getElementById("mount")).render(
 });
 
 const LINK = "https://verify.didit.me/session/fixturetoken";
-const TEXT = `Check your ID at this link:\n${LINK}\n\nIf you did not ask for this, you can ignore it.`;
+const SHOP = "York Currency Exchange Inc.";
+const CONTACT = "Privacy officer";
+const TEXT = `${SHOP} sent you this link to complete your ID check:\n${LINK}\n\nIf you did not ask for this, you can ignore it, or contact ${SHOP} at ${CONTACT}.`;
 
 async function openLink(page: import("@playwright/test").Page, width: number, sendFails: boolean) {
   await page.setViewportSize({ width, height: width < 500 ? 844 : 900 });
@@ -97,13 +99,17 @@ window.CDOS = {
       copy: function() { return Promise.resolve({
         provider: "didit", tier4: "unavailable", counterOnly: false, quebec: false,
         faceCrop: false, version: "shot", notice: "Before we check your ID",
-        selfieConsent: "Optional face match"
+        selfieConsent: "Optional face match", shopName: ${JSON.stringify(SHOP)}
       }); },
       checks: function() { return Promise.resolve({ records: [] }); },
       start: function() { return Promise.resolve({ providerRef: "inq-1", connected: true }); },
       consent: function() { return Promise.resolve({ consentId: "cns-1" }); },
       link: function() { return Promise.resolve({ url: ${JSON.stringify(LINK)} }); },
-      sendLink: function() { return ${sendFails ? "Promise.reject(Object.assign(new Error('The message was not sent. Try again.'), { status: 503 }))" : "Promise.resolve({ sent: true })"}; }
+      sendLink: function() { return ${sendFails ? "Promise.reject(Object.assign(new Error('The message was not sent. Try again.'), { status: 503 }))" : "Promise.resolve({ sent: true })"}; },
+      noteLink: function(_id, body) {
+        if (body && body.kind === "text") return Promise.resolve({ shop: ${JSON.stringify(SHOP)}, contact: ${JSON.stringify(CONTACT)}, text: ${JSON.stringify(TEXT)} });
+        return Promise.resolve({ recorded: true });
+      }
     }
   }
 };
