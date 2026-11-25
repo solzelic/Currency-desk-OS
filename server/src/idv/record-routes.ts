@@ -70,6 +70,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       provider: readiness.provider,
       ready: readiness.ready,
       testShop: readiness.testShop,
+      sandbox: readiness.sandbox,
       tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,

@@ -10272,7 +10272,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Verification provider ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Verification provider",
-          body: idvLeadText + " No background check or ID verification is sent."
+          body: idvLeadText + " This setting does not send a check."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
@@ -10334,7 +10334,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
           }
         }, "Identity verifications ", /*#__PURE__*/React.createElement(window.CDOS.InfoTip, {
           title: "Identity verifications",
-          body: idvLeadText + " No background check is sent and nothing is charged."
+          body: idvLeadText + " This setting does not send a check."
         })), /*#__PURE__*/React.createElement("div", {
           className: "text-[11px]",
           style: {
@@ -50823,7 +50823,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
-    tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.',
+    tagline: 'This desk screens the name here. Nothing is sent out.',
     channel: 'instant',
     icon: 'search',
     idv: false,
@@ -50833,7 +50833,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'verify',
     label: 'Verified',
-    tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.',
+    tagline: 'This desk screens the name here. It does not authenticate an ID.',
     channel: 'link',
     icon: 'id',
     idv: true,
@@ -50843,7 +50843,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'plus',
     label: 'Verified Plus',
-    tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.',
+    tagline: 'This desk screens the name here. It does not run a biometric.',
     channel: 'link',
     icon: 'shield',
     idv: true,
@@ -53383,13 +53383,13 @@ ${(filing.map || []).map(blockHTML).join('')}
     if (!shop) return "The identity check status is not available.";
     const didit = shop.provider === "didit";
     const name = didit ? "Didit" : "Persona";
-    if (shop.ready === "off") return "Identity checks are off.";
+    if (shop.ready === "off") return "Automatic ID checks are off. Check the ID in person instead.";
     if (shop.ready === "privacy_missing") return "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
     if (shop.ready === "not_configured" || shop.ready === "not_test_shop") {
-      return "Automatic ID check with " + name + " is not available for this shop. Check the ID by hand instead.";
+      return "Automatic ID check with " + name + " is not available for this shop. Check the ID in person instead.";
     }
-    if (didit && shop.testShop) return "Automatic ID check uses Didit (test).";
-    if (didit) return "Automatic ID check uses Didit.";
+    if (didit) return "Automatic ID check uses Didit (test).";
+    if (shop.sandbox) return "Automatic ID check uses Persona (test).";
     return "Automatic ID check uses Persona.";
   }
   function stopLine(err) {
@@ -53397,7 +53397,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const message = err && err.message || "";
     if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
     if (code === "PRIVACY_CONTACT") return message || "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
-    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID in person instead.";
     if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
       return message || "The ID check did not finish. Try again, or check the ID in person.";
     }
@@ -67166,7 +67166,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
   };
   const idvUnknown = () => window.CDOS && window.CDOS.idvLead ? window.CDOS.idvLead(null) : "The identity check status is not available.";
   let idvLeadText = idvUnknown();
-  const STALE_IDV = ["The identity check status is not available.", "Identity checks are off. No identity check is sent.", "Identity checks are off. No identity check was sent."];
+  const STALE_IDV = ["The identity check status is not available.", "Identity checks are off. No identity check is sent.", "Identity checks are off. No identity check was sent.", "Identity checks are off."];
   function useIdvLead() {
     const [lead, setLead] = useState(idvLeadText);
     useEffect(() => {

@@ -57,9 +57,9 @@
   //   • verify — does not authenticate an ID.
   //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.', channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.', channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.', channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'This desk screens the name here. Nothing is sent out.', channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'This desk screens the name here. It does not authenticate an ID.', channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'This desk screens the name here. It does not run a biometric.', channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };

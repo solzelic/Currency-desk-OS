@@ -256,6 +256,7 @@ describe("sandbox start-check", () => {
     expect(crossed.json()).not.toHaveProperty("provider");
     expect(crossed.json()).not.toHaveProperty("ready");
     expect(crossed.json()).not.toHaveProperty("testShop");
+    expect(crossed.json()).not.toHaveProperty("sandbox");
     const staging = await buildApp(handle.db, {}, undefined, {
       persona, fetch: fetchStub, sleep: async () => {},
       env: { ...ENV, STAGING: "1", RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com" },

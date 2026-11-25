@@ -31,6 +31,7 @@
     "The identity check status is not available.",
     "Identity checks are off. No identity check is sent.",
     "Identity checks are off. No identity check was sent.",
+    "Identity checks are off.",
   ];
   function useIdvLead() {
     const [lead, setLead] = useState(idvLeadText);

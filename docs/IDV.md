@@ -80,10 +80,18 @@ and the DPA are signed. These five items are still open:
    shop is not billed for a check that is declined, abandoned or expired."
    A Persona shop does not show them.
 
-`GET /api/idv/clients/:clientId` also returns `provider` and `ready`
-(`off`, `not_test_shop`, `not_configured`, `privacy_missing`, `ok`) to any
-signed-in desk role. The consent read returns the same `ready`. A stopped
-check on the desk says why. Customer consent uses "the staff at this counter"
+`GET /api/idv/clients/:clientId` also returns `provider`, `ready`
+(`off`, `not_test_shop`, `not_configured`, `privacy_missing`, `ok`),
+`checksEnabled`, `testShop`, and `sandbox` to any signed-in desk role. The
+consent read returns the same `ready`, `testShop`, and `sandbox`. A stopped
+check on the desk says why. Checks off say "Automatic ID checks are off.
+Check the ID in person instead." A ready Persona shop says "Automatic ID
+check uses Persona." and adds " (test)" when `sandbox` is true. Didit is
+sandbox only, so a ready Didit shop says "Automatic ID check uses Didit
+(test)." Not configured and not a test shop say the automatic check is not
+available and to check the ID in person. The teller screen does not say
+staging. A missing privacy contact says the owner adds it in Settings,
+Clients and KYC. Customer consent uses "the staff at this counter"
 when the privacy contact is empty, and drops the privacy-policy sentence when
 there is no URL. Staging still blocks the customer link until the privacy
 fields are set. That fallback wording is draft for Compliance review (CD-219).

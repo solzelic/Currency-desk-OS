@@ -1636,7 +1636,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               return (<div className="flex items-center justify-between p-3 mb-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="shield" s={16} c={CD.mute} /></span>
-                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Verification provider <window.CDOS.InfoTip title="Verification provider" body={idvLeadText + " No background check or ID verification is sent."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} No check is sent.</div></div>
+                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Verification provider <window.CDOS.InfoTip title="Verification provider" body={idvLeadText + " This setting does not send a check."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} No check is sent.</div></div>
                 </div>
                 <div className="relative flex items-center">
                   <select value={cur} onChange={e => setProv(e.target.value)} className="text-[13px] font-semibold outline-none appearance-none cursor-pointer" style={{ background: CD.paper, border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.ink, padding: '8px 30px 8px 12px' }}>
@@ -1649,7 +1649,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
               <div className="flex items-center justify-between p-3 mb-4" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: CD.panel }}>
                 <div className="flex items-center gap-2.5">
                   <span className="grid place-items-center flex-none" style={{ width: 34, height: 34, borderRadius: 9, background: CD.lineSoft }}><Ic n="id" s={16} c={CD.mute} /></span>
-                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body={idvLeadText + " No background check is sent and nothing is charged."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} Nothing is charged.</div></div>
+                  <div><div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: CD.ink }}>Identity verifications <window.CDOS.InfoTip title="Identity verifications" body={idvLeadText + " This setting does not send a check."} /></div><div className="text-[11px]" style={{ color: CD.mute }}>{idvLeadText} Nothing is charged.</div></div>
                 </div>
                 <div className="text-right"><div className="text-[13px] font-semibold" style={{ color: CD.mute }}>Not connected</div></div>
               </div>); })()}

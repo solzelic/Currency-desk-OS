@@ -31,7 +31,7 @@ const filled: ConsentFill = {
 };
 
 type StopFn = (err: { code?: string; status?: number; reason?: string; message?: string } | null) => string;
-type LeadFn = (shop: { provider?: string; ready?: string; testShop?: boolean } | null) => string;
+type LeadFn = (shop: { provider?: string; ready?: string; testShop?: boolean; sandbox?: boolean } | null) => string;
 
 function loadStopLine(): { stopLine: StopFn; lead: LeadFn } {
   const g = globalThis as unknown as {
@@ -40,7 +40,7 @@ function loadStopLine(): { stopLine: StopFn; lead: LeadFn } {
     window: unknown;
     document: { body: { dataset: Record<string, string> }; addEventListener: () => void; removeEventListener: () => void };
     localStorage: { getItem: () => null; setItem: () => void; removeItem: () => void };
-    CDOS: { CD: object; idvProviderCopy?: (shop: { provider?: string; ready?: string; testShop?: boolean } | null) => string; IdCheck?: { stopLine: StopFn } };
+    CDOS: { CD: object; idvProviderCopy?: (shop: { provider?: string; ready?: string; testShop?: boolean; sandbox?: boolean } | null) => string; IdCheck?: { stopLine: StopFn } };
   };
   const CD = new Proxy({}, { get: () => "var(--cd-ink)" });
   g.React = React;
@@ -70,9 +70,9 @@ describe("identity check readiness", () => {
     expect(stopLine({ code: "IDV_OFF" })).toBe("Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.");
     expect(stopLine({ code: "PRIVACY_CONTACT", message: "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC." }))
       .toBe("Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.");
-    expect(stopLine({ status: 503, reason: "not_available" })).toBe("Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.");
-    expect(stopLine({ code: "IDV_PROVIDER", message: "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead." }))
-      .toBe("Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.");
+    expect(stopLine({ status: 503, reason: "not_available" })).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
+    expect(stopLine({ code: "IDV_PROVIDER", message: "Automatic ID check with Didit is not available for this shop. Check the ID in person instead." }))
+      .toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
     expect(stopLine({ code: "IDV_KEY", message: "Identity checks are not connected." })).toBe("Identity checks are not connected.");
     expect(stopLine({ code: "IDV_CAP", message: "This shop already has the maximum number of identity checks in progress." }))
       .toBe("This shop already has the maximum number of identity checks in progress.");
@@ -97,12 +97,13 @@ describe("identity check readiness", () => {
 describe("consent copy", () => {
   it("names the provider for the cashier, and leaves a missing read unknown", () => {
     const hand = "Automatic ID check with ";
-    const instead = " is not available for this shop. Check the ID by hand instead.";
+    const instead = " is not available for this shop. Check the ID in person instead.";
     expect(lead(null)).toBe("The identity check status is not available.");
-    expect(lead({ provider: "persona", ready: "off" })).toBe("Identity checks are off.");
-    expect(lead({ provider: "didit", ready: "off" })).toBe("Identity checks are off.");
+    expect(lead({ provider: "persona", ready: "off" })).toBe("Automatic ID checks are off. Check the ID in person instead.");
+    expect(lead({ provider: "didit", ready: "off" })).toBe("Automatic ID checks are off. Check the ID in person instead.");
     expect(lead({ provider: "persona", ready: "ok" })).toBe("Automatic ID check uses Persona.");
-    expect(lead({ provider: "didit", ready: "ok" })).toBe("Automatic ID check uses Didit.");
+    expect(lead({ provider: "persona", ready: "ok", sandbox: true })).toBe("Automatic ID check uses Persona (test).");
+    expect(lead({ provider: "didit", ready: "ok" })).toBe("Automatic ID check uses Didit (test).");
     expect(lead({ provider: "didit", ready: "ok", testShop: true })).toBe("Automatic ID check uses Didit (test).");
     expect(lead({ provider: "persona", ready: "not_configured" })).toBe(hand + "Persona" + instead);
     expect(lead({ provider: "didit", ready: "not_configured" })).toBe(hand + "Didit" + instead);

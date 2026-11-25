@@ -66,13 +66,13 @@
     if (!shop) return "The identity check status is not available.";
     const didit = shop.provider === "didit";
     const name = didit ? "Didit" : "Persona";
-    if (shop.ready === "off") return "Identity checks are off.";
+    if (shop.ready === "off") return "Automatic ID checks are off. Check the ID in person instead.";
     if (shop.ready === "privacy_missing") return "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
     if (shop.ready === "not_configured" || shop.ready === "not_test_shop") {
-      return "Automatic ID check with " + name + " is not available for this shop. Check the ID by hand instead.";
+      return "Automatic ID check with " + name + " is not available for this shop. Check the ID in person instead.";
     }
-    if (didit && shop.testShop) return "Automatic ID check uses Didit (test).";
-    if (didit) return "Automatic ID check uses Didit.";
+    if (didit) return "Automatic ID check uses Didit (test).";
+    if (shop.sandbox) return "Automatic ID check uses Persona (test).";
     return "Automatic ID check uses Persona.";
   }
   function stopLine(err) {
@@ -80,7 +80,7 @@
     const message = (err && err.message) || "";
     if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
     if (code === "PRIVACY_CONTACT") return message || "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
-    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID in person instead.";
     if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
       return message || "The ID check did not finish. Try again, or check the ID in person.";
     }

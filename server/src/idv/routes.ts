@@ -279,7 +279,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     };
     const readiness = await readIdvReady(db, actor, options?.env ?? process.env);
     const stored = await latestClientIdvStatus(db, who.legalEntityId, clientId);
-    const file = { checksEnabled: readiness.checksEnabled, provider: readiness.provider, ready: readiness.ready, testShop: readiness.testShop };
+    const file = { checksEnabled: readiness.checksEnabled, provider: readiness.provider, ready: readiness.ready, testShop: readiness.testShop, sandbox: readiness.sandbox };
     if (stored !== "approved") return { status: stored, ...file };
     const shopCode = await shopEnvCodeFor(db, who.tenantId);
     const status = personaPassLabel(options?.env ?? process.env, configRow?.api_key_ref ?? null, shopCode);

@@ -66,10 +66,10 @@ export function diditSelection(
   testShop: boolean,
 ): { ok: true } | { ok: false; message: string } {
   if (!diditRuntimeAllowed(env)) {
-    return { ok: false, message: "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead." };
+    return { ok: false, message: "Automatic ID check with Didit is not available for this shop. Check the ID in person instead." };
   }
   if (!testShop) {
-    return { ok: false, message: "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead." };
+    return { ok: false, message: "Automatic ID check with Didit is not available for this shop. Check the ID in person instead." };
   }
   return { ok: true };
 }
