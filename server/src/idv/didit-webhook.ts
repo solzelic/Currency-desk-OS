@@ -3,11 +3,12 @@
    Failed, abandoned, and declined scans are not billed. */
 import { randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
+import { latestFaceAttestation, writeCounterScanPass } from "./counter-scan.js";
 import { chargeForDiditOutcome, diditRuntimeAllowed } from "./providers/didit.js";
 import type { IdvResult } from "./provider.js";
 import { dbQuery, writePersonaRecord } from "./records.js";
 import { locateIdvInquiry } from "./store.js";
-import { classifyCheck, type CheckResult } from "./tiers.js";
+import { classifyCheck, type CheckMethod, type CheckResult } from "./tiers.js";
 
 const RECORDABLE = new Set<IdvResult["outcome"]>(["approved", "declined", "failed", "expired", "review"]);
 
@@ -61,6 +62,13 @@ async function auditShop(db: Db, providerRef: string) {
   };
 }
 
+function storedMethod(value: string | null): CheckMethod {
+  if (value === "counter_id_scan" || value === "counter_full") return value;
+  return "id_and_selfie";
+}
+
+/* ID and selfie, including the full counter check, still needs the selfie.
+   A counter ID scan does not. That pass is written only with an attestation. */
 function checkResult(result: IdvResult): CheckResult {
   const selfie = result.outcome === "approved" && result.checksPassed === true ? "approved" : null;
   return classifyCheck(result.outcome, selfie).result;
@@ -90,13 +98,19 @@ export async function finishDiditWebhook(
     await writeDiditAudit(db, located, "idv.didit_webhook_refused", { reason: "not_test_shop" });
     return "unknown";
   }
-  const next = statusWord(result);
+  const method = storedMethod(located.checkMethod);
+  const idReady = method === "counter_id_scan" && result.outcome === "approved" && result.idPassed === true;
   return db.transaction(async (tx) => {
     const q = dbQuery(tx);
     await q.query(
       "SELECT reference_id FROM idv_inquiries WHERE provider = $1 AND provider_ref = $2 FOR UPDATE",
       [result.provider, result.providerRef],
     );
+    const attested = method === "counter_id_scan"
+      ? await latestFaceAttestation(tx, located.tenantId, located.shopId, located.referenceId)
+      : null;
+    const awaiting = idReady && !attested;
+    const next = awaiting ? "in progress" : statusWord(result);
     const inserted = await q.query(
       `INSERT INTO idv_events (event_id, provider, provider_ref, reference_id, shop_id, branch_id, teller_id, outcome)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -104,6 +118,12 @@ export async function finishDiditWebhook(
       [result.eventId, result.provider, result.providerRef, located.referenceId, located.shopId, located.branchId, located.tellerId, result.outcome],
     );
     if (!inserted.rows.length) return "duplicate" as const;
+    if (idReady) {
+      await q.query(
+        "UPDATE idv_inquiries SET id_scan_passed = true WHERE provider = 'didit' AND provider_ref = $1",
+        [result.providerRef],
+      );
+    }
     const updated = await q.query(
       `UPDATE idv_inquiries SET status = $1
         WHERE provider = $2 AND provider_ref = $3
@@ -112,45 +132,65 @@ export async function finishDiditWebhook(
         RETURNING reference_id`,
       [next, result.provider, result.providerRef],
     );
-    /* A later status that does not replace the stored one writes no check row. */
+    /* A later status that does not replace the stored one writes no check row.
+       An approved document scan with no attestation is not a verification. */
     await writeDiditAudit(tx as Db, located, "idv.didit_result", {
       outcome: result.outcome,
       referenceId: located.referenceId,
       applied: updated.rows.length > 0,
     });
-    if (updated.rows.length && RECORDABLE.has(result.outcome) && located.clientId) {
-      const tier = located.requestedTier === "4" ? "4" : "3";
-      await writePersonaRecord(tx, {
-        recordId: `idc_${randomUUID()}`,
-        tenantId: located.tenantId,
-        legalEntityId: located.shopId,
-        branchId: located.branchId,
-        staffId: located.tellerId,
-        clientId: located.clientId,
-        tier,
-        inquiryId: located.providerRef,
-        textName: null,
-        documentType: null,
-        idClass: null,
-        number: null,
-        numberCipher: null,
-        cropCipher: null,
-        jurisdiction: null,
-        country: null,
-        expiry: null,
-        birth: null,
-        address: null,
-        result: checkResult(result),
-        providerChecks: result.checksLine ?? "ID not passed, liveness not passed, face match not passed",
-        governmentId: null,
-        selfieId: null,
-        templateId: null,
-        templateVersion: null,
-        provider: "didit",
-        method: "id_and_selfie",
-        databaseStep: tier === "4" ? "off" : "not_applicable",
-      });
+    if (awaiting || !updated.rows.length || !RECORDABLE.has(result.outcome) || !located.clientId) {
+      return "stored" as const;
     }
+    if (method === "counter_id_scan" && idReady && attested) {
+      await writeCounterScanPass(tx, {
+        tenantId: located.tenantId,
+        shopId: located.shopId,
+        branchId: located.branchId,
+        tellerId: located.tellerId,
+        clientId: located.clientId,
+        providerRef: located.providerRef,
+        checksLine: "ID passed",
+        attestation: attested,
+      });
+      return "stored" as const;
+    }
+    const tier = method === "counter_id_scan" ? "3" : located.requestedTier === "4" ? "4" : "3";
+    const counterResult = method === "counter_id_scan"
+      ? classifyCheck(result.outcome, null, { method, idPassed: result.idPassed === true, attested: false }).result
+      : checkResult(result);
+    await writePersonaRecord(tx, {
+      recordId: `idc_${randomUUID()}`,
+      tenantId: located.tenantId,
+      legalEntityId: located.shopId,
+      branchId: located.branchId,
+      staffId: located.tellerId,
+      clientId: located.clientId,
+      tier,
+      inquiryId: located.providerRef,
+      textName: null,
+      documentType: null,
+      idClass: null,
+      number: null,
+      numberCipher: null,
+      cropCipher: null,
+      jurisdiction: null,
+      country: null,
+      expiry: null,
+      birth: null,
+      address: null,
+      result: counterResult,
+      providerChecks: method === "counter_id_scan"
+        ? (result.idPassed ? "ID passed" : "ID not passed")
+        : (result.checksLine ?? "ID not passed, liveness not passed, face match not passed"),
+      governmentId: null,
+      selfieId: null,
+      templateId: null,
+      templateVersion: null,
+      provider: "didit",
+      method: method === "counter_id_scan" ? "counter_id_scan" : method === "counter_full" ? "counter_full" : "id_and_selfie",
+      databaseStep: tier === "4" ? "off" : "not_applicable",
+    });
     return "stored" as const;
   });
 }
