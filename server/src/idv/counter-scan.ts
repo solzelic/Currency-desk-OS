@@ -88,12 +88,24 @@ async function existingPass(db: Db, shopId: string, providerRef: string): Promis
   return typeof id === "string" ? id : null;
 }
 
-/* Writes the pass only when the document scan already passed and an
-   attestation is on file. The caller holds the inquiry row. */
+/* Writes the pass only when this inquiry is still the in-progress ID
+   approval. A declined, expired, or review status does not match, and
+   then no pass row is written. The caller holds the inquiry row. */
 export async function writeCounterScanPass(db: Db, input: {
   tenantId: string; shopId: string; branchId: string; tellerId: string; clientId: string;
   providerRef: string; checksLine: string; attestation: FaceAttestation;
-}): Promise<string> {
+}): Promise<string | null> {
+  const updated = await dbQuery(db).query(
+    `UPDATE idv_inquiries
+        SET status = 'approved'
+      WHERE provider = 'didit' AND provider_ref = $1
+        AND status = 'in progress'
+        AND id_scan_passed IS TRUE
+        AND status NOT IN ('approved', 'declined', 'failed', 'expired')
+      RETURNING reference_id`,
+    [input.providerRef],
+  );
+  if (!updated.rows.length) return null;
   const already = await existingPass(db, input.shopId, input.providerRef);
   if (already) return already;
   const recordId = `idc_${randomUUID()}`;
@@ -132,12 +144,18 @@ export async function writeCounterScanPass(db: Db, input: {
     attestationRole: input.attestation.role,
     attestationAt: input.attestation.attestedAt,
   });
-  await dbQuery(db).query(
-    `UPDATE idv_inquiries SET status = 'approved', id_scan_passed = true
-      WHERE provider = 'didit' AND provider_ref = $1`,
-    [input.providerRef],
-  );
   return recordId;
+}
+
+async function auditAttest(db: Db, actor: DeskActor, referenceId: string, verified: boolean): Promise<void> {
+  await dbQuery(db).query(
+    `INSERT INTO audit_events (id, tenant_id, legal_entity_id, branch_id, actor_id, action, detail)
+     VALUES ($1, $2, $3, $4, $5, 'idv.counter_scan_attested', $6::jsonb)`,
+    [
+      randomUUID(), actor.tenantId, actor.legalEntityId, actor.branchId, actor.userId,
+      JSON.stringify({ referenceId, verified }),
+    ],
+  );
 }
 
 export async function recordCounterFaceMatch(
@@ -172,8 +190,10 @@ export async function recordCounterFaceMatch(
     if (row.check_method !== "counter_id_scan") {
       return fail(409, "IDV_METHOD", "That check is not a counter ID scan.");
     }
-    const prior = await existingPass(tx, row.shop_id, row.provider_ref);
-    if (prior) return { ok: true, body: { verified: true, recordId: prior, pending: false } };
+    if (row.status !== "in progress" || row.id_scan_passed !== true) {
+      await auditAttest(tx, actor, row.reference_id, false);
+      return fail(409, "scan_not_ready", "The ID scan is not ready to confirm.");
+    }
     const attestation = await insertAttestation(tx, {
       tenantId: actor.tenantId,
       shopId: row.shop_id,
@@ -184,9 +204,6 @@ export async function recordCounterFaceMatch(
       staffId: actor.staffId,
       role: actor.role,
     });
-    if (row.id_scan_passed !== true) {
-      return { ok: true, body: { verified: false, recordId: null, pending: true } };
-    }
     const recordId = await writeCounterScanPass(tx, {
       tenantId: actor.tenantId,
       shopId: row.shop_id,
@@ -197,6 +214,11 @@ export async function recordCounterFaceMatch(
       checksLine: "ID passed",
       attestation,
     });
+    if (!recordId) {
+      await auditAttest(tx, actor, row.reference_id, false);
+      return fail(409, "scan_not_ready", "The ID scan is not ready to confirm.");
+    }
+    await auditAttest(tx, actor, row.reference_id, true);
     return { ok: true, body: { verified: true, recordId, pending: false } };
   });
 }

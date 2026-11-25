@@ -736,6 +736,11 @@ describe("didit routes", () => {
     });
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json()).toMatchObject({ verified: true, pending: false });
+    const attested = await handle.db.execute(sql`
+      SELECT detail->>'verified' AS verified FROM audit_events
+       WHERE action = 'idv.counter_scan_attested' AND detail->>'referenceId' = 'ref-scan'
+    `);
+    expect(attested.rows[0]).toMatchObject({ verified: "true" });
     const record = await handle.db.execute(sql`
       SELECT result, method, provider_checks, attestation_staff_id, attestation_role, inspector_staff_id,
              attestation, attestation_at <= now() AS not_future,
@@ -793,7 +798,7 @@ describe("didit routes", () => {
     expect(row.rows[0]).toMatchObject({ result: "declined", method: "counter_id_scan" });
   });
 
-  it("verifies a document scan when the teller attested before the webhook", async () => {
+  it("refuses an attestation before the ID result, then accepts one after it", async () => {
     const session = "12121212-3434-4545-8656-787878787878";
     await handle.db.execute(sql`
       INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
@@ -803,12 +808,19 @@ describe("didit routes", () => {
       method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
       payload: { clientId: "cli-scan", providerRef: session, attested: true },
     });
-    expect(early.statusCode, early.body).toBe(200);
-    expect(early.json()).toMatchObject({ verified: false, pending: true, recordId: null });
+    expect(early.statusCode, early.body).toBe(409);
+    expect(early.json()).toMatchObject({ error: "scan_not_ready" });
     const res = await scanWebhook(session, "ref-attest-first", "Approved", {
       id_verifications: [{ status: "Approved" }],
     });
     expect(res.statusCode, res.body).toBe(200);
+    const before = await handle.db.execute(sql`SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${session} AND result = 'pass'`);
+    expect(before.rows).toEqual([]);
+    const saved = await app.inject({
+      method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+      payload: { clientId: "cli-scan", providerRef: session, attested: true },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
     const row = await handle.db.execute(sql`
       SELECT result, attestation_role, attestation_staff_id FROM idv_check_records WHERE persona_inquiry_id = ${session}
     `);
@@ -817,6 +829,54 @@ describe("didit routes", () => {
       attestation_role: "teller",
       attestation_staff_id: `${DEMO.tenantId}:m.costa`,
     });
+  });
+
+  it("does not turn a declined, expired, or review scan into a pass", async () => {
+    async function seed(reference: string, session: string) {
+      await handle.db.execute(sql`
+        INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+        VALUES (${reference}, ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+      `);
+    }
+    async function attest(session: string) {
+      return app.inject({
+        method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+        payload: { clientId: "cli-scan", providerRef: session, attested: true },
+      });
+    }
+    async function expectKept(session: string, status: string) {
+      const refused = await attest(session);
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json()).toMatchObject({ error: "scan_not_ready" });
+      const passes = await handle.db.execute(sql`
+        SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${session} AND result = 'pass'
+      `);
+      expect(passes.rows).toEqual([]);
+      const inquiry = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE provider_ref = ${session}`);
+      expect(inquiry.rows[0]).toMatchObject({ status });
+      const audited = await handle.db.execute(sql`
+        SELECT detail->>'verified' AS verified FROM audit_events
+         WHERE action = 'idv.counter_scan_attested'
+           AND detail->>'referenceId' = (SELECT reference_id FROM idv_inquiries WHERE provider_ref = ${session})
+         ORDER BY at DESC LIMIT 1
+      `);
+      expect(audited.rows[0]).toMatchObject({ verified: "false" });
+    }
+    const approved = { id_verifications: [{ status: "Approved" }] };
+    await seed("ref-then-declined", "15151515-1616-4545-8616-191919191919");
+    expect((await scanWebhook("15151515-1616-4545-8616-191919191919", "ref-then-declined", "Approved", approved)).statusCode).toBe(200);
+    expect((await scanWebhook("15151515-1616-4545-8616-191919191919", "ref-then-declined", "Declined", { id_verifications: [{ status: "Declined" }] })).statusCode).toBe(200);
+    await expectKept("15151515-1616-4545-8616-191919191919", "declined");
+
+    await seed("ref-declined-first", "16161616-1717-4545-8616-202020202020");
+    expect((await scanWebhook("16161616-1717-4545-8616-202020202020", "ref-declined-first", "Declined", { id_verifications: [{ status: "Declined" }] })).statusCode).toBe(200);
+    expect((await scanWebhook("16161616-1717-4545-8616-202020202020", "ref-declined-first", "Approved", approved)).statusCode).toBe(200);
+    await expectKept("16161616-1717-4545-8616-202020202020", "declined");
+
+    await seed("ref-then-review", "17171717-1818-4545-8616-212121212121");
+    expect((await scanWebhook("17171717-1818-4545-8616-212121212121", "ref-then-review", "Approved", approved)).statusCode).toBe(200);
+    expect((await scanWebhook("17171717-1818-4545-8616-212121212121", "ref-then-review", "In Review", approved)).statusCode).toBe(200);
+    await expectKept("17171717-1818-4545-8616-212121212121", "needs review");
   });
 
   it("still requires liveness and face match on the ID and selfie path", async () => {

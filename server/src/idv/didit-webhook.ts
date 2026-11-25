@@ -110,7 +110,6 @@ export async function finishDiditWebhook(
       ? await latestFaceAttestation(tx, located.tenantId, located.shopId, located.referenceId)
       : null;
     const awaiting = idReady && !attested;
-    const next = awaiting ? "in progress" : statusWord(result);
     const inserted = await q.query(
       `INSERT INTO idv_events (event_id, provider, provider_ref, reference_id, shop_id, branch_id, teller_id, outcome)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -118,19 +117,23 @@ export async function finishDiditWebhook(
       [result.eventId, result.provider, result.providerRef, located.referenceId, located.shopId, located.branchId, located.tellerId, result.outcome],
     );
     if (!inserted.rows.length) return "duplicate" as const;
-    if (idReady) {
-      await q.query(
-        "UPDATE idv_inquiries SET id_scan_passed = true WHERE provider = 'didit' AND provider_ref = $1",
-        [result.providerRef],
-      );
-    }
+    /* An approved ID stays in progress until the attestation writes the pass.
+       id_scan_passed moves only with a status this guard accepts.
+       A final status is not reopened, and any other status clears the flag. */
+    const next = idReady ? "in progress" : statusWord(result);
     const updated = await q.query(
-      `UPDATE idv_inquiries SET status = $1
-        WHERE provider = $2 AND provider_ref = $3
+      `UPDATE idv_inquiries
+          SET status = $1,
+              id_scan_passed = CASE
+                WHEN $2::text = 'counter_id_scan' AND $1 = 'in progress' AND $3::boolean IS TRUE THEN true
+                WHEN $2::text = 'counter_id_scan' THEN false
+                ELSE id_scan_passed
+              END
+        WHERE provider = $4 AND provider_ref = $5
           AND status NOT IN ('approved', 'declined', 'failed', 'expired')
           AND NOT (status = 'needs review' AND $1 = 'in progress')
         RETURNING reference_id`,
-      [next, result.provider, result.providerRef],
+      [next, method, idReady, result.provider, result.providerRef],
     );
     /* A later status that does not replace the stored one writes no check row.
        An approved document scan with no attestation is not a verification. */
