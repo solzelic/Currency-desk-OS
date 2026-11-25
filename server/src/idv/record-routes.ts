@@ -6,8 +6,9 @@ import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { isStagingRuntime } from "../auth/staging-runtime.js";
 import type { Db } from "../db/index.js";
-import { CONSENT_VERSION, noticeCopy, privacyReady, selfieConsentCopy } from "./consent-copy.js";
+import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoticeCopy, diditSelfieConsentCopy, noticeCopy, privacyReady, selfieConsentCopy } from "./consent-copy.js";
 import { generateOneTimeLink } from "./persona-calls.js";
+import { diditConfigured, diditSelection, diditSessionLink } from "./providers/didit.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
@@ -46,16 +47,20 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const actor = await who(req, reply);
     if (!actor) return;
     const fill = await consentFill(db, actor);
+    const shop = await loadShopIdv(db, actor.legalEntityId);
+    const didit = shop.provider === "didit";
     const branch = await dbQuery(db).query(
       "SELECT province FROM branches WHERE id = $1 AND legal_entity_id = $2",
       [actor.branchId, actor.legalEntityId],
     );
     const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
     return {
-      version: CONSENT_VERSION,
+      version: didit ? DIDIT_CONSENT_VERSION : CONSENT_VERSION,
       faceCrop: fill.faceCrop,
-      notice: noticeCopy(fill),
-      selfieConsent: selfieConsentCopy(fill),
+      notice: didit ? diditNoticeCopy(fill) : noticeCopy(fill),
+      selfieConsent: didit ? diditSelfieConsentCopy(fill) : selfieConsentCopy(fill),
+      provider: didit ? "didit" : "persona",
+      tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,
       counterLine: gate.line,
@@ -161,6 +166,19 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       });
     }
     const shop = await loadShopIdv(db, actor.legalEntityId);
+    if (shop.provider === "didit") {
+      const tenant = await dbQuery(db).query("SELECT is_test_shop FROM tenants WHERE id = $1", [actor.tenantId]);
+      const testShop = tenant.rows[0]?.is_test_shop === true;
+      const selection = diditSelection(env(), testShop);
+      if (!selection.ok) return reply.code(409).send({ code: "IDV_PROVIDER", message: selection.message });
+      if (!diditConfigured(env())) return reply.code(503).send({ error: "not_available" });
+      try {
+        const url = await diditSessionLink({ sessionId: inquiryId, env: env(), fetchImpl: options?.fetch });
+        return { url };
+      } catch {
+        return reply.code(502).send({ error: "link_failed", message: "The ID check link could not be opened." });
+      }
+    }
     const key = personaApiKey({ apiKeyRef: shop.apiKeyRef, shopCode: await shopEnvCodeFor(db, actor.tenantId) }, env());
     if (!key) return reply.code(409).send({ code: "IDV_KEY", message: "Identity checks are not connected." });
     try {

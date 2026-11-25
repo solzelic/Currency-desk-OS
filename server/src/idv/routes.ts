@@ -11,8 +11,10 @@ import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { audit } from "../audit.js";
 import type { Db } from "../db/index.js";
 import { reserveIdvCredit } from "./credit.js";
+import { finishDiditWebhook } from "./didit-webhook.js";
 import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
+import { diditConfigured, diditSelection, diditWorkflowForTier } from "./providers/didit.js";
 import { personaConnection, personaKeyMatchesRuntime, personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import { clientOnShop, failStarting, latestClientIdvStatus, reserveIdvSlot, setProviderRef } from "./store.js";
@@ -65,9 +67,14 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
   app.post<{ Params: { provider: string } }>("/api/webhooks/idv/:provider", { bodyLimit: IDV_WEBHOOK_BODY_LIMIT, config: { rawBody: true } }, async (req, reply) => {
     if (!(req.params.provider in registry)) return reply.code(404).send({ error: "unknown_provider" });
     const provider = registry[req.params.provider];
-    if (!provider) return reply.code(503).send({ error: "not_configured" });
+    if (!provider) {
+      const error = req.params.provider === "didit" ? "not_available" : "not_configured";
+      return reply.code(503).send({ error });
+    }
     const raw = rawBuffer(req.rawBody);
     const headers = req.headers as Record<string, string | string[] | undefined>;
+    /* Unsigned, stale, and unknown-session Didit refusals are not audited.
+       audit_events needs a shop, and an unsigned body is not a shop. */
     if (!raw || !provider.verifyWebhook({ rawBody: raw, headers })) {
       return reply.code(401).send({ error: "invalid_signature" });
     }
@@ -78,7 +85,9 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     if (!result || result.provider !== provider.name) return reply.code(400).send({ error: "invalid_webhook" });
     if (result.ignore) return { received: true, dropped: true };
     try {
-      const saved = await finishIdvWebhook(db, result, { env: options?.env ?? process.env, fetchImpl: options?.fetch });
+      const saved = provider.name === "didit"
+        ? await finishDiditWebhook(db, result, options?.env ?? process.env)
+        : await finishIdvWebhook(db, result, { env: options?.env ?? process.env, fetchImpl: options?.fetch });
       if (saved === "unknown") return { received: true, dropped: true };
       if (saved === "conflict") return reply.code(400).send({ error: "invalid_webhook" });
       if (saved === "duplicate") return { received: true, duplicate: true };
@@ -122,18 +131,39 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const id = typeof row.provider === "string" ? row.provider : "";
     if (!(id in starts)) return reply.code(409).send({ code: "IDV_PROVIDER", message: UNKNOWN });
     const provider = starts[id];
+    const env = options?.env ?? process.env;
+    if (id === "didit") {
+      const shopRow = await db.execute(sql`
+        SELECT t.is_test_shop
+          FROM legal_entities e
+          JOIN tenants t ON t.id = e.tenant_id
+         WHERE e.id = ${who.legalEntityId}
+         LIMIT 1
+      `);
+      const testShop = (shopRow.rows[0] as { is_test_shop?: boolean } | undefined)?.is_test_shop === true;
+      const selection = diditSelection(env, testShop);
+      if (!selection.ok) return reply.code(409).send({ code: "IDV_PROVIDER", message: selection.message });
+      if (!provider || !diditConfigured(env)) return reply.code(503).send({ error: "not_available" });
+      const workflow = diditWorkflowForTier(gateTier, env);
+      if (!workflow.ok) return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+    }
     if (!provider) return { connected: false, message: NOT_CONNECTED };
     const spec = {
       referenceId: "", shopId: who.legalEntityId, branchId: who.branchId, tellerId: who.id,
       apiKeyRef: row.api_key_ref ?? null,
       templateId: templateForTier(shop, tier) ?? row.template_id ?? null,
       shopCode: await shopEnvCodeFor(db, who.tenantId),
+      tier: gateTier,
     };
-    if (provider.ready && !provider.ready(spec)) return { connected: false, message: NOT_CONNECTED };
-    const env = options?.env ?? process.env;
-    const creds = personaConnection(spec, env);
-    if (creds && !personaKeyMatchesRuntime(creds.apiKey, env)) {
-      return reply.code(409).send({ code: "IDV_KEY", message: KEY_MISMATCH });
+    if (provider.ready && !provider.ready(spec)) {
+      if (provider.name === "didit") return reply.code(503).send({ error: "not_available" });
+      return { connected: false, message: NOT_CONNECTED };
+    }
+    if (provider.name === "persona") {
+      const creds = personaConnection(spec, env);
+      if (creds && !personaKeyMatchesRuntime(creds.apiKey, env)) {
+        return reply.code(409).send({ code: "IDV_KEY", message: KEY_MISMATCH });
+      }
     }
     if (clientId && !await clientOnShop(db, who.legalEntityId, who.tenantId, clientId, options?.clients)) {
       return reply.code(404).send({ error: "not_found", message: "That client is not on this shop." });
@@ -177,8 +207,13 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       };
     } catch (err) {
       await failStarting(db, activeId);
+      if (err instanceof Error && err.message === "not_available") return reply.code(503).send({ error: "not_available" });
+      if (err instanceof Error && err.message === "tier_unavailable") {
+        return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+      }
       if (err instanceof Error && err.message === "not_connected") return { connected: false, message: NOT_CONNECTED };
-      req.log.error({ reason: "start_failed", name: err instanceof Error ? err.name : "Error" }, "idv start failed");
+      const code = err instanceof Error && /^[a-z0-9_]+$/.test(err.message) ? err.message : "start_failed";
+      req.log.error({ reason: "start_failed", code }, "idv start failed");
       return reply.code(502).send({ error: "provider_unavailable", message: UNAVAILABLE });
     }
   });

@@ -54,6 +54,12 @@ export function resolveTier(input: string): TierNumber | null {
   return TIER_NUMBER[input] ?? null;
 }
 
+export function methodLabel(method: CheckMethod, provider = "persona"): string {
+  if (provider === "didit" && method === "id_and_selfie") return "ID and selfie, Didit";
+  if (provider === "didit" && method === "id_selfie_database") return "ID, selfie and database, Didit";
+  return METHOD_LABEL[method];
+}
+
 export function faceMatchTier(tier: TierNumber | null): boolean {
   return tier === "3" || tier === "4";
 }

@@ -1,13 +1,16 @@
 /* Webhook providers and start providers. The route asks this map.
    Provider names and env vars stay in the adapter. */
 import type { ClientLookup, IdvProvider } from "./provider.js";
+import { createDiditProvider } from "./providers/didit.js";
 import { personaConnection } from "./providers/persona.js";
 import { createPersonaProvider, startPersonaCheck } from "./providers/persona/index.js";
 
 const PERSONA = "persona";
+const DIDIT = "didit";
 
 export type IdvRouteOptions = {
   persona?: IdvProvider | null;
+  didit?: IdvProvider | null;
   providers?: Readonly<Record<string, IdvProvider | null>>;
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
@@ -18,9 +21,16 @@ export type IdvRouteOptions = {
   rateLimitStore?: Map<string, number[]>;
 };
 
+function diditWebhook(options?: IdvRouteOptions): IdvProvider | null {
+  if (options && "didit" in options) return options.didit ?? null;
+  if (options && "persona" in options && options.env === undefined) return null;
+  return createDiditProvider(options?.env);
+}
+
 export function webhookProviders(options?: IdvRouteOptions): Record<string, IdvProvider | null> {
-  if (options && "persona" in options) return { [PERSONA]: options.persona ?? null };
-  return { [PERSONA]: createPersonaProvider(options?.env) };
+  const didit = diditWebhook(options);
+  if (options && "persona" in options) return { [PERSONA]: options.persona ?? null, [DIDIT]: didit };
+  return { [PERSONA]: createPersonaProvider(options?.env), [DIDIT]: didit };
 }
 
 /* null: the caller passed no provider. Absent: unknown provider.
@@ -37,5 +47,6 @@ export function startProviders(options?: IdvRouteOptions): Record<string, IdvPro
       verifyWebhook() { return false; },
       parseResult() { return null; },
     },
+    [DIDIT]: createDiditProvider(env, deps),
   };
 }
