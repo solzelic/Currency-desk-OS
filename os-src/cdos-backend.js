@@ -1011,6 +1011,9 @@
     link: function (inquiryId) {
       return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });
     },
+    sendLink: function (inquiryId, body) {
+      return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/send-link", { method: "POST", body: JSON.stringify(body) });
+    },
     inPerson: function (body) { return request("/api/idv/checks/in-person", { method: "POST", body: JSON.stringify(body) }); },
     returning: function (body) { return request("/api/idv/checks/returning", { method: "POST", body: JSON.stringify(body) }); },
     reveal: function (recordId, body) {

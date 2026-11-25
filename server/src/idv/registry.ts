@@ -19,6 +19,8 @@ export type IdvRouteOptions = {
   clients?: ClientLookup;
   ratePerMinute?: number;
   rateLimitStore?: Map<string, number[]>;
+  mail?: (to: string, subject: string, text: string) => Promise<"sent" | "failed">;
+  now?: () => number;
 };
 
 function diditWebhook(options?: IdvRouteOptions): IdvProvider | null {

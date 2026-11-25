@@ -84,7 +84,7 @@
   /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
   const CUSTOMER_STEPS = [
-    "Open the link on the counter device, or send it to the customer's phone.",
+    "The link goes to the customer by email, or you copy a text. The counter device is never handed over.",
     "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.",
     "The customer scans their ID and takes a selfie with Didit.",
     "The result comes back to this screen.",
@@ -189,6 +189,9 @@
     const [form, setForm] = useState({ nameOnId: "", documentType: "", documentNumber: "", issuingJurisdiction: "", issuingCountry: "CA", expiryDate: "", attested: false });
     const [ret, setRet] = useState({ noDoubts: false, detailsChanged: false, doubtReason: "", pep: "" });
     const [moreOpen, setMoreOpen] = useState(false);
+    const [sendTo, setSendTo] = useState("");
+    const [sendNote, setSendNote] = useState("");
+    const [sendError, setSendError] = useState("");
 
     useEffect(() => holdSheet(), []);
     useEffect(() => {
@@ -197,6 +200,12 @@
       let live = true;
       client.copy().then((body) => { if (live) setCopy(body); }).catch((err) => { if (live) setError(err.message || "The notice could not be read."); });
       client.checks(clientId).then((body) => { if (live) setPack(body); }).catch(() => {});
+      const clients = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (clients && clients.get) {
+        clients.get(clientId).then((body) => {
+          if (live && body && body.email) setSendTo((cur) => cur || String(body.email));
+        }).catch(() => {});
+      }
       return () => { live = false; };
     }, [clientId]);
 
@@ -362,6 +371,31 @@
       setBusy(false);
     };
     const setField = (key, value) => setForm((cur) => ({ ...cur, [key]: value }));
+    const linkMessage = (url) => `Check your ID at this link:\n${url}\n\nIf you did not ask for this, you can ignore it.`;
+    const copyValue = async (value, okLine, failLine) => {
+      setSendError("");
+      try {
+        await navigator.clipboard.writeText(value);
+        setSendNote(okLine);
+      } catch (_) {
+        setSendNote("");
+        setSendError(failLine);
+      }
+    };
+    const sendEmailLink = async () => {
+      const client = api();
+      if (!client || !inquiryId || busy) return;
+      setBusy(true);
+      setSendError("");
+      setSendNote("");
+      try {
+        await client.sendLink(inquiryId, { email: sendTo.trim() });
+        setSendNote("The email was sent.");
+      } catch (err) {
+        setSendError((err && err.message) || "The message was not sent. Try again.");
+      }
+      setBusy(false);
+    };
     const shell = (testid, title, body) => (
       <Portal>
         <div data-testid="id-check-flow" tabIndex={-1} className="fixed inset-0 flex items-center justify-center overflow-auto p-3 md:p-6" style={{ background: "var(--cd-scrim)", zIndex: 9400 }}>
@@ -438,8 +472,20 @@
     </div>));
     if (step === "link") return shell("id-check-link", tier === "4" ? "ID, selfie and database" : "ID and selfie", (<div className="space-y-2">
       {tier === "4" && <div className="text-[13px]" style={{ color: CD.ink }}>{databaseMessage || "The database step is not on yet. This check runs ID and selfie."}</div>}
-      <div className="text-[13px]" style={{ color: CD.ink }}>Hand the counter device to the customer. The check opens at this link.</div>
+      {copy && copy.provider === "didit" && <div data-testid="id-check-link-how" className="text-[13px]" style={{ color: CD.ink }}>The link goes to the customer's email, or they get a copied message or the Copy link.</div>}
       {customerSteps(copy, counter)}
+      {copy && copy.provider === "didit" && linkUrl && <div data-testid="id-check-send" className="space-y-2 min-w-0">
+        <label className="block text-[12px]" style={{ color: CD.mute }}>Email
+          <input data-testid="id-check-send-email" value={sendTo} onChange={(e) => setSendTo(e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" data-testid="id-check-send-email-btn" disabled={busy || !sendTo.trim()} onClick={sendEmailLink} style={btnStyle(busy || !sendTo.trim())}>{busy ? "Sending" : "Send"}</button>
+          <button type="button" data-testid="id-check-copy-link" onClick={() => copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again.")} style={ghost}>Copy link</button>
+          <button type="button" data-testid="id-check-copy-text" onClick={() => copyValue(linkMessage(linkUrl), "The text was copied.", "The text was not copied. Try again.")} style={ghost}>Copy text</button>
+        </div>
+        {sendNote && <div data-testid="id-check-send-sent" className="text-[13px]" style={{ color: CD.ink }}>{sendNote}</div>}
+        {sendError && <div data-testid="id-check-send-error" className="text-[13px]" style={{ color: CD.ink }}>{sendError}</div>}
+      </div>}
       {linkUrl
         ? <a data-testid="id-check-link-url" href={linkUrl} target="_blank" rel="noopener noreferrer" className="id-check-figure text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</a>
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}

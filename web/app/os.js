@@ -4435,6 +4435,9 @@
     link: function (inquiryId) {
       return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/one-time-link", { method: "POST", body: "{}" });
     },
+    sendLink: function (inquiryId, body) {
+      return request("/api/idv/inquiries/" + encodeURIComponent(inquiryId) + "/send-link", { method: "POST", body: JSON.stringify(body) });
+    },
     inPerson: function (body) { return request("/api/idv/checks/in-person", { method: "POST", body: JSON.stringify(body) }); },
     returning: function (body) { return request("/api/idv/checks/returning", { method: "POST", body: JSON.stringify(body) }); },
     reveal: function (recordId, body) {
@@ -53353,7 +53356,7 @@ ${(filing.map || []).map(blockHTML).join('')}
 
   /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
-  const CUSTOMER_STEPS = ["Open the link on the counter device, or send it to the customer's phone.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
+  const CUSTOMER_STEPS = ["The link goes to the customer by email, or you copy a text. The counter device is never handed over.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
   const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
@@ -53537,6 +53540,9 @@ ${(filing.map || []).map(blockHTML).join('')}
       pep: ""
     });
     const [moreOpen, setMoreOpen] = useState(false);
+    const [sendTo, setSendTo] = useState("");
+    const [sendNote, setSendNote] = useState("");
+    const [sendError, setSendError] = useState("");
     useEffect(() => holdSheet(), []);
     useEffect(() => {
       const client = api();
@@ -53550,6 +53556,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       client.checks(clientId).then(body => {
         if (live) setPack(body);
       }).catch(() => {});
+      const clients = window.CDOS.Backend && window.CDOS.Backend.Clients;
+      if (clients && clients.get) {
+        clients.get(clientId).then(body => {
+          if (live && body && body.email) setSendTo(cur => cur || String(body.email));
+        }).catch(() => {});
+      }
       return () => {
         live = false;
       };
@@ -53760,6 +53772,33 @@ ${(filing.map || []).map(blockHTML).join('')}
       ...cur,
       [key]: value
     }));
+    const linkMessage = url => `Check your ID at this link:\n${url}\n\nIf you did not ask for this, you can ignore it.`;
+    const copyValue = async (value, okLine, failLine) => {
+      setSendError("");
+      try {
+        await navigator.clipboard.writeText(value);
+        setSendNote(okLine);
+      } catch (_) {
+        setSendNote("");
+        setSendError(failLine);
+      }
+    };
+    const sendEmailLink = async () => {
+      const client = api();
+      if (!client || !inquiryId || busy) return;
+      setBusy(true);
+      setSendError("");
+      setSendNote("");
+      try {
+        await client.sendLink(inquiryId, {
+          email: sendTo.trim()
+        });
+        setSendNote("The email was sent.");
+      } catch (err) {
+        setSendError(err && err.message || "The message was not sent. Try again.");
+      }
+      setBusy(false);
+    };
     const shell = (testid, title, body) => /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-flow",
       tabIndex: -1,
@@ -54041,12 +54080,57 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, databaseMessage || "The database step is not on yet. This check runs ID and selfie."), /*#__PURE__*/React.createElement("div", {
+    }, databaseMessage || "The database step is not on yet. This check runs ID and selfie."), copy && copy.provider === "didit" && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-link-how",
       className: "text-[13px]",
       style: {
         color: CD.ink
       }
-    }, "Hand the counter device to the customer. The check opens at this link."), customerSteps(copy, counter), linkUrl ? /*#__PURE__*/React.createElement("a", {
+    }, "The link goes to the customer's email, or they get a copied message or the Copy link."), customerSteps(copy, counter), copy && copy.provider === "didit" && linkUrl && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-send",
+      className: "space-y-2 min-w-0"
+    }, /*#__PURE__*/React.createElement("label", {
+      className: "block text-[12px]",
+      style: {
+        color: CD.mute
+      }
+    }, "Email", /*#__PURE__*/React.createElement("input", {
+      "data-testid": "id-check-send-email",
+      value: sendTo,
+      onChange: e => setSendTo(e.target.value),
+      className: "text-sm px-2.5 py-2 outline-none mt-1",
+      style: inputStyle
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "flex flex-wrap gap-2"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-send-email-btn",
+      disabled: busy || !sendTo.trim(),
+      onClick: sendEmailLink,
+      style: btnStyle(busy || !sendTo.trim())
+    }, busy ? "Sending" : "Send"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-copy-link",
+      onClick: () => copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again."),
+      style: ghost
+    }, "Copy link"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "id-check-copy-text",
+      onClick: () => copyValue(linkMessage(linkUrl), "The text was copied.", "The text was not copied. Try again."),
+      style: ghost
+    }, "Copy text")), sendNote && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-send-sent",
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, sendNote), sendError && /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-send-error",
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, sendError)), linkUrl ? /*#__PURE__*/React.createElement("a", {
       "data-testid": "id-check-link-url",
       href: linkUrl,
       target: "_blank",

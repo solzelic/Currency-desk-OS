@@ -72,8 +72,10 @@ and the DPA are signed. These five items are still open:
    `https://currencydesk-staging.onrender.com/api/webhooks/idv/didit`
    for `status.updated` and `data.updated`, version v3.
 4. Start an ID and selfie check. The counter shows a `verify.didit.me` link.
-   The same screen shows "What the customer does": "Open the link on the
-   counter device, or send it to the customer's phone." "The customer reads
+   The link step says "The link goes to the customer's email, or they get a
+   copied message or the Copy link." The same screen shows "What the customer does": "The link goes to the
+   customer by email, or you copy a text. The counter device is never handed
+   over." "The customer reads
    the notice and chooses whether to go ahead. If they say no, check the ID
    at the counter." "The customer scans their ID and takes a selfie with
    Didit." "The result comes back to this screen." Under that list: "Your

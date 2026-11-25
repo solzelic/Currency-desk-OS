@@ -17,7 +17,7 @@ const { transform } = require("@babel/standalone") as {
 };
 
 const STEPS = [
-  "Open the link on the counter device, or send it to the customer's phone.",
+  "The link goes to the customer by email, or you copy a text. The counter device is never handed over.",
   "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.",
   "The customer scans their ID and takes a selfie with Didit.",
   "The result comes back to this screen.",
@@ -119,6 +119,8 @@ describe("Didit customer steps", () => {
     const link = source.slice(source.indexOf('step === "link"'), source.indexOf('step === "failed"'));
     expect(chooser).toContain("customerSteps(copy, counter)");
     expect(link).toContain("customerSteps(copy, counter)");
+    expect(link).toContain("The link goes to the customer's email, or they get a copied message or the Copy link.");
+    expect(source).not.toContain("Hand the counter device");
     expect(source).not.toContain("ID, selfie and database is not available yet");
     expect(source).toContain("ID, selfie and database checks are not available yet.");
     const moreAt = chooser.indexOf('data-testid="id-check-more"');
