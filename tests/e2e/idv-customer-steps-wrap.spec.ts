@@ -105,7 +105,7 @@ window.CDOS = {
       start: function() { return Promise.resolve({ providerRef: "inq-1", connected: true }); },
       consent: function() { return Promise.resolve({ consentId: "cns-1" }); },
       link: function() { return Promise.resolve({ url: ${JSON.stringify(LINK)} }); },
-      sendLink: function() { return ${sendFails ? "Promise.reject(Object.assign(new Error('The message was not sent. Try again.'), { status: 503 }))" : "Promise.resolve({ sent: true })"}; },
+      sendLink: function() { return ${sendFails ? "Promise.reject(Object.assign(new Error(\"The email didn't go. Try again, or use Copy link.\"), { status: 502 }))" : "Promise.resolve({ sent: true })"}; },
       noteLink: function(_id, body) {
         if (body && body.kind === "text") return Promise.resolve({ shop: ${JSON.stringify(SHOP)}, contact: ${JSON.stringify(CONTACT)}, text: ${JSON.stringify(TEXT)} });
         return Promise.resolve({ recorded: true });
@@ -136,14 +136,14 @@ for (const width of [390, 1280]) {
     const box = await page.getByTestId("id-check-send").boundingBox();
     expect(box && box.x >= 0 && box.x + box.width <= width + 1).toBe(true);
     await page.getByTestId("id-check-send-email-btn").click();
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Email sent.");
+    await expect(page.getByTestId("id-check-send-email-btn")).toHaveText("Email sent.");
     await page.getByTestId("id-check-copy-link").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(LINK);
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Link copied.");
+    await expect(page.getByTestId("id-check-copy-link")).toHaveText("Link copied.");
     await page.getByTestId("id-check-copy-text").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(TEXT);
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Text copied.");
-    await expect(page.getByTestId("id-check-link-how")).toHaveText("The link goes to the customer's email, or they get a copied message or the Copy link.");
+    await expect(page.getByTestId("id-check-copy-text")).toHaveText("Text copied.");
+    await expect(page.getByTestId("id-check-link-how")).toHaveCount(0);
     await expect(page.getByText("Hand the counter device")).toHaveCount(0);
   });
 }
@@ -151,5 +151,6 @@ for (const width of [390, 1280]) {
 test("Didit link screen shows the email error", async ({ page }) => {
   await openLink(page, 390, true);
   await page.getByTestId("id-check-send-email-btn").click();
-  await expect(page.getByTestId("id-check-send-error")).toHaveText("The message was not sent. Try again.");
+  await expect(page.getByTestId("id-check-send-error")).toContainText("The email didn't go. Try again, or use Copy link.");
+  await expect(page.getByTestId("id-check-try-again")).toBeVisible();
 });

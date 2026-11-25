@@ -94,20 +94,23 @@
     const name = String(shop || "").trim();
     return /[.!?]$/.test(name) ? "This email comes from " + name : "This email comes from " + name + ".";
   }
-  function customerSteps(copy, counter) {
+  function customerSteps(copy, counter, panel) {
     if (!copy || copy.provider !== "didit" || counter) return null;
+    const closed = !!(panel && panel.closed);
     return (
       <div data-testid="id-check-customer-steps" className="min-w-0 w-full" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: "var(--cd-paper-soft)", padding: "12px 14px", boxSizing: "border-box", maxWidth: "100%" }}>
-        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer does</div>
-        <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
+        {panel && panel.onToggle
+          ? <button type="button" data-testid="id-check-steps-toggle" aria-expanded={!closed} onClick={panel.onToggle} className="text-[13px] font-semibold w-full text-left" style={{ color: CD.ink, background: "transparent", border: 0, padding: 0, minHeight: 44 }}>What the customer does</button>
+          : <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer does</div>}
+        {!closed && <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
           {CUSTOMER_STEPS.map((line, i) => (
             <li key={line} className="id-check-step flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
               <span className="flex-none" style={{ width: 18, color: CD.mute, fontFamily: '"Space Mono", ui-monospace, monospace', fontSize: 12, lineHeight: 1.45 }}>{i + 1}.</span>
               <span className="id-check-step-text min-w-0 flex-1">{line}</span>
             </li>
           ))}
-        </ol>
-        <div data-testid="id-check-customer-billing" className="text-[12px] mt-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{CUSTOMER_BILLING}</div>
+        </ol>}
+        {!closed && <div data-testid="id-check-customer-billing" className="text-[12px] mt-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{CUSTOMER_BILLING}</div>}
       </div>
     );
   }
@@ -196,6 +199,9 @@
     const [sendTo, setSendTo] = useState("");
     const [sendNote, setSendNote] = useState("");
     const [sendError, setSendError] = useState("");
+    const [stepsOpen, setStepsOpen] = useState(false);
+    const [linkCopied, setLinkCopied] = useState(false);
+    const [textCopied, setTextCopied] = useState(false);
 
     useEffect(() => holdSheet(), []);
     useEffect(() => {
@@ -376,19 +382,18 @@
     };
     const setField = (key, value) => setForm((cur) => ({ ...cur, [key]: value }));
     const linkMessage = (shop, url, contact) => `${shop} sent you this link to complete your ID check:\n${url}\n\nIf you did not ask for this, you can ignore it, or contact ${shop} at ${contact}.`;
-    const copyValue = async (value, okLine, failLine) => {
+    const emailOk = (value) => {
+      const email = String(value || "").trim();
+      return email.length > 0 && email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    };
+    const emailBad = sendTo.trim().length > 0 && !emailOk(sendTo);
+    const copyValue = async (value) => {
       setSendError("");
-      try {
-        await navigator.clipboard.writeText(value);
-        setSendNote(okLine);
-      } catch (_) {
-        setSendNote("");
-        setSendError(failLine);
-      }
+      await navigator.clipboard.writeText(value);
     };
     const sendEmailLink = async () => {
       const client = api();
-      if (!client || !inquiryId || busy) return;
+      if (!client || !inquiryId || busy || !emailOk(sendTo)) return;
       setBusy(true);
       setSendError("");
       setSendNote("");
@@ -396,7 +401,8 @@
         await client.sendLink(inquiryId, { email: sendTo.trim() });
         setSendNote("Email sent.");
       } catch (err) {
-        setSendError((err && err.message) || "The message was not sent. Try again.");
+        setSendNote("");
+        setSendError((err && err.message) || "The email didn't go. Try again, or use Copy link.");
       }
       setBusy(false);
     };
@@ -407,8 +413,11 @@
       setSendNote("");
       try {
         await client.noteLink(inquiryId, { kind: "link" });
-        await copyValue(linkUrl, "Link copied.", "The link was not copied. Try again.");
+        await copyValue(linkUrl);
+        setLinkCopied(true);
+        setSendNote("");
       } catch (err) {
+        setLinkCopied(false);
         setSendNote("");
         setSendError((err && err.message) || "The link was not copied. Try again.");
       }
@@ -427,8 +436,11 @@
           setSendError("The text was not copied. Try again.");
           return;
         }
-        await copyValue(text, "Text copied.", "The text was not copied. Try again.");
+        await copyValue(text);
+        setTextCopied(true);
+        setSendNote("");
       } catch (err) {
+        setTextCopied(false);
         setSendNote("");
         setSendError((err && err.message) || "The text was not copied. Try again.");
       }
@@ -507,22 +519,28 @@
       <div className="text-[13px]" style={{ color: CD.ink }}>{counterLine}</div>
       <div className="mt-3"><button type="button" onClick={() => setStep("inperson")} style={btnStyle(false)}>Enter the ID</button></div>
     </div>));
-    if (step === "link") return shell("id-check-link", tier === "4" ? "ID, selfie and database" : "ID and selfie", (<div className="space-y-2">
+    if (step === "link") {
+      const narrow = typeof window !== "undefined" && window.innerWidth <= 430;
+      const emailFailed = sendError === "The email didn't go. Try again, or use Copy link.";
+      return shell("id-check-link", tier === "4" ? "ID, selfie and database" : "ID and selfie", (<div className="space-y-2">
       {tier === "4" && <div className="text-[13px]" style={{ color: CD.ink }}>{databaseMessage || "The database step is not on yet. This check runs ID and selfie."}</div>}
-      {copy && copy.provider === "didit" && <div data-testid="id-check-link-how" className="text-[13px]" style={{ color: CD.ink }}>The link goes to the customer's email, or they get a copied message or the Copy link.</div>}
-      {customerSteps(copy, counter)}
+      {customerSteps(copy, counter, { closed: narrow && !stepsOpen, onToggle: () => setStepsOpen((open) => !open) })}
       {copy && copy.provider === "didit" && linkUrl && <div data-testid="id-check-send" className="space-y-2 min-w-0">
         {copy.shopName ? <div data-testid="id-check-from-shop" className="text-[13px]" style={{ color: CD.ink }}>{shopFromLine(copy.shopName)}</div> : null}
         <label className="block text-[12px]" style={{ color: CD.mute }}>Email
-          <input data-testid="id-check-send-email" value={sendTo} onChange={(e) => setSendTo(e.target.value)} className="text-sm px-2.5 py-2 outline-none mt-1" style={inputStyle} />
+          <input data-testid="id-check-send-email" value={sendTo} disabled={busy} onChange={(e) => { setSendTo(e.target.value); setSendNote(""); }} aria-invalid={emailBad} className="text-sm px-2.5 py-2 outline-none mt-1" style={{ ...inputStyle, border: emailBad ? `1px solid ${CD.flag}` : inputStyle.border }} />
         </label>
+        {emailBad && <div data-testid="id-check-email-invalid" className="text-[13px]" style={{ color: CD.flag }}>That email is not valid.</div>}
         <div className="flex flex-wrap gap-2">
-          <button type="button" data-testid="id-check-send-email-btn" disabled={busy || !sendTo.trim()} onClick={sendEmailLink} style={btnStyle(busy || !sendTo.trim())}>{busy ? "Sending" : "Send"}</button>
-          <button type="button" data-testid="id-check-copy-link" onClick={copyLink} style={ghost}>Copy link</button>
-          <button type="button" data-testid="id-check-copy-text" onClick={copyText} style={ghost}>Copy text</button>
+          <button type="button" data-testid="id-check-send-email-btn" disabled={busy || !emailOk(sendTo)} onClick={sendEmailLink} style={btnStyle(busy || !emailOk(sendTo))}>{busy ? "Sending" : sendNote === "Email sent." ? "Email sent." : "Send"}</button>
+          <button type="button" data-testid="id-check-copy-link" onClick={copyLink} style={ghost}>{linkCopied ? "Link copied." : "Copy link"}</button>
+          <button type="button" data-testid="id-check-copy-text" onClick={copyText} style={ghost}>{textCopied ? "Text copied." : "Copy text"}</button>
         </div>
-        {sendNote && <div data-testid="id-check-send-sent" className="text-[13px]" style={{ color: CD.ink }}>{sendNote}</div>}
-        {sendError && <div data-testid="id-check-send-error" className="text-[13px]" style={{ color: CD.ink }}>{sendError}</div>}
+        {emailFailed && <div data-testid="id-check-send-error" className="space-y-2">
+          <div className="text-[13px]" style={{ color: CD.flag }}>The email didn't go. Try again, or use Copy link.</div>
+          <button type="button" data-testid="id-check-try-again" onClick={sendEmailLink} style={ghost}>Try again</button>
+        </div>}
+        {sendError && !emailFailed && <div data-testid="id-check-send-error" className="text-[13px]" style={{ color: CD.ink }}>{sendError}</div>}
       </div>}
       {linkUrl
         ? <a data-testid="id-check-link-url" href={linkUrl} target="_blank" rel="noopener noreferrer" className="id-check-figure text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</a>
@@ -532,6 +550,7 @@
         <Skel width="58%" /><Skel width="36%" /><Skel width="24%" />
       </div>
     </div>));
+    }
     if (step === "attest") {
       const words = window.CDOS.faceMatchAttestation.statement;
       return shell("id-check-attest", "Compare the face", (<div className="space-y-3">

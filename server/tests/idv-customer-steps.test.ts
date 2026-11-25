@@ -118,8 +118,11 @@ describe("Didit customer steps", () => {
     const chooser = source.slice(source.indexOf('step === "chooser"'), source.indexOf('step === "opening"'));
     const link = source.slice(source.indexOf('step === "link"'), source.indexOf('step === "failed"'));
     expect(chooser).toContain("customerSteps(copy, counter)");
-    expect(link).toContain("customerSteps(copy, counter)");
-    expect(link).toContain("The link goes to the customer's email, or they get a copied message or the Copy link.");
+    expect(link).toContain("customerSteps(copy, counter,");
+    expect(link).not.toContain("or they get a copied message or the Copy link.");
+    expect(link).toContain("That email is not valid.");
+    expect(link).toContain("id-check-try-again");
+    expect(link).toContain("closed: narrow && !stepsOpen");
     expect(link).toContain("shopFromLine(copy.shopName)");
     expect(source).toContain("Waiting for the customer");
     expect(source).toContain("sent you this link to complete your ID check:");
