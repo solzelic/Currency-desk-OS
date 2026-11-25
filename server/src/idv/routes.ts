@@ -14,7 +14,7 @@ import { reserveIdvCredit } from "./credit.js";
 import { finishDiditWebhook } from "./didit-webhook.js";
 import type { IdvProvider } from "./provider.js";
 import { startProviders, webhookProviders, type IdvRouteOptions } from "./registry.js";
-import { diditConfigured, diditSelection, diditWorkflowForTier } from "./providers/didit.js";
+import { diditConfigured, diditDocScanAvailable, diditSelection, diditWorkflowForTier } from "./providers/didit.js";
 import { personaConnection, personaKeyMatchesRuntime, personaPassLabel } from "./providers/persona.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import { clientOnShop, failStarting, latestClientIdvStatus, reserveIdvSlot, setProviderRef } from "./store.js";
@@ -111,6 +111,19 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     const tierRaw = typeof rawBody === "object" && rawBody !== null && "tier" in rawBody ? (rawBody as { tier?: unknown }).tier : undefined;
     const tier = typeof tierRaw === "string" ? resolveTier(tierRaw.trim()) : null;
     if (typeof tierRaw === "string" && !tier) return reply.code(400).send({ error: "invalid_request", message: "That ID check tier is not valid." });
+    const methodRaw = typeof rawBody === "object" && rawBody !== null && "method" in rawBody ? (rawBody as { method?: unknown }).method : undefined;
+    if (methodRaw !== undefined && typeof methodRaw !== "string") {
+      return reply.code(400).send({ error: "invalid_request", message: "That ID check method is not valid." });
+    }
+    const methodName = typeof methodRaw === "string" ? methodRaw.trim() : "";
+    const startMethod: "id_and_selfie" | "counter_id_scan" | "counter_full" | null = methodName === "" || methodName === "id_and_selfie"
+      ? "id_and_selfie"
+      : methodName === "counter_id_scan"
+        ? "counter_id_scan"
+        : methodName === "counter_full"
+          ? "counter_full"
+          : null;
+    if (!startMethod) return reply.code(400).send({ error: "invalid_request", message: "That ID check method is not valid." });
     if (tier === "1") return reply.code(409).send({ code: "COUNTER_PATH", message: "In person is recorded at the counter. No identity provider is called." });
     if (tier === "2") return reply.code(409).send({ code: "RETURNING", message: "Returning client does not start an identity provider check." });
     const shop = await loadShopIdv(db, who.legalEntityId);
@@ -144,8 +157,21 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       const selection = diditSelection(env, testShop);
       if (!selection.ok) return reply.code(409).send({ code: "IDV_PROVIDER", message: selection.message });
       if (!provider || !diditConfigured(env)) return reply.code(503).send({ error: "not_available" });
-      const workflow = diditWorkflowForTier(gateTier, env);
-      if (!workflow.ok) return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+      if (gateTier === "4") return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+      if (startMethod === "counter_id_scan") {
+        if (!diditDocScanAvailable(env)) {
+          return reply.code(409).send({
+            code: "DOC_WORKFLOW_UNSET",
+            error: "not_available",
+            message: "The document-only ID scan is not set up on this server.",
+          });
+        }
+      } else {
+        const workflow = diditWorkflowForTier(gateTier, env);
+        if (!workflow.ok) return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+      }
+    } else if (startMethod !== "id_and_selfie") {
+      return reply.code(409).send({ code: "IDV_METHOD", message: "That check is only on a Didit shop." });
     }
     if (!provider) return { connected: false, message: NOT_CONNECTED };
     const spec = {
@@ -154,6 +180,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       templateId: templateForTier(shop, tier) ?? row.template_id ?? null,
       shopCode: await shopEnvCodeFor(db, who.tenantId),
       tier: gateTier,
+      method: id === "didit" ? startMethod : null,
     };
     if (provider.ready && !provider.ready(spec)) {
       if (provider.name === "didit") return reply.code(503).send({ error: "not_available" });
@@ -178,13 +205,21 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     }, options?.cap ?? IDV_SHOP_CAP);
     if (reserved.kind === "capped") return reply.code(409).send({ code: "IDV_CAP", message: CAP });
     const activeId = reserved.referenceId;
+    const methodWords = startMethod === "counter_id_scan"
+      ? "ID scanned at the counter"
+      : startMethod === "counter_full"
+        ? "Full check at the counter"
+        : "ID and selfie";
     const tierFields = tier === "4"
       ? { tier: "4" as const, databaseStep: "off" as const, message: "The database step is not on yet. This check runs ID and selfie." }
-      : tier === "3"
-        ? { tier: "3" as const, method: "ID and selfie" }
+      : tier === "3" || startMethod !== "id_and_selfie"
+        ? { tier: "3" as const, method: methodWords }
         : {};
     if (tier) {
       await db.execute(sql`UPDATE idv_inquiries SET requested_tier = ${tier} WHERE reference_id = ${activeId}`);
+    }
+    if (id === "didit" && reserved.kind === "created") {
+      await db.execute(sql`UPDATE idv_inquiries SET check_method = ${startMethod} WHERE reference_id = ${activeId}`);
     }
     if (reserved.kind === "reused" && reserved.providerRef !== reserved.referenceId) {
       return { connected: true, referenceId: activeId, providerRef: reserved.providerRef, reused: true, ...tierFields };
@@ -210,6 +245,13 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       if (err instanceof Error && err.message === "not_available") return reply.code(503).send({ error: "not_available" });
       if (err instanceof Error && err.message === "tier_unavailable") {
         return reply.code(409).send({ code: "IDV_TIER", message: "not available yet" });
+      }
+      if (err instanceof Error && err.message === "doc_workflow_unset") {
+        return reply.code(409).send({
+          code: "DOC_WORKFLOW_UNSET",
+          error: "not_available",
+          message: "The document-only ID scan is not set up on this server.",
+        });
       }
       if (err instanceof Error && err.message === "not_connected") return { connected: false, message: NOT_CONNECTED };
       const code = err instanceof Error && /^[a-z0-9_]+$/.test(err.message) ? err.message : "start_failed";

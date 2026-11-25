@@ -15,9 +15,11 @@ export type IdvResult = {
   inquiryStatus?: "in progress" | "needs review";
   /* A watchlist event is acknowledged and not stored. */
   ignore?: boolean;
-  /* Didit only. A pass needs ID, liveness, and face match, not the session status alone. */
+  /* Didit only. A pass needs ID, liveness, and face match, not the session status alone.
+     idPassed is the ID feature on its own. The counter scan uses that, not checksPassed. */
   checksPassed?: boolean;
   checksLine?: string;
+  idPassed?: boolean;
 };
 
 export type IdvStart = {
@@ -29,6 +31,7 @@ export type IdvStart = {
   templateId?: string | null;
   shopCode?: string;
   tier?: string | null;
+  method?: "id_and_selfie" | "counter_id_scan" | "counter_full" | null;
 };
 
 /* The ledger connection, when client files live there rather than on the app database. */

@@ -56,7 +56,7 @@ describe("idv source locks", () => {
 
   it("names the Didit secrets only in the Didit adapter", () => {
     const adapter = join(root, "idv/providers/didit.ts");
-    const names = ["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "DIDIT_WORKFLOW_ID", "DIDIT_AML_WORKFLOW_ID", "DIDIT_LIVE_ALLOWED"];
+    const names = ["DIDIT_API_KEY", "DIDIT_WEBHOOK_SECRET", "DIDIT_WORKFLOW_ID", "DIDIT_DOC_WORKFLOW_ID", "DIDIT_AML_WORKFLOW_ID", "DIDIT_LIVE_ALLOWED"];
     const hits = files(root).filter((path) => path !== adapter).filter((path) => {
       const text = readFileSync(path, "utf8");
       return names.some((name) => text.includes(name));
