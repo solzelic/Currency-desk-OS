@@ -102,7 +102,7 @@ jobs:
           done
           sudo rm -f /var/lib/apt/lists/*google* /var/lib/apt/lists/*chrome* || true
           for attempt in 1 2 3; do
-            if npx playwright install --with-deps chromium; then
+            if npx playwright install --with-deps chromium webkit; then
               exit 0
             fi
             echo "::warning::Chromium install attempt ${attempt}/3 failed"

@@ -84,6 +84,20 @@ export function diditConfigured(env: NodeJS.ProcessEnv): boolean {
     && UUID.test(trimmed(env, "DIDIT_WORKFLOW_ID"));
 }
 
+/* Document-only workflow. OCR / ID verification. Not the Basic KYC workflow.
+   An empty or non-UUID value means the counter scan is not available. */
+export function diditDocWorkflow(
+  env: NodeJS.ProcessEnv,
+): { ok: true; workflowId: string } | { ok: false; reason: "not_available" } {
+  const id = trimmed(env, "DIDIT_DOC_WORKFLOW_ID");
+  if (!UUID.test(id)) return { ok: false, reason: "not_available" };
+  return { ok: true, workflowId: id };
+}
+
+export function diditDocScanAvailable(env: NodeJS.ProcessEnv): boolean {
+  return diditDocWorkflow(env).ok;
+}
+
 /* Tier 4 is off in this slice. DIDIT_AML_WORKFLOW_ID is not read. */
 export function diditWorkflowForTier(
   tier: string | null | undefined,
@@ -108,17 +122,30 @@ function featurePassed(statuses: string[]): boolean {
   return statuses.length > 0 && statuses.every((status) => status === FEATURE_PASS);
 }
 
-/* Status words only. Names, numbers, and images stay in the decision. */
-export function diditDecisionChecks(decision: unknown): { passed: boolean; line: string } {
+function featureReport(decision: unknown): { id: boolean; liveness: boolean; face: boolean } {
   const record = obj(decision);
-  const id = featurePassed(featureStatuses(record.id_verifications));
-  const liveness = featurePassed(featureStatuses(record.liveness_checks));
-  const face = featurePassed(featureStatuses(record.face_matches));
+  return {
+    id: featurePassed(featureStatuses(record.id_verifications)),
+    liveness: featurePassed(featureStatuses(record.liveness_checks)),
+    face: featurePassed(featureStatuses(record.face_matches)),
+  };
+}
+
+/* Status words only. Names, numbers, and images stay in the decision.
+   The default call is ID, liveness, and face match. A counter ID scan
+   looks at the ID feature only and does not call the others passed. */
+export function diditDecisionChecks(decision: unknown, method?: string): { passed: boolean; line: string } {
+  const { id, liveness, face } = featureReport(decision);
   const word = (ok: boolean) => ok ? "passed" : "not passed";
+  if (method === "counter_id_scan") return { passed: id, line: `ID ${word(id)}` };
   return {
     passed: id && liveness && face,
     line: `ID ${word(id)}, liveness ${word(liveness)}, face match ${word(face)}`,
   };
+}
+
+export function diditIdPassed(decision: unknown): boolean {
+  return featureReport(decision).id;
 }
 
 /* An env-shaped name is allowed. A raw secret is not stored. */
@@ -253,6 +280,7 @@ export function parseDiditWebhook(body: unknown): IdvResult | null {
     outcome: named.outcome,
     checksPassed: checks.passed,
     checksLine: checks.line,
+    idPassed: diditIdPassed(record.decision),
     ...(named.inquiryStatus ? { inquiryStatus: named.inquiryStatus } : {}),
   };
 }
@@ -266,13 +294,24 @@ export async function startDiditCheck(
   deps: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<{ providerRef: string }> {
   const env = deps.env ?? process.env;
-  const choice = diditWorkflowForTier(input.tier ?? "3", env);
-  if (!choice.ok) throw new Error(choice.reason === "tier_unavailable" ? "tier_unavailable" : "not_available");
+  const tier = input.tier ?? "3";
+  if (tier === "1" || tier === "2" || tier === "4") throw new Error("tier_unavailable");
+  const method = input.method === "counter_id_scan" ? "counter_id_scan" : input.method === "counter_full" ? "counter_full" : "id_and_selfie";
+  let workflowId = "";
+  if (method === "counter_id_scan") {
+    const doc = diditDocWorkflow(env);
+    if (!doc.ok) throw new Error("doc_workflow_unset");
+    workflowId = doc.workflowId;
+  } else {
+    const choice = diditWorkflowForTier(tier, env);
+    if (!choice.ok) throw new Error(choice.reason === "tier_unavailable" ? "tier_unavailable" : "not_available");
+    workflowId = choice.workflowId;
+  }
   const key = trimmed(env, "DIDIT_API_KEY");
   const base = diditApiBase(env);
   const fetchImpl = deps.fetch ?? fetch;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const body = JSON.stringify({ workflow_id: choice.workflowId, vendor_data: input.referenceId });
+  const body = JSON.stringify({ workflow_id: workflowId, vendor_data: input.referenceId });
   let status = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
     const res = await fetchImpl(`${base}/v3/session/`, {

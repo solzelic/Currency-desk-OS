@@ -49,7 +49,7 @@
   const inputStyle = { border: `1px solid ${CD.line}`, borderRadius: 8, background: "var(--cd-panel)", color: CD.ink, width: "100%", fontFamily: '"Archivo", system-ui, sans-serif', minHeight: 44, padding: "0 12px" };
   const btnStyle = (disabled) => ({
     flex: "1 1 160px", minHeight: 44, padding: "0 16px", borderRadius: 8, border: "0",
-    background: disabled ? "#E4E1D8" : CD.ink, color: disabled ? "#3F3C36" : "var(--cd-on-ink)",
+    background: disabled ? "var(--cd-disabled)" : CD.ink, color: disabled ? "var(--cd-mute)" : "var(--cd-on-ink)",
     fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600,
     cursor: disabled ? "not-allowed" : "pointer",
   });
@@ -106,28 +106,29 @@
     }
   }
 
-  /* Didit only. The teller reads what the customer will see.
+  /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
   const CUSTOMER_STEPS = [
-    "You share a link or a QR code.",
-    "The customer scans their ID.",
-    "The customer takes a selfie.",
-    "The result comes back to you.",
-    "There is no charge if the check fails.",
+    "Open the link on the counter device, or send it to the customer's phone.",
+    "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.",
+    "The customer scans their ID and takes a selfie with Didit.",
+    "The result comes back to this screen.",
   ];
+  const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
     return (
       <div data-testid="id-check-customer-steps" className="min-w-0 w-full" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: "var(--cd-paper-soft)", padding: "12px 14px", boxSizing: "border-box", maxWidth: "100%" }}>
-        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer sees</div>
+        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer does</div>
         <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
           {CUSTOMER_STEPS.map((line, i) => (
-            <li key={line} className="flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
+            <li key={line} className="id-check-step flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
               <span className="flex-none" style={{ width: 18, color: CD.mute, fontFamily: '"Space Mono", ui-monospace, monospace', fontSize: 12, lineHeight: 1.45 }}>{i + 1}.</span>
-              <span className="min-w-0 flex-1" style={{ overflowWrap: "anywhere" }}>{line}</span>
+              <span className="id-check-step-text min-w-0 flex-1">{line}</span>
             </li>
           ))}
         </ol>
+        <div data-testid="id-check-customer-billing" className="text-[12px] mt-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{CUSTOMER_BILLING}</div>
       </div>
     );
   }
@@ -415,26 +416,30 @@
       const more = [];
       if (!counter && primary.id !== "1") more.push({ id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." });
       if (!counter && full) more.push({ id: "2", label: "Returning client", note: "Reuse the check on file." });
+      const tier4Off = !counter && copy.tier4 === "unavailable";
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-3" style={{ paddingBottom: 16 }}>
         {(counterLine || (counter && copy.counterLine)) && <div data-testid="id-check-counter-line" className="text-[13px]" style={{ color: CD.ink }}>{counterLine || copy.counterLine}</div>}
         <button data-testid="id-check-primary" type="button" onClick={() => pick(primary.id)} className="w-full text-left" style={{ ...btnStyle(false), flex: "none", minHeight: 72, padding: "14px 16px", borderRadius: 12 }}>
           <div className="text-[16px] font-semibold">{primary.label}</div>
           <div className="text-[13px] mt-1" style={{ color: "var(--cd-on-ink)", opacity: 0.82 }}>{primary.note}</div>
         </button>
-        {copy.tier4 === "unavailable" && <div data-testid="id-check-tier4" className="text-[13px]" style={{ color: CD.mute }}>ID, selfie and database is not available yet</div>}
         {customerSteps(copy, counter)}
-        {more.length > 0 && <div data-testid="id-check-more">
+        {(more.length > 0 || tier4Off) && <div data-testid="id-check-more">
           <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)} className="w-full" style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: `1px solid ${CD.line}`, background: "transparent", color: CD.ink, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600 }}>
             <span>More options</span>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" style={{ flex: "none", transform: moreOpen ? "rotate(180deg)" : "none" }}><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          {moreOpen && <div className="space-y-2 mt-2">
+          {moreOpen && <div data-testid="id-check-more-list" className="space-y-2 mt-2" style={{ height: "auto", overflow: "visible" }}>
             {more.map((item) => (
-              <button key={item.id} type="button" onClick={() => pick(item.id)} className="w-full text-left px-4" style={{ minHeight: 44, border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink }}>
+              <button key={item.id} type="button" data-testid={"id-check-more-" + item.id} onClick={() => pick(item.id)} className="w-full min-w-0 text-left px-4 py-2.5" style={{ minHeight: 44, height: "auto", overflow: "visible", boxSizing: "border-box", border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.ink, whiteSpace: "normal" }}>
                 <div className="text-[14px] font-semibold">{item.label}</div>
                 <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{item.note}</div>
               </button>
             ))}
+            {tier4Off && <div data-testid="id-check-tier4" aria-disabled="true" className="w-full min-w-0 text-left px-4 py-2.5" style={{ minHeight: 44, height: "auto", overflow: "visible", boxSizing: "border-box", border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, color: CD.mute, whiteSpace: "normal", cursor: "default" }}>
+              <div className="text-[14px] font-semibold" style={{ color: CD.mute }}>ID, selfie and database</div>
+              <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID, selfie and database checks are not available yet.</div>
+            </div>}
           </div>}
         </div>}
       </div>));
@@ -468,6 +473,15 @@
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}
       <div data-testid="id-check-result-wait" className="space-y-2 mt-3" aria-busy="true"><Skel width="58%" /><Skel width="36%" /><Skel width="24%" /></div>
     </div>));
+    if (step === "attest") {
+      const words = window.CDOS.faceMatchAttestation.statement;
+      return shell("id-check-attest", "Compare the face", (<div className="space-y-3">
+        <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}>
+          <input data-testid="id-check-attest-box" type="checkbox" />
+          <span>{words}</span>
+        </label>
+      </div>));
+    }
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", (<div data-testid="id-check-error" className="space-y-3">
       <div className="text-[13px]" style={{ color: CD.ink }}>{error || "The ID check did not finish. Try again, or check the ID in person."}</div>
       <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>
@@ -582,6 +596,23 @@
     </Portal>);
   }
 
+  function retentionSentence(latest, typedOnly) {
+    if (!latest) {
+      return typedOnly ? "ID typed by hand, not checked. Check the ID to record it." : "";
+    }
+    if (latest.numberUnavailable) return "No ID number was recorded for this check.";
+    if (latest.method === "in_person" && latest.maskedNumber) {
+      return "The ID number is stored encrypted. Only the last 4 are shown.";
+    }
+    if (latest.maskedNumber) {
+      return "ID details from this check are kept on the server. Only the last 4 of the number are shown.";
+    }
+    if (latest.method === "id_and_selfie" || latest.method === "id_selfie_database") {
+      return "ID scanned. No ID number stored.";
+    }
+    return "No ID number was recorded for this check.";
+  }
+
   function Panel({ clientId, canEdit, dealId }) {
     const [pack, setPack] = useState(null);
     const [status, setStatus] = useState("");
@@ -651,6 +682,7 @@
     const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
     const advised = !!(pack && pack.advice);
     const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || (latest && (latest.result === "pass" || latest.result === "returning_confirmed")));
+    const sentence = loaded ? retentionSentence(latest, typedOnly) : "";
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -682,7 +714,7 @@
         {CROP[role] && latest && latest.photoOnFile && <button type="button" onClick={showPhoto} className="text-[12px] font-medium" style={quietBtn}>Show the photo</button>}
       </div>
       {note && <div className="text-[11.5px] mt-1.5" style={{ color: CD.flag }}>{note}</div>}
-      <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>ID details from a finished check are kept on the server. This screen shows the last 4 of the number.</div>
+      {sentence ? <div data-testid="id-check-retention" className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{sentence}</div> : null}
       {latest && latest.photoOnFile && <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>Persona's full ID images and selfie are not copied to this desk. Only a small photo from the ID is kept, for comparison by eye.</div>}
       {open && <Flow clientId={clientId} dealId={dealId} initialStep={startAt} onClose={() => { setOpen(false); setTick((n) => n + 1); }} onDone={() => { window.dispatchEvent(new CustomEvent("cdos-id-standing", { detail: { clientId } })); setTick((n) => n + 1); }} />}
       {reveal && latest && <Reveal record={latest} onClose={() => setReveal(false)} />}

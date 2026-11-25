@@ -2399,6 +2399,8 @@
     const [shake, setShake] = React.useState(false);
     const [lockedOut, setLockedOut] = React.useState(false);
     const lockedRef = React.useRef(false);
+    const padRef = React.useRef(null);
+    const cardRef = React.useRef(null);
     const ini = nm => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) {
@@ -2536,24 +2538,33 @@
       setPin(p => p.slice(0, -1));
     };
     React.useEffect(() => {
+      const previous = document.activeElement;
+      const restore = previous && previous !== document.body && typeof previous.focus === "function" ? previous : null;
+      if (previous && typeof previous.blur === "function") previous.blur();
+      if (cardRef.current && typeof cardRef.current.focus === "function") cardRef.current.focus();
+      const padOnTop = () => {
+        const pad = padRef.current;
+        if (!pad || !pad.isConnected) return false;
+        const top = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
+        return !!(top && (top === pad || pad.contains(top)));
+      };
       const h = e => {
-        if (e.key === 'Escape') {
+        if (!padOnTop()) return;
+        if (e.key === "Escape") {
           onCancel && onCancel();
           return;
         }
         if (lockedRef.current) return;
-        if (e.key === 'Backspace') {
-          e.preventDefault();
-          back();
-          return;
-        }
-        if (/^[0-9]$/.test(e.key)) {
-          e.preventDefault();
-          press(e.key);
-        }
+        if (e.key !== "Backspace" && !/^[0-9]$/.test(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Backspace") back();else press(e.key);
       };
-      document.addEventListener('keydown', h);
-      return () => document.removeEventListener('keydown', h);
+      document.addEventListener("keydown", h, true);
+      return () => {
+        document.removeEventListener("keydown", h, true);
+        if (restore && restore.isConnected && typeof restore.focus === "function") restore.focus();
+      };
     }, []);
     const keyBtn = (label, onClick, kind, face) => {
       const word = face === 'word';
@@ -2590,6 +2601,8 @@
       }, label);
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      ref: padRef,
+      "data-pin-pad": "open",
       style: {
         position: 'fixed',
         inset: 0,
@@ -2604,6 +2617,8 @@
       },
       onMouseDown: () => onCancel && onCancel()
     }, /*#__PURE__*/React.createElement("div", {
+      ref: cardRef,
+      tabIndex: -1,
       onMouseDown: e => e.stopPropagation(),
       style: {
         width: '100%',
@@ -2614,6 +2629,7 @@
         boxShadow: '0 30px 70px var(--cd-scrim)',
         padding: '24px 22px 18px',
         textAlign: 'center',
+        outline: 'none',
         animation: shake ? 'cdosPinShake .42s' : 'none'
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -3408,6 +3424,24 @@
 });
 
 
+/* ---- shared/face-match-attestation.js ---- */
+/* The teller's face-match words. One source for the server and the desk.
+   The server requires this file. The shell loads it too. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.faceMatchAttestation = api;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  return {
+    version: "face-match-v1",
+    statement: "The customer is in front of me. I compared their face with the photo on this ID and they are the same person.",
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -3446,13 +3480,31 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    var timeoutMs = init.timeoutMs;
+    delete init.timeoutMs;
+    var timer = 0;
+    var controller = null;
+    var timedOut = false;
+    if (timeoutMs && !init.signal && typeof AbortController === "function") {
+      controller = new AbortController();
+      init.signal = controller.signal;
+      timer = setTimeout(function () { timedOut = true; controller.abort(); }, timeoutMs);
+    }
     try {
       response = await fetch(path, init);
     } catch (cause) {
+      if (timedOut) {
+        var timed = new Error("The desk did not answer in time. Check the client list before trying again.");
+        timed.code = "TIMEOUT";
+        timed.cause = cause;
+        throw timed;
+      }
       var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     var body = {};
@@ -4449,7 +4501,7 @@
        being quietly wrong about somebody's compliance history. */
     lookup: function (name) { return request("/api/clients/lookup?name=" + encodeURIComponent(name)); },
     create: function (input) {
-      return request("/api/clients", { method: "POST", body: JSON.stringify(input) });
+      return request("/api/clients", { method: "POST", body: JSON.stringify(input), timeoutMs: 15000 });
     },
     update: function (clientId, changes) {
       return request("/api/clients/" + encodeURIComponent(clientId), {
@@ -13450,7 +13502,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Seg, {
         value: settings.largeTxCheck || 'off',
         onPick: v => set('largeTxCheck', v, `large-deal check ${v}`),
-        opts: [['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]
+        opts: [['off', 'Off'], ['quick', 'Quick'], ['verify', 'Verified'], ['plus', 'Verified Plus']]
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Require ID photo on file",
         desc: "Contacts without a stored ID scan are flagged \u2014 in Clients \xB7 KYC and here."
@@ -25225,7 +25277,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
          EXISTING customer is what the picker is for.
           Returns the created record, or null when this desk is not
          server-backed. */
-      async open(name, deskRecord) {
+      async open(name, deskRecord, opts) {
         const client = api();
         if (!client || mode === 'local') return null;
         const rec = deskRecord || {};
@@ -25233,6 +25285,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
           legalName: String(name).trim(),
           kind: rec.kind === 'corporate' ? 'business' : 'individual'
         }, client.fromDeskFields(rec)));
+        /* Add contact closes as soon as create answers. Record the ID
+           still waits, and the document is stored before the list is read. */
+        if (opts && opts.wait === false) {
+          void applyDocument(created.clientId, rec).then(() => load(true)).catch(err => {
+            trouble = err && err.message || "The ID was not saved on this contact.";
+            announce();
+          });
+          return created;
+        }
         await applyDocument(created.clientId, rec);
         await load(true);
         return created;
@@ -50735,7 +50796,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const stampNow = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
-  const money = n => '$' + (+n || 0).toFixed(2);
+  const money = n => `${(+n || 0).toFixed(2)} CAD`;
   // house default risk for brand-new contacts (Settings → Clients · KYC)
   const storedSettings = () => {
     try {
@@ -50762,8 +50823,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const TEMPLATES = [{
     id: 'quick',
     label: 'Quick check',
-    tagline: 'This desk screens the name here. Nothing is sent out.',
-    price: 3.99,
+    tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.',
     channel: 'instant',
     icon: 'search',
     idv: false,
@@ -50773,8 +50833,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'verify',
     label: 'Verified',
-    tagline: 'This desk screens the name here. It does not authenticate an ID.',
-    price: 6.99,
+    tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.',
     channel: 'link',
     icon: 'id',
     idv: true,
@@ -50784,8 +50843,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   }, {
     id: 'plus',
     label: 'Verified Plus',
-    tagline: 'This desk screens the name here. It does not run a biometric.',
-    price: 14.99,
+    tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.',
     channel: 'link',
     icon: 'shield',
     idv: true,
@@ -51035,7 +51093,6 @@ ${(filing.map || []).map(blockHTML).join('')}
       kind: kind || 'individual',
       template,
       templateLabel: t.label,
-      price: 0,
       channel: channel || 'none',
       contact: contact || {},
       by: by || 'Desk',
@@ -51097,7 +51154,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           <div style="text-align:right;font-size:11px;color:${P.mute};line-height:1.8;"><div style="display:inline-flex;align-items:center;gap:6px;background:${dm.bg};color:${dm.c};font-family:'Space Mono',monospace;font-weight:700;padding:4px 11px;border-radius:6px;">● ${esc(dm.label.toUpperCase())}</div><div style="margin-top:6px;">Ref <b style="color:${P.ink};font-family:'Space Mono',monospace;">${esc(r.reportRef || '')}</b></div><div>${esc(r.completedAt || '')}</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:${P.line};border:1px solid ${P.line};margin-bottom:20px;">
-          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by], ['Billed', money(check.price)]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
+          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
         </div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:${P.faint};font-family:'Space Mono',monospace;margin-bottom:6px;">Checks performed</div>
         <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
@@ -51455,20 +51512,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, lead, " ", tt.tagline)), /*#__PURE__*/React.createElement("div", {
-        className: "text-right flex-none"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "text-[14px] font-bold",
-        style: {
-          color: on ? KYC_BLUE : CD.ink,
-          fontVariantNumeric: 'tabular-nums'
-        }
-      }, money(net(tt.price))), /*#__PURE__*/React.createElement("div", {
-        className: "text-[9.5px]",
-        style: {
-          color: CD.faint
-        }
-      }, "per check")));
+      }, lead, " ", tt.tagline)));
     })), !verified && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mt-2 flex items-start gap-1.5",
       style: {
@@ -51478,7 +51522,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 12,
       c: CD.faint
-    }), " ", /*#__PURE__*/React.createElement("span", null, "First contact needs a full identity check. The $3.99 Quick check unlocks once ", String(subject).split(/\s+/)[0], " is verified")), /*#__PURE__*/React.createElement("div", {
+    }), " ", /*#__PURE__*/React.createElement("span", null, "First contact needs a full identity check. Quick check unlocks once ", String(subject).split(/\s+/)[0], " is verified")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mt-4 mb-2",
       style: {
         color: CD.faint,
@@ -51847,11 +51891,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, /*#__PURE__*/React.createElement("span", null, check.requestedAt), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.faint
-      }
-    }, "\xB7"), /*#__PURE__*/React.createElement("span", null, money(check.price)), check.status === 'completed' && check.result.reportRef && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, check.requestedAt), check.status === 'completed' && check.result.reportRef && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -52317,23 +52357,16 @@ ${(filing.map || []).map(blockHTML).join('')}
     by,
     setClients,
     onClose,
-    onDone,
-    requireId
+    onDone
   }) {
-    const store = useStore();
     const idvShop = window.CDOS.useIdvShop();
     const lead = window.CDOS.idvLead(idvShop);
-    const [step, setStep] = useState('id'); // id | details | verifying | done
+    const [step, setStep] = useState('id');
     const [photo, setPhoto] = useState(null);
     const [name, setName] = useState(initialName || '');
     const [kind, setKind] = useState('individual');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
-    const [tplId, setTplId] = useState('verify');
-    const [mode, setMode] = useState(null);
-    const [via, setVia] = useState('sms');
-    const [checkId, setCheckId] = useState(null);
-    const applied = useRef(false);
     const onFile = async file => {
       if (!file) return;
       const taken = await window.CDOS.intakeIdImage(file); // see cdos-base.jsx
@@ -52437,91 +52470,58 @@ ${(filing.map || []).map(blockHTML).join('')}
       return done.catch(err => console.warn('[CurrencyDesk] contact not yet on the server —', err && err.message || err));
     };
     const [saving, setSaving] = useState(false);
-    /* Escape hatch: create the contact without running (or paying for) a
-       verification.
-        This ONE path waits for the server, unlike the mid-transaction
-       paths above. What happens immediately afterwards is that the new
-       file is opened on screen, and the single most important thing a
-       brand-new file can say — that somebody else on this desk already
-       has that name — is a fact only the server holds. Handing the
-       teller the browser's copy meant handing them a file with that
-       warning missing, which is the exact defect these records moved to
-       the server to end. One round-trip at the end of the wizard, and
-       the button says it is working. */
-    const saveManual = async () => {
-      const nm = name.trim();
-      if (!nm || saving) return;
-      writeContact(nm);
-      setSaving(true);
-      try {
-        await publishContact(nm);
-      } finally {
-        setSaving(false);
+    const [saveNote, setSaveNote] = useState('');
+    const openIdCheck = clientId => {
+      const Flow = window.CDOS.IdCheck && window.CDOS.IdCheck.Flow;
+      if (!Flow || !clientId || !window.ReactDOM || !window.ReactDOM.createRoot) return;
+      let host = document.getElementById('cdos-id-flow-host');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'cdos-id-flow-host';
+        document.body.appendChild(host);
       }
-      if (onDone) onDone(nm);
-      onClose();
+      if (!openIdCheck.root) openIdCheck.root = window.ReactDOM.createRoot(host);
+      const close = () => {
+        if (openIdCheck.root) openIdCheck.root.render(null);
+      };
+      openIdCheck.root.render(React.createElement(Flow, {
+        clientId: clientId,
+        onClose: close
+      }));
     };
-    /* The choose step's button used to start a check, wait, and then write
-       an invented address and ID number onto the contact as "Pulled from
-       the ID". Persona is not connected, so the contact is saved and that
-       is all. */
-    const tierNo = tplId === 'plus' ? '4' : tplId === 'quick' ? '2' : '3';
-    const needsPep = tierNo === '2' || tierNo === '3';
-    const [pepAnswer, setPepAnswer] = useState(null);
-    const [checkNote, setCheckNote] = useState('');
-    const startCheck = async () => {
+    /* Close as soon as the server has the file. The document write and
+       the list refresh keep going. A desk with no server just saves. */
+    const saveContact = async andCheck => {
       const nm = name.trim();
       if (!nm || saving) return;
-      if (needsPep && pepAnswer === null) return;
       writeContact(nm);
-      setSaving(true);
-      try {
-        const created = await publishContact(nm);
-        const clientId = created && created.clientId;
-        if (clientId && window.CDOS.Backend && window.CDOS.Backend.screenIdCheck) {
-          const answer = await window.CDOS.Backend.screenIdCheck({
-            clientId: clientId,
-            tier: tierNo,
-            pepAnswer: needsPep ? pepAnswer : undefined
-          });
-          if (answer && answer.state === 'needs_review') {
-            setCheckNote('This needs review. Your compliance officer will review this.');
-            return;
-          }
-        }
-      } catch (err) {
-        setCheckNote('This needs review. Your compliance officer will review this.');
+      const shared = window.CDOS.ClientRecords;
+      if (!shared || !shared.serverBacked()) {
+        if (onDone) onDone(nm);
+        onClose();
         return;
-      } finally {
+      }
+      setSaving(true);
+      setSaveNote('');
+      try {
+        const created = await shared.open(nm, {
+          kind: kind,
+          phone: phone.trim(),
+          email: email.trim(),
+          photo: photo
+        }, {
+          wait: false
+        });
+        const clientId = created && created.clientId;
+        if (onDone) onDone(nm);
+        onClose();
+        if (andCheck && clientId) openIdCheck(clientId);
+      } catch (err) {
+        setSaveNote(err && err.message || 'The contact could not be saved.');
         setSaving(false);
       }
-      if (onDone) onDone(nm);
-      onClose();
     };
-
-    // when the verification finishes, fold the extracted identity into the contact
-    const check = checkId ? store[checkId] : null;
-    useEffect(() => {
-      if (step === 'verifying' && check && check.status === 'completed' && !applied.current) {
-        applied.current = true;
-        const ex = check.result.extracted;
-        if (ex && setClients) setClients(c => ({
-          ...c,
-          [name.trim()]: {
-            ...(c[name.trim()] || {}),
-            ...ex,
-            kind,
-            idVerifiedAt: check.result.completedAt
-          }
-        }));
-        /* What the provider read off the document belongs on the
-           server record too, or the desk's proof of who it identified
-           lives in one browser. */
-        if (ex) publishContact(name.trim(), ex);
-        setStep('done');
-      }
-    }, [check && check.status]);
-    const si = step === 'id' ? 0 : step === 'details' ? 1 : 2; // which of the 3 stepper dots is current
+    const si = step === 'id' ? 0 : 1;
     const Step = ({
       n,
       label
@@ -52549,9 +52549,8 @@ ${(filing.map || []).map(blockHTML).join('')}
         }
       }, label));
     };
-    const ex = check && check.result ? check.result.extracted : null;
-    const dm = check && check.result ? decisionMeta(check.result.decision) : null;
     return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+      "data-testid": "add-contact",
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
         background: 'var(--cd-scrim)',
@@ -52599,7 +52598,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, lead)), /*#__PURE__*/React.createElement("button", {
+    }, "Save the contact, then check the ID if you need to.")), /*#__PURE__*/React.createElement("button", {
       onClick: onClose,
       className: "grid place-items-center flex-none",
       style: {
@@ -52628,15 +52627,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), /*#__PURE__*/React.createElement(Step, {
       n: 2,
       label: "Details"
-    }), /*#__PURE__*/React.createElement("span", {
-      style: {
-        flex: 1,
-        height: 1,
-        background: CD.line
-      }
-    }), /*#__PURE__*/React.createElement(Step, {
-      n: 3,
-      label: "Verify"
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto px-5 py-4"
     }, step === 'id' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -52746,7 +52736,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Just the basics to create the contact. ", lead, " It does not fill the file in."), /*#__PURE__*/React.createElement("div", {
+    }, "Just the basics to create the contact."), /*#__PURE__*/React.createElement("div", {
       className: "inline-flex mb-3",
       style: {
         border: `1px solid ${CD.line}`,
@@ -52816,172 +52806,12 @@ ${(filing.map || []).map(blockHTML).join('')}
         borderRadius: 8,
         background: 'var(--cd-panel)'
       }
-    }))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[11px] mt-3 flex items-center gap-1.5",
-      style: {
-        color: CD.faint
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "send",
-      s: 11,
-      c: CD.faint
-    }), " ", lead, " Saving the contact does not send a check.")), step === 'choose' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(VerifyChooserBody, {
-      subject: name.trim() || 'this contact',
-      hasId: !!photo,
-      verified: false,
-      tplId: tplId,
-      setTplId: setTplId,
-      mode: mode,
-      setMode: setMode,
-      via: via,
-      setVia: setVia,
-      email: email,
-      setEmail: setEmail,
-      phone: phone,
-      setPhone: setPhone,
-      onScanMore: () => setStep('id'),
-      onCapture: setPhoto
-    }), needsPep && /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 text-[12.5px]",
-      "data-testid": "pep-client-answer",
+    }))), saveNote && /*#__PURE__*/React.createElement("div", {
+      className: "text-[12.5px] mt-3",
       style: {
         color: CD.ink
       }
-    }, /*#__PURE__*/React.createElement("div", null, "The client's own answer."), /*#__PURE__*/React.createElement("div", {
-      className: "mt-1"
-    }, "Is this person, or a family member or close associate, a politically exposed person or the head of an international organization?"), /*#__PURE__*/React.createElement("div", {
-      className: "flex gap-2 mt-2"
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setPepAnswer(true),
-      className: "px-3 py-1.5 text-[12px]",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        background: pepAnswer === true ? CD.ink : 'transparent',
-        color: pepAnswer === true ? 'var(--cd-on-ink)' : CD.ink
-      }
-    }, "Yes"), /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => setPepAnswer(false),
-      className: "px-3 py-1.5 text-[12px]",
-      style: {
-        border: `1px solid ${CD.line}`,
-        borderRadius: 8,
-        background: pepAnswer === false ? CD.ink : 'transparent',
-        color: pepAnswer === false ? 'var(--cd-on-ink)' : CD.ink
-      }
-    }, "No"))), checkNote && /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 text-[13px]",
-      "data-testid": "kyc-needs-review",
-      style: {
-        color: CD.ink
-      }
-    }, checkNote)), step === 'verifying' && /*#__PURE__*/React.createElement("div", {
-      className: "text-center py-8"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center mx-auto mb-4",
-      style: {
-        width: 56,
-        height: 56,
-        borderRadius: '50%',
-        background: CD.brassSoft
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "kyc-spin",
-      style: {
-        width: 24,
-        height: 24,
-        border: `3px solid ${CD.brass}`,
-        borderTopColor: 'transparent',
-        borderRadius: '50%',
-        display: 'inline-block'
-      }
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "text-[15px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, lead), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px] mt-1 mx-auto",
-      style: {
-        color: CD.mute,
-        maxWidth: 360
-      }
-    }, "This desk does not send the ID out, and it does not screen a sanctions list."), /*#__PURE__*/React.createElement("div", {
-      className: "inline-flex items-center gap-2 mt-4 px-3 py-1.5 text-[12px]",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 999,
-        color: CD.mute
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 13,
-      c: CD.mute
-    }), " Not connected")), step === 'done' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2.5 mb-3"
-    }, /*#__PURE__*/React.createElement("span", {
-      className: "grid place-items-center flex-none",
-      style: {
-        width: 40,
-        height: 40,
-        borderRadius: '50%',
-        background: dm ? dm.bg : CD.greenSoft
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: dm ? dm.icon : 'checkcircle',
-      s: 20,
-      c: dm ? dm.c : CD.green
-    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[15px] font-semibold",
-      style: {
-        color: CD.ink
-      }
-    }, name.trim(), " added", dm && dm.label === 'Verified' ? ' & verified' : ''), /*#__PURE__*/React.createElement("div", {
-      className: "text-[12px]",
-      style: {
-        color: dm ? dm.c : CD.mute
-      }
-    }, dm ? dm.label : 'Verified', " \xB7 saved to your contacts"))), ex && /*#__PURE__*/React.createElement("div", {
-      className: "p-3",
-      style: {
-        background: CD.panel,
-        border: `1px solid ${CD.line}`,
-        borderRadius: 11
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-[10px] uppercase tracking-widest mb-2 flex items-center gap-1.5",
-      style: {
-        color: CD.faint,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, /*#__PURE__*/React.createElement(Ic, {
-      n: "id",
-      s: 12,
-      c: CD.faint
-    }), " On the contact"), [['Address', `${ex.address}, ${ex.city}, ${ex.province} ${ex.postal}`], ['Date of birth', ex.dob], ['ID', `${ex.idType} · ${ex.idNum}`], ['Expiry', ex.idExpiry]].map(([l, v]) => /*#__PURE__*/React.createElement("div", {
-      key: l,
-      className: "flex items-center justify-between py-1.5 text-[12.5px]",
-      style: {
-        borderTop: `1px solid ${CD.lineSoft}`
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.mute
-      }
-    }, l), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.ink,
-        fontFamily: 'Space Mono, monospace'
-      }
-    }, v))), /*#__PURE__*/React.createElement("div", {
-      className: "text-[10.5px] mt-2",
-      style: {
-        color: CD.faint
-      }
-    }, "Saved to the contact \u2014 review and edit anytime in Clients.")))), /*#__PURE__*/React.createElement("div", {
+    }, saveNote))), /*#__PURE__*/React.createElement("div", {
       className: "flex items-center gap-2 px-5 py-3.5 flex-none",
       style: {
         borderTop: `1px solid ${CD.line}`,
@@ -52993,7 +52823,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Skip \u2014 add ID later"), /*#__PURE__*/React.createElement("div", {
+    }, "Skip. Add the ID later"), /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }), /*#__PURE__*/React.createElement("button", {
       onClick: () => setStep('details'),
@@ -53016,89 +52846,33 @@ ${(filing.map || []).map(blockHTML).join('')}
         borderRadius: 9,
         color: CD.mute
       }
-    }, "Back"), !requireId && /*#__PURE__*/React.createElement("button", {
-      onClick: saveManual,
+    }, "Back"), /*#__PURE__*/React.createElement("div", {
+      className: "flex-1"
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "add-contact-save",
+      onClick: () => saveContact(false),
       disabled: !name.trim() || saving,
-      title: "Skip verification \u2014 not recommended",
-      className: "px-2.5 py-2.5 text-[12px] font-medium",
+      className: "px-3.5 py-2.5 text-sm font-semibold",
       style: {
-        color: CD.faint,
-        textDecoration: 'underline',
-        textUnderlineOffset: 2,
+        border: `1px solid ${CD.line}`,
+        borderRadius: 9,
+        color: CD.ink,
+        background: CD.paper,
         cursor: name.trim() && !saving ? 'pointer' : 'not-allowed'
       }
-    }, saving ? 'Saving…' : 'Save without verifying'), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1"
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setStep('choose'),
-      disabled: !name.trim(),
-      className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white",
+    }, saving ? 'Saving…' : 'Save contact'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      "data-testid": "add-contact-check",
+      onClick: () => saveContact(true),
+      disabled: !name.trim() || saving,
+      className: "px-3.5 py-2.5 text-sm font-semibold text-white",
       style: {
-        background: name.trim() ? CD.ink : 'var(--cd-disabled)',
+        background: name.trim() && !saving ? CD.ink : 'var(--cd-disabled)',
         borderRadius: 9,
-        cursor: name.trim() ? 'pointer' : 'not-allowed'
+        cursor: name.trim() && !saving ? 'pointer' : 'not-allowed'
       }
-    }, "Continue ", /*#__PURE__*/React.createElement(Ic, {
-      n: "chev",
-      s: 14,
-      c: "var(--cd-on-ink)"
-    }))), step === 'choose' && (() => {
-      const del = deliveryFor({
-        tplId,
-        mode,
-        via,
-        email,
-        phone,
-        hasId: !!photo,
-        subject: name.trim()
-      });
-      return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-        className: "flex-1"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "text-[11px]",
-        style: {
-          color: CD.faint
-        }
-      }, lead), /*#__PURE__*/React.createElement("div", {
-        className: "text-[13px] font-semibold leading-none",
-        style: {
-          color: CD.mute
-        }
-      }, "Nothing is charged")), /*#__PURE__*/React.createElement("button", {
-        onClick: () => setStep('details'),
-        className: "px-3.5 py-2.5 text-sm font-medium",
-        style: {
-          border: `1px solid ${CD.line}`,
-          borderRadius: 9,
-          color: CD.mute
-        }
-      }, "Back"), /*#__PURE__*/React.createElement("button", {
-        onClick: startCheck,
-        disabled: del.missing || needsPep && pepAnswer === null,
-        className: "flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white",
-        style: {
-          background: del.missing || needsPep && pepAnswer === null ? 'var(--cd-disabled)' : CD.ink,
-          borderRadius: 9,
-          cursor: del.missing || needsPep && pepAnswer === null ? 'not-allowed' : 'pointer'
-        }
-      }, /*#__PURE__*/React.createElement(Ic, {
-        n: "send",
-        s: 14,
-        c: "var(--cd-on-ink)"
-      }), " ", del.label));
-    })(), step === 'done' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      className: "flex-1"
-    }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        if (onDone) onDone(name.trim());
-        onClose();
-      },
-      className: "px-5 py-2.5 text-sm font-semibold text-white",
-      style: {
-        background: CD.ink,
-        borderRadius: 9
-      }
-    }, "Done")))), cam && /*#__PURE__*/React.createElement("div", {
+    }, saving ? 'Saving…' : 'Save and check ID')))), cam && /*#__PURE__*/React.createElement("div", {
       onClick: e => e.stopPropagation(),
       className: "fixed inset-0 flex items-center justify-center p-4",
       style: {
@@ -53560,8 +53334,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     padding: "0 16px",
     borderRadius: 8,
     border: "0",
-    background: disabled ? "#E4E1D8" : CD.ink,
-    color: disabled ? "#3F3C36" : "var(--cd-on-ink)",
+    background: disabled ? "var(--cd-disabled)" : CD.ink,
+    color: disabled ? "var(--cd-mute)" : "var(--cd-on-ink)",
     fontFamily: '"Archivo", system-ui, sans-serif',
     fontSize: 14,
     fontWeight: 600,
@@ -53635,9 +53409,10 @@ ${(filing.map || []).map(blockHTML).join('')}
     }
   }
 
-  /* Didit only. The teller reads what the customer will see.
+  /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
-  const CUSTOMER_STEPS = ["You share a link or a QR code.", "The customer scans their ID.", "The customer takes a selfie.", "The result comes back to you.", "There is no charge if the check fails."];
+  const CUSTOMER_STEPS = ["Open the link on the counter device, or send it to the customer's phone.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
+  const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
     return /*#__PURE__*/React.createElement("div", {
@@ -53656,7 +53431,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "What the customer sees"), /*#__PURE__*/React.createElement("ol", {
+    }, "What the customer does"), /*#__PURE__*/React.createElement("ol", {
       className: "m-0 mt-2 space-y-1.5",
       style: {
         listStyle: "none",
@@ -53664,7 +53439,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, CUSTOMER_STEPS.map((line, i) => /*#__PURE__*/React.createElement("li", {
       key: line,
-      className: "flex items-start gap-2 min-w-0 text-[13px]",
+      className: "id-check-step flex items-start gap-2 min-w-0 text-[13px]",
       style: {
         color: CD.ink,
         lineHeight: 1.45
@@ -53679,11 +53454,15 @@ ${(filing.map || []).map(blockHTML).join('')}
         lineHeight: 1.45
       }
     }, i + 1, "."), /*#__PURE__*/React.createElement("span", {
-      className: "min-w-0 flex-1",
+      className: "id-check-step-text min-w-0 flex-1"
+    }, line)))), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-customer-billing",
+      className: "text-[12px] mt-2",
       style: {
-        overflowWrap: "anywhere"
+        color: CD.mute,
+        lineHeight: 1.45
       }
-    }, line)))));
+    }, CUSTOMER_BILLING));
   }
   function holdSheet() {
     const count = Number(document.body.dataset.idCheckCount || "0") + 1;
@@ -54129,6 +53908,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         label: "Returning client",
         note: "Reuse the check on file."
       });
+      const tier4Off = !counter && copy.tier4 === "unavailable";
       return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
         className: "space-y-3",
         style: {
@@ -54160,13 +53940,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: "var(--cd-on-ink)",
           opacity: 0.82
         }
-      }, primary.note)), copy.tier4 === "unavailable" && /*#__PURE__*/React.createElement("div", {
-        "data-testid": "id-check-tier4",
-        className: "text-[13px]",
-        style: {
-          color: CD.mute
-        }
-      }, "ID, selfie and database is not available yet"), customerSteps(copy, counter), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, primary.note)), customerSteps(copy, counter), (more.length > 0 || tier4Off) && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -54204,18 +53978,28 @@ ${(filing.map || []).map(blockHTML).join('')}
         strokeLinecap: "round",
         strokeLinejoin: "round"
       }))), moreOpen && /*#__PURE__*/React.createElement("div", {
-        className: "space-y-2 mt-2"
+        "data-testid": "id-check-more-list",
+        className: "space-y-2 mt-2",
+        style: {
+          height: "auto",
+          overflow: "visible"
+        }
       }, more.map(item => /*#__PURE__*/React.createElement("button", {
         key: item.id,
         type: "button",
+        "data-testid": "id-check-more-" + item.id,
         onClick: () => pick(item.id),
-        className: "w-full text-left px-4",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
         style: {
           minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
           border: `1px solid ${CD.line}`,
           borderRadius: 10,
           background: CD.paper,
-          color: CD.ink
+          color: CD.ink,
+          whiteSpace: "normal"
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[14px] font-semibold"
@@ -54224,7 +54008,33 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, item.note)))))));
+      }, item.note))), tier4Off && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-tier4",
+        "aria-disabled": "true",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
+        style: {
+          minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10,
+          background: CD.paper,
+          color: CD.mute,
+          whiteSpace: "normal",
+          cursor: "default"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-0.5",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database checks are not available yet."))))));
     }
     if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-loading",
@@ -54323,6 +54133,20 @@ ${(filing.map || []).map(blockHTML).join('')}
     }), /*#__PURE__*/React.createElement(Skel, {
       width: "24%"
     }))));
+    if (step === "attest") {
+      const words = window.CDOS.faceMatchAttestation.statement;
+      return shell("id-check-attest", "Compare the face", /*#__PURE__*/React.createElement("div", {
+        className: "space-y-3"
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "flex items-start gap-2 text-[13px]",
+        style: {
+          color: CD.ink
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        "data-testid": "id-check-attest-box",
+        type: "checkbox"
+      }), /*#__PURE__*/React.createElement("span", null, words))));
+    }
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-error",
       className: "space-y-3"
@@ -54723,6 +54547,22 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Nobody has looked at the full number.")))));
   }
+  function retentionSentence(latest, typedOnly) {
+    if (!latest) {
+      return typedOnly ? "ID typed by hand, not checked. Check the ID to record it." : "";
+    }
+    if (latest.numberUnavailable) return "No ID number was recorded for this check.";
+    if (latest.method === "in_person" && latest.maskedNumber) {
+      return "The ID number is stored encrypted. Only the last 4 are shown.";
+    }
+    if (latest.maskedNumber) {
+      return "ID details from this check are kept on the server. Only the last 4 of the number are shown.";
+    }
+    if (latest.method === "id_and_selfie" || latest.method === "id_selfie_database") {
+      return "ID scanned. No ID number stored.";
+    }
+    return "No ID number was recorded for this check.";
+  }
   function Panel({
     clientId,
     canEdit,
@@ -54804,6 +54644,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
     const advised = !!(pack && pack.advice);
     const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
+    const sentence = loaded ? retentionSentence(latest, typedOnly) : "";
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -54918,12 +54759,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.flag
       }
-    }, note), /*#__PURE__*/React.createElement("div", {
+    }, note), sentence ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-retention",
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
       }
-    }, "ID details from a finished check are kept on the server. This screen shows the last 4 of the number."), latest && latest.photoOnFile && /*#__PURE__*/React.createElement("div", {
+    }, sentence) : null, latest && latest.photoOnFile && /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute

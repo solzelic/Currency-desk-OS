@@ -6,9 +6,10 @@ import { hasBackendPermission } from "../auth/permissions.js";
 import { resolveSession, SESSION_COOKIE } from "../auth/sessions.js";
 import { isStagingRuntime } from "../auth/staging-runtime.js";
 import type { Db } from "../db/index.js";
-import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoticeCopy, diditSelfieConsentCopy, noticeCopy, privacyReady, selfieConsentCopy } from "./consent-copy.js";
+import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoSelfieConsentCopy, diditNoticeCopy, diditSelfieConsentCopy, noticeCopy, privacyReady, selfieConsentCopy } from "./consent-copy.js";
+import { recordCounterFaceMatch } from "./counter-scan.js";
 import { generateOneTimeLink } from "./persona-calls.js";
-import { diditConfigured, diditSelection, diditSessionLink } from "./providers/didit.js";
+import { diditConfigured, diditDocScanAvailable, diditSelection, diditSessionLink } from "./providers/didit.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
@@ -56,11 +57,16 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     );
     const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
     const readiness = await readIdvReady(db, actor, env());
+    const tenant = await dbQuery(db).query("SELECT is_test_shop FROM tenants WHERE id = $1", [actor.tenantId]);
+    const testShop = tenant.rows[0]?.is_test_shop === true;
+    const docScan = didit && diditSelection(env(), testShop).ok && diditDocScanAvailable(env());
     return {
       version: didit ? DIDIT_CONSENT_VERSION : CONSENT_VERSION,
       faceCrop: fill.faceCrop,
       notice: didit ? diditNoticeCopy(fill) : noticeCopy(fill),
       selfieConsent: didit ? diditSelfieConsentCopy(fill) : selfieConsentCopy(fill),
+      noSelfieConsent: docScan ? diditNoSelfieConsentCopy(fill) : null,
+      docScan,
       provider: readiness.provider,
       ready: readiness.ready,
       tier4: didit ? "unavailable" : null,
@@ -90,6 +96,21 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       copyVersion: body.data.copyVersion, faceCropShown: body.data.faceCropShown,
     });
     if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, code: saved.error, message: saved.message });
+    return saved.body;
+  });
+
+  app.post("/api/idv/checks/counter-scan/attest", async (req, reply) => {
+    const actor = await who(req, reply);
+    if (!actor) return;
+    if (!hasBackendPermission(actor.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
+    const body = z.object({
+      clientId: CLIENT_ID,
+      providerRef: z.string().trim().min(1).max(80),
+      attested: z.boolean(),
+    }).strict().safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: "invalid_request" });
+    const saved = await recordCounterFaceMatch(db, actor, body.data, env());
+    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, message: saved.message });
     return saved.body;
   });
 

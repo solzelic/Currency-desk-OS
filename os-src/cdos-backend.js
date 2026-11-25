@@ -35,13 +35,31 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    var timeoutMs = init.timeoutMs;
+    delete init.timeoutMs;
+    var timer = 0;
+    var controller = null;
+    var timedOut = false;
+    if (timeoutMs && !init.signal && typeof AbortController === "function") {
+      controller = new AbortController();
+      init.signal = controller.signal;
+      timer = setTimeout(function () { timedOut = true; controller.abort(); }, timeoutMs);
+    }
     try {
       response = await fetch(path, init);
     } catch (cause) {
+      if (timedOut) {
+        var timed = new Error("The desk did not answer in time. Check the client list before trying again.");
+        timed.code = "TIMEOUT";
+        timed.cause = cause;
+        throw timed;
+      }
       var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
       throw networkError;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     var body = {};
@@ -1038,7 +1056,7 @@
        being quietly wrong about somebody's compliance history. */
     lookup: function (name) { return request("/api/clients/lookup?name=" + encodeURIComponent(name)); },
     create: function (input) {
-      return request("/api/clients", { method: "POST", body: JSON.stringify(input) });
+      return request("/api/clients", { method: "POST", body: JSON.stringify(input), timeoutMs: 15000 });
     },
     update: function (clientId, changes) {
       return request("/api/clients/" + encodeURIComponent(clientId), {

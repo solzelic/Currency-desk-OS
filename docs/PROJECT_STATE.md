@@ -2,6 +2,10 @@
 
 `GET /api/idv/clients/:clientId` answers any signed-in desk role with `provider` (`persona` or `didit`) and `ready`: `off`, `not_test_shop`, `not_configured`, `privacy_missing`, or `ok`. It still returns `checksEnabled`. The same `ready` is on the consent read. The teller ID check shows that reason when a start or a link stops: checks off, the server's privacy sentence, Didit not set up, or the provider, key, cap, and tier sentences. Shop screens name Persona, Didit, or say identity checks are off. Customer consent no longer prints a bracket placeholder. An empty privacy contact reads "the staff at this counter". With no policy URL the privacy-policy sentence is left out. An empty shop name reads "This shop". That fallback wording is draft for Compliance review (CD-219). Staging still refuses a customer link until `privacyReady` is true. The live lock and tier 4 are unchanged.
 
+## Add contact saves, then the real ID check (25 November 2026)
+
+Add a contact no longer offers the old priced verify step. The footer is Save contact and Save and check ID. Save contact closes when the server has created the file. The ID document is stored, and then the client list is read again. If that write fails, the desk says the ID was not saved. A desk that is not on the server saves and closes without an ID check. Save and check ID opens the teller ID check for the new client. Only creating a client gives up after 15 seconds, and the message tells the teller to check the client list before trying again. Recording an ID still stores the document before the list is read again. While the PIN pad is the top layer it takes the digits, including when a field behind it still has focus, and those digits are not written into that field. A disabled ID check button uses the muted surface and muted text. Quick, Verified, and Verified Plus no longer show a price. Skip on Add contact says Skip. Add the ID later. The identity check sentence follows the record: encrypted last 4 for an in-person number, server last 4 for a check with a number, no number stored for a scan with no fields, no number recorded when the number was unavailable, a hand-typed prompt when there is no check, and no sentence when nothing is on file. Sign-up and Early Access were not edited.
+
 ## Didit identity check, sandbox only (25 November 2026)
 
 Didit sits behind the existing `IdvProvider` adapter. Persona is still the
@@ -14,18 +18,37 @@ unselectable unless the process is staging or `DIDIT_LIVE_ALLOWED` is exactly
 and that lock before it writes. Missing
 `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, or `DIDIT_WORKFLOW_ID` answers 503
 `not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 is off even
-when `DIDIT_AML_WORKFLOW_ID` is set. A pass needs ID, liveness, and face
-match each passed. A test pass with no stored number reads Missing ID.
+when `DIDIT_AML_WORKFLOW_ID` is set. An ID and selfie pass still needs ID,
+liveness, and face match each passed. A counter ID scan
+(`counter_id_scan`, label "ID scanned at the counter") uses optional
+`DIDIT_DOC_WORKFLOW_ID` only, never the Basic KYC workflow. If that id is
+unset the start answers 409 `DOC_WORKFLOW_UNSET`. A pass needs the ID
+feature Approved and a server attestation: the staff user id, the role,
+and the database clock. The attestation is refused with 409 unless that
+scan is still in progress with the ID approved. The stored words are
+face-match-v1: "The customer is in front of me. I compared their face with
+the photo on this ID and they are the same person." A later declined,
+expired, or review result clears that flag and cannot be attested into a
+pass. After a pass, that later result writes a new not-a-pass row and
+leaves the pass row as it was.
+Without the attestation it is not verified.
+`counter_full` ("Full check at the counter") is the Basic KYC workflow and
+still needs ID, liveness, and face match. Failed and declined scans are
+not billed, on every method. The webhook signature checks and the live
+gate are unchanged. A test pass with no stored number reads Missing ID.
 A failed, abandoned,
 or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
 It checks the raw-body signature and a 300-second timestamp, and it is
 idempotent on session id plus status. The decision body, the secret, and the
 ID photos are not stored and not logged. Names and the sandbox workflow id
-are in `docs/IDV.md`. On the teller ID check, a Didit shop shows five steps:
-you share a link or a QR code, the customer scans their ID, the customer
-takes a selfie, the result comes back to you, and there is no charge if the
-check fails. A Persona shop does not show those steps. A counter only shop
-does not show them either.
+are in `docs/IDV.md`. On the teller ID check, a Didit shop shows
+"What the customer does": "Open the link on the counter device, or send it
+to the customer's phone." "The customer reads the notice and chooses whether
+to go ahead. If they say no, check the ID at the counter." "The customer
+scans their ID and takes a selfie with Didit." "The result comes back to
+this screen." Under that list: "Your shop is not billed for a check that is
+declined, abandoned or expired." A Persona shop does not show those steps.
+A counter only shop does not show them either.
 
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 

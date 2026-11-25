@@ -223,6 +223,9 @@ type InsertRecord = {
   recordId?: string;
   numberUnavailable?: boolean;
   provider?: "persona" | "didit";
+  attestationStaffId?: string | null;
+  attestationRole?: string | null;
+  attestationAt?: string | null;
 };
 
 async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: InsertRecord): Promise<string> {
@@ -237,7 +240,8 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       template_id, template_version, staff_id, inspector_staff_id, attestation,
       confirmed_by_staff_id, original_record_id, consent_id, counter_check_chosen, deal_id,
       address_line, date_of_birth, database_step, face_crop_ciphertext, face_crop_retained_until, verified_at,
-      key_version, retain_until, number_unavailable, provider
+      key_version, retain_until, number_unavailable, provider,
+      attestation_staff_id, attestation_role, attestation_at
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
       CASE WHEN $34::text IS NULL THEN NULL ELSE now() + interval '5 years' END,
@@ -245,7 +249,8 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       ${KEY_VERSION},
       COALESCE($35::timestamptz, now()) + interval '5 years',
       $36,
-      COALESCE($37, 'persona')
+      COALESCE($37, 'persona'),
+      $38, $39, $40
     )`,
     [
       id, actor.tenantId, actor.legalEntityId, actor.branchId, clientId, row.tier, row.method,
@@ -259,6 +264,9 @@ async function insertRecord(q: Q, actor: DeskActor, clientId: string, row: Inser
       row.databaseStep ?? plan.databaseStep, row.cropCipher ?? null, row.verifiedAt ?? null,
       row.numberUnavailable === true,
       row.provider ?? null,
+      row.attestationStaffId ?? null,
+      row.attestationRole ?? null,
+      row.attestationAt ?? null,
     ],
   );
   await linkDeal(q, actor, id, clientId, row.dealId ?? null);
@@ -398,7 +406,7 @@ async function latestFullCheck(q: Q, actor: DeskActor, clientId: string): Promis
        FROM idv_check_records r
       WHERE tenant_id = $1 AND legal_entity_id = $2 AND client_id = $3
         AND result = 'pass'
-        AND method IN ('in_person', 'id_and_selfie', 'id_selfie_database')
+        AND method IN ('in_person', 'id_and_selfie', 'id_selfie_database', 'counter_id_scan', 'counter_full')
         AND NOT EXISTS (
           SELECT 1 FROM idv_record_supersessions s
            WHERE s.record_id = r.record_id AND s.tenant_id = r.tenant_id AND s.legal_entity_id = r.legal_entity_id
@@ -521,6 +529,11 @@ export async function writePersonaRecord(db: Db, input: {
   provider?: "persona" | "didit";
   method?: CheckMethod;
   databaseStep?: "off" | "not_applicable";
+  inspectorStaffId?: string | null;
+  attestation?: string | null;
+  attestationStaffId?: string | null;
+  attestationRole?: string | null;
+  attestationAt?: string | null;
 }): Promise<void> {
   const plan = tierMethod(input.tier === "4" ? "4" : "3");
   const actor: DeskActor = {
@@ -552,6 +565,12 @@ export async function writePersonaRecord(db: Db, input: {
     provider: input.provider ?? "persona",
     cropCipher: input.cropCipher,
     numberUnavailable: input.numberUnavailable === true,
+    inspectorStaffId: input.inspectorStaffId ?? null,
+    attestation: input.attestation ?? null,
+    attestationStaffId: input.attestationStaffId ?? null,
+    attestationRole: input.attestationRole ?? null,
+    attestationAt: input.attestationAt ?? null,
+    verifiedAt: input.attestationAt ?? null,
   });
 }
 
@@ -576,6 +595,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
             r.number_unavailable, r.issuing_jurisdiction, r.issuing_country, r.expiry_date, r.result,
             r.provider_checks, r.persona_inquiry_id, r.staff_id, r.inspector_staff_id, r.original_record_id, r.consent_id,
             r.counter_check_chosen, r.deal_id, r.database_step, r.provider,
+            r.attestation_staff_id, r.attestation_role, r.attestation_at,
             (r.face_crop_ciphertext IS NOT NULL AND r.face_crop_retained_until > now()) AS has_crop,
             r.verified_at > now() - interval '5 years' AS within_five_years,
             o.verified_at AS original_verified_at, o.method AS original_method, o.result AS original_result,
@@ -632,13 +652,15 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const result = String(row.result);
     const docType = str(row, "document_type");
     const typeRow = resolveIdType(docType);
+    const scanMethod = method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full";
     const line = expiredStamp
       ?? (result === "declined" ? notPassedLine(stamp.date)
         : result === "needs_review" ? underReviewLine(stamp.date)
           : result === "method_not_completed" ? INCOMPLETE_LINE
             : returningStamp ?? (result === "pass"
-              ? idCheckedLine(stamp.date, label, rowTest && method === "id_and_selfie")
+              ? idCheckedLine(stamp.date, label, rowTest && scanMethod)
               : PROGRESS_LINE));
+    const attestedAt = row.attestation_at ? branchStamp(new Date(String(row.attestation_at)), facts.timeZone) : null;
     const originalExpiry = day(row.original_expiry);
     const originalType = str(row, "original_document_type");
     const originalTypeRow = resolveIdType(originalType);
@@ -700,6 +722,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       nameOnId: str(row, "name_on_id"),
       documentType: str(row, "document_type"),
       maskedNumber: last ? `•••• ${last}` : null,
+      numberUnavailable: row.number_unavailable === true,
       issuingJurisdiction: str(row, "issuing_jurisdiction"),
       issuingCountry: str(row, "issuing_country"),
       expiryDate: day(row.expiry_date),
@@ -712,6 +735,10 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       dealId: str(row, "deal_id"),
       deals,
       statusLine: statusLine(result, method, stamp.date, rowTest, { expiredStamp, returningStamp }, providerName, line),
+      attestationStaffId: str(row, "attestation_staff_id"),
+      attestationRole: str(row, "attestation_role"),
+      attestationDate: attestedAt?.date ?? null,
+      attestationTime: attestedAt?.time ?? null,
     };
   });
   return {
@@ -917,9 +944,9 @@ function statusLine(
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
   /* Persona keeps the scan-and-selfie badge it had before Didit.
      A Didit pass uses the check line. It does not say Missing ID. */
-  if (result === "pass" && method === "id_and_selfie") {
+  if (result === "pass" && (method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full")) {
     if (provider === "didit") return checkedLine;
-    return verifiedScanChip(date, test);
+    if (method === "id_and_selfie") return verifiedScanChip(date, test);
   }
   return PROGRESS_LINE;
 }

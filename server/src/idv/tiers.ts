@@ -19,7 +19,7 @@ export const TIER_ALIASES = ["1", "2", "3", "4", "quick", "verify", "plus"] as c
 /* Old numeric 1 and 2 were quick and verify. Those are now 2 and 3. */
 export const PEP_TIERS = new Set<TierNumber>(["2", "3"]);
 
-export type CheckMethod = "in_person" | "returning_client" | "id_and_selfie" | "id_selfie_database";
+export type CheckMethod = "in_person" | "returning_client" | "id_and_selfie" | "id_selfie_database" | "counter_id_scan" | "counter_full";
 
 export type CheckResult = "pass" | "declined" | "needs_review" | "method_not_completed" | "returning_confirmed" | "expired";
 
@@ -28,6 +28,8 @@ export const METHOD_LABEL: Record<CheckMethod, string> = {
   returning_client: "Returning client",
   id_and_selfie: "ID and selfie, Persona",
   id_selfie_database: "ID, selfie and database, Persona",
+  counter_id_scan: "ID scanned at the counter",
+  counter_full: "Full check at the counter",
 };
 
 export const NO_PHOTO_LINE = "No photo on file";
@@ -55,6 +57,8 @@ export function resolveTier(input: string): TierNumber | null {
 }
 
 export function methodLabel(method: CheckMethod, provider = "persona"): string {
+  if (method === "counter_id_scan") return METHOD_LABEL.counter_id_scan;
+  if (method === "counter_full") return METHOD_LABEL.counter_full;
   if (provider === "didit" && method === "id_and_selfie") return "ID and selfie, Didit";
   if (provider === "didit" && method === "id_selfie_database") return "ID, selfie and database, Didit";
   return METHOD_LABEL[method];
@@ -74,8 +78,23 @@ export function tierMethod(tier: TierNumber): { method: CheckMethod; databaseSte
 
 const SELFIE_FAILED = new Set(["failed", "declined", "canceled", "cancelled", "expired", "abandoned"]);
 
-/* A failed selfie is not a verification. A missing selfie is not one either. */
-export function classifyCheck(outcome: string, selfieStatus: string | null): { result: CheckResult; verification: boolean } {
+/* A document-only counter scan is verified only when the ID feature passed
+   and a teller has attested the face match. The two-argument call is the
+   ID-and-selfie rule and stays as it was. */
+export function classifyCheck(
+  outcome: string,
+  selfieStatus: string | null,
+  context?: { method?: CheckMethod; idPassed?: boolean; attested?: boolean },
+): { result: CheckResult; verification: boolean } {
+  if (context?.method === "counter_id_scan") {
+    if (outcome === "review") return { result: "needs_review", verification: false };
+    if (outcome === "declined") return { result: "declined", verification: false };
+    if (outcome === "failed" || outcome === "expired") return { result: "method_not_completed", verification: false };
+    if (outcome === "approved" && context.idPassed === true && context.attested === true) {
+      return { result: "pass", verification: true };
+    }
+    return { result: "method_not_completed", verification: false };
+  }
   const selfie = (selfieStatus ?? "").trim().toLowerCase();
   if (SELFIE_FAILED.has(selfie)) return { result: "method_not_completed", verification: false };
   if (outcome === "review") return { result: "needs_review", verification: false };

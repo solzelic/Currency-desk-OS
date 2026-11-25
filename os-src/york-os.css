@@ -2629,6 +2629,17 @@ html[data-cdtheme="dark"] .cdos-tour-next:hover { background: #fff; }
   .fixed.inset-0 .flex.items-center > label {
     flex: none;
   }
+  /* Customer step sentences wrap inside the card. The rules above
+     keep chip text on one line. The number stays beside the sentence. */
+  .fixed.inset-0 li.id-check-step.flex.gap-2 {
+    flex-wrap: nowrap;
+  }
+  .fixed.inset-0 .flex.gap-2 > span.id-check-step-text {
+    white-space: normal;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 
   /* The desktop window draws a resize grip in the corner. A phone
      window fills the screen and does not resize. */

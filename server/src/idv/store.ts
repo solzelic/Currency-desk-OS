@@ -47,18 +47,20 @@ export async function latestClientIdvStatus(db: Db, shopId: string, clientId: st
 
 type MapRow = {
   shop_id: string; branch_id: string; teller_id: string; provider_ref: string; reference_id: string; tenant_id: string;
-  client_id?: string | null; requested_tier?: string | null;
+  client_id?: string | null; requested_tier?: string | null; check_method?: string | null; id_scan_passed?: boolean | null;
 };
 
 export type LocatedInquiry = {
   shopId: string; branchId: string; tellerId: string; providerRef: string; referenceId: string; tenantId: string;
   clientId: string | null; requestedTier: string | null;
+  checkMethod: string | null; idScanPassed: boolean;
 };
 
 /* Same match as recordIdvEvent, without writing. */
 export async function locateIdvInquiry(db: Db, result: IdvResult): Promise<LocatedInquiry | "unknown" | "conflict"> {
   const found = await db.execute(sql`
-    SELECT i.shop_id, i.branch_id, i.teller_id, i.provider_ref, i.reference_id, i.client_id, i.requested_tier, e.tenant_id
+    SELECT i.shop_id, i.branch_id, i.teller_id, i.provider_ref, i.reference_id, i.client_id, i.requested_tier,
+           i.check_method, i.id_scan_passed, e.tenant_id
       FROM idv_inquiries i
       JOIN legal_entities e ON e.id = i.shop_id
      WHERE i.provider = ${result.provider} AND i.provider_ref = ${result.providerRef}
@@ -73,6 +75,8 @@ export async function locateIdvInquiry(db: Db, result: IdvResult): Promise<Locat
     referenceId: row.reference_id, tenantId: row.tenant_id,
     clientId: typeof row.client_id === "string" && row.client_id ? row.client_id : null,
     requestedTier: typeof row.requested_tier === "string" ? row.requested_tier : null,
+    checkMethod: typeof row.check_method === "string" ? row.check_method : null,
+    idScanPassed: row.id_scan_passed === true,
   };
 }
 
