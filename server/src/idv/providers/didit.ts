@@ -9,10 +9,11 @@
    https://docs.didit.me/integration/verification-statuses
    The key, the signing secret, and the raw body are never logged. */
 import * as crypto from "node:crypto";
-import { isProductionRuntime } from "../../auth/staging-runtime.js";
+import { isStagingRuntime } from "../../auth/staging-runtime.js";
 import type { IdvOutcome, IdvProvider, IdvResult, IdvSettingsProvider, IdvStart, IdvWebhookInput } from "../provider.js";
 
 const WINDOW_SEC = 300;
+const DIDIT_FETCH_MS = 10_000;
 const ATTEMPTS = 3;
 export const DIDIT_API_BASE_DEFAULT = "https://verification.didit.me";
 export const DIDIT_HOST = "verify.didit.me";
@@ -46,11 +47,22 @@ export function diditLiveAllowed(env: NodeJS.ProcessEnv): boolean {
   return env.DIDIT_LIVE_ALLOWED === "1";
 }
 
+/* Live Render sets RENDER=true and an onrender.com hostname, which is not
+   one of the custom live hosts. Off Render, or on staging, Didit may run.
+   On live Render it runs only when DIDIT_LIVE_ALLOWED is exactly 1. */
+export function diditRuntimeAllowed(env: NodeJS.ProcessEnv): boolean {
+  return diditLiveAllowed(env) || env.RENDER !== "true" || isStagingRuntime(undefined, env);
+}
+
+function diditOffRenderOrStaging(env: NodeJS.ProcessEnv): boolean {
+  return env.RENDER !== "true" || isStagingRuntime(undefined, env);
+}
+
 export function diditSelection(
   env: NodeJS.ProcessEnv,
   testShop: boolean,
 ): { ok: true } | { ok: false; message: string } {
-  if (isProductionRuntime(env) && !diditLiveAllowed(env)) {
+  if (!diditRuntimeAllowed(env)) {
     return { ok: false, message: "Didit is not available on this server." };
   }
   if (!testShop) {
@@ -119,7 +131,7 @@ export function diditApiBase(env: NodeJS.ProcessEnv): string {
     const host = url.hostname.toLowerCase();
     if (host === "verification.didit.me") return raw.replace(/\/$/, "");
     const loopback = host === "127.0.0.1" || host === "localhost";
-    if (loopback && !isProductionRuntime(env) && (url.protocol === "http:" || url.protocol === "https:")) {
+    if (loopback && diditOffRenderOrStaging(env) && (url.protocol === "http:" || url.protocol === "https:")) {
       return raw.replace(/\/$/, "");
     }
   } catch {
@@ -253,6 +265,7 @@ export async function startDiditCheck(
       headers: { "x-api-key": key, accept: "application/json", "content-type": "application/json" },
       body,
       redirect: "manual",
+      signal: AbortSignal.timeout(DIDIT_FETCH_MS),
     });
     status = res.status;
     if (status === 200 || status === 201) {
@@ -280,6 +293,7 @@ export async function diditSessionLink(input: {
     method: "GET",
     headers: { "x-api-key": trimmed(input.env, "DIDIT_API_KEY"), accept: "application/json" },
     redirect: "manual",
+    signal: AbortSignal.timeout(DIDIT_FETCH_MS),
   });
   if (res.status !== 200) {
     await res.body?.cancel();
@@ -297,7 +311,7 @@ export function createDiditProvider(
 ): IdvProvider | null {
   const source = env ?? process.env;
   if (!diditConfigured(source)) return null;
-  if (isProductionRuntime(source) && !diditLiveAllowed(source)) return null;
+  if (!diditRuntimeAllowed(source)) return null;
   const secret = trimmed(source, "DIDIT_WEBHOOK_SECRET");
   return {
     name: "didit",

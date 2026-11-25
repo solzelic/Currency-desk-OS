@@ -2,14 +2,16 @@
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
+import { finishDiditWebhook } from "../src/idv/didit-webhook.js";
 import {
-  chargeForDiditOutcome, createDiditProvider, diditDecisionChecks, diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
+  chargeForDiditOutcome, createDiditProvider, diditApiBase, diditDecisionChecks, diditSessionLink,
+  diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
 } from "../src/idv/providers/didit.js";
 
 const SECRET = "fixture-didit-secret";
@@ -20,6 +22,11 @@ const ENV = {
   DIDIT_API_KEY: KEY,
   DIDIT_WEBHOOK_SECRET: SECRET,
   DIDIT_WORKFLOW_ID: WORKFLOW,
+};
+const RENDER_LIVE = {
+  ...ENV,
+  RENDER: "true",
+  RENDER_EXTERNAL_HOSTNAME: "currencydesk.onrender.com",
 };
 const NOW = 1_700_000_000_000;
 const FIXTURE = readFileSync(join(import.meta.dirname, "fixtures/didit/status-updated.json"));
@@ -58,7 +65,7 @@ beforeAll(async () => {
   app = await buildApp(handle.db, {}, undefined, { env: ENV, fetch: fetchStub, sleep: async () => {} });
   off = await buildApp(handle.db, {}, undefined, { env: {}, fetch: fetchStub });
   live = await buildApp(handle.db, {}, undefined, {
-    env: { ...ENV, RENDER_EXTERNAL_HOSTNAME: "www.currencydeskos.com" },
+    env: RENDER_LIVE,
     fetch: fetchStub,
   });
   cookies.owner = await signIn(app, "j.masri");
@@ -169,12 +176,39 @@ describe("didit provider", () => {
     expect(routes).not.toContain("ID, selfie and database");
   });
 
-  it("is absent when the key or secret is missing, including on a live host", () => {
+  it("is absent when the key or secret is missing, and on live Render", () => {
     expect(createDiditProvider({})).toBeNull();
     expect(createDiditProvider({ DIDIT_WEBHOOK_SECRET: SECRET, DIDIT_WORKFLOW_ID: WORKFLOW })).toBeNull();
     expect(createDiditProvider({ DIDIT_API_KEY: KEY, DIDIT_WORKFLOW_ID: WORKFLOW })).toBeNull();
-    expect(createDiditProvider({ ...ENV, RENDER_EXTERNAL_HOSTNAME: "www.currencydeskos.com" })).toBeNull();
-    expect(createDiditProvider({ ...ENV, RENDER_EXTERNAL_HOSTNAME: "www.currencydeskos.com", DIDIT_LIVE_ALLOWED: "1" })).not.toBeNull();
+    expect(createDiditProvider(RENDER_LIVE)).toBeNull();
+    expect(createDiditProvider({ ...RENDER_LIVE, DIDIT_LIVE_ALLOWED: "1" })).not.toBeNull();
+    expect(diditApiBase({ ...RENDER_LIVE, DIDIT_API_BASE: "http://127.0.0.1:4198" })).toBe("https://verification.didit.me");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "http://127.0.0.1:4198" })).toBe("http://127.0.0.1:4198");
+    expect(createDiditProvider({
+      ...ENV,
+      RENDER: "true",
+      STAGING: "1",
+      RENDER_EXTERNAL_HOSTNAME: "currencydesk-staging.onrender.com",
+    })).not.toBeNull();
+  });
+
+  it("aborts a Didit call that does not answer", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      expect(ms).toBe(10_000);
+      const controller = new AbortController();
+      controller.abort();
+      return controller.signal;
+    });
+    const hung: typeof fetch = async (_url, init) => {
+      if (!init?.signal?.aborted) throw new Error("missing timeout");
+      throw new DOMException("The operation was aborted", "AbortError");
+    };
+    await expect(startDiditCheck({
+      referenceId: "ref-timeout", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "3",
+    }, { env: ENV, fetch: hung, sleep: async () => {} })).rejects.toThrow(/abort/i);
+    await expect(diditSessionLink({ sessionId: SESSION, env: ENV, fetchImpl: hung })).rejects.toThrow(/abort/i);
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    timeout.mockRestore();
   });
 
   it("creates a session with the workflow id and no customer fields", async () => {
@@ -247,7 +281,7 @@ describe("didit routes", () => {
     expect(start.json().message).toBe("Didit can be used only on a staging test shop.");
   });
 
-  it("keeps Didit off on a live host unless the live flag is set", async () => {
+  it("keeps Didit off on live Render unless the live flag is set", async () => {
     await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
     const owner = await signIn(live, "j.masri");
     const teller = await signIn(live, "m.costa");
@@ -379,6 +413,40 @@ describe("didit routes", () => {
     expect(String(row.rows[0]?.provider_checks)).not.toContain("database");
     expect(String(row.rows[0]?.method)).not.toContain("database");
     expect(JSON.stringify(row.rows[0])).not.toContain("Fixture Person");
+  });
+
+  it("does not apply a webhook off a test shop or on live Render", async () => {
+    const session = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status)
+      VALUES ('ref-lock', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-didit', '3', 'starting')
+    `);
+    await handle.db.update(schema.tenants).set({ isTestShop: false }).where(eq(schema.tenants.id, DEMO.tenantId));
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Approved",
+      vendor_data: "ref-lock",
+      decision: {
+        id_verifications: [{ status: "Approved" }],
+        liveness_checks: [{ status: "Approved" }],
+        face_matches: [{ status: "Approved" }],
+      },
+    }));
+    const dropped = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(dropped.statusCode, dropped.body).toBe(200);
+    expect(dropped.json()).toEqual({ received: true, dropped: true });
+    await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
+    const parsed = parseDiditWebhook(JSON.parse(raw.toString("utf8")));
+    expect(await finishDiditWebhook(handle.db, parsed!, RENDER_LIVE)).toBe("unknown");
+    const rows = await handle.db.execute(sql`SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${session}`);
+    expect(rows.rows).toEqual([]);
+    const status = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE provider_ref = ${session}`);
+    expect(status.rows[0]).toMatchObject({ status: "starting" });
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'failed' WHERE provider_ref = ${session}`);
   });
 
   it("rejects a bad signature and a stale replay before any write", async () => {

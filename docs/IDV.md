@@ -5,9 +5,9 @@ same `IdvProvider` adapter. A shop with no row, or a row that still says
 `persona`, is unchanged. Checks stay off until the owner turns them on.
 
 Didit is sandbox only. A shop can select it only when `tenants.is_test_shop`
-is true. On a live host (`www.currencydeskos.com` or `currencydeskos.com`,
-and `STAGING` is not `1`) Didit is not selectable unless `DIDIT_LIVE_ALLOWED`
-is exactly `1`. That variable stays unset.
+is true. On Render (`RENDER` exactly `true`) Didit is not selectable unless
+this process is staging or `DIDIT_LIVE_ALLOWED` is exactly `1`. That variable
+stays unset. A loopback `DIDIT_API_BASE` is ignored on live Render.
 
 ## Env names
 

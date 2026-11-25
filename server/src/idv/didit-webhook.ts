@@ -3,7 +3,7 @@
    Failed, abandoned, and declined scans are not billed. */
 import { randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
-import { chargeForDiditOutcome } from "./providers/didit.js";
+import { chargeForDiditOutcome, diditRuntimeAllowed } from "./providers/didit.js";
 import type { IdvResult } from "./provider.js";
 import { dbQuery, writePersonaRecord } from "./records.js";
 import { locateIdvInquiry } from "./store.js";
@@ -17,6 +17,18 @@ function statusWord(result: IdvResult): string {
   return result.outcome;
 }
 
+async function shopIsTest(db: Db, shopId: string): Promise<boolean> {
+  const found = await dbQuery(db).query(
+    `SELECT t.is_test_shop
+       FROM legal_entities e
+       JOIN tenants t ON t.id = e.tenant_id
+      WHERE e.id = $1
+      LIMIT 1`,
+    [shopId],
+  );
+  return found.rows[0]?.is_test_shop === true;
+}
+
 function checkResult(result: IdvResult): CheckResult {
   const selfie = result.outcome === "approved" && result.checksPassed === true ? "approved" : null;
   return classifyCheck(result.outcome, selfie).result;
@@ -25,6 +37,7 @@ function checkResult(result: IdvResult): CheckResult {
 export async function finishDiditWebhook(
   db: Db,
   result: IdvResult,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<"stored" | "duplicate" | "unknown" | "conflict"> {
   /* No settle. Failed, abandoned, and declined stay no_charge.
      A pass is unbilled in this sandbox slice. */
@@ -32,6 +45,7 @@ export async function finishDiditWebhook(
   if (charge !== "no_charge" && charge !== "unbilled") throw new Error("didit_charge_unexpected");
   const located = await locateIdvInquiry(db, result);
   if (located === "unknown" || located === "conflict") return located;
+  if (!diditRuntimeAllowed(env) || !await shopIsTest(db, located.shopId)) return "unknown";
   const next = statusWord(result);
   return db.transaction(async (tx) => {
     const q = dbQuery(tx);

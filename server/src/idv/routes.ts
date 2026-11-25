@@ -84,7 +84,7 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     if (result.ignore) return { received: true, dropped: true };
     try {
       const saved = provider.name === "didit"
-        ? await finishDiditWebhook(db, result)
+        ? await finishDiditWebhook(db, result, options?.env ?? process.env)
         : await finishIdvWebhook(db, result, { env: options?.env ?? process.env, fetchImpl: options?.fetch });
       if (saved === "unknown") return { received: true, dropped: true };
       if (saved === "conflict") return reply.code(400).send({ error: "invalid_webhook" });
