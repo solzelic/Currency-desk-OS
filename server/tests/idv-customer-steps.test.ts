@@ -1,4 +1,4 @@
-/* The Didit teller screen lists what the customer will see.
+/* The Didit teller screen lists what the customer does.
    Persona and a counter only shop render none of it. */
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -17,12 +17,12 @@ const { transform } = require("@babel/standalone") as {
 };
 
 const STEPS = [
-  "You share a link or a QR code.",
-  "The customer scans their ID.",
-  "The customer takes a selfie.",
-  "The result comes back to you.",
-  "There is no charge if the check fails.",
+  "Open the link on the counter device, or send it to the customer's phone.",
+  "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.",
+  "The customer scans their ID and takes a selfie with Didit.",
+  "The result comes back to this screen.",
 ];
+const BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
 const DASH = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D-]/;
 const FLAG = /\u{1F1E6}|\u{1F1FF}|🇺🇸|🇨🇦|🇬🇧/u;
 
@@ -72,23 +72,30 @@ function loadSteps(): StepsFn {
 const customerSteps = loadSteps();
 
 function html(node: unknown): string {
-  return renderToStaticMarkup(node as never);
+  return renderToStaticMarkup(node as never).replace(/&#x27;/g, "'");
 }
 
 describe("Didit customer steps", () => {
-  it("renders the five steps on a Didit shop", () => {
+  it("renders what the customer does on a Didit shop", () => {
     const markup = html(customerSteps({ provider: "didit" }, false));
     expect(markup).toContain('data-testid="id-check-customer-steps"');
-    expect(markup).toContain("What the customer sees");
+    expect(markup).toContain("What the customer does");
+    expect(markup).not.toContain("What the customer sees");
+    const list = markup.slice(markup.indexOf("<ol"), markup.indexOf("</ol>"));
     let at = 0;
     for (const line of STEPS) {
       expect(line).not.toMatch(DASH);
       expect(line).not.toMatch(FLAG);
       expect(line).not.toMatch(/\$|dollar|pound|euro|flag/i);
-      const next = markup.indexOf(line);
+      const next = list.indexOf(line);
       expect(next).toBeGreaterThan(at);
       at = next;
     }
+    expect(list).not.toContain(BILLING);
+    expect(BILLING).not.toMatch(DASH);
+    const note = markup.indexOf('data-testid="id-check-customer-billing"');
+    expect(note).toBeGreaterThan(markup.indexOf("</ol>"));
+    expect(markup.indexOf(BILLING)).toBeGreaterThan(note);
     expect(markup).toContain("max-width:100%");
     expect(markup).toContain("overflow-wrap:anywhere");
     expect(markup).not.toMatch(FLAG);

@@ -53577,9 +53577,10 @@ ${(filing.map || []).map(blockHTML).join('')}
     }
   }
 
-  /* Didit only. The teller reads what the customer will see.
+  /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
-  const CUSTOMER_STEPS = ["You share a link or a QR code.", "The customer scans their ID.", "The customer takes a selfie.", "The result comes back to you.", "There is no charge if the check fails."];
+  const CUSTOMER_STEPS = ["Open the link on the counter device, or send it to the customer's phone.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
+  const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
     return /*#__PURE__*/React.createElement("div", {
@@ -53598,7 +53599,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "What the customer sees"), /*#__PURE__*/React.createElement("ol", {
+    }, "What the customer does"), /*#__PURE__*/React.createElement("ol", {
       className: "m-0 mt-2 space-y-1.5",
       style: {
         listStyle: "none",
@@ -53625,7 +53626,14 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         overflowWrap: "anywhere"
       }
-    }, line)))));
+    }, line)))), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-customer-billing",
+      className: "text-[12px] mt-2",
+      style: {
+        color: CD.mute,
+        lineHeight: 1.45
+      }
+    }, CUSTOMER_BILLING));
   }
   function holdSheet() {
     const count = Number(document.body.dataset.idCheckCount || "0") + 1;

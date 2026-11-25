@@ -81,20 +81,20 @@
     }
   }
 
-  /* Didit only. The teller reads what the customer will see.
+  /* Didit only. The teller reads what the customer does.
      A Persona shop and a counter only shop do not show this. */
   const CUSTOMER_STEPS = [
-    "You share a link or a QR code.",
-    "The customer scans their ID.",
-    "The customer takes a selfie.",
-    "The result comes back to you.",
-    "There is no charge if the check fails.",
+    "Open the link on the counter device, or send it to the customer's phone.",
+    "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.",
+    "The customer scans their ID and takes a selfie with Didit.",
+    "The result comes back to this screen.",
   ];
+  const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
     return (
       <div data-testid="id-check-customer-steps" className="min-w-0 w-full" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: "var(--cd-paper-soft)", padding: "12px 14px", boxSizing: "border-box", maxWidth: "100%" }}>
-        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer sees</div>
+        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer does</div>
         <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
           {CUSTOMER_STEPS.map((line, i) => (
             <li key={line} className="flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
@@ -103,6 +103,7 @@
             </li>
           ))}
         </ol>
+        <div data-testid="id-check-customer-billing" className="text-[12px] mt-2" style={{ color: CD.mute, lineHeight: 1.45 }}>{CUSTOMER_BILLING}</div>
       </div>
     );
   }
