@@ -53350,6 +53350,62 @@ ${(filing.map || []).map(blockHTML).join('')}
       return ["Passport", "Driver's Licence"];
     }
   }
+
+  /* Didit only. The teller reads what the customer does.
+     A Persona shop and a counter only shop do not show this. */
+  const CUSTOMER_STEPS = ["Open the link on the counter device, or send it to the customer's phone.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
+  const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
+  function customerSteps(copy, counter) {
+    if (!copy || copy.provider !== "didit" || counter) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-customer-steps",
+      className: "min-w-0 w-full",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12,
+        background: "var(--cd-paper-soft)",
+        padding: "12px 14px",
+        boxSizing: "border-box",
+        maxWidth: "100%"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "What the customer does"), /*#__PURE__*/React.createElement("ol", {
+      className: "m-0 mt-2 space-y-1.5",
+      style: {
+        listStyle: "none",
+        padding: 0
+      }
+    }, CUSTOMER_STEPS.map((line, i) => /*#__PURE__*/React.createElement("li", {
+      key: line,
+      className: "id-check-step flex items-start gap-2 min-w-0 text-[13px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "flex-none",
+      style: {
+        width: 18,
+        color: CD.mute,
+        fontFamily: '"Space Mono", ui-monospace, monospace',
+        fontSize: 12,
+        lineHeight: 1.45
+      }
+    }, i + 1, "."), /*#__PURE__*/React.createElement("span", {
+      className: "id-check-step-text min-w-0 flex-1"
+    }, line)))), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-customer-billing",
+      className: "text-[12px] mt-2",
+      style: {
+        color: CD.mute,
+        lineHeight: 1.45
+      }
+    }, CUSTOMER_BILLING));
+  }
   function holdSheet() {
     const count = Number(document.body.dataset.idCheckCount || "0") + 1;
     document.body.dataset.idCheckCount = String(count);
@@ -53791,6 +53847,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         label: "Returning client",
         note: "Reuse the check on file."
       });
+      const tier4Off = !counter && copy.tier4 === "unavailable";
       return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
         className: "space-y-3",
         style: {
@@ -53822,13 +53879,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: "var(--cd-on-ink)",
           opacity: 0.82
         }
-      }, primary.note)), copy.tier4 === "unavailable" && /*#__PURE__*/React.createElement("div", {
-        "data-testid": "id-check-tier4",
-        className: "text-[13px]",
-        style: {
-          color: CD.mute
-        }
-      }, "ID, selfie and database is not available yet"), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, primary.note)), customerSteps(copy, counter), (more.length > 0 || tier4Off) && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -53866,18 +53917,28 @@ ${(filing.map || []).map(blockHTML).join('')}
         strokeLinecap: "round",
         strokeLinejoin: "round"
       }))), moreOpen && /*#__PURE__*/React.createElement("div", {
-        className: "space-y-2 mt-2"
+        "data-testid": "id-check-more-list",
+        className: "space-y-2 mt-2",
+        style: {
+          height: "auto",
+          overflow: "visible"
+        }
       }, more.map(item => /*#__PURE__*/React.createElement("button", {
         key: item.id,
         type: "button",
+        "data-testid": "id-check-more-" + item.id,
         onClick: () => pick(item.id),
-        className: "w-full text-left px-4",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
         style: {
           minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
           border: `1px solid ${CD.line}`,
           borderRadius: 10,
           background: CD.paper,
-          color: CD.ink
+          color: CD.ink,
+          whiteSpace: "normal"
         }
       }, /*#__PURE__*/React.createElement("div", {
         className: "text-[14px] font-semibold"
@@ -53886,7 +53947,33 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, item.note)))))));
+      }, item.note))), tier4Off && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-tier4",
+        "aria-disabled": "true",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
+        style: {
+          minHeight: 44,
+          height: "auto",
+          overflow: "visible",
+          boxSizing: "border-box",
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10,
+          background: CD.paper,
+          color: CD.mute,
+          whiteSpace: "normal",
+          cursor: "default"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-0.5",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database checks are not available yet."))))));
     }
     if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-loading",
@@ -53959,7 +54046,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Hand the counter device to the customer. The check opens at this link."), linkUrl ? /*#__PURE__*/React.createElement("a", {
+    }, "Hand the counter device to the customer. The check opens at this link."), customerSteps(copy, counter), linkUrl ? /*#__PURE__*/React.createElement("a", {
       "data-testid": "id-check-link-url",
       href: linkUrl,
       target: "_blank",
@@ -54916,7 +55003,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       Panel,
       Flow,
       DealBar,
-      Settings
+      Settings,
+      customerSteps
     }
   });
 })();
