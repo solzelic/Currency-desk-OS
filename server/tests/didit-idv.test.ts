@@ -10,13 +10,15 @@ import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { finishDiditWebhook } from "../src/idv/didit-webhook.js";
 import {
-  chargeForDiditOutcome, createDiditProvider, diditApiBase, diditDecisionChecks, diditSessionLink,
+  chargeForDiditOutcome, createDiditProvider, diditApiBase, diditDecisionChecks, diditDocWorkflow, diditSessionLink,
   diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
 } from "../src/idv/providers/didit.js";
+import { classifyCheck } from "../src/idv/tiers.js";
 
 const SECRET = "fixture-didit-secret";
 const KEY = "fixture-didit-key";
 const WORKFLOW = "89c8dc5a-2673-4603-973a-b7172aa33c33";
+const DOC = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 const AML = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const ENV = {
   DIDIT_API_KEY: KEY,
@@ -52,6 +54,7 @@ function headers(body: Buffer, seconds: number, secret = SECRET) {
 
 let handle: DbHandle;
 let app: FastifyInstance;
+let docApp: FastifyInstance;
 let off: FastifyInstance;
 let live: FastifyInstance;
 const cookies: Record<string, Record<string, string>> = {};
@@ -74,6 +77,9 @@ beforeAll(async () => {
   handle = await createDb();
   await seed(handle.db);
   app = await buildApp(handle.db, {}, undefined, { env: ENV, fetch: fetchStub, sleep: async () => {} });
+  docApp = await buildApp(handle.db, {}, undefined, {
+    env: { ...ENV, DIDIT_DOC_WORKFLOW_ID: DOC }, fetch: fetchStub, sleep: async () => {},
+  });
   off = await buildApp(handle.db, {}, undefined, { env: {}, fetch: fetchStub });
   live = await buildApp(handle.db, {}, undefined, {
     env: RENDER_LIVE,
@@ -86,6 +92,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
+  await docApp?.close();
   await off?.close();
   await live?.close();
   await handle?.close();
@@ -259,6 +266,26 @@ describe("didit provider", () => {
       referenceId: "ref-aml", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "4",
     }, { env: { ...ENV, DIDIT_AML_WORKFLOW_ID: AML }, fetch: fetchStub, sleep: async () => {} })).rejects.toThrow("tier_unavailable");
     expect(calls).toHaveLength(before);
+    calls.length = 0;
+    const scanned = await startDiditCheck({
+      referenceId: "ref-doc", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "3", method: "counter_id_scan",
+    }, { env: { ...ENV, DIDIT_DOC_WORKFLOW_ID: DOC }, fetch: fetchStub, sleep: async () => {} });
+    expect(scanned.providerRef).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.parse(calls[0]?.body ?? "{}").workflow_id).toBe(DOC);
+    expect(calls[0]?.body).not.toContain(WORKFLOW);
+    const beforeDoc = calls.length;
+    await expect(startDiditCheck({
+      referenceId: "ref-doc-missing", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "3", method: "counter_id_scan",
+    }, { env: ENV, fetch: fetchStub, sleep: async () => {} })).rejects.toThrow("doc_workflow_unset");
+    await expect(startDiditCheck({
+      referenceId: "ref-doc-tier4", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "4", method: "counter_id_scan",
+    }, { env: { ...ENV, DIDIT_DOC_WORKFLOW_ID: DOC, DIDIT_AML_WORKFLOW_ID: AML }, fetch: fetchStub, sleep: async () => {} })).rejects.toThrow("tier_unavailable");
+    const basic = await startDiditCheck({
+      referenceId: "ref-basic-still", shopId: "shop", branchId: "branch", tellerId: "teller", tier: "3",
+    }, { env: { ...ENV, DIDIT_DOC_WORKFLOW_ID: DOC }, fetch: fetchStub, sleep: async () => {} });
+    expect(basic.providerRef).toBeTruthy();
+    expect(JSON.parse(calls.at(-1)?.body ?? "{}").workflow_id).toBe(WORKFLOW);
+    expect(calls).toHaveLength(beforeDoc + 1);
     const passed = diditDecisionChecks({
       id_verifications: [{ status: "Approved", full_name: "Fixture Person" }],
       liveness_checks: [{ status: "Approved" }],
@@ -266,6 +293,25 @@ describe("didit provider", () => {
     });
     expect(passed).toEqual({ passed: true, line: "ID passed, liveness passed, face match passed" });
     expect(passed.line).not.toContain("Fixture Person");
+    expect(diditDecisionChecks({
+      id_verifications: [{ status: "Approved" }],
+    }, "counter_id_scan")).toEqual({ passed: true, line: "ID passed" });
+    expect(diditDecisionChecks({
+      id_verifications: [{ status: "Declined" }],
+      liveness_checks: [{ status: "Approved" }],
+      face_matches: [{ status: "Approved" }],
+    }, "counter_id_scan").passed).toBe(false);
+    expect(classifyCheck("approved", "approved")).toEqual({ result: "pass", verification: true });
+    expect(classifyCheck("approved", "failed")).toEqual({ result: "method_not_completed", verification: false });
+    expect(classifyCheck("approved", null, { method: "counter_id_scan", idPassed: true, attested: false }).verification).toBe(false);
+    expect(classifyCheck("approved", null, { method: "counter_id_scan", idPassed: true, attested: true })).toEqual({
+      result: "pass", verification: true,
+    });
+    expect(classifyCheck("declined", null, { method: "counter_id_scan", idPassed: false, attested: true })).toEqual({
+      result: "declined", verification: false,
+    });
+    expect(diditDocWorkflow(ENV)).toEqual({ ok: false, reason: "not_available" });
+    expect(diditDocWorkflow({ ...ENV, DIDIT_DOC_WORKFLOW_ID: DOC })).toEqual({ ok: true, workflowId: DOC });
     expect(diditDecisionChecks({
       id_verifications: [{ status: "Approved" }],
       liveness_checks: [{ status: "Approved" }],
@@ -577,5 +623,245 @@ describe("didit routes", () => {
     expect(saved.json().provider).toBe("didit");
     expect(saved.json().diditSelectable).toBe(true);
     expect(saved.json().tier4).toBe("unavailable");
+  });
+
+  it("refuses a counter ID scan when the document workflow is unset, and on live, and for tier 4", async () => {
+    calls.length = 0;
+    await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
+    await enable("didit");
+    const missing = await app.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "3", method: "counter_id_scan", clientId: "cli-didit" },
+    });
+    expect(missing.statusCode).toBe(409);
+    expect(missing.json()).toMatchObject({
+      code: "DOC_WORKFLOW_UNSET",
+      error: "not_available",
+      message: "The document-only ID scan is not set up on this server.",
+    });
+    expect(calls).toHaveLength(0);
+    const plus = await docApp.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "4", method: "counter_id_scan", clientId: "cli-didit" },
+    });
+    expect(plus.statusCode).toBe(409);
+    expect(plus.json()).toMatchObject({ code: "IDV_TIER", message: "not available yet" });
+    expect(calls).toHaveLength(0);
+    const teller = await signIn(live, "m.costa");
+    const locked = await live.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: teller,
+      payload: { tier: "3", method: "counter_id_scan", clientId: "cli-didit" },
+    });
+    expect(locked.statusCode).toBe(409);
+    expect(locked.json().message).toBe("Didit is not available on this server.");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("starts a counter scan on the document workflow and keeps the basic workflow for ID and selfie", async () => {
+    calls.length = 0;
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli-doc', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Doc Fixture')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    const started = await docApp.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "3", method: "counter_id_scan", clientId: "cli-doc" },
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    expect(started.json().method).toBe("ID scanned at the counter");
+    expect(JSON.parse(calls[0]?.body ?? "{}").workflow_id).toBe(DOC);
+    expect(calls[0]?.body).not.toContain(WORKFLOW);
+    const stored = await handle.db.execute(sql`
+      SELECT check_method FROM idv_inquiries WHERE provider_ref = ${started.json().providerRef}
+    `);
+    expect(stored.rows[0]).toMatchObject({ check_method: "counter_id_scan" });
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'failed' WHERE client_id = 'cli-doc' AND status = 'starting'`);
+    calls.length = 0;
+    const basic = await docApp.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "3", clientId: "cli-doc" },
+    });
+    expect(basic.statusCode, basic.body).toBe(200);
+    expect(basic.json().method).toBe("ID and selfie");
+    expect(JSON.parse(calls[0]?.body ?? "{}").workflow_id).toBe(WORKFLOW);
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'failed' WHERE client_id = 'cli-doc' AND status = 'starting'`);
+  });
+
+  async function scanWebhook(session: string, reference: string, status: string, decision: unknown) {
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status,
+      vendor_data: reference,
+      decision,
+    }));
+    return app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+  }
+
+  it("does not verify a document-only pass until the teller attests", async () => {
+    const session = "88888888-9999-4aaa-8bbb-cccccccccccc";
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli-scan', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Scan Fixture')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-scan', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+    `);
+    const res = await scanWebhook(session, "ref-scan", "Approved", {
+      full_name: "Fixture Person",
+      id_verifications: [{ status: "Approved" }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const rows = await handle.db.execute(sql`SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${session}`);
+    expect(rows.rows).toEqual([]);
+    const inquiry = await handle.db.execute(sql`
+      SELECT status, id_scan_passed FROM idv_inquiries WHERE provider_ref = ${session}
+    `);
+    expect(inquiry.rows[0]).toMatchObject({ status: "in progress", id_scan_passed: true });
+    const early = await app.inject({
+      method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+      payload: { clientId: "cli-scan", providerRef: session, attested: true, attestedAt: "2000-01-01T00:00:00.000Z" },
+    });
+    expect(early.statusCode).toBe(400);
+    const saved = await app.inject({
+      method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+      payload: { clientId: "cli-scan", providerRef: session, attested: true },
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ verified: true, pending: false });
+    const record = await handle.db.execute(sql`
+      SELECT result, method, provider_checks, attestation_staff_id, attestation_role, inspector_staff_id,
+             attestation, attestation_at <= now() AS not_future,
+             attestation_at > now() - interval '2 minutes' AS recent
+        FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(record.rows[0]).toMatchObject({
+      result: "pass",
+      method: "counter_id_scan",
+      provider_checks: "ID passed",
+      attestation_staff_id: `${DEMO.tenantId}:m.costa`,
+      attestation_role: "teller",
+      inspector_staff_id: "m.costa",
+      attestation: "I compared the customer's face to the ID photo",
+      not_future: true,
+      recent: true,
+    });
+    expect(JSON.stringify(record.rows)).not.toContain("Fixture Person");
+    const file = await app.inject({
+      method: "GET", url: "/api/idv/clients/cli-scan/checks", cookies: cookies.teller,
+    });
+    expect(file.statusCode, file.body).toBe(200);
+    const shown = file.json() as { records: Array<{ statusLine: string; methodLabel: string; result: string }> };
+    expect(shown.records[0]?.result).toBe("pass");
+    expect(shown.records[0]?.methodLabel).toBe("ID scanned at the counter");
+    expect(shown.records[0]?.statusLine).toContain("ID scanned at the counter");
+  });
+
+  it("keeps a document scan unverified when nobody attests, and does not bill a decline", async () => {
+    const open = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+    const declined = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-open-scan', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${open}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+    `);
+    const held = await scanWebhook(open, "ref-open-scan", "Approved", {
+      id_verifications: [{ status: "Approved" }],
+    });
+    expect(held.statusCode, held.body).toBe(200);
+    const openRows = await handle.db.execute(sql`SELECT result FROM idv_check_records WHERE persona_inquiry_id = ${open}`);
+    expect(openRows.rows).toEqual([]);
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-scan-declined', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${declined}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+    `);
+    const dropped = await scanWebhook(declined, "ref-scan-declined", "Declined", {
+      id_verifications: [{ status: "Declined" }],
+    });
+    expect(dropped.statusCode, dropped.body).toBe(200);
+    expect(chargeForDiditOutcome("declined")).toBe("no_charge");
+    expect(chargeForDiditOutcome("failed")).toBe("no_charge");
+    const row = await handle.db.execute(sql`
+      SELECT result, method FROM idv_check_records WHERE persona_inquiry_id = ${declined}
+    `);
+    expect(row.rows[0]).toMatchObject({ result: "declined", method: "counter_id_scan" });
+  });
+
+  it("verifies a document scan when the teller attested before the webhook", async () => {
+    const session = "12121212-3434-4545-8656-787878787878";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-attest-first', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting', 'counter_id_scan')
+    `);
+    const early = await app.inject({
+      method: "POST", url: "/api/idv/checks/counter-scan/attest", cookies: cookies.teller,
+      payload: { clientId: "cli-scan", providerRef: session, attested: true },
+    });
+    expect(early.statusCode, early.body).toBe(200);
+    expect(early.json()).toMatchObject({ verified: false, pending: true, recordId: null });
+    const res = await scanWebhook(session, "ref-attest-first", "Approved", {
+      id_verifications: [{ status: "Approved" }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const row = await handle.db.execute(sql`
+      SELECT result, attestation_role, attestation_staff_id FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(row.rows[0]).toMatchObject({
+      result: "pass",
+      attestation_role: "teller",
+      attestation_staff_id: `${DEMO.tenantId}:m.costa`,
+    });
+  });
+
+  it("still requires liveness and face match on the ID and selfie path", async () => {
+    const session = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status)
+      VALUES ('ref-old-path', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting')
+    `);
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Approved",
+      vendor_data: "ref-old-path",
+      decision: { id_verifications: [{ status: "Approved" }] },
+    }));
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const row = await handle.db.execute(sql`
+      SELECT result, method, provider_checks FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(row.rows[0]).toMatchObject({
+      result: "method_not_completed",
+      method: "id_and_selfie",
+      provider_checks: "ID passed, liveness not passed, face match not passed",
+    });
+  });
+
+  it("labels a full counter check on its own and still requires the selfie", async () => {
+    const session = "13131313-1414-4545-8616-171717171717";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-full', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-scan', '3', 'starting', 'counter_full')
+    `);
+    const res = await scanWebhook(session, "ref-full", "Approved", {
+      id_verifications: [{ status: "Approved" }],
+      liveness_checks: [{ status: "Approved" }],
+      face_matches: [{ status: "Declined" }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const row = await handle.db.execute(sql`
+      SELECT result, method FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(row.rows[0]).toMatchObject({ result: "method_not_completed", method: "counter_full" });
+    expect(chargeForDiditOutcome("failed")).toBe("no_charge");
   });
 });
