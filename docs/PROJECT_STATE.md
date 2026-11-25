@@ -10,8 +10,24 @@ unselectable unless the process is staging or `DIDIT_LIVE_ALLOWED` is exactly
 and that lock before it writes. Missing
 `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, or `DIDIT_WORKFLOW_ID` answers 503
 `not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 is off even
-when `DIDIT_AML_WORKFLOW_ID` is set. A pass needs ID, liveness, and face
-match each passed. A test pass with no stored number reads Missing ID.
+when `DIDIT_AML_WORKFLOW_ID` is set. An ID and selfie pass still needs ID,
+liveness, and face match each passed. A counter ID scan
+(`counter_id_scan`, label "ID scanned at the counter") uses optional
+`DIDIT_DOC_WORKFLOW_ID` only, never the Basic KYC workflow. If that id is
+unset the start answers 409 `DOC_WORKFLOW_UNSET`. A pass needs the ID
+feature Approved and a server attestation: the staff user id, the role,
+and the database clock. The attestation is refused with 409 unless that
+scan is still in progress with the ID approved. The stored words are
+face-match-v1: "The customer is in front of me. I compared their face with
+the photo on this ID and they are the same person." A later declined,
+expired, or review result clears that flag and cannot be attested into a
+pass. After a pass, that later result writes a new not-a-pass row and
+leaves the pass row as it was.
+Without the attestation it is not verified.
+`counter_full` ("Full check at the counter") is the Basic KYC workflow and
+still needs ID, liveness, and face match. Failed and declined scans are
+not billed, on every method. The webhook signature checks and the live
+gate are unchanged. A test pass with no stored number reads Missing ID.
 A failed, abandoned,
 or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
 It checks the raw-body signature and a 300-second timestamp, and it is

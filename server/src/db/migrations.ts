@@ -125,6 +125,10 @@ export const migrations: readonly Migration[] = [
   ["084_platform_tenant", "src/db/migrations/084_platform_tenant.sql"],
   /* 085 names the identity provider on a check record. Existing rows stay persona. */
   ["085_idv_didit_provider", "src/db/migrations/085_idv_didit_provider.sql"],
+  /* 086 is the counter ID scan: the method on the inquiry, and the teller's attestation. */
+  ["086_idv_counter_scan", "src/db/migrations/086_idv_counter_scan.sql"],
+  /* 088 stores the face-match statement version. 087 is the remote pre-verify method. */
+  ["088_idv_face_match_version", "src/db/migrations/088_idv_face_match_version.sql"],
 ] as const;
 
 type MigrationReader = {

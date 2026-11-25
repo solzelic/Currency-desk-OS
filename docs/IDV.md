@@ -19,6 +19,7 @@ Didit's sandbox workflow and is not a secret.
 | `DIDIT_API_KEY` | `x-api-key` for `POST /v3/session/` and `GET /v3/session/{id}/decision/` |
 | `DIDIT_WEBHOOK_SECRET` | HMAC secret for `POST /api/webhooks/idv/didit` |
 | `DIDIT_WORKFLOW_ID` | Tier 3, ID and selfie. Sandbox example: `89c8dc5a-2673-4603-973a-b7172aa33c33` |
+| `DIDIT_DOC_WORKFLOW_ID` | Optional. Document-only workflow for the counter ID scan. No value is committed. If unset, that method answers 409 and does not use `DIDIT_WORKFLOW_ID` |
 | `DIDIT_AML_WORKFLOW_ID` | Ignored in this slice. Tier 4 stays off even when this is set |
 | `DIDIT_LIVE_ALLOWED` | Stays unset until the reseller agreement and the DPA are signed |
 
@@ -34,9 +35,14 @@ value is ignored.
 ## What a check does
 
 In person and returning client do not call a provider. Tier 3 on a Didit shop
-opens Didit's Basic KYC workflow (ID, liveness, face match). Tier 4 is
-off. Setting `DIDIT_AML_WORKFLOW_ID` does not turn it on. A failed, abandoned, or
-declined scan is not billed. This slice does not settle a credit for a pass
+opens Didit's Basic KYC workflow (ID, liveness, face match) for ID and selfie
+and for a full check at the counter. Tier 4 is
+off. Setting `DIDIT_AML_WORKFLOW_ID` does not turn it on. A counter ID scan
+opens `DIDIT_DOC_WORKFLOW_ID` only. A pass on that method needs the ID
+feature Approved and a teller attestation recorded by the server (staff user
+id, role, database time). FINTRAC expects the person to match the photo, so
+the scan alone is not a verification. A failed, abandoned, or
+declined scan is not billed, on every method. This slice does not settle a credit for a pass
 either.
 
 The webhook accepts `status.updated` and `data.updated`. The signature is

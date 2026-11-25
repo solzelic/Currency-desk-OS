@@ -89,6 +89,21 @@ export function diditNoticeCopy(fill: ConsentFill): string {
   ].join("\n");
 }
 
+/* The teller scans the ID. There is no selfie and no hand-off.
+   FINTRAC still requires the person to match the photo, so the teller attests that. */
+export function diditNoSelfieConsentCopy(fill: ConsentFill): string {
+  const shop = shopName(fill);
+  return [
+    "ID scan, no selfie",
+    `${shop} ("we") must verify your identity under Canada's anti-money laundering law for some transactions. The teller scans your ID on this shop device. The device stays with the teller. There is no selfie and the device is not handed to you.`,
+    "Didit reads the ID. This desk does not keep the ID photo.",
+    "The law requires the person to match the photo on the ID. After the scan, the teller compares your face to that photo and records the comparison.",
+    ID_DETAILS_LINE,
+    "I agree to this ID scan. No selfie is taken.",
+    `Questions: ${privacy(fill)}.`,
+  ].join("\n");
+}
+
 export function diditSelfieConsentCopy(fill: ConsentFill): string {
   const shop = shopName(fill);
   return [
