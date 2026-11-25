@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
-import { resetIdvSendLimits, idvLinkMessage, idvLinkSubject, PRIVACY_CONTACT_MESSAGE } from "../src/idv/send-link.js";
+import { resetIdvSendLimits, idvLinkMessage, idvLinkSubject, PRIVACY_CONTACT_MESSAGE, DIDIT_UNAVAILABLE_MESSAGE, EMAIL_FAILED_MESSAGE, tellerFromLine } from "../src/idv/send-link.js";
 import { PROVINCE_LINE, QUEBEC_LINE } from "../src/idv/tiers.js";
 
 const KEYS = {
@@ -18,8 +18,8 @@ const SESSION = "66666666-7777-4888-8999-aaaaaaaaaaaa";
 const URL = "https://verify.didit.me/session/fixturetoken";
 const EMAIL = "a.client@staging.invalid";
 const SHOP = "York Currency Exchange Inc.";
-const CONTACT = "Privacy officer";
-const REPLY = "privacy@staging.invalid";
+const REPLY = "privacy@yorkfx.ca";
+const CONTACT = `${REPLY}, 416-555-0100`;
 const SUBJECT = `Your ID check link from ${SHOP}`;
 const BODY = `${SHOP} sent you this link to complete your ID check:\n${URL}\n\nIf you did not ask for this, you can ignore it, or contact ${SHOP} at ${CONTACT}.`;
 const fetchStub: typeof fetch = async (input) => {
@@ -63,9 +63,9 @@ beforeAll(async () => {
   await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
   await handle.db.execute(sql`
     INSERT INTO idv_shop_config (shop_id, provider, checks_enabled, privacy_contact, privacy_email, privacy_phone, privacy_policy_url)
-    VALUES (${DEMO.legalEntityId}, 'didit', true, 'Privacy officer', 'privacy@staging.invalid', '416-555-0100', 'https://example.com/privacy')
+    VALUES (${DEMO.legalEntityId}, 'didit', true, 'Privacy officer', 'privacy@yorkfx.ca', '416-555-0100', 'https://example.com/privacy')
     ON CONFLICT (shop_id) DO UPDATE SET provider = 'didit', checks_enabled = true,
-      privacy_contact = 'Privacy officer', privacy_email = 'privacy@staging.invalid',
+      privacy_contact = 'Privacy officer', privacy_email = 'privacy@yorkfx.ca',
       privacy_phone = '416-555-0100', privacy_policy_url = 'https://example.com/privacy'
   `);
   await handle.db.execute(sql`
@@ -178,10 +178,10 @@ describe("send the Didit link by email", () => {
     expect(locked.statusCode).toBe(409);
     const provider = await post(off, cookies.off, SESSION, EMAIL);
     expect(provider.statusCode).toBe(503);
-    expect(provider.json()).toMatchObject({ error: "not_available", message: "The message was not sent." });
+    expect(provider.json()).toMatchObject({ error: "not_available", message: DIDIT_UNAVAILABLE_MESSAGE });
     const mailMissing = await post(bare, cookies.bare, SESSION, EMAIL);
     expect(mailMissing.statusCode).toBe(503);
-    expect(mailMissing.json().message).toBe("The message was not sent.");
+    expect(mailMissing.json().message).toBe(EMAIL_FAILED_MESSAGE);
     expect(sent).toHaveLength(0);
   });
 
@@ -200,7 +200,13 @@ describe("send the Didit link by email", () => {
     expect(first.statusCode, first.body).toBe(200);
     expect(first.json()).toEqual({ sent: true });
     expect(idvLinkSubject(SHOP)).toBe(SUBJECT);
+    expect(idvLinkSubject(SHOP)).not.toContain("..");
     expect(idvLinkMessage(SHOP, URL, CONTACT)).toBe(BODY);
+    expect(BODY).toContain(REPLY);
+    expect(BODY).not.toContain("Privacy officer");
+    expect(BODY).not.toContain("..");
+    expect(tellerFromLine(SHOP)).toBe("This email comes from York Currency Exchange Inc.");
+    expect(tellerFromLine("York FX")).toBe("This email comes from York FX.");
     expect(sent).toEqual([{ to: EMAIL, subject: SUBJECT, text: BODY, replyTo: REPLY }]);
     const again = await post(app, cookies.teller, SESSION, EMAIL);
     expect(again.statusCode).toBe(429);
@@ -292,5 +298,42 @@ describe("send the Didit link by email", () => {
     expect(dumped).not.toContain(URL);
     expect(dumped).not.toContain(EMAIL);
     expect(dumped).not.toContain("fixturetoken");
+  });
+
+  it("refuses a missing email, an invalid email, phone only, and a missing policy URL", async () => {
+    const sentRows = async () => {
+      const rows = await handle.db.execute(sql`SELECT count(*)::int AS n FROM audit_events WHERE action = 'idv.link_sent'`);
+      return Number((rows.rows[0] as { n: number }).n);
+    };
+    const expectRefused = async (label: string) => {
+      const before = await sentRows();
+      const refused = await post(app, cookies.teller, SESSION, EMAIL);
+      expect(refused.statusCode, label).toBe(409);
+      expect(refused.json()).toEqual({ error: "PRIVACY_CONTACT", message: PRIVACY_CONTACT_MESSAGE });
+      expect(sent, label).toHaveLength(0);
+      expect(await sentRows(), label).toBe(before);
+      expect(refused.body, label).not.toContain("sent you this link");
+    };
+    try {
+      await handle.db.execute(sql`UPDATE idv_shop_config SET privacy_email = NULL WHERE shop_id = ${DEMO.legalEntityId}`);
+      const phone = await handle.db.execute(sql`SELECT privacy_phone FROM idv_shop_config WHERE shop_id = ${DEMO.legalEntityId}`);
+      expect(String((phone.rows[0] as { privacy_phone: string }).privacy_phone || "")).not.toBe("");
+      await expectRefused("missing email and phone only");
+      await handle.db.execute(sql`UPDATE idv_shop_config SET privacy_email = 'not-an-email' WHERE shop_id = ${DEMO.legalEntityId}`);
+      await expectRefused("invalid email");
+      await handle.db.execute(sql`
+        UPDATE idv_shop_config
+           SET privacy_email = 'privacy@yorkfx.ca', privacy_policy_url = NULL
+         WHERE shop_id = ${DEMO.legalEntityId}
+      `);
+      await expectRefused("missing policy URL");
+    } finally {
+      await handle.db.execute(sql`
+        UPDATE idv_shop_config
+           SET privacy_contact = 'Privacy officer', privacy_email = 'privacy@yorkfx.ca',
+               privacy_phone = '416-555-0100', privacy_policy_url = 'https://example.com/privacy'
+         WHERE shop_id = ${DEMO.legalEntityId}
+      `);
+    }
   });
 });

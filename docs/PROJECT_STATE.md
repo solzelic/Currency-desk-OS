@@ -50,8 +50,10 @@ the Didit link by email. Copy link and Copy text stay on the same screen.
 Text is copied, not sent. The email subject is "Your ID check link from"
 the shop legal name. The message says that shop sent the link to complete
 the ID check, then the link, then to ignore it or contact that shop at its
-privacy contact. A missing privacy contact is refused and no message is
-sent. The reply-to is the shop privacy email. The send panel says the email
+privacy email, or the privacy phone when both are on the shop record. The
+officer name is not in that line. A shop that is not privacy ready, or
+whose privacy email is missing or not valid, is refused and no message is
+sent. The reply-to is that same privacy email. The send panel says the email
 comes from the shop by name. Staging email goes only to an @staging.invalid
 address. A missing Didit setup or a missing mail setup answers 503 and the
 desk says the message was not sent. Quebec and a branch with no province

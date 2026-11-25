@@ -53361,6 +53361,10 @@ ${(filing.map || []).map(blockHTML).join('')}
      A Persona shop and a counter only shop do not show this. */
   const CUSTOMER_STEPS = ["The link goes to the customer by email, or you copy a text. The counter device is never handed over.", "The customer reads the notice and chooses whether to go ahead. If they say no, check the ID at the counter.", "The customer scans their ID and takes a selfie with Didit.", "The result comes back to this screen."];
   const CUSTOMER_BILLING = "Your shop is not billed for a check that is declined, abandoned or expired.";
+  function shopFromLine(shop) {
+    const name = String(shop || "").trim();
+    return /[.!?]$/.test(name) ? "This email comes from " + name : "This email comes from " + name + ".";
+  }
   function customerSteps(copy, counter) {
     if (!copy || copy.provider !== "didit" || counter) return null;
     return /*#__PURE__*/React.createElement("div", {
@@ -53796,7 +53800,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         await client.sendLink(inquiryId, {
           email: sendTo.trim()
         });
-        setSendNote("The email was sent.");
+        setSendNote("Email sent.");
       } catch (err) {
         setSendError(err && err.message || "The message was not sent. Try again.");
       }
@@ -53811,7 +53815,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         await client.noteLink(inquiryId, {
           kind: "link"
         });
-        await copyValue(linkUrl, "The link was copied.", "The link was not copied. Try again.");
+        await copyValue(linkUrl, "Link copied.", "The link was not copied. Try again.");
       } catch (err) {
         setSendNote("");
         setSendError(err && err.message || "The link was not copied. Try again.");
@@ -53833,7 +53837,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           setSendError("The text was not copied. Try again.");
           return;
         }
-        await copyValue(text, "The text was copied.", "The text was not copied. Try again.");
+        await copyValue(text, "Text copied.", "The text was not copied. Try again.");
       } catch (err) {
         setSendNote("");
         setSendError(err && err.message || "The text was not copied. Try again.");
@@ -54135,7 +54139,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "This email comes from ", copy.shopName, ".") : null, /*#__PURE__*/React.createElement("label", {
+    }, shopFromLine(copy.shopName)) : null, /*#__PURE__*/React.createElement("label", {
       className: "block text-[12px]",
       style: {
         color: CD.mute
@@ -54195,7 +54199,12 @@ ${(filing.map || []).map(blockHTML).join('')}
       "data-testid": "id-check-result-wait",
       className: "space-y-2 mt-3",
       "aria-busy": "true"
-    }, /*#__PURE__*/React.createElement(Skel, {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px]",
+      style: {
+        color: CD.ink
+      }
+    }, "Waiting for the customer"), /*#__PURE__*/React.createElement(Skel, {
       width: "58%"
     }), /*#__PURE__*/React.createElement(Skel, {
       width: "36%"
@@ -55134,7 +55143,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       Flow,
       DealBar,
       Settings,
-      customerSteps
+      customerSteps,
+      shopFromLine
     }
   });
 })();

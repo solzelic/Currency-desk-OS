@@ -73,7 +73,7 @@ ReactDOM.createRoot(document.getElementById("mount")).render(
 
 const LINK = "https://verify.didit.me/session/fixturetoken";
 const SHOP = "York Currency Exchange Inc.";
-const CONTACT = "Privacy officer";
+const CONTACT = "privacy@yorkfx.ca";
 const TEXT = `${SHOP} sent you this link to complete your ID check:\n${LINK}\n\nIf you did not ask for this, you can ignore it, or contact ${SHOP} at ${CONTACT}.`;
 
 async function openLink(page: import("@playwright/test").Page, width: number, sendFails: boolean) {
@@ -136,13 +136,13 @@ for (const width of [390, 1280]) {
     const box = await page.getByTestId("id-check-send").boundingBox();
     expect(box && box.x >= 0 && box.x + box.width <= width + 1).toBe(true);
     await page.getByTestId("id-check-send-email-btn").click();
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("The email was sent.");
+    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Email sent.");
     await page.getByTestId("id-check-copy-link").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(LINK);
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("The link was copied.");
+    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Link copied.");
     await page.getByTestId("id-check-copy-text").click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(TEXT);
-    await expect(page.getByTestId("id-check-send-sent")).toHaveText("The text was copied.");
+    await expect(page.getByTestId("id-check-send-sent")).toHaveText("Text copied.");
     await expect(page.getByTestId("id-check-link-how")).toHaveText("The link goes to the customer's email, or they get a copied message or the Copy link.");
     await expect(page.getByText("Hand the counter device")).toHaveCount(0);
   });

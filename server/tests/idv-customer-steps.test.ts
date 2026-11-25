@@ -120,9 +120,13 @@ describe("Didit customer steps", () => {
     expect(chooser).toContain("customerSteps(copy, counter)");
     expect(link).toContain("customerSteps(copy, counter)");
     expect(link).toContain("The link goes to the customer's email, or they get a copied message or the Copy link.");
-    expect(link).toContain("This email comes from ");
+    expect(link).toContain("shopFromLine(copy.shopName)");
+    expect(source).toContain("Waiting for the customer");
     expect(source).toContain("sent you this link to complete your ID check:");
     expect(source).toContain("If you did not ask for this, you can ignore it, or contact ");
+    const line = (globalThis as unknown as { CDOS: { IdCheck: { shopFromLine: (shop: string) => string } } }).CDOS.IdCheck.shopFromLine;
+    expect(line("York Currency Exchange Inc.")).toBe("This email comes from York Currency Exchange Inc.");
+    expect(line("York FX")).toBe("This email comes from York FX.");
     expect(source).not.toContain("Hand the counter device");
     expect(source).not.toContain("ID, selfie and database is not available yet");
     expect(source).toContain("ID, selfie and database checks are not available yet.");

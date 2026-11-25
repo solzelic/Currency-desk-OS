@@ -9,9 +9,26 @@ import { diditConfigured, diditSelection, diditSessionLink } from "./providers/d
 import {
   agreedConsent, consentFill, dbQuery, inquiryClientId, loadShopIdv, type DeskActor, type Step,
 } from "./records.js";
+import { privacyReady, shownPhone } from "./consent-copy.js";
 import { counterOnly } from "./tiers.js";
 
-export const PRIVACY_CONTACT_MESSAGE = "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
+export const PRIVACY_CONTACT_MESSAGE = "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+export const DIDIT_UNAVAILABLE_MESSAGE = "Automatic ID check with Didit is not available for this shop. Check the ID in person instead.";
+export const EMAIL_FAILED_MESSAGE = "The email didn't go. Try again, or use Copy link.";
+
+export function tellerFromLine(shop: string): string {
+  const name = shop.trim();
+  return /[.!?]$/.test(name) ? `This email comes from ${name}` : `This email comes from ${name}.`;
+}
+
+function plain(value: string): string {
+  return value.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+}
+
+export function idvContactLine(email: string, phone: string): string {
+  const shown = phone ? shownPhone(phone) : "";
+  return [email, shown].filter(Boolean).join(", ");
+}
 
 export function idvLinkSubject(shop: string): string {
   return `Your ID check link from ${shop}`;
@@ -110,13 +127,14 @@ async function openDiditLink(
   const tenant = await dbQuery(db).query("SELECT is_test_shop FROM tenants WHERE id = $1", [actor.tenantId]);
   const selection = diditSelection(env, tenant.rows[0]?.is_test_shop === true);
   if (!selection.ok) return fail(409, "IDV_PROVIDER", selection.message);
-  if (!diditConfigured(env)) return fail(503, "not_available", "The message was not sent.");
+  if (!diditConfigured(env)) return fail(503, "not_available", DIDIT_UNAVAILABLE_MESSAGE);
   const fill = await consentFill(db, actor);
-  const contact = fill.privacyContact?.trim() ?? "";
-  if (!contact) return fail(409, "PRIVACY_CONTACT", PRIVACY_CONTACT_MESSAGE);
+  if (!privacyReady(fill)) return fail(409, "PRIVACY_CONTACT", PRIVACY_CONTACT_MESSAGE);
+  const replyTo = cleanEmail(plain(fill.privacyEmail ?? ""));
+  if (!replyTo) return fail(409, "PRIVACY_CONTACT", PRIVACY_CONTACT_MESSAGE);
   const name = fill.legalName?.trim() ?? "";
   if (!name) return fail(503, "not_available", "The message was not sent.");
-  const replyTo = cleanEmail(fill.privacyEmail ?? "") ?? undefined;
+  const contact = idvContactLine(replyTo, plain(fill.privacyPhone ?? ""));
   return { ok: true, body: { clientId, shop: name, contact, replyTo } };
 }
 
@@ -142,7 +160,7 @@ export async function sendDiditLink(
   }
   if (!deps.mail && !mailReady(env)) {
     await auditLink(db, actor, "idv.link_failed", { channel: "email", destination: maskEmail(email), staffId: actor.staffId });
-    return fail(503, "not_available", "The message was not sent.");
+    return fail(503, "send_failed", EMAIL_FAILED_MESSAGE);
   }
   const now = (deps.now ?? Date.now)();
   if (limited(actor.legalEntityId, opened.body.clientId, now)) {
@@ -161,7 +179,7 @@ export async function sendDiditLink(
   const status = await mail(email, subject, text, opened.body.replyTo).catch(() => "failed" as const);
   if (status !== "sent") {
     await auditLink(db, actor, "idv.link_failed", { channel: "email", destination: maskEmail(email), staffId: actor.staffId });
-    return fail(502, "send_failed", "The message was not sent. Try again.");
+    return fail(502, "send_failed", EMAIL_FAILED_MESSAGE);
   }
   remember(actor.legalEntityId, opened.body.clientId, now);
   await auditLink(db, actor, "idv.link_sent", { channel: "email", destination: maskEmail(email), staffId: actor.staffId });
