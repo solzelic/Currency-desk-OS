@@ -97,7 +97,12 @@ describe("Didit customer steps", () => {
     expect(note).toBeGreaterThan(markup.indexOf("</ol>"));
     expect(markup.indexOf(BILLING)).toBeGreaterThan(note);
     expect(markup).toContain("max-width:100%");
-    expect(markup).toContain("overflow-wrap:anywhere");
+    expect(markup).toContain("id-check-step-text");
+    const phone = readFileSync(join(root, "os-src/york-os.css"), "utf8");
+    const rule = phone.slice(phone.indexOf("span.id-check-step-text"), phone.indexOf("span.id-check-step-text") + 240);
+    expect(rule).toContain("white-space: normal");
+    expect(rule).toContain("flex: 1 1 auto");
+    expect(rule).toContain("min-width: 0");
     expect(markup).not.toMatch(FLAG);
     expect(markup).not.toContain("Persona");
     expect(markup).not.toContain("Verified");
