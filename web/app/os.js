@@ -54076,6 +54076,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         label: "Returning client",
         note: "Reuse the check on file."
       });
+      const tier4Off = !counter && copy.tier4 === "unavailable";
       return shell(counter ? copy.quebec ? "id-check-quebec" : "id-check-counter" : "id-check-chooser", "Choose the check", /*#__PURE__*/React.createElement("div", {
         className: "space-y-3",
         style: {
@@ -54107,13 +54108,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           color: "var(--cd-on-ink)",
           opacity: 0.82
         }
-      }, primary.note)), copy.tier4 === "unavailable" && /*#__PURE__*/React.createElement("div", {
-        "data-testid": "id-check-tier4",
-        className: "text-[13px]",
-        style: {
-          color: CD.mute
-        }
-      }, "ID, selfie and database is not available yet"), customerSteps(copy, counter), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, primary.note)), customerSteps(copy, counter), (more.length > 0 || tier4Off) && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -54171,7 +54166,27 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, item.note)))))));
+      }, item.note))), tier4Off && /*#__PURE__*/React.createElement("div", {
+        "data-testid": "id-check-tier4",
+        className: "w-full min-w-0 text-left px-4 py-2.5",
+        "aria-disabled": "true",
+        style: {
+          border: `1px solid ${CD.line}`,
+          borderRadius: 10,
+          background: CD.paper,
+          boxSizing: "border-box"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "text-[14px] font-semibold",
+        style: {
+          color: CD.ink
+        }
+      }, "ID, selfie and database"), /*#__PURE__*/React.createElement("div", {
+        className: "text-[12px] mt-0.5",
+        style: {
+          color: CD.mute
+        }
+      }, "ID, selfie and database checks are not available yet"))))));
     }
     if (step === "opening") return shell("id-check-opening", "ID and selfie", /*#__PURE__*/React.createElement("div", {
       "data-testid": "id-check-loading",

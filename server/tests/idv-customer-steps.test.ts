@@ -114,6 +114,14 @@ describe("Didit customer steps", () => {
     const link = source.slice(source.indexOf('step === "link"'), source.indexOf('step === "failed"'));
     expect(chooser).toContain("customerSteps(copy, counter)");
     expect(link).toContain("customerSteps(copy, counter)");
+    expect(source).not.toContain("ID, selfie and database is not available yet");
+    expect(source).toContain("ID, selfie and database checks are not available yet");
+    const moreAt = chooser.indexOf('data-testid="id-check-more"');
+    const tierAt = chooser.indexOf('data-testid="id-check-tier4"');
+    expect(moreAt).toBeGreaterThan(chooser.indexOf("customerSteps(copy, counter)"));
+    expect(tierAt).toBeGreaterThan(moreAt);
+    expect(chooser.slice(0, moreAt)).not.toContain("id-check-tier4");
+    expect(source).toContain('else if (next === "4") return;');
     expect(source).not.toContain("\u2014");
     expect(source).not.toContain("\u2013");
     for (const file of [

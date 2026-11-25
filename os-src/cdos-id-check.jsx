@@ -388,15 +388,15 @@
       const more = [];
       if (!counter && primary.id !== "1") more.push({ id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." });
       if (!counter && full) more.push({ id: "2", label: "Returning client", note: "Reuse the check on file." });
+      const tier4Off = !counter && copy.tier4 === "unavailable";
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-3" style={{ paddingBottom: 16 }}>
         {(counterLine || (counter && copy.counterLine)) && <div data-testid="id-check-counter-line" className="text-[13px]" style={{ color: CD.ink }}>{counterLine || copy.counterLine}</div>}
         <button data-testid="id-check-primary" type="button" onClick={() => pick(primary.id)} className="w-full text-left" style={{ ...btnStyle(false), flex: "none", minHeight: 72, padding: "14px 16px", borderRadius: 12 }}>
           <div className="text-[16px] font-semibold">{primary.label}</div>
           <div className="text-[13px] mt-1" style={{ color: "var(--cd-on-ink)", opacity: 0.82 }}>{primary.note}</div>
         </button>
-        {copy.tier4 === "unavailable" && <div data-testid="id-check-tier4" className="text-[13px]" style={{ color: CD.mute }}>ID, selfie and database is not available yet</div>}
         {customerSteps(copy, counter)}
-        {more.length > 0 && <div data-testid="id-check-more">
+        {(more.length > 0 || tier4Off) && <div data-testid="id-check-more">
           <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)} className="w-full" style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: `1px solid ${CD.line}`, background: "transparent", color: CD.ink, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600 }}>
             <span>More options</span>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" style={{ flex: "none", transform: moreOpen ? "rotate(180deg)" : "none" }}><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -408,6 +408,10 @@
                 <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>{item.note}</div>
               </button>
             ))}
+            {tier4Off && <div data-testid="id-check-tier4" className="w-full min-w-0 text-left px-4 py-2.5" aria-disabled="true" style={{ border: `1px solid ${CD.line}`, borderRadius: 10, background: CD.paper, boxSizing: "border-box" }}>
+              <div className="text-[14px] font-semibold" style={{ color: CD.ink }}>ID, selfie and database</div>
+              <div className="text-[12px] mt-0.5" style={{ color: CD.mute }}>ID, selfie and database checks are not available yet</div>
+            </div>}
           </div>}
         </div>}
       </div>));
