@@ -35,6 +35,7 @@ export async function readIdvReady(db: Db, actor: DeskActor, env: NodeJS.Process
   provider: "persona" | "didit";
   ready: IdvReady;
   checksEnabled: boolean;
+  testShop: boolean;
 }> {
   const shop = await loadShopIdv(db, actor.legalEntityId);
   const provider = shop.provider === "didit" ? "didit" : "persona";
@@ -48,6 +49,7 @@ export async function readIdvReady(db: Db, actor: DeskActor, env: NodeJS.Process
   return {
     provider,
     checksEnabled: shop.checksEnabled,
+    testShop,
     ready: idvReadyReason({
       checksEnabled: shop.checksEnabled,
       provider,

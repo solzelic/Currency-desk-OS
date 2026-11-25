@@ -69,6 +69,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       docScan,
       provider: readiness.provider,
       ready: readiness.ready,
+      testShop: readiness.testShop,
       tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,
@@ -186,7 +187,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     if (isStagingRuntime(undefined, env()) && !privacyReady(fill)) {
       return reply.code(409).send({
         code: "PRIVACY_CONTACT",
-        message: "Set the shop privacy contact before a face match. The owner adds it in identity check settings.",
+        message: "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.",
       });
     }
     const shop = await loadShopIdv(db, actor.legalEntityId);

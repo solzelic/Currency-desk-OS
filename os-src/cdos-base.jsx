@@ -1420,7 +1420,7 @@
   }
   function idvLead(shop) {
     const fn = window.CDOS && window.CDOS.idvProviderCopy;
-    return fn ? fn(shop) : "Identity checks are off.";
+    return fn ? fn(shop) : "The identity check status is not available.";
   }
 
   window.CDOS = Object.assign(window.CDOS || {}, {

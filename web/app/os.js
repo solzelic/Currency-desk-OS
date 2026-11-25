@@ -2750,7 +2750,7 @@
   }
   function idvLead(shop) {
     const fn = window.CDOS && window.CDOS.idvProviderCopy;
-    return fn ? fn(shop) : "Identity checks are off.";
+    return fn ? fn(shop) : "The identity check status is not available.";
   }
   window.CDOS = Object.assign(window.CDOS || {}, {
     useIdvShop,
@@ -52630,11 +52630,31 @@ ${(filing.map || []).map(blockHTML).join('')}
     })), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 overflow-auto px-5 py-4"
     }, step === 'id' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      className: "text-[12.5px] mb-3",
+      className: "text-[12.5px]",
       style: {
         color: CD.mute
       }
-    }, "Capture the customer's government ID. ", lead, " Nothing is read off the document."), photo ? /*#__PURE__*/React.createElement("div", {
+    }, "Capture the customer's government ID. Nothing is read off the document."), /*#__PURE__*/React.createElement("div", {
+      "data-testid": "add-contact-idv-note",
+      className: "flex items-start gap-1.5 mt-2 mb-3",
+      style: {
+        color: CD.mute
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "flex-none",
+      style: {
+        marginTop: 1
+      }
+    }, /*#__PURE__*/React.createElement(Ic, {
+      n: "info",
+      s: 14,
+      c: CD.mute
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "text-[12px]",
+      style: {
+        lineHeight: 1.45
+      }
+    }, lead)), photo ? /*#__PURE__*/React.createElement("div", {
       className: "relative",
       style: {
         borderRadius: 12,
@@ -53356,26 +53376,28 @@ ${(filing.map || []).map(blockHTML).join('')}
   function linesOf(text) {
     return String(text || "").split("\n").filter(Boolean);
   }
-  /* The teller sees which provider this shop uses, or that checks are off.
-     ready comes from GET /api/idv/clients/:id and from the consent read. */
+  /* The cashier reads which provider this shop uses, and what to do.
+     ready comes from GET /api/idv/clients/:id and from the consent read.
+     A missing shop is not "off": the desk has not heard yet. */
   function idvProviderCopy(shop) {
-    if (!shop || shop.ready === "off") return "Identity checks are off.";
-    if (shop.provider === "didit") {
-      if (shop.ready === "not_configured") return "Didit is not set up on this server.";
-      if (shop.ready === "not_test_shop") return "Didit can be used only on a staging test shop.";
-      if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-      return "Didit is the identity provider for this shop.";
+    if (!shop) return "The identity check status is not available.";
+    const didit = shop.provider === "didit";
+    const name = didit ? "Didit" : "Persona";
+    if (shop.ready === "off") return "Identity checks are off.";
+    if (shop.ready === "privacy_missing") return "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (shop.ready === "not_configured" || shop.ready === "not_test_shop") {
+      return "Automatic ID check with " + name + " is not available for this shop. Check the ID by hand instead.";
     }
-    if (shop.ready === "not_configured") return "Persona is not set up on this server.";
-    if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-    return "Persona is the identity provider for this shop.";
+    if (didit && shop.testShop) return "Automatic ID check uses Didit (test).";
+    if (didit) return "Automatic ID check uses Didit.";
+    return "Automatic ID check uses Persona.";
   }
   function stopLine(err) {
     const code = err && err.code;
     const message = err && err.message || "";
     if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
-    if (code === "PRIVACY_CONTACT") return message || "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Didit is not set up on this server.";
+    if (code === "PRIVACY_CONTACT") return message || "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.";
     if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
       return message || "The ID check did not finish. Try again, or check the ID in person.";
     }
@@ -67142,18 +67164,30 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const h = Math.round(m / 60);
     return h < 24 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
   };
-  let idvLeadText = 'Identity checks are off.';
+  const idvUnknown = () => window.CDOS && window.CDOS.idvLead ? window.CDOS.idvLead(null) : "The identity check status is not available.";
+  let idvLeadText = idvUnknown();
+  const STALE_IDV = ["The identity check status is not available.", "Identity checks are off. No identity check is sent.", "Identity checks are off. No identity check was sent."];
   function useIdvLead() {
     const [lead, setLead] = useState(idvLeadText);
     useEffect(() => {
       const api = window.CDOS.Backend && window.CDOS.Backend.IdCheck;
-      if (!api || !api.copy) return undefined;
+      if (!api || !api.copy) {
+        const unknown = idvUnknown();
+        idvLeadText = unknown;
+        setLead(unknown);
+        return undefined;
+      }
       let live = true;
       api.copy().then(body => {
         if (!live) return;
         idvLeadText = window.CDOS.idvLead(body);
         setLead(idvLeadText);
-      }).catch(() => {});
+      }).catch(() => {
+        if (!live) return;
+        const unknown = idvUnknown();
+        idvLeadText = unknown;
+        setLead(unknown);
+      });
       return () => {
         live = false;
       };
@@ -67180,7 +67214,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     tpl: {
       quote: '{desk}: {amount} {ccy} = ${total} CAD at {rate}. This is our live counter rate. Reply Y and we’ll hold it for {mins} min — N to pass.',
       hold: 'Done — {rate} is held for you until {time}. Your ref is {ref} — give it at the counter. Bring one piece of government photo ID.',
-      verify: 'Identity checks are off. No identity check is sent.',
+      verify: 'The identity check status is not available.',
       ready: 'Give ref {ref} at the counter — your rate stays locked until {time}.',
       nudge: 'Heads up — your held rate (ref {ref}) expires in 10 minutes.',
       closed: 'No problem. Today’s rates are always live at {site} — text back any time.',
@@ -67304,7 +67338,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       rate: 0.0248,
       total: 1984,
       holdUntil: n + 6 * 60000,
-      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out('Identity checks are off. No identity check is sent.'), sys('Identity checks are off. No identity check was sent.'), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
+      thread: [sys('Quote requested on yorkfx.ca — 80,000 PHP'), out(q(80000, 'PHP', 1984, 0.0248, 30)), inn('Y'), out(`Done — 0.0248 is held for you until ${hhmm(n + 6 * 60000)}. Your ref is TQ-1042 — give it at the counter. Bring one piece of government photo ID.`), out(idvLeadText), sys(idvLeadText), out(`Give ref TQ-1042 at the counter — your rate stays locked until ${hhmm(n + 6 * 60000)}.`)]
     }, {
       id: 'r6',
       ref: 'TQ-1041',
@@ -67400,7 +67434,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       kind: 'System',
       dir: 'sys',
       to: '+1 416 555 0158',
-      detail: 'Identity checks are off. No identity check was sent.'
+      detail: idvLeadText
     }, {
       t: n - 69 * m,
       kind: 'Hold',
@@ -68731,7 +68765,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const preview = useMemo(() => {
       const msgs = [out(render(tg.tpl.quote, ctx)), inn('Y'), out(render(tg.tpl.hold, ctx))];
       if (tg.verifyStep) {
-        msgs.push(out(render(tg.tpl.verify, ctx)), sys(lead + ' No identity check was sent.'), out(render(tg.tpl.ready, ctx)));
+        msgs.push(out(render(tg.tpl.verify, ctx)), sys(lead), out(render(tg.tpl.ready, ctx)));
       }
       if (tg.nudge) msgs.push(out(render(tg.tpl.nudge, ctx)));
       return msgs;
@@ -70083,7 +70117,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
       style: {
         color: CD.faint
       }
-    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. ", lead, " No identity check is billed.")), /*#__PURE__*/React.createElement("div", {
+    }, "Texting is included in every plan \u2014 even Basic. Past ", num(tg.monthIncl), ", overage is 1.5\xA2 per text. ", lead)), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] px-1",
       style: {
         color: CD.faint
@@ -70107,6 +70141,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     openSettings,
     onStartTx
   }) {
+    const lead = useIdvLead();
     const [tab, setTab] = useState('requests');
     const loadTg = () => {
       const b = load(TGKEY, null);
@@ -70134,6 +70169,49 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
     const [bcasts, setBcasts] = useState(() => load(BKEY2, DEF_BCASTS));
     const [sites, setSites] = useState(() => load(SKEY2, DEF_SITES));
     const [openId, setOpenId] = useState(null);
+    useEffect(() => {
+      const stale = value => STALE_IDV.indexOf(value) >= 0 && value !== lead;
+      setTgRaw(current => stale(current.tpl.verify) ? {
+        ...current,
+        tpl: {
+          ...current.tpl,
+          verify: lead
+        }
+      } : current);
+      setReqs(rows => {
+        let changed = false;
+        const next = rows.map(row => {
+          let rowChanged = false;
+          const thread = (row.thread || []).map(item => {
+            if (!stale(item.t)) return item;
+            rowChanged = true;
+            return {
+              ...item,
+              t: lead
+            };
+          });
+          if (!rowChanged) return row;
+          changed = true;
+          return {
+            ...row,
+            thread
+          };
+        });
+        return changed ? next : rows;
+      });
+      setLogbook(rows => {
+        let changed = false;
+        const next = rows.map(item => {
+          if (!stale(item.detail)) return item;
+          changed = true;
+          return {
+            ...item,
+            detail: lead
+          };
+        });
+        return changed ? next : rows;
+      });
+    }, [lead]);
     useEffect(() => {
       save(TGKEY, tg);
     }, [tg]);
@@ -70256,7 +70334,7 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         upd(id, r => ({
           ...r,
           status: 'verified',
-          thread: [...r.thread, sys(idvLeadText + ' No identity check was sent.'), out(render(tg.tpl.ready, ctxFor(r)))]
+          thread: [...r.thread, sys(idvLeadText), out(render(tg.tpl.ready, ctxFor(r)))]
         }));
         bump(1);
         if (r0) {

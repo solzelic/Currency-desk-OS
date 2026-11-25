@@ -88,10 +88,6 @@ when the privacy contact is empty, and drops the privacy-policy sentence when
 there is no URL. Staging still blocks the customer link until the privacy
 fields are set. That fallback wording is draft for Compliance review (CD-219).
 
-The same screen lists five steps: share a link or a QR code, the customer
-scans their ID, the customer takes a selfie, the result comes back, and
-there is no charge if the check fails. A Persona shop does not show them.
-
 ## References
 
 - https://docs.didit.me/sessions-api/create-session

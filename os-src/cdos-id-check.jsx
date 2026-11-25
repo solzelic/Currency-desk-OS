@@ -59,26 +59,28 @@
   };
 
   function linesOf(text) { return String(text || "").split("\n").filter(Boolean); }
-  /* The teller sees which provider this shop uses, or that checks are off.
-     ready comes from GET /api/idv/clients/:id and from the consent read. */
+  /* The cashier reads which provider this shop uses, and what to do.
+     ready comes from GET /api/idv/clients/:id and from the consent read.
+     A missing shop is not "off": the desk has not heard yet. */
   function idvProviderCopy(shop) {
-    if (!shop || shop.ready === "off") return "Identity checks are off.";
-    if (shop.provider === "didit") {
-      if (shop.ready === "not_configured") return "Didit is not set up on this server.";
-      if (shop.ready === "not_test_shop") return "Didit can be used only on a staging test shop.";
-      if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-      return "Didit is the identity provider for this shop.";
+    if (!shop) return "The identity check status is not available.";
+    const didit = shop.provider === "didit";
+    const name = didit ? "Didit" : "Persona";
+    if (shop.ready === "off") return "Identity checks are off.";
+    if (shop.ready === "privacy_missing") return "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (shop.ready === "not_configured" || shop.ready === "not_test_shop") {
+      return "Automatic ID check with " + name + " is not available for this shop. Check the ID by hand instead.";
     }
-    if (shop.ready === "not_configured") return "Persona is not set up on this server.";
-    if (shop.ready === "privacy_missing") return "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-    return "Persona is the identity provider for this shop.";
+    if (didit && shop.testShop) return "Automatic ID check uses Didit (test).";
+    if (didit) return "Automatic ID check uses Didit.";
+    return "Automatic ID check uses Persona.";
   }
   function stopLine(err) {
     const code = err && err.code;
     const message = (err && err.message) || "";
     if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
-    if (code === "PRIVACY_CONTACT") return message || "Set the shop privacy contact before a face match. The owner adds it in identity check settings.";
-    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Didit is not set up on this server.";
+    if (code === "PRIVACY_CONTACT") return message || "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID by hand instead.";
     if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
       return message || "The ID check did not finish. Try again, or check the ID in person.";
     }
