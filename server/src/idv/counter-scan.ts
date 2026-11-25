@@ -1,12 +1,14 @@
 /* Teller face-match attestation for a document-only counter scan.
    The staff user id, the role, and the time come from the session and
    the database clock. The client does not send them. */
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import type { Db } from "../db/index.js";
 import { dbQuery, writePersonaRecord, type DeskActor, type Step } from "./records.js";
 import { diditSelection } from "./providers/didit.js";
 
-const faceMatch = require("../../../shared/face-match-attestation.js") as { version: string; statement: string };
+const loadShared = createRequire(import.meta.url);
+const faceMatch = loadShared("../../../shared/face-match-attestation.js") as { version: string; statement: string };
 export const FACE_MATCH_STATEMENT = faceMatch.statement;
 export const FACE_MATCH_VERSION = faceMatch.version;
 
