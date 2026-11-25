@@ -219,7 +219,10 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     const saved = await sendDiditLink(db, actor, req.params.inquiryId ?? "", email, {
       env: env(), fetch: options?.fetch, mail: options?.mail, now: options?.now,
     });
-    if (!saved.ok) return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    if (!saved.ok) {
+      if (saved.error === "COUNTER_ONLY") return reply.code(saved.status).send({ code: "COUNTER_ONLY", message: saved.message });
+      return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    }
     return saved.body;
   });
 

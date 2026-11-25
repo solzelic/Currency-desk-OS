@@ -10,6 +10,7 @@ import {
   agreedConsent, consentFill, dbQuery, inquiryClientId, loadShopIdv, type DeskActor, type Step,
 } from "./records.js";
 import { privacyReady } from "./consent-copy.js";
+import { counterOnly } from "./tiers.js";
 
 export const IDV_LINK_SUBJECT = "Your ID check link";
 
@@ -83,6 +84,12 @@ export async function sendDiditLink(
   if (!id || id.length > 80) return fail(400, "invalid_request", "That email is not valid.");
   const clientId = await inquiryClientId(db, actor, id);
   if (!clientId) return fail(404, "not_found", "That ID check is not on this client.");
+  const branch = await dbQuery(db).query(
+    "SELECT province FROM branches WHERE id = $1 AND legal_entity_id = $2",
+    [actor.branchId, actor.legalEntityId],
+  );
+  const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
+  if (gate.counter) return fail(409, "COUNTER_ONLY", gate.line);
   if (!await agreedConsent(db, actor, id)) {
     return fail(409, "consent_required", "Record consent before the ID check link opens.");
   }

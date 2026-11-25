@@ -7,6 +7,7 @@ import { createDb, schema, type DbHandle } from "../src/db/index.js";
 import { DEMO, seed } from "../src/seed.js";
 import { buildApp } from "../src/app.js";
 import { resetIdvSendLimits, idvLinkMessage, IDV_LINK_SUBJECT } from "../src/idv/send-link.js";
+import { PROVINCE_LINE, QUEBEC_LINE } from "../src/idv/tiers.js";
 
 const KEYS = {
   DIDIT_API_KEY: "fixture-didit-key",
@@ -143,6 +144,24 @@ describe("send the Didit link by email", () => {
     const other = await post(app, cookies.teller, "77777777-8888-4999-8aaa-bbbbbbbbbbbb", EMAIL);
     expect(other.statusCode).toBe(404);
     expect(sent).toHaveLength(0);
+  });
+
+  it("refuses a Quebec branch and an empty province before any email", async () => {
+    try {
+      await handle.db.update(schema.branches).set({ province: "QC" }).where(eq(schema.branches.id, DEMO.branchId));
+      const quebec = await post(app, cookies.teller, SESSION, EMAIL);
+      expect(quebec.statusCode).toBe(409);
+      expect(quebec.json()).toEqual({ code: "COUNTER_ONLY", message: QUEBEC_LINE });
+      expect(sent).toHaveLength(0);
+
+      await handle.db.update(schema.branches).set({ province: null }).where(eq(schema.branches.id, DEMO.branchId));
+      const empty = await post(app, cookies.teller, SESSION, EMAIL);
+      expect(empty.statusCode).toBe(409);
+      expect(empty.json()).toEqual({ code: "COUNTER_ONLY", message: PROVINCE_LINE });
+      expect(sent).toHaveLength(0);
+    } finally {
+      await handle.db.update(schema.branches).set({ province: "ON" }).where(eq(schema.branches.id, DEMO.branchId));
+    }
   });
 
   it("keeps the test shop and live locks and answers 503 when Didit or mail is missing", async () => {
