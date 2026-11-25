@@ -10,6 +10,8 @@ import { dbQuery, writePersonaRecord } from "./records.js";
 import { locateIdvInquiry } from "./store.js";
 import { classifyCheck, type CheckMethod, type CheckResult } from "./tiers.js";
 
+const SUPERSEDE_OUTCOME = new Set<IdvResult["outcome"]>(["declined", "expired", "review"]);
+
 const RECORDABLE = new Set<IdvResult["outcome"]>(["approved", "declined", "failed", "expired", "review"]);
 
 function statusWord(result: IdvResult): string {
@@ -33,7 +35,7 @@ async function shopIsTest(db: Db, shopId: string): Promise<boolean> {
 async function writeDiditAudit(
   db: Db,
   shop: { tenantId: string; shopId: string; branchId: string; tellerId: string },
-  action: "idv.didit_result" | "idv.didit_webhook_refused",
+  action: "idv.didit_result" | "idv.didit_webhook_refused" | "idv.counter_scan_superseded",
   detail: Record<string, string | boolean>,
 ): Promise<void> {
   await dbQuery(db).query(
@@ -142,6 +144,78 @@ export async function finishDiditWebhook(
       referenceId: located.referenceId,
       applied: updated.rows.length > 0,
     });
+    /* A pass already approved the inquiry, so the guard above skips a later
+       Declined, Expired, or In Review. Write a new row. Leave the pass row. */
+    if (!updated.rows.length && method === "counter_id_scan" && SUPERSEDE_OUTCOME.has(result.outcome) && located.clientId) {
+      const opened = await q.query(
+        `UPDATE idv_inquiries
+            SET status = $1, id_scan_passed = false
+          WHERE provider = 'didit' AND provider_ref = $2 AND status = 'approved'
+          RETURNING reference_id`,
+        [statusWord(result), result.providerRef],
+      );
+      if (opened.rows.length) {
+        const prior = await q.query(
+          `SELECT record_id FROM idv_check_records
+            WHERE legal_entity_id = $1 AND persona_inquiry_id = $2 AND provider = 'didit'
+              AND method = 'counter_id_scan' AND result = 'pass'
+            ORDER BY verified_at DESC
+            LIMIT 1`,
+          [located.shopId, result.providerRef],
+        );
+        const recordId = `idc_${randomUUID()}`;
+        const superseded = classifyCheck(result.outcome, null, {
+          method: "counter_id_scan",
+          idPassed: result.idPassed === true,
+          attested: false,
+        }).result;
+        await writePersonaRecord(tx, {
+          recordId,
+          tenantId: located.tenantId,
+          legalEntityId: located.shopId,
+          branchId: located.branchId,
+          staffId: located.tellerId,
+          clientId: located.clientId,
+          tier: "3",
+          inquiryId: located.providerRef,
+          textName: null,
+          documentType: null,
+          idClass: null,
+          number: null,
+          numberCipher: null,
+          cropCipher: null,
+          jurisdiction: null,
+          country: null,
+          expiry: null,
+          birth: null,
+          address: null,
+          result: superseded,
+          providerChecks: result.idPassed ? "ID passed" : "ID not passed",
+          governmentId: null,
+          selfieId: null,
+          templateId: null,
+          templateVersion: null,
+          provider: "didit",
+          method: "counter_id_scan",
+          databaseStep: "not_applicable",
+        });
+        const priorId = prior.rows[0]?.record_id;
+        if (typeof priorId === "string") {
+          await q.query(
+            `INSERT INTO idv_record_supersessions
+              (supersession_id, record_id, superseded_by_record_id, tenant_id, legal_entity_id, staff_id)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [`sup_${randomUUID()}`, priorId, recordId, located.tenantId, located.shopId, located.tellerId],
+          );
+        }
+        await writeDiditAudit(tx as Db, located, "idv.counter_scan_superseded", {
+          outcome: result.outcome,
+          referenceId: located.referenceId,
+          recordId,
+        });
+      }
+      return "stored" as const;
+    }
     if (awaiting || !updated.rows.length || !RECORDABLE.has(result.outcome) || !located.clientId) {
       return "stored" as const;
     }

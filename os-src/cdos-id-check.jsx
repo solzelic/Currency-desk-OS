@@ -498,7 +498,7 @@
       <div className="text-[13px]" style={{ color: CD.ink }}>Look at the customer and the photo on the ID. The law requires the person to match that photo.</div>
       <label className="flex items-start gap-2 text-[13px]" style={{ color: CD.ink }}>
         <input data-testid="id-check-attest-box" type="checkbox" checked={faceCompared} onChange={(e) => setFaceCompared(e.target.checked)} />
-        <span>I compared the customer's face to the ID photo</span>
+        <span>{window.CDOS.faceMatchAttestation.statement}</span>
       </label>
       <button type="button" data-testid="id-check-attest-save" disabled={!faceCompared || busy} onClick={sendAttest} style={btnStyle(!faceCompared || busy)}>{busy ? "Saving" : "Record the comparison"}</button>
     </div>));

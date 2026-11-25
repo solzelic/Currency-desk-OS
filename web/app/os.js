@@ -3387,6 +3387,24 @@
 });
 
 
+/* ---- shared/face-match-attestation.js ---- */
+/* The teller's face-match words. One source for the server and the desk.
+   The server requires this file. The shell loads it too. */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === "object" && module && module.exports) module.exports = api;
+  if (root) {
+    var cdos = root.CDOS || (root.CDOS = {});
+    cdos.faceMatchAttestation = api;
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  return {
+    version: "face-match-v1",
+    statement: "The customer is in front of me. I compared their face with the photo on this ID and they are the same person.",
+  };
+});
+
+
 /* ---- os-src/cdos-backend.js ---- */
 (function () {
   "use strict";
@@ -54377,7 +54395,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       type: "checkbox",
       checked: faceCompared,
       onChange: e => setFaceCompared(e.target.checked)
-    }), /*#__PURE__*/React.createElement("span", null, "I compared the customer's face to the ID photo")), /*#__PURE__*/React.createElement("button", {
+    }), /*#__PURE__*/React.createElement("span", null, window.CDOS.faceMatchAttestation.statement)), /*#__PURE__*/React.createElement("button", {
       type: "button",
       "data-testid": "id-check-attest-save",
       disabled: !faceCompared || busy,
