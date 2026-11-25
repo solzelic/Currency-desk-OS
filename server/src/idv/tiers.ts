@@ -19,7 +19,7 @@ export const TIER_ALIASES = ["1", "2", "3", "4", "quick", "verify", "plus"] as c
 /* Old numeric 1 and 2 were quick and verify. Those are now 2 and 3. */
 export const PEP_TIERS = new Set<TierNumber>(["2", "3"]);
 
-export type CheckMethod = "in_person" | "returning_client" | "id_and_selfie" | "id_selfie_database" | "counter_id_scan" | "counter_full";
+export type CheckMethod = "in_person" | "returning_client" | "id_and_selfie" | "id_selfie_database" | "counter_id_scan" | "counter_full" | "customer_preverify";
 
 export type CheckResult = "pass" | "declined" | "needs_review" | "method_not_completed" | "returning_confirmed" | "expired";
 
@@ -30,6 +30,7 @@ export const METHOD_LABEL: Record<CheckMethod, string> = {
   id_selfie_database: "ID, selfie and database, Persona",
   counter_id_scan: "ID scanned at the counter",
   counter_full: "Full check at the counter",
+  customer_preverify: "Sent to the customer to pre-verify",
 };
 
 export const NO_PHOTO_LINE = "No photo on file";
@@ -59,6 +60,7 @@ export function resolveTier(input: string): TierNumber | null {
 export function methodLabel(method: CheckMethod, provider = "persona"): string {
   if (method === "counter_id_scan") return METHOD_LABEL.counter_id_scan;
   if (method === "counter_full") return METHOD_LABEL.counter_full;
+  if (method === "customer_preverify") return METHOD_LABEL.customer_preverify;
   if (provider === "didit" && method === "id_and_selfie") return "ID and selfie, Didit";
   if (provider === "didit" && method === "id_selfie_database") return "ID, selfie and database, Didit";
   return METHOD_LABEL[method];

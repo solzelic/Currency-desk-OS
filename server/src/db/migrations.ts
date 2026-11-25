@@ -127,6 +127,8 @@ export const migrations: readonly Migration[] = [
   ["085_idv_didit_provider", "src/db/migrations/085_idv_didit_provider.sql"],
   /* 086 is the counter ID scan: the method on the inquiry, and the teller's attestation. */
   ["086_idv_counter_scan", "src/db/migrations/086_idv_counter_scan.sql"],
+  /* 087 adds the remote pre-verify method. 086 is the counter scan. */
+  ["087_idv_customer_preverify", "src/db/migrations/087_idv_customer_preverify.sql"],
 ] as const;
 
 type MigrationReader = {

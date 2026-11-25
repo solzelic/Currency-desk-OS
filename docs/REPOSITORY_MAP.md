@@ -140,6 +140,9 @@ The root allow-list in `server/src/app.ts` still names `CurrencyDesk OS.html`, `
 - Migration `086_idv_counter_scan` stores the Didit method on the inquiry
   and the teller's face-match attestation. PGlite applies it from `createDb`.
   The 081 method check is not edited; 086 replaces that constraint.
+- Migration `087_idv_customer_preverify` adds the remote pre-verify method.
+  PGlite applies it from `createDb`. The link answer can include a QR matrix.
+  The desk does not text or email that link.
 - Migration `075_sanctions_lists` adds `sanctions_list_snapshots`,
   `sanctions_list_entries`, `sanctions_ops_flags`, and
   `sanctions_score_settings`. 074 is the Persona inquiry client on PR 722,

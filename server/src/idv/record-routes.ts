@@ -10,6 +10,7 @@ import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoSelfieConsentCopy, didit
 import { recordCounterFaceMatch } from "./counter-scan.js";
 import { generateOneTimeLink } from "./persona-calls.js";
 import { diditConfigured, diditDocScanAvailable, diditSelection, diditSessionLink } from "./providers/didit.js";
+import { qrMatrix } from "./qr.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
@@ -195,6 +196,14 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       if (!diditConfigured(env())) return reply.code(503).send({ error: "not_available" });
       try {
         const url = await diditSessionLink({ sessionId: inquiryId, env: env(), fetchImpl: options?.fetch });
+        const methodRow = await dbQuery(db).query(
+          `SELECT check_method FROM idv_inquiries
+            WHERE provider = 'didit' AND provider_ref = $1 AND shop_id = $2`,
+          [inquiryId, actor.legalEntityId],
+        );
+        /* TODO: text and email when a send path exists for this link.
+           sendSms and sendEmail send other messages. They do not send an ID check link. */
+        if (methodRow.rows[0]?.check_method === "customer_preverify") return { url, qr: qrMatrix(url) };
         return { url };
       } catch {
         return reply.code(502).send({ error: "link_failed", message: "The ID check link could not be opened." });

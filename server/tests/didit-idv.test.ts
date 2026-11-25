@@ -13,6 +13,7 @@ import {
   chargeForDiditOutcome, createDiditProvider, diditApiBase, diditDecisionChecks, diditDocWorkflow, diditSessionLink,
   diditWorkflowForTier, parseDiditWebhook, startDiditCheck,
 } from "../src/idv/providers/didit.js";
+import { qrMatrix } from "../src/idv/qr.js";
 import { classifyCheck } from "../src/idv/tiers.js";
 
 const SECRET = "fixture-didit-secret";
@@ -863,5 +864,102 @@ describe("didit routes", () => {
     `);
     expect(row.rows[0]).toMatchObject({ result: "method_not_completed", method: "counter_full" });
     expect(chargeForDiditOutcome("failed")).toBe("no_charge");
+  });
+
+  it("sends a pre-verify link on the basic workflow and lands the webhook on the file", async () => {
+    calls.length = 0;
+    await handle.db.update(schema.tenants).set({ isTestShop: true }).where(eq(schema.tenants.id, DEMO.tenantId));
+    await enable("didit");
+    await handle.db.execute(sql`
+      INSERT INTO desk_clients (client_id, tenant_id, legal_entity_id, display_name)
+      VALUES ('cli-remote', ${DEMO.tenantId}, ${DEMO.legalEntityId}, 'Remote Fixture')
+      ON CONFLICT (client_id) DO NOTHING
+    `);
+    const plus = await docApp.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "4", method: "customer_preverify", clientId: "cli-remote" },
+    });
+    expect(plus.statusCode).toBe(409);
+    expect(plus.json()).toMatchObject({ code: "IDV_TIER" });
+    expect(calls).toHaveLength(0);
+    const started = await docApp.inject({
+      method: "POST", url: "/api/idv/start-check", cookies: cookies.teller,
+      payload: { tier: "3", method: "customer_preverify", clientId: "cli-remote" },
+    });
+    expect(started.statusCode, started.body).toBe(200);
+    expect(started.json().method).toBe("Sent to the customer to pre-verify");
+    expect(JSON.parse(calls[0]?.body ?? "{}").workflow_id).toBe(WORKFLOW);
+    expect(calls[0]?.body).not.toContain(DOC);
+    const providerRef = started.json().providerRef as string;
+    const waiting = await app.inject({
+      method: "GET", url: "/api/idv/clients/cli-remote/checks", cookies: cookies.teller,
+    });
+    expect(waiting.statusCode, waiting.body).toBe(200);
+    expect(waiting.json().pending[0]).toMatchObject({
+      method: "customer_preverify",
+      methodLabel: "Sent to the customer to pre-verify",
+      line: "Waiting for the customer.",
+      providerRef,
+    });
+    await handle.db.execute(sql`
+      INSERT INTO idv_consents (consent_id, tenant_id, legal_entity_id, branch_id, client_id, copy_version, language, inquiry_id, choice, staff_id)
+      VALUES ('consent-remote', ${DEMO.tenantId}, ${DEMO.legalEntityId}, ${DEMO.branchId}, 'cli-remote', 'didit-consent-sandbox-v0', 'en', ${providerRef}, 'agreed', 'm.costa')
+    `);
+    const link = await docApp.inject({
+      method: "POST", url: `/api/idv/inquiries/${providerRef}/one-time-link`, cookies: cookies.teller, payload: {},
+    });
+    expect(link.statusCode, link.body).toBe(200);
+    expect(link.json().url).toBe("https://verify.didit.me/session/fixturetoken");
+    const qr = link.json().qr as boolean[][];
+    expect(qr.length).toBeGreaterThan(20);
+    expect(qr.every((row) => row.length === qr.length)).toBe(true);
+    expect(link.body).not.toContain(KEY);
+    expect(qrMatrix("https://verify.didit.me/session/fixturetoken").length).toBe(qr.length);
+    const session = providerRef;
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Approved",
+      vendor_data: started.json().referenceId,
+      decision: {
+        id_verifications: [{ status: "Approved" }],
+        liveness_checks: [{ status: "Approved" }],
+        face_matches: [{ status: "Approved" }],
+      },
+    }));
+    const hooked = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(hooked.statusCode, hooked.body).toBe(200);
+    const row = await handle.db.execute(sql`
+      SELECT result, method, provider_checks FROM idv_check_records WHERE persona_inquiry_id = ${session}
+    `);
+    expect(row.rows[0]).toMatchObject({
+      result: "pass",
+      method: "customer_preverify",
+      provider_checks: "ID passed, liveness passed, face match passed",
+    });
+    const after = await app.inject({
+      method: "GET", url: "/api/idv/clients/cli-remote/checks", cookies: cookies.teller,
+    });
+    expect(after.json().pending).toEqual([]);
+    expect(after.json().records[0].methodLabel).toBe("Sent to the customer to pre-verify");
+    const declined = "14141414-1515-4545-8616-181818181818";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status, check_method)
+      VALUES ('ref-remote-no', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${declined}, 'cli-remote', '3', 'starting', 'customer_preverify')
+    `);
+    const dropped = await scanWebhook(declined, "ref-remote-no", "Declined", {
+      id_verifications: [{ status: "Declined" }],
+      liveness_checks: [{ status: "Declined" }],
+      face_matches: [{ status: "Declined" }],
+    });
+    expect(dropped.statusCode, dropped.body).toBe(200);
+    expect(chargeForDiditOutcome("declined")).toBe("no_charge");
+    const declinedRow = await handle.db.execute(sql`
+      SELECT result, method FROM idv_check_records WHERE persona_inquiry_id = ${declined}
+    `);
+    expect(declinedRow.rows[0]).toMatchObject({ result: "declined", method: "customer_preverify" });
   });
 });

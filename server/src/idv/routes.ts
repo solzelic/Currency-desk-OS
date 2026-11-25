@@ -116,13 +116,15 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       return reply.code(400).send({ error: "invalid_request", message: "That ID check method is not valid." });
     }
     const methodName = typeof methodRaw === "string" ? methodRaw.trim() : "";
-    const startMethod: "id_and_selfie" | "counter_id_scan" | "counter_full" | null = methodName === "" || methodName === "id_and_selfie"
+    const startMethod: "id_and_selfie" | "counter_id_scan" | "counter_full" | "customer_preverify" | null = methodName === "" || methodName === "id_and_selfie"
       ? "id_and_selfie"
       : methodName === "counter_id_scan"
         ? "counter_id_scan"
         : methodName === "counter_full"
           ? "counter_full"
-          : null;
+          : methodName === "customer_preverify"
+            ? "customer_preverify"
+            : null;
     if (!startMethod) return reply.code(400).send({ error: "invalid_request", message: "That ID check method is not valid." });
     if (tier === "1") return reply.code(409).send({ code: "COUNTER_PATH", message: "In person is recorded at the counter. No identity provider is called." });
     if (tier === "2") return reply.code(409).send({ code: "RETURNING", message: "Returning client does not start an identity provider check." });
@@ -209,7 +211,9 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       ? "ID scanned at the counter"
       : startMethod === "counter_full"
         ? "Full check at the counter"
-        : "ID and selfie";
+        : startMethod === "customer_preverify"
+          ? "Sent to the customer to pre-verify"
+          : "ID and selfie";
     const tierFields = tier === "4"
       ? { tier: "4" as const, databaseStep: "off" as const, message: "The database step is not on yet. This check runs ID and selfie." }
       : tier === "3" || startMethod !== "id_and_selfie"

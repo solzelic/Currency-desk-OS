@@ -31,7 +31,7 @@ export type IdvStart = {
   templateId?: string | null;
   shopCode?: string;
   tier?: string | null;
-  method?: "id_and_selfie" | "counter_id_scan" | "counter_full" | null;
+  method?: "id_and_selfie" | "counter_id_scan" | "counter_full" | "customer_preverify" | null;
 };
 
 /* The ledger connection, when client files live there rather than on the app database. */

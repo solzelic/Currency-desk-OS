@@ -22,7 +22,7 @@ still needs ID, liveness, and face match. On a Didit test shop with the
 document workflow set, the customer file offers "Scan the ID at the counter"
 first. The scan stays on the shop device. The copy says there is no selfie
 and no hand-off. The teller then confirms they compared the customer's face
-to the ID photo. Full check at the counter and in person stay available. Failed and declined scans are
+to the ID photo. Full check at the counter, send to the customer to pre-verify, and in person stay available. Pre-verify is a remote Basic KYC link, shown as a QR code and a copy button. Text and email are not sent. The result lands on the customer file when the webhook arrives, and the file says it is waiting until then. Failed and declined scans are
 not billed, on every method. The webhook signature checks and the live
 gate are unchanged. A test pass with no stored number reads Missing ID.
 A failed, abandoned,
