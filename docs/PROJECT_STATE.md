@@ -17,7 +17,11 @@ or declined scan is not billed. The webhook is `POST /api/webhooks/idv/didit`.
 It checks the raw-body signature and a 300-second timestamp, and it is
 idempotent on session id plus status. The decision body, the secret, and the
 ID photos are not stored and not logged. Names and the sandbox workflow id
-are in `docs/IDV.md`.
+are in `docs/IDV.md`. On the teller ID check, a Didit shop shows five steps:
+you share a link or a QR code, the customer scans their ID, the customer
+takes a selfie, the result comes back to you, and there is no charge if the
+check fails. A Persona shop does not show those steps. A counter only shop
+does not show them either.
 
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 

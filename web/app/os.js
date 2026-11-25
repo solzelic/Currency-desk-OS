@@ -53576,6 +53576,57 @@ ${(filing.map || []).map(blockHTML).join('')}
       return ["Passport", "Driver's Licence"];
     }
   }
+
+  /* Didit only. The teller reads what the customer will see.
+     A Persona shop and a counter only shop do not show this. */
+  const CUSTOMER_STEPS = ["You share a link or a QR code.", "The customer scans their ID.", "The customer takes a selfie.", "The result comes back to you.", "There is no charge if the check fails."];
+  function customerSteps(copy, counter) {
+    if (!copy || copy.provider !== "didit" || counter) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-customer-steps",
+      className: "min-w-0 w-full",
+      style: {
+        border: `1px solid ${CD.line}`,
+        borderRadius: 12,
+        background: "var(--cd-paper-soft)",
+        padding: "12px 14px",
+        boxSizing: "border-box",
+        maxWidth: "100%"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "text-[13px] font-semibold",
+      style: {
+        color: CD.ink
+      }
+    }, "What the customer sees"), /*#__PURE__*/React.createElement("ol", {
+      className: "m-0 mt-2 space-y-1.5",
+      style: {
+        listStyle: "none",
+        padding: 0
+      }
+    }, CUSTOMER_STEPS.map((line, i) => /*#__PURE__*/React.createElement("li", {
+      key: line,
+      className: "flex items-start gap-2 min-w-0 text-[13px]",
+      style: {
+        color: CD.ink,
+        lineHeight: 1.45
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "flex-none",
+      style: {
+        width: 18,
+        color: CD.mute,
+        fontFamily: '"Space Mono", ui-monospace, monospace',
+        fontSize: 12,
+        lineHeight: 1.45
+      }
+    }, i + 1, "."), /*#__PURE__*/React.createElement("span", {
+      className: "min-w-0 flex-1",
+      style: {
+        overflowWrap: "anywhere"
+      }
+    }, line)))));
+  }
   function holdSheet() {
     const count = Number(document.body.dataset.idCheckCount || "0") + 1;
     document.body.dataset.idCheckCount = String(count);
@@ -54054,7 +54105,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, "ID, selfie and database is not available yet"), more.length > 0 && /*#__PURE__*/React.createElement("div", {
+      }, "ID, selfie and database is not available yet"), customerSteps(copy, counter), more.length > 0 && /*#__PURE__*/React.createElement("div", {
         "data-testid": "id-check-more"
       }, /*#__PURE__*/React.createElement("button", {
         type: "button",
@@ -54185,7 +54236,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.ink
       }
-    }, "Hand the counter device to the customer. The check opens at this link."), linkUrl ? /*#__PURE__*/React.createElement("a", {
+    }, "Hand the counter device to the customer. The check opens at this link."), customerSteps(copy, counter), linkUrl ? /*#__PURE__*/React.createElement("a", {
       "data-testid": "id-check-link-url",
       href: linkUrl,
       target: "_blank",
@@ -55110,7 +55161,8 @@ ${(filing.map || []).map(blockHTML).join('')}
       Panel,
       Flow,
       DealBar,
-      Settings
+      Settings,
+      customerSteps
     }
   });
 })();

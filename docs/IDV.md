@@ -66,6 +66,9 @@ and the DPA are signed. These five items are still open:
    `https://currencydesk-staging.onrender.com/api/webhooks/idv/didit`
    for `status.updated` and `data.updated`, version v3.
 4. Start an ID and selfie check. The counter shows a `verify.didit.me` link.
+   The same screen lists five steps: share a link or a QR code, the customer
+   scans their ID, the customer takes a selfie, the result comes back, and
+   there is no charge if the check fails. A Persona shop does not show them.
 
 ## References
 

@@ -81,6 +81,32 @@
     }
   }
 
+  /* Didit only. The teller reads what the customer will see.
+     A Persona shop and a counter only shop do not show this. */
+  const CUSTOMER_STEPS = [
+    "You share a link or a QR code.",
+    "The customer scans their ID.",
+    "The customer takes a selfie.",
+    "The result comes back to you.",
+    "There is no charge if the check fails.",
+  ];
+  function customerSteps(copy, counter) {
+    if (!copy || copy.provider !== "didit" || counter) return null;
+    return (
+      <div data-testid="id-check-customer-steps" className="min-w-0 w-full" style={{ border: `1px solid ${CD.line}`, borderRadius: 12, background: "var(--cd-paper-soft)", padding: "12px 14px", boxSizing: "border-box", maxWidth: "100%" }}>
+        <div className="text-[13px] font-semibold" style={{ color: CD.ink }}>What the customer sees</div>
+        <ol className="m-0 mt-2 space-y-1.5" style={{ listStyle: "none", padding: 0 }}>
+          {CUSTOMER_STEPS.map((line, i) => (
+            <li key={line} className="flex items-start gap-2 min-w-0 text-[13px]" style={{ color: CD.ink, lineHeight: 1.45 }}>
+              <span className="flex-none" style={{ width: 18, color: CD.mute, fontFamily: '"Space Mono", ui-monospace, monospace', fontSize: 12, lineHeight: 1.45 }}>{i + 1}.</span>
+              <span className="min-w-0 flex-1" style={{ overflowWrap: "anywhere" }}>{line}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+
   function holdSheet() {
     const count = Number(document.body.dataset.idCheckCount || "0") + 1;
     document.body.dataset.idCheckCount = String(count);
@@ -368,6 +394,7 @@
           <div className="text-[13px] mt-1" style={{ color: "var(--cd-on-ink)", opacity: 0.82 }}>{primary.note}</div>
         </button>
         {copy.tier4 === "unavailable" && <div data-testid="id-check-tier4" className="text-[13px]" style={{ color: CD.mute }}>ID, selfie and database is not available yet</div>}
+        {customerSteps(copy, counter)}
         {more.length > 0 && <div data-testid="id-check-more">
           <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)} className="w-full" style={{ minHeight: 44, padding: "0 16px", borderRadius: 10, border: `1px solid ${CD.line}`, background: "transparent", color: CD.ink, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: '"Archivo", system-ui, sans-serif', fontSize: 14, fontWeight: 600 }}>
             <span>More options</span>
@@ -407,6 +434,7 @@
     if (step === "link") return shell("id-check-link", tier === "4" ? "ID, selfie and database" : "ID and selfie", (<div className="space-y-2">
       {tier === "4" && <div className="text-[13px]" style={{ color: CD.ink }}>{databaseMessage || "The database step is not on yet. This check runs ID and selfie."}</div>}
       <div className="text-[13px]" style={{ color: CD.ink }}>Hand the counter device to the customer. The check opens at this link.</div>
+      {customerSteps(copy, counter)}
       {linkUrl
         ? <a data-testid="id-check-link-url" href={linkUrl} target="_blank" rel="noopener noreferrer" className="id-check-figure text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</a>
         : <div data-testid="id-check-link-url" className="text-[13px]" style={{ color: CD.ink }}>The ID check link could not be opened.</div>}
@@ -718,5 +746,5 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { IdCheck: { Panel, Flow, DealBar, Settings } });
+  window.CDOS = Object.assign(window.CDOS || {}, { IdCheck: { Panel, Flow, DealBar, Settings, customerSteps } });
 })();
