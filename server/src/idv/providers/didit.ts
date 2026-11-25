@@ -49,11 +49,14 @@ export function diditLiveAllowed(env: NodeJS.ProcessEnv): boolean {
 
 /* Live Render sets RENDER=true and an onrender.com hostname, which is not
    one of the custom live hosts. Off Render, or on staging, Didit may run.
-   On live Render it runs only when DIDIT_LIVE_ALLOWED is exactly 1. */
+   On live Render it runs only when DIDIT_LIVE_ALLOWED is exactly 1.
+   Off Render means RENDER is not exactly "true". A process that leaves
+   RENDER unset is off Render. Render itself sets RENDER=true. */
 export function diditRuntimeAllowed(env: NodeJS.ProcessEnv): boolean {
   return diditLiveAllowed(env) || env.RENDER !== "true" || isStagingRuntime(undefined, env);
 }
 
+/* Off Render means RENDER is not exactly "true". */
 function diditOffRenderOrStaging(env: NodeJS.ProcessEnv): boolean {
   return env.RENDER !== "true" || isStagingRuntime(undefined, env);
 }
@@ -123,16 +126,28 @@ export function diditRefIssue(name: string): "key" | null {
   return ENV_NAME.test(name) ? null : "key";
 }
 
+/* The public base is https, with no userinfo and port 443 or none.
+   A loopback URL is only for a local stub, and only off Render or on staging. */
+function publicDiditOrigin(url: URL): string | null {
+  if (url.protocol !== "https:") return null;
+  if (url.username || url.password) return null;
+  if (url.port !== "" && url.port !== "443") return null;
+  if (url.hostname.toLowerCase() !== "verification.didit.me") return null;
+  return url.origin;
+}
+
 export function diditApiBase(env: NodeJS.ProcessEnv): string {
   const raw = trimmed(env, "DIDIT_API_BASE");
   if (!raw) return DIDIT_API_BASE_DEFAULT;
   try {
     const url = new URL(raw);
+    const official = publicDiditOrigin(url);
+    if (official) return official;
     const host = url.hostname.toLowerCase();
-    if (host === "verification.didit.me") return raw.replace(/\/$/, "");
     const loopback = host === "127.0.0.1" || host === "localhost";
+    if (url.username || url.password) return DIDIT_API_BASE_DEFAULT;
     if (loopback && diditOffRenderOrStaging(env) && (url.protocol === "http:" || url.protocol === "https:")) {
-      return raw.replace(/\/$/, "");
+      return `${url.protocol}//${url.host}`;
     }
   } catch {
     /* fall through */

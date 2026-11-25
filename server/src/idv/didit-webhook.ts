@@ -29,6 +29,38 @@ async function shopIsTest(db: Db, shopId: string): Promise<boolean> {
   return found.rows[0]?.is_test_shop === true;
 }
 
+async function writeDiditAudit(
+  db: Db,
+  shop: { tenantId: string; shopId: string; branchId: string; tellerId: string },
+  action: "idv.didit_result" | "idv.didit_webhook_refused",
+  detail: Record<string, string | boolean>,
+): Promise<void> {
+  await dbQuery(db).query(
+    `INSERT INTO audit_events (id, tenant_id, legal_entity_id, branch_id, actor_id, action, detail)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+    [randomUUID(), shop.tenantId, shop.shopId, shop.branchId, shop.tellerId || null, action, JSON.stringify(detail)],
+  );
+}
+
+async function auditShop(db: Db, providerRef: string) {
+  const found = await dbQuery(db).query(
+    `SELECT i.shop_id, i.branch_id, i.teller_id, e.tenant_id
+       FROM idv_inquiries i
+       JOIN legal_entities e ON e.id = i.shop_id
+      WHERE i.provider = 'didit' AND i.provider_ref = $1
+      LIMIT 1`,
+    [providerRef],
+  );
+  const row = found.rows[0];
+  if (!row?.tenant_id || !row.shop_id || !row.branch_id) return null;
+  return {
+    tenantId: String(row.tenant_id),
+    shopId: String(row.shop_id),
+    branchId: String(row.branch_id),
+    tellerId: typeof row.teller_id === "string" ? row.teller_id : "",
+  };
+}
+
 function checkResult(result: IdvResult): CheckResult {
   const selfie = result.outcome === "approved" && result.checksPassed === true ? "approved" : null;
   return classifyCheck(result.outcome, selfie).result;
@@ -44,8 +76,20 @@ export async function finishDiditWebhook(
   const charge = chargeForDiditOutcome(result.outcome);
   if (charge !== "no_charge" && charge !== "unbilled") throw new Error("didit_charge_unexpected");
   const located = await locateIdvInquiry(db, result);
-  if (located === "unknown" || located === "conflict") return located;
-  if (!diditRuntimeAllowed(env) || !await shopIsTest(db, located.shopId)) return "unknown";
+  if (located === "unknown") return "unknown";
+  if (located === "conflict") {
+    const shop = await auditShop(db, result.providerRef);
+    if (shop) await writeDiditAudit(db, shop, "idv.didit_webhook_refused", { reason: "vendor_data_conflict" });
+    return "conflict";
+  }
+  if (!diditRuntimeAllowed(env)) {
+    await writeDiditAudit(db, located, "idv.didit_webhook_refused", { reason: "runtime_locked" });
+    return "unknown";
+  }
+  if (!await shopIsTest(db, located.shopId)) {
+    await writeDiditAudit(db, located, "idv.didit_webhook_refused", { reason: "not_test_shop" });
+    return "unknown";
+  }
   const next = statusWord(result);
   return db.transaction(async (tx) => {
     const q = dbQuery(tx);
@@ -69,6 +113,11 @@ export async function finishDiditWebhook(
       [next, result.provider, result.providerRef],
     );
     /* A later status that does not replace the stored one writes no check row. */
+    await writeDiditAudit(tx as Db, located, "idv.didit_result", {
+      outcome: result.outcome,
+      referenceId: located.referenceId,
+      applied: updated.rows.length > 0,
+    });
     if (updated.rows.length && RECORDABLE.has(result.outcome) && located.clientId) {
       const tier = located.requestedTier === "4" ? "4" : "3";
       await writePersonaRecord(tx, {

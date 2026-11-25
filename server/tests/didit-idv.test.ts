@@ -32,6 +32,17 @@ const NOW = 1_700_000_000_000;
 const FIXTURE = readFileSync(join(import.meta.dirname, "fixtures/didit/status-updated.json"));
 const SESSION = "11111111-2222-4333-8444-555555555555";
 
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value !== null && typeof value === "object") {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) out[key] = sortKeys(source[key]);
+    return out;
+  }
+  return value;
+}
+
 function mac(body: Buffer, secret = SECRET) {
   return createHmac("sha256", secret).update(body).digest("hex");
 }
@@ -125,7 +136,24 @@ describe("didit provider", () => {
   it("rejects a stale timestamp and a missing signature", () => {
     const check = provider();
     expect(check.verifyWebhook({ rawBody: FIXTURE, headers: headers(FIXTURE, seconds - 301), now: NOW })).toBe(false);
+    expect(check.verifyWebhook({ rawBody: FIXTURE, headers: headers(FIXTURE, seconds + 301), now: NOW })).toBe(false);
     expect(check.verifyWebhook({ rawBody: FIXTURE, headers: { "x-timestamp": String(seconds) }, now: NOW })).toBe(false);
+  });
+
+  it("accepts the v2 signature without the raw-body header", () => {
+    const check = provider();
+    const canonical = JSON.stringify(sortKeys(JSON.parse(FIXTURE.toString("utf8"))));
+    const v2 = createHmac("sha256", SECRET).update(canonical, "utf8").digest("hex");
+    expect(check.verifyWebhook({
+      rawBody: FIXTURE,
+      headers: { "x-timestamp": String(seconds), "x-signature-v2": v2 },
+      now: NOW,
+    })).toBe(true);
+    expect(check.verifyWebhook({
+      rawBody: FIXTURE,
+      headers: { "x-timestamp": String(seconds), "x-signature-v2": v2.replace(/.$/, "0") },
+      now: NOW,
+    })).toBe(false);
   });
 
   it("compares the signature with timingSafeEqual", () => {
@@ -184,6 +212,11 @@ describe("didit provider", () => {
     expect(createDiditProvider({ ...RENDER_LIVE, DIDIT_LIVE_ALLOWED: "1" })).not.toBeNull();
     expect(diditApiBase({ ...RENDER_LIVE, DIDIT_API_BASE: "http://127.0.0.1:4198" })).toBe("https://verification.didit.me");
     expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "http://127.0.0.1:4198" })).toBe("http://127.0.0.1:4198");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "http://verification.didit.me" })).toBe("https://verification.didit.me");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "https://user:secret@verification.didit.me" })).toBe("https://verification.didit.me");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "https://verification.didit.me:8443" })).toBe("https://verification.didit.me");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "https://verification.didit.me:443/v3" })).toBe("https://verification.didit.me");
+    expect(diditApiBase({ ...ENV, DIDIT_API_BASE: "http://user:secret@127.0.0.1:4198" })).toBe("https://verification.didit.me");
     expect(createDiditProvider({
       ...ENV,
       RENDER: "true",
@@ -346,8 +379,17 @@ describe("didit routes", () => {
     expect(file.statusCode, file.body).toBe(200);
     const shown = file.json() as { standing: { chip: string }; records: Array<{ statusLine: string }> };
     expect(shown.standing.chip).toBe("Missing ID");
-    expect(shown.records[0]?.statusLine).toBe("Missing ID");
+    expect(shown.records[0]?.statusLine).toContain("ID checked");
+    expect(shown.records[0]?.statusLine).not.toBe("Missing ID");
     expect(file.body).not.toContain("ID verified, scan and selfie");
+    const audited = await handle.db.execute(sql`
+      SELECT action, detail::text AS detail FROM audit_events
+       WHERE action = 'idv.didit_result' AND detail->>'referenceId' = 'ref-didit-1'
+    `);
+    expect(audited.rows).toHaveLength(1);
+    expect(JSON.stringify(audited.rows)).not.toContain("Fixture Person");
+    expect(JSON.stringify(audited.rows)).not.toContain(SECRET);
+    expect(JSON.stringify(audited.rows)).not.toContain("FIXTURE0001");
   });
 
   it("does not record a pass when a later Approved status is skipped", async () => {
@@ -446,6 +488,42 @@ describe("didit routes", () => {
     expect(rows.rows).toEqual([]);
     const status = await handle.db.execute(sql`SELECT status FROM idv_inquiries WHERE provider_ref = ${session}`);
     expect(status.rows[0]).toMatchObject({ status: "starting" });
+    const refused = await handle.db.execute(sql`
+      SELECT detail->>'reason' AS reason FROM audit_events
+       WHERE action = 'idv.didit_webhook_refused' AND branch_id = ${DEMO.branchId}
+       ORDER BY at DESC LIMIT 2
+    `);
+    expect(refused.rows.map((row) => row.reason).sort()).toEqual(["not_test_shop", "runtime_locked"]);
+    await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'failed' WHERE provider_ref = ${session}`);
+  });
+
+  it("rejects a vendor_data value that is not the stored reference", async () => {
+    const session = "77777777-8888-4999-8aaa-bbbbbbbbbbbb";
+    await handle.db.execute(sql`
+      INSERT INTO idv_inquiries (reference_id, shop_id, branch_id, teller_id, provider, provider_ref, client_id, requested_tier, status)
+      VALUES ('ref-stored', ${DEMO.legalEntityId}, ${DEMO.branchId}, 'm.costa', 'didit', ${session}, 'cli-didit', '3', 'starting')
+    `);
+    const raw = Buffer.from(JSON.stringify({
+      webhook_type: "status.updated",
+      session_id: session,
+      status: "Declined",
+      vendor_data: "ref-other",
+    }));
+    const res = await app.inject({
+      method: "POST", url: "/api/webhooks/idv/didit", payload: raw.toString("utf8"),
+      headers: headers(raw, Math.floor(Date.now() / 1000)),
+    });
+    expect(res.statusCode, res.body).toBe(400);
+    expect(res.json()).toEqual({ error: "invalid_webhook" });
+    const events = await handle.db.execute(sql`SELECT event_id FROM idv_events WHERE provider_ref = ${session}`);
+    expect(events.rows).toEqual([]);
+    const refused = await handle.db.execute(sql`
+      SELECT detail->>'reason' AS reason FROM audit_events
+       WHERE action = 'idv.didit_webhook_refused'
+       ORDER BY at DESC LIMIT 1
+    `);
+    expect(refused.rows[0]).toMatchObject({ reason: "vendor_data_conflict" });
+    expect(JSON.stringify(refused.rows)).not.toContain("ref-other");
     await handle.db.execute(sql`UPDATE idv_inquiries SET status = 'failed' WHERE provider_ref = ${session}`);
   });
 

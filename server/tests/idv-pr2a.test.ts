@@ -1083,6 +1083,11 @@ describe("id check records", () => {
     expect(row.rows[0]?.document_number_last4).toBeNull();
     expect(row.rows[0]?.number_unavailable).toBe(true);
     expect(JSON.stringify(row.rows[0])).not.toContain(NUMBER);
+    const file = await app.inject({ method: "GET", url: `/api/idv/clients/${clientId}/checks`, cookies: cookies.teller });
+    expect(file.statusCode, file.body).toBe(200);
+    const personaLine = file.json().records[0].statusLine as string;
+    expect(personaLine).toContain("ID verified, scan and selfie");
+    expect(personaLine).not.toBe("Missing ID");
     const status = await dbQuery(handle.db).query("SELECT status FROM idv_inquiries WHERE provider_ref = $1", [started.inquiryId]);
     expect(status.rows[0]?.status).not.toBe("in progress");
     expect(status.rows[0]?.status).not.toBe("starting");

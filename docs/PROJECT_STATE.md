@@ -5,7 +5,8 @@ default and still handles its own webhook. A shop stays on Persona, with
 checks off, until an owner of a test shop selects Didit. A shop that is not
 a test shop cannot select it. On Render (`RENDER` exactly `true`) Didit stays
 unselectable unless the process is staging or `DIDIT_LIVE_ALLOWED` is exactly
-`1`, and that variable stays unset. A webhook also re-checks the test shop
+`1`, and that variable stays unset. Off Render means `RENDER` is not exactly
+`true`. A webhook also re-checks the test shop
 and that lock before it writes. Missing
 `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, or `DIDIT_WORKFLOW_ID` answers 503
 `not_available`. Tier 3 uses the Basic KYC workflow. Tier 4 is off even

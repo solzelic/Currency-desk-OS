@@ -73,6 +73,8 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
     }
     const raw = rawBuffer(req.rawBody);
     const headers = req.headers as Record<string, string | string[] | undefined>;
+    /* Unsigned, stale, and unknown-session Didit refusals are not audited.
+       audit_events needs a shop, and an unsigned body is not a shop. */
     if (!raw || !provider.verifyWebhook({ rawBody: raw, headers })) {
       return reply.code(401).send({ error: "invalid_signature" });
     }

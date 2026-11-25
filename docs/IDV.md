@@ -25,9 +25,11 @@ Didit's sandbox workflow and is not a secret.
 If the key, the webhook secret, or the tier 3 workflow id is missing, a Didit
 start and the Didit webhook answer `503` `{ "error": "not_available" }`.
 
-`DIDIT_API_BASE` is optional and is not set on Render. It is accepted only
-for `https://verification.didit.me` or a loopback URL off a live host, so a
-local stub can stand in. Any other value is ignored.
+`DIDIT_API_BASE` is optional and is not set on Render. The public value must
+be `https://verification.didit.me` with no userinfo and with port 443 or no
+port. A loopback URL is accepted only off Render or on staging, so a local
+stub can stand in. Off Render means `RENDER` is not exactly `true`. Any other
+value is ignored.
 
 ## What a check does
 
