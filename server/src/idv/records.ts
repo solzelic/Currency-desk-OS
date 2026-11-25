@@ -406,7 +406,7 @@ async function latestFullCheck(q: Q, actor: DeskActor, clientId: string): Promis
        FROM idv_check_records r
       WHERE tenant_id = $1 AND legal_entity_id = $2 AND client_id = $3
         AND result = 'pass'
-        AND method IN ('in_person', 'id_and_selfie', 'id_selfie_database', 'counter_id_scan', 'counter_full')
+        AND method IN ('in_person', 'id_and_selfie', 'id_selfie_database', 'counter_id_scan', 'counter_full', 'customer_preverify')
         AND NOT EXISTS (
           SELECT 1 FROM idv_record_supersessions s
            WHERE s.record_id = r.record_id AND s.tenant_id = r.tenant_id AND s.legal_entity_id = r.legal_entity_id
@@ -652,7 +652,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
     const result = String(row.result);
     const docType = str(row, "document_type");
     const typeRow = resolveIdType(docType);
-    const scanMethod = method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full";
+    const scanMethod = method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full" || method === "customer_preverify";
     const line = expiredStamp
       ?? (result === "declined" ? notPassedLine(stamp.date)
         : result === "needs_review" ? underReviewLine(stamp.date)
@@ -740,10 +740,33 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       attestationTime: attestedAt?.time ?? null,
     };
   });
+  const pendingRows = await q.query(
+    `SELECT provider_ref
+       FROM idv_inquiries
+      WHERE shop_id = $1 AND client_id = $2 AND provider = 'didit'
+        AND check_method = 'customer_preverify'
+        AND status IN ('starting', 'in progress')
+        AND NOT EXISTS (
+          SELECT 1 FROM idv_check_records r
+           WHERE r.legal_entity_id = idv_inquiries.shop_id
+             AND r.persona_inquiry_id = idv_inquiries.provider_ref
+             AND r.result IN ('pass', 'declined', 'needs_review', 'method_not_completed', 'expired')
+        )
+      ORDER BY created_at DESC
+      LIMIT 3`,
+    [actor.legalEntityId, clientId],
+  );
+  const pending = pendingRows.rows.map((row) => ({
+    providerRef: String(row.provider_ref),
+    method: "customer_preverify" as const,
+    methodLabel: methodLabel("customer_preverify", "didit"),
+    line: "Waiting for the customer.",
+  }));
   return {
     ok: true as const,
     body: {
       clientId,
+      pending,
       detail: DETAIL_LINE,
       advice: earlier && earlier.advise && !earlier.due ? ADVISE_LINE : null,
       due: earlier?.due ? DUE_LINE : null,
@@ -943,7 +966,7 @@ function statusLine(
   if (result === "pass" && method === "in_person") return idCheckedLine(date, METHOD_LABEL.in_person, false);
   /* Persona keeps the scan-and-selfie badge it had before Didit.
      A Didit pass uses the check line. It does not say Missing ID. */
-  if (result === "pass" && (method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full")) {
+  if (result === "pass" && (method === "id_and_selfie" || method === "counter_id_scan" || method === "counter_full" || method === "customer_preverify")) {
     if (provider === "didit") return checkedLine;
     if (method === "id_and_selfie") return verifiedScanChip(date, test);
   }

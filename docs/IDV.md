@@ -75,6 +75,9 @@ and the DPA are signed. These five items are still open:
    When `DIDIT_DOC_WORKFLOW_ID` is set, the customer file offers "Scan the ID
    at the counter" first. That scan stays on the shop device. There is no
    selfie and no hand-off. The teller then confirms the face matches the photo.
+   "Send to the customer to pre-verify" shows a QR code and a copy button for
+   the Basic KYC link. The desk does not text or email it. The file says it
+   is waiting until the webhook writes the result.
 
 ## References
 

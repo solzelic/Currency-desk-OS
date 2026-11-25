@@ -65,7 +65,7 @@ async function auditShop(db: Db, providerRef: string) {
 }
 
 function storedMethod(value: string | null): CheckMethod {
-  if (value === "counter_id_scan" || value === "counter_full") return value;
+  if (value === "counter_id_scan" || value === "counter_full" || value === "customer_preverify") return value;
   return "id_and_selfie";
 }
 
@@ -265,7 +265,7 @@ export async function finishDiditWebhook(
       templateId: null,
       templateVersion: null,
       provider: "didit",
-      method: method === "counter_id_scan" ? "counter_id_scan" : method === "counter_full" ? "counter_full" : "id_and_selfie",
+      method,
       databaseStep: tier === "4" ? "off" : "not_applicable",
     });
     return "stored" as const;

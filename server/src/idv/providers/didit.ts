@@ -296,7 +296,9 @@ export async function startDiditCheck(
   const env = deps.env ?? process.env;
   const tier = input.tier ?? "3";
   if (tier === "1" || tier === "2" || tier === "4") throw new Error("tier_unavailable");
-  const method = input.method === "counter_id_scan" ? "counter_id_scan" : input.method === "counter_full" ? "counter_full" : "id_and_selfie";
+  /* customer_preverify and counter_full use the Basic KYC workflow.
+     Only counter_id_scan uses the document workflow. */
+  const method = input.method === "counter_id_scan" ? "counter_id_scan" : "basic";
   let workflowId = "";
   if (method === "counter_id_scan") {
     const doc = diditDocWorkflow(env);

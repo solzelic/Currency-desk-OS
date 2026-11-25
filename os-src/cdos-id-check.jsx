@@ -165,6 +165,8 @@
     const [scanKind, setScanKind] = useState("");
     const [faceCompared, setFaceCompared] = useState(false);
     const [sdkOn, setSdkOn] = useState(false);
+    const [linkQr, setLinkQr] = useState(null);
+    const [copied, setCopied] = useState(false);
     const scanMounted = useRef(false);
 
     useEffect(() => holdSheet(), []);
@@ -178,7 +180,7 @@
     }, [clientId]);
 
     useEffect(() => {
-      if ((step !== "link" && step !== "wait") || !inquiryId) return undefined;
+      if ((step !== "link" && step !== "wait" && step !== "share") || !inquiryId) return undefined;
       let live = true;
       let timer = 0;
       const waitMs = (window.CDOS && window.CDOS.idCheckWaitMs) || 90000;
@@ -211,9 +213,10 @@
     const docScan = !!(copy && copy.docScan) && !counter;
     const pick = (next) => {
       setError("");
-      setTier(next === "scan" || next === "full" ? "3" : next);
+      setTier(next === "scan" || next === "full" || next === "remote" ? "3" : next);
       if (next === "scan") setScanKind("counter_id_scan");
       else if (next === "full") setScanKind("counter_full");
+      else if (next === "remote") setScanKind("customer_preverify");
       else setScanKind("");
       if (next === "1") setStep("inperson");
       else if (next === "2") {
@@ -222,7 +225,7 @@
         setStep(pack.due || !full ? "blocked" : "returning");
       } else if (next === "4") return;
       else if (next === "scan") setStep("noselfie");
-      else if (next === "full") setStep("notice");
+      else if (next === "full" || next === "remote") setStep("notice");
       else setStep("notice");
     };
     useEffect(() => {
@@ -260,11 +263,12 @@
         setInquiryId(started.providerRef);
         setConsentId(saved.consentId);
         setLinkUrl(safeCheckLink(link.url));
+        setLinkQr(Array.isArray(link.qr) ? link.qr : null);
         setDatabaseMessage(started.message || "");
         setScanKind(chosen);
         scanMounted.current = false;
         setSdkOn(false);
-        setStep(chosen === "counter_id_scan" || chosen === "counter_full" ? "scan" : "link");
+        setStep(chosen === "customer_preverify" ? "share" : chosen === "counter_id_scan" || chosen === "counter_full" ? "scan" : "link");
       } catch (err) {
         if (err && (err.code === "consent_copy_changed" || /notice changed/i.test((err && err.message) || ""))) {
           const fresh = await client.copy().catch(() => null);
@@ -417,7 +421,10 @@
           ? { id: "scan", label: "Scan the ID at the counter", note: "The teller scans the ID on this device. No selfie. No hand-off." }
           : { id: "3", label: "ID and selfie", note: "Document check and a selfie." };
       const more = [];
-      if (docScan) more.push({ id: "full", label: "Full check at the counter", note: "ID, selfie, and face match on this device." });
+      if (copy.provider === "didit" && !counter) {
+        more.push({ id: "full", label: "Full check at the counter", note: "ID, selfie, and face match on this device." });
+        more.push({ id: "remote", label: "Send to the customer to pre-verify", note: "ID, liveness, and face match on their phone." });
+      }
       if (!counter && primary.id !== "1") more.push({ id: "1", label: "In person", note: "Staff inspect the original ID. No photo is taken." });
       if (!counter && full) more.push({ id: "2", label: "Returning client", note: "Reuse the check on file." });
       return shell(counter ? (copy.quebec ? "id-check-quebec" : "id-check-counter") : "id-check-chooser", "Choose the check", (<div className="space-y-3" style={{ paddingBottom: 16 }}>
@@ -492,6 +499,23 @@
         {!sdkOn && linkUrl && <a data-testid="id-check-scan-open" href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-[13px]" style={{ color: CD.ink }}>Open the scan on this device</a>}
         {step === "scan" && <button type="button" data-testid="id-check-scan-done" onClick={() => setStep(counterScan ? "attest" : "wait")} style={btnStyle(false)}>{counterScan ? "The ID is scanned" : "The check is done"}</button>}
         {step === "wait" && <div data-testid="id-check-result-wait" className="space-y-2" aria-busy="true"><Skel width="58%" /><Skel width="36%" /></div>}
+      </div>));
+    }
+    /* TODO: text and email when a send path exists for this link.
+       Twilio and Resend send other messages. They do not send an ID check link. */
+    if (step === "share") {
+      const cells = Array.isArray(linkQr) ? linkQr : [];
+      const n = cells.length;
+      return shell("id-check-share", "Send to the customer", (<div className="space-y-3">
+        <div data-testid="id-check-share-copy" className="text-[13px]" style={{ color: CD.ink }}>The customer finishes this on their phone. ID, liveness, and a face match. The result shows on this file when it comes back.</div>
+        {n > 0 && <div data-testid="id-check-qr" aria-label="QR code for the ID check" style={{ display: "grid", gridTemplateColumns: `repeat(${n}, 6px)`, width: n * 6, background: "#fff", padding: 8 }}>
+          {cells.map((row, y) => row.map((on, x) => <span key={y + "-" + x} style={{ width: 6, height: 6, background: on ? "#111" : "#fff" }} />))}
+        </div>}
+        {linkUrl
+          ? <div data-testid="id-check-link-url" className="text-[12.5px] break-all" style={{ color: CD.ink }}>{linkUrl}</div>
+          : <div className="text-[13px]" style={{ color: CD.ink }}>The link could not be opened.</div>}
+        <button type="button" data-testid="id-check-copy-link" disabled={!linkUrl} onClick={() => { if (linkUrl && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(linkUrl).then(() => setCopied(true)).catch(() => setCopied(false)); }} style={btnStyle(!linkUrl)}>{copied ? "Copied" : "Copy the link"}</button>
+        <div data-testid="id-check-pending" className="text-[13px]" style={{ color: CD.ink }}>Waiting for the customer. Sent to the customer to pre-verify.</div>
       </div>));
     }
     if (step === "attest") return shell("id-check-attest", "Compare the face", (<div className="space-y-3">
@@ -703,6 +727,7 @@
       <div className="text-[10px] uppercase tracking-widest mb-1.5" style={{ color: CD.faint, fontFamily: "Space Mono, monospace" }}>Identity check</div>
       <div data-testid="id-check-badge" className="text-[12.5px]" style={{ color: CD.ink }}>{primary}</div>
       {secondary && <div data-testid="id-check-record-line" className="text-[12.5px] mt-1" style={{ color: CD.ink }}>{secondary}</div>}
+      {pack && pack.pending && pack.pending[0] && <div data-testid="id-check-file-pending" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.pending[0].line} {pack.pending[0].methodLabel}</div>}
       {pack && pack.detail && latest && <div className="text-[11.5px] mt-1.5" style={{ color: CD.mute }}>{pack.detail}</div>}
       {pack && pack.advice && <div data-testid="id-check-advice" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.advice}</div>}
       {pack && pack.due && <div data-testid="id-check-due" className="text-[12.5px] mt-1.5" style={{ color: CD.ink }}>{pack.due}</div>}
