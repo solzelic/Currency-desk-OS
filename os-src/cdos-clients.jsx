@@ -203,8 +203,10 @@
         /* Add contact closes as soon as create answers. Record the ID
            still waits, and the document is stored before the list is read. */
         if (opts && opts.wait === false) {
-          void applyDocument(created.clientId, rec).catch(() => {});
-          void load(true).catch(() => {});
+          void applyDocument(created.clientId, rec).then(() => load(true)).catch((err) => {
+            trouble = (err && err.message) || "The ID was not saved on this contact.";
+            announce();
+          });
           return created;
         }
         await applyDocument(created.clientId, rec);

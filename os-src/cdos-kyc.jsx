@@ -43,7 +43,7 @@
   }
   const getPartnerRate = () => RATE_ADJ;
   const stampNow = () => new Date().toLocaleString('en-CA', { hour12: false }).replace(',', '');
-  const money = (n) => '$' + (+n || 0).toFixed(2);
+  const money = (n) => `${(+n || 0).toFixed(2)} CAD`;
   // house default risk for brand-new contacts (Settings → Clients · KYC)
   const storedSettings = () => { try { return JSON.parse(localStorage.getItem('cdos_settings') || '{}') || {}; } catch (e) { return {}; } };
   const houseRisk = () => storedSettings().defaultClientRisk || 'Normal';
@@ -57,9 +57,9 @@
   //   • verify — does not authenticate an ID.
   //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.', price: 3.99, channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.', price: 6.99, channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.', price: 14.99, channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.', channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.', channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.', channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };
@@ -201,7 +201,7 @@
     const t = tmpl(template);
     /* Persona is not connected. Storing a check would let a later paint
        read it as a verification that happened. Nothing is written. */
-    return { id: null, subject, kind: kind || 'individual', template, templateLabel: t.label, price: 0, channel: channel || 'none', contact: contact || {}, by: by || 'Desk', requestedAt: stampNow(), ms: Date.now(), status: 'not_connected', result: null, notConnected: true };
+    return { id: null, subject, kind: kind || 'individual', template, templateLabel: t.label, channel: channel || 'none', contact: contact || {}, by: by || 'Desk', requestedAt: stampNow(), ms: Date.now(), status: 'not_connected', result: null, notConnected: true };
   }
   const checksFor = (name) => Object.values(STORE).filter(c => c.subject === name).sort((a, b) => b.ms - a.ms);
   function summary() {
@@ -239,7 +239,7 @@
           <div style="text-align:right;font-size:11px;color:${P.mute};line-height:1.8;"><div style="display:inline-flex;align-items:center;gap:6px;background:${dm.bg};color:${dm.c};font-family:'Space Mono',monospace;font-weight:700;padding:4px 11px;border-radius:6px;">● ${esc(dm.label.toUpperCase())}</div><div style="margin-top:6px;">Ref <b style="color:${P.ink};font-family:'Space Mono',monospace;">${esc(r.reportRef || '')}</b></div><div>${esc(r.completedAt || '')}</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:${P.line};border:1px solid ${P.line};margin-bottom:20px;">
-          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by], ['Billed', money(check.price)]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
+          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
         </div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:${P.faint};font-family:'Space Mono',monospace;margin-bottom:6px;">Checks performed</div>
         <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
@@ -331,10 +331,9 @@
               </div>
               <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{tt.tagline}</div>
             </div>
-            <div className="text-right flex-none"><div className="text-[14px] font-bold" style={{ color: on ? KYC_BLUE : CD.ink, fontVariantNumeric: 'tabular-nums' }}>{money(net(tt.price))}</div><div className="text-[9.5px]" style={{ color: CD.faint }}>per check</div></div>
           </button>); })}
       </div>
-      {!verified && <div className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> <span>First contact needs a full identity check. The $3.99 Quick check unlocks once {String(subject).split(/\s+/)[0]} is verified</span></div>}
+      {!verified && <div className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: CD.faint }}><Ic n="lock" s={12} c={CD.faint} /> <span>First contact needs a full identity check. Quick check unlocks once {String(subject).split(/\s+/)[0]} is verified</span></div>}
       <div className="text-[10px] uppercase tracking-widest mt-4 mb-2" style={{ color: CD.faint, fontFamily: 'Space Mono, monospace' }}>Delivery</div>
       {(<div className="p-3" style={{ background: CD.panel, border: `1px solid ${CD.line}`, borderRadius: 12 }}>
         <div className="inline-flex mb-2.5" style={{ border: `1px solid ${CD.line}`, borderRadius: 8, overflow: 'hidden' }}>
@@ -428,7 +427,7 @@
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2"><span className="text-[12.5px] font-semibold" style={{ color: CD.ink }}>{t.label}</span><span className="text-[11px] font-semibold" style={{ color: pm.c }}>{pm.label}</span></div>
         <div className="text-[11px] flex items-center gap-1.5 flex-wrap" style={{ color: CD.mute }}>
-          <span>{check.requestedAt}</span><span style={{ color: CD.faint }}>·</span><span>{money(check.price)}</span>
+          <span>{check.requestedAt}</span>
           {check.status === 'completed' && check.result.reportRef && <><span style={{ color: CD.faint }}>·</span><span style={{ fontFamily: 'Space Mono, monospace' }}>{check.result.reportRef}</span></>}
         </div>
       </div>
@@ -784,7 +783,7 @@
         {/* footer */}
         <div className="flex items-center gap-2 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
           {step === 'id' && (<>
-            <button onClick={() => setStep('details')} className="text-[12px] font-medium" style={{ color: CD.mute }}>Skip — add ID later</button>
+            <button onClick={() => setStep('details')} className="text-[12px] font-medium" style={{ color: CD.mute }}>Skip. Add the ID later</button>
             <div className="flex-1" />
             <button onClick={() => setStep('details')} disabled={!photo} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: photo ? CD.ink : 'var(--cd-disabled)', borderRadius: 9, cursor: photo ? 'pointer' : 'not-allowed' }}>Continue <Ic n="chev" s={14} c="var(--cd-on-ink)" /></button>
           </>)}

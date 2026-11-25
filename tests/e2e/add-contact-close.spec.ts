@@ -1,9 +1,9 @@
 /* Add contact closes when the file is created, not after the list
-   reload. The old priced verify step is gone. A mounted PIN pad does
-   not take digits typed into a field. */
+   reload. The old priced verify step is gone. Digits typed while the
+   PIN pad is the top layer never reach a field behind it. */
 import { test, expect, signInAtDesk } from "./fixtures";
 
-test("add contact closes on create and the PIN pad leaves a field alone", async ({ page }) => {
+test("add contact closes on create and the PIN pad keeps digits off the field behind it", async ({ page }) => {
   let created = false;
   await page.route("**/api/clients", async (route) => {
     const req = route.request();
@@ -57,7 +57,7 @@ test("add contact closes on create and the PIN pad leaves a field alone", async 
   const modal = page.getByTestId("add-contact");
   await expect(modal).toBeVisible();
   await expect(modal).not.toContainText("$");
-  await page.getByRole("button", { name: "Skip — add ID later" }).click();
+  await page.getByRole("button", { name: "Skip. Add the ID later" }).click();
   await page.getByPlaceholder("Jane Doe").fill("Ada Fast");
   await expect(modal).not.toContainText("$");
   const posted = page.waitForResponse((res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/api/clients");
@@ -80,7 +80,10 @@ test("add contact closes on create and the PIN pad leaves a field alone", async 
     }));
   });
   const field = page.locator("#digit-field");
+  await expect(page.locator("[data-pin-pad=open]")).toBeVisible();
+  await field.fill("void reason");
   await field.focus();
   await page.keyboard.type("1948");
-  await expect(field).toHaveValue("1948");
+  await page.keyboard.press("Backspace");
+  await expect(field).toHaveValue("void reason");
 });

@@ -2399,6 +2399,8 @@
     const [shake, setShake] = React.useState(false);
     const [lockedOut, setLockedOut] = React.useState(false);
     const lockedRef = React.useRef(false);
+    const padRef = React.useRef(null);
+    const cardRef = React.useRef(null);
     const ini = nm => (nm || '?').split(/[ .]+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase();
     React.useEffect(() => {
       if (!document.getElementById('cdos-pin-kf')) {
@@ -2536,37 +2538,33 @@
       setPin(p => p.slice(0, -1));
     };
     React.useEffect(() => {
-      const typing = target => {
-        if (!target || typeof target.tagName !== "string") return false;
-        const tag = target.tagName.toUpperCase();
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-        return target.isContentEditable === true;
-      };
+      const previous = document.activeElement;
+      const restore = previous && previous !== document.body && typeof previous.focus === "function" ? previous : null;
+      if (previous && typeof previous.blur === "function") previous.blur();
+      if (cardRef.current && typeof cardRef.current.focus === "function") cardRef.current.focus();
       const padOnTop = () => {
-        const pad = document.querySelector("[data-pin-pad]");
-        if (!pad) return false;
+        const pad = padRef.current;
+        if (!pad || !pad.isConnected) return false;
         const top = document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2));
         return !!(top && (top === pad || pad.contains(top)));
       };
       const h = e => {
-        if (typing(e.target) || !padOnTop()) return;
-        if (e.key === 'Escape') {
+        if (!padOnTop()) return;
+        if (e.key === "Escape") {
           onCancel && onCancel();
           return;
         }
         if (lockedRef.current) return;
-        if (e.key === 'Backspace') {
-          e.preventDefault();
-          back();
-          return;
-        }
-        if (/^[0-9]$/.test(e.key)) {
-          e.preventDefault();
-          press(e.key);
-        }
+        if (e.key !== "Backspace" && !/^[0-9]$/.test(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Backspace") back();else press(e.key);
       };
-      document.addEventListener('keydown', h);
-      return () => document.removeEventListener('keydown', h);
+      document.addEventListener("keydown", h, true);
+      return () => {
+        document.removeEventListener("keydown", h, true);
+        if (restore && restore.isConnected && typeof restore.focus === "function") restore.focus();
+      };
     }, []);
     const keyBtn = (label, onClick, kind, face) => {
       const word = face === 'word';
@@ -2603,6 +2601,7 @@
       }, label);
     };
     return ReactDOM.createPortal(/*#__PURE__*/React.createElement("div", {
+      ref: padRef,
       "data-pin-pad": "open",
       style: {
         position: 'fixed',
@@ -2618,6 +2617,8 @@
       },
       onMouseDown: () => onCancel && onCancel()
     }, /*#__PURE__*/React.createElement("div", {
+      ref: cardRef,
+      tabIndex: -1,
       onMouseDown: e => e.stopPropagation(),
       style: {
         width: '100%',
@@ -2628,6 +2629,7 @@
         boxShadow: '0 30px 70px var(--cd-scrim)',
         padding: '24px 22px 18px',
         textAlign: 'center',
+        outline: 'none',
         animation: shake ? 'cdosPinShake .42s' : 'none'
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -3439,16 +3441,25 @@
       { "content-type": "application/json" },
       activeWorkspaceId ? { "x-workspace-id": activeWorkspaceId } : null,
       (options && options.headers) || {});
+    var timeoutMs = init.timeoutMs;
+    delete init.timeoutMs;
     var timer = 0;
     var controller = null;
-    if (!init.signal && typeof AbortController === "function") {
+    var timedOut = false;
+    if (timeoutMs && !init.signal && typeof AbortController === "function") {
       controller = new AbortController();
       init.signal = controller.signal;
-      timer = setTimeout(function () { controller.abort(); }, 15000);
+      timer = setTimeout(function () { timedOut = true; controller.abort(); }, timeoutMs);
     }
     try {
       response = await fetch(path, init);
     } catch (cause) {
+      if (timedOut) {
+        var timed = new Error("The desk did not answer in time. Check the client list before trying again.");
+        timed.code = "TIMEOUT";
+        timed.cause = cause;
+        throw timed;
+      }
       var networkError = new Error("CurrencyDesk could not reach the ledger server. Nothing was posted.");
       networkError.code = "NETWORK_ERROR";
       networkError.cause = cause;
@@ -4450,7 +4461,7 @@
        being quietly wrong about somebody's compliance history. */
     lookup: function (name) { return request("/api/clients/lookup?name=" + encodeURIComponent(name)); },
     create: function (input) {
-      return request("/api/clients", { method: "POST", body: JSON.stringify(input) });
+      return request("/api/clients", { method: "POST", body: JSON.stringify(input), timeoutMs: 15000 });
     },
     update: function (clientId, changes) {
       return request("/api/clients/" + encodeURIComponent(clientId), {
@@ -13449,7 +13460,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
       }, /*#__PURE__*/React.createElement(Seg, {
         value: settings.largeTxCheck || 'off',
         onPick: v => set('largeTxCheck', v, `large-deal check ${v}`),
-        opts: [['off', 'Off'], ['quick', 'Quick · $3.99'], ['verify', 'Verified · $6.99'], ['plus', 'Verified Plus · $14.99']]
+        opts: [['off', 'Off'], ['quick', 'Quick'], ['verify', 'Verified'], ['plus', 'Verified Plus']]
       })), /*#__PURE__*/React.createElement(Row, {
         title: "Require ID photo on file",
         desc: "Contacts without a stored ID scan are flagged \u2014 in Clients \xB7 KYC and here."
@@ -25235,8 +25246,10 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
         /* Add contact closes as soon as create answers. Record the ID
            still waits, and the document is stored before the list is read. */
         if (opts && opts.wait === false) {
-          void applyDocument(created.clientId, rec).catch(() => {});
-          void load(true).catch(() => {});
+          void applyDocument(created.clientId, rec).then(() => load(true)).catch(err => {
+            trouble = err && err.message || "The ID was not saved on this contact.";
+            announce();
+          });
           return created;
         }
         await applyDocument(created.clientId, rec);
@@ -50741,7 +50754,7 @@ ${(filing.map || []).map(blockHTML).join('')}
   const stampNow = () => new Date().toLocaleString('en-CA', {
     hour12: false
   }).replace(',', '');
-  const money = n => '$' + (+n || 0).toFixed(2);
+  const money = n => `${(+n || 0).toFixed(2)} CAD`;
   // house default risk for brand-new contacts (Settings → Clients · KYC)
   const storedSettings = () => {
     try {
@@ -50769,7 +50782,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     id: 'quick',
     label: 'Quick check',
     tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.',
-    price: 3.99,
     channel: 'instant',
     icon: 'search',
     idv: false,
@@ -50780,7 +50792,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     id: 'verify',
     label: 'Verified',
     tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.',
-    price: 6.99,
     channel: 'link',
     icon: 'id',
     idv: true,
@@ -50791,7 +50802,6 @@ ${(filing.map || []).map(blockHTML).join('')}
     id: 'plus',
     label: 'Verified Plus',
     tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.',
-    price: 14.99,
     channel: 'link',
     icon: 'shield',
     idv: true,
@@ -51041,7 +51051,6 @@ ${(filing.map || []).map(blockHTML).join('')}
       kind: kind || 'individual',
       template,
       templateLabel: t.label,
-      price: 0,
       channel: channel || 'none',
       contact: contact || {},
       by: by || 'Desk',
@@ -51103,7 +51112,7 @@ ${(filing.map || []).map(blockHTML).join('')}
           <div style="text-align:right;font-size:11px;color:${P.mute};line-height:1.8;"><div style="display:inline-flex;align-items:center;gap:6px;background:${dm.bg};color:${dm.c};font-family:'Space Mono',monospace;font-weight:700;padding:4px 11px;border-radius:6px;">● ${esc(dm.label.toUpperCase())}</div><div style="margin-top:6px;">Ref <b style="color:${P.ink};font-family:'Space Mono',monospace;">${esc(r.reportRef || '')}</b></div><div>${esc(r.completedAt || '')}</div></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:${P.line};border:1px solid ${P.line};margin-bottom:20px;">
-          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by], ['Billed', money(check.price)]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
+          ${[['Subject', check.subject], ['Type', check.kind], ['Requested by', check.by]].map(k => `<div style="background:#fff;padding:13px 15px;"><div style="font-size:10.5px;color:${P.mute};text-transform:uppercase;letter-spacing:.06em;">${esc(k[0])}</div><div style="font-size:15px;font-weight:700;margin-top:3px;">${esc(k[1])}</div></div>`).join('')}
         </div>
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:${P.faint};font-family:'Space Mono',monospace;margin-bottom:6px;">Checks performed</div>
         <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
@@ -51459,20 +51468,7 @@ ${(filing.map || []).map(blockHTML).join('')}
         style: {
           color: CD.mute
         }
-      }, tt.tagline)), /*#__PURE__*/React.createElement("div", {
-        className: "text-right flex-none"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "text-[14px] font-bold",
-        style: {
-          color: on ? KYC_BLUE : CD.ink,
-          fontVariantNumeric: 'tabular-nums'
-        }
-      }, money(net(tt.price))), /*#__PURE__*/React.createElement("div", {
-        className: "text-[9.5px]",
-        style: {
-          color: CD.faint
-        }
-      }, "per check")));
+      }, tt.tagline)));
     })), !verified && /*#__PURE__*/React.createElement("div", {
       className: "text-[11px] mt-2 flex items-start gap-1.5",
       style: {
@@ -51482,7 +51478,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       n: "lock",
       s: 12,
       c: CD.faint
-    }), " ", /*#__PURE__*/React.createElement("span", null, "First contact needs a full identity check. The $3.99 Quick check unlocks once ", String(subject).split(/\s+/)[0], " is verified")), /*#__PURE__*/React.createElement("div", {
+    }), " ", /*#__PURE__*/React.createElement("span", null, "First contact needs a full identity check. Quick check unlocks once ", String(subject).split(/\s+/)[0], " is verified")), /*#__PURE__*/React.createElement("div", {
       className: "text-[10px] uppercase tracking-widest mt-4 mb-2",
       style: {
         color: CD.faint,
@@ -51849,11 +51845,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, /*#__PURE__*/React.createElement("span", null, check.requestedAt), /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: CD.faint
-      }
-    }, "\xB7"), /*#__PURE__*/React.createElement("span", null, money(check.price)), check.status === 'completed' && check.result.reportRef && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, check.requestedAt), check.status === 'completed' && check.result.reportRef && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
       style: {
         color: CD.faint
       }
@@ -52780,7 +52772,7 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.mute
       }
-    }, "Skip \u2014 add ID later"), /*#__PURE__*/React.createElement("div", {
+    }, "Skip. Add the ID later"), /*#__PURE__*/React.createElement("div", {
       className: "flex-1"
     }), /*#__PURE__*/React.createElement("button", {
       onClick: () => setStep('details'),
@@ -53291,8 +53283,8 @@ ${(filing.map || []).map(blockHTML).join('')}
     padding: "0 16px",
     borderRadius: 8,
     border: "0",
-    background: disabled ? "#E4E1D8" : CD.ink,
-    color: disabled ? "#3F3C36" : "var(--cd-on-ink)",
+    background: disabled ? "var(--cd-disabled)" : CD.ink,
+    color: disabled ? "var(--cd-mute)" : "var(--cd-on-ink)",
     fontFamily: '"Archivo", system-ui, sans-serif',
     fontSize: 14,
     fontWeight: 600,
@@ -54375,6 +54367,22 @@ ${(filing.map || []).map(blockHTML).join('')}
       }
     }, "Nobody has looked at the full number.")))));
   }
+  function retentionSentence(latest, typedOnly) {
+    if (!latest) {
+      return typedOnly ? "ID typed by hand, not checked. Check the ID to record it." : "";
+    }
+    if (latest.numberUnavailable) return "No ID number was recorded for this check.";
+    if (latest.method === "in_person" && latest.maskedNumber) {
+      return "The ID number is stored encrypted. Only the last 4 are shown.";
+    }
+    if (latest.maskedNumber) {
+      return "ID details from this check are kept on the server. Only the last 4 of the number are shown.";
+    }
+    if (latest.method === "id_and_selfie" || latest.method === "id_selfie_database") {
+      return "ID scanned. No ID number stored.";
+    }
+    return "No ID number was recorded for this check.";
+  }
   function Panel({
     clientId,
     canEdit,
@@ -54456,6 +54464,7 @@ ${(filing.map || []).map(blockHTML).join('')}
     const stale = !!(pack && pack.due) || String(primary).indexOf("Expired") === 0;
     const advised = !!(pack && pack.advice);
     const passed = !stale && !advised && (primary === "Check passed" || primary === "Check passed (test)" || latest && (latest.result === "pass" || latest.result === "returning_confirmed"));
+    const sentence = loaded ? retentionSentence(latest, typedOnly) : "";
     const canReveal = !!REVEAL[role];
     const showPhoto = async () => {
       const client = api();
@@ -54570,12 +54579,13 @@ ${(filing.map || []).map(blockHTML).join('')}
       style: {
         color: CD.flag
       }
-    }, note), /*#__PURE__*/React.createElement("div", {
+    }, note), sentence ? /*#__PURE__*/React.createElement("div", {
+      "data-testid": "id-check-retention",
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute
       }
-    }, "ID details from a finished check are kept on the server. This screen shows the last 4 of the number."), latest && latest.photoOnFile && /*#__PURE__*/React.createElement("div", {
+    }, sentence) : null, latest && latest.photoOnFile && /*#__PURE__*/React.createElement("div", {
       className: "text-[11.5px] mt-1.5",
       style: {
         color: CD.mute

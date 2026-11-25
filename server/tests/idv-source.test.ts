@@ -35,7 +35,9 @@ describe("idv source locks", () => {
     expect(panel).not.toContain("Approved");
     expect(panel).toContain("Check passed (test)");
     expect(panel).toContain("Check passed");
-    expect(panel).toContain("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
+    expect(panelFile).toContain("function retentionSentence");
+    expect(panel).toContain("retentionSentence(latest, typedOnly)");
+    expect(panel).not.toContain("ID details from a finished check are kept on the server. This screen shows the last 4 of the number.");
     expect(panel).not.toContain("ID details from this check are not saved on the desk");
   });
 
@@ -64,6 +66,15 @@ describe("idv source locks", () => {
     const text = readFileSync(adapter, "utf8");
     for (const name of names) expect(text).toContain(name);
     expect(hits).toEqual([]);
+  });
+
+  it("paints a disabled ID check button with the muted surface", () => {
+    const source = readFileSync(join(import.meta.dirname, "../../os-src/cdos-id-check.jsx"), "utf8");
+    const style = source.slice(source.indexOf("const btnStyle"), source.indexOf("const ghost"));
+    expect(style).toContain('disabled ? "var(--cd-disabled)"');
+    expect(style).toContain('disabled ? "var(--cd-mute)"');
+    expect(style).not.toContain("#E4E1D8");
+    expect(style).not.toContain("#3F3C36");
   });
 
   it("compares the webhook signature with timingSafeEqual", () => {

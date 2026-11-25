@@ -700,6 +700,7 @@ export async function readClientChecks(db: Db, actor: DeskActor, clientId: strin
       nameOnId: str(row, "name_on_id"),
       documentType: str(row, "document_type"),
       maskedNumber: last ? `•••• ${last}` : null,
+      numberUnavailable: row.number_unavailable === true,
       issuingJurisdiction: str(row, "issuing_jurisdiction"),
       issuingCountry: str(row, "issuing_country"),
       expiryDate: day(row.expiry_date),

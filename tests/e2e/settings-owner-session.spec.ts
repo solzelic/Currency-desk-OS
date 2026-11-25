@@ -109,7 +109,7 @@ async function addContact(page: Page, name: string): Promise<void> {
   await page.getByText(/^Clients · KYC$|^Clients$/).first().click();
   await rendered(page, /New contact|contacts$/);
   await page.getByRole("button", { name: /^New contact$/ }).click();
-  const skipId = page.getByText(/^Skip — add ID later$/);
+  const skipId = page.getByText(/^Skip\. Add the ID later$/);
   if (await skipId.isVisible({ timeout: 5_000 }).catch(() => false)) await skipId.click();
   await page.getByPlaceholder("Jane Doe").fill(name);
   await page.getByRole("button", { name: "Save contact" }).click();
