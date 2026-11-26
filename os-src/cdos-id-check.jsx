@@ -68,6 +68,33 @@
   }
 
   function linesOf(text) { return String(text || "").split("\n").filter(Boolean); }
+  /* The cashier reads which provider this shop uses, and what to do.
+     ready comes from GET /api/idv/clients/:id and from the consent read.
+     A missing shop is not "off": the desk has not heard yet. */
+  function idvProviderCopy(shop) {
+    if (!shop) return "The identity check status is not available.";
+    const didit = shop.provider === "didit";
+    const name = didit ? "Didit" : "Persona";
+    if (shop.ready === "off") return "Automatic ID checks are off. Check the ID in person instead.";
+    if (shop.ready === "privacy_missing") return "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (shop.ready === "not_configured" || shop.ready === "not_test_shop") {
+      return "Automatic ID check with " + name + " is not available for this shop. Check the ID in person instead.";
+    }
+    if (didit) return "Automatic ID check uses Didit (test).";
+    if (shop.sandbox) return "Automatic ID check uses Persona (test).";
+    return "Automatic ID check uses Persona.";
+  }
+  function stopLine(err) {
+    const code = err && err.code;
+    const message = (err && err.message) || "";
+    if (code === "IDV_OFF") return "Identity checks are off for this shop. The owner turns them on in Settings, Clients and KYC.";
+    if (code === "PRIVACY_CONTACT") return message || "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.";
+    if (err && err.status === 503 && (err.reason === "not_available" || code === "not_available")) return "Automatic ID check with Didit is not available for this shop. Check the ID in person instead.";
+    if (code === "IDV_PROVIDER" || code === "IDV_KEY" || code === "IDV_CAP" || code === "IDV_TIER") {
+      return message || "The ID check did not finish. Try again, or check the ID in person.";
+    }
+    return "The ID check did not finish. Try again, or check the ID in person.";
+  }
   function inquiryLine(status) {
     if (status === "Check passed" || status === "Check passed (test)") return status;
     if (status === "starting" || status === "in progress") return "ID check in progress";
@@ -352,7 +379,10 @@
         } else if (err && (err.code === "COUNTER_ONLY" || /Inspect the original ID/.test(err.message || ""))) {
           setCounterLine(err.message || "");
           setStep("chooser");
-        } else setStep("failed");
+        } else {
+          setError(stopLine(err));
+          setStep("failed");
+        }
       }
       setBusy(false);
     };
@@ -505,7 +535,7 @@
               <button type="button" data-testid="id-check-close" onClick={onClose} className="text-[13px] font-medium" style={{ minHeight: 44, padding: "0 16px", border: `1px solid ${CD.line}`, borderRadius: 8, color: CD.ink, background: CD.paper, fontFamily: '"Archivo", system-ui, sans-serif' }}>Close</button>
             </div>
             <div data-testid={testid} className="px-5 py-4">{body}</div>
-            {error && <div role="alert" data-testid="id-check-storage" className="text-[13px] px-5 pb-4" style={{ color: CD.ink }}>{error}</div>}
+            {error && step !== "failed" && step !== "incomplete" && <div role="alert" data-testid="id-check-storage" className="text-[13px] px-5 pb-4" style={{ color: CD.ink }}>{error}</div>}
           </div>
         </div>
       </Portal>
@@ -613,7 +643,7 @@
       </div>));
     }
     if (step === "failed" || step === "incomplete") return shell("id-check-incomplete", "ID check", (<div data-testid="id-check-error" className="space-y-3">
-      <div className="text-[13px]" style={{ color: CD.ink }}>The ID check did not finish. Try again, or check the ID in person.</div>
+      <div className="text-[13px]" style={{ color: CD.ink }}>{error || "The ID check did not finish. Try again, or check the ID in person."}</div>
       <button type="button" data-testid="id-check-error-in-person" onClick={() => { setError(""); setStep("inperson"); }} style={btnStyle(false)}>Check the ID in person</button>
     </div>));
     if (step === "blocked") return shell("id-check-returning-blocked", "Returning client", (<div className="space-y-2">
@@ -936,5 +966,5 @@
     </div>);
   }
 
-  window.CDOS = Object.assign(window.CDOS || {}, { IdCheck: { Panel, Flow, DealBar, Settings, customerSteps, shopFromLine, buttonFeedbackMs: BUTTON_FEEDBACK_MS } });
+  window.CDOS = Object.assign(window.CDOS || {}, { idvProviderCopy, IdCheck: { Panel, Flow, DealBar, Settings, customerSteps, shopFromLine, buttonFeedbackMs: BUTTON_FEEDBACK_MS, stopLine } });
 })();

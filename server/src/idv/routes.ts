@@ -19,7 +19,8 @@ import { personaConnection, personaKeyMatchesRuntime, personaPassLabel } from ".
 import { shopEnvCodeFor } from "./shop-config.js";
 import { clientOnShop, failStarting, latestClientIdvStatus, reserveIdvSlot, setProviderRef } from "./store.js";
 import { finishIdvWebhook } from "./webhook-record.js";
-import { loadShopIdv, templateForTier } from "./records.js";
+import { loadShopIdv, templateForTier, type DeskActor } from "./records.js";
+import { readIdvReady } from "./ready.js";
 import { counterOnly, faceMatchTier, resolveTier } from "./tiers.js";
 
 export const IDV_SHOP_CAP = 5;
@@ -272,11 +273,16 @@ export function registerIdvRoutes(app: FastifyInstance, db: Db, options?: IdvRou
       SELECT checks_enabled, api_key_ref FROM idv_shop_config WHERE shop_id = ${who.legalEntityId} LIMIT 1
     `);
     const configRow = config.rows[0] as { checks_enabled?: boolean; api_key_ref?: string | null } | undefined;
-    const checksEnabled = configRow?.checks_enabled === true;
+    const actor: DeskActor = {
+      tenantId: who.tenantId, legalEntityId: who.legalEntityId, branchId: who.branchId,
+      staffId: who.staffId, role: who.role as DeskActor["role"], userId: who.id,
+    };
+    const readiness = await readIdvReady(db, actor, options?.env ?? process.env);
     const stored = await latestClientIdvStatus(db, who.legalEntityId, clientId);
-    if (stored !== "approved") return { status: stored, checksEnabled };
+    const file = { checksEnabled: readiness.checksEnabled, provider: readiness.provider, ready: readiness.ready, testShop: readiness.testShop, sandbox: readiness.sandbox };
+    if (stored !== "approved") return { status: stored, ...file };
     const shopCode = await shopEnvCodeFor(db, who.tenantId);
     const status = personaPassLabel(options?.env ?? process.env, configRow?.api_key_ref ?? null, shopCode);
-    return { status, checksEnabled };
+    return { status, ...file };
   });
 }

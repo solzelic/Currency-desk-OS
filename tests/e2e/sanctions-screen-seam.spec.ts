@@ -107,7 +107,11 @@ test("a Canada desk says sanctions screening is not connected and shows no count
   await page.getByRole("button", { name: "Save contact" }).click();
   const file = page.getByTestId("client-identity");
   await expect(file).toBeVisible();
-  await expect(file.getByTestId("persona-not-connected")).toHaveText("Persona is not connected yet.");
+  /* The line is the off sentence when this shop has checks off, and the
+     on sentence once the status read says checks are on. The first paint
+     says the status is not available, so this waits for that read. */
+  const line = file.locator("[data-testid='persona-not-connected'], [data-testid='persona-connection']");
+  await expect(line).toHaveText(/^(Automatic ID checks are off\. Check the ID in person instead\.|Identity checks are on for this shop\.)$/);
   await expect(file.getByText(/Background & ID checks via/i)).toHaveCount(0);
   await expect(file.getByText(/screened against/i)).toHaveCount(0);
   await expect(file.getByText(/Verify identity/i)).toHaveCount(0);

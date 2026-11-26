@@ -281,7 +281,7 @@ describe("inquiry text and face crop", () => {
     expect(off).not.toContain(CROP_LINE);
     expect(on.toLowerCase()).not.toContain("stays in canada");
     expect(on.toLowerCase()).not.toContain("stored in canada");
-    expect(CONSENT_VERSION).toBe("consent-v0.3.9-draft");
+    expect(CONSENT_VERSION).toBe("consent-v0.3.10-draft");
     for (const word of ["verified", "approved", "cleared"]) {
       expect(on.toLowerCase()).not.toMatch(new RegExp(`\\b${word}\\b`));
     }

@@ -57,9 +57,9 @@
   //   • verify — does not authenticate an ID.
   //   • plus   — does not run a biometric or a database inquiry.
   const TEMPLATES = [
-    { id: 'quick', label: 'Quick check', tagline: 'Persona is not connected yet. This desk screens the name here. Nothing is sent out.', channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
-    { id: 'verify', label: 'Verified', tagline: 'Persona is not connected yet. This desk screens the name here. It does not authenticate an ID.', channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
-    { id: 'plus', label: 'Verified Plus', tagline: 'Persona is not connected yet. This desk screens the name here. It does not run a biometric.', channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
+    { id: 'quick', label: 'Quick check', tagline: 'This desk screens the name here. Nothing is sent out.', channel: 'instant', icon: 'search', idv: false, bio: false, db: true, smart: false },
+    { id: 'verify', label: 'Verified', tagline: 'This desk screens the name here. It does not authenticate an ID.', channel: 'link', icon: 'id', idv: true, bio: false, db: true, smart: false },
+    { id: 'plus', label: 'Verified Plus', tagline: 'This desk screens the name here. It does not run a biometric.', channel: 'link', icon: 'shield', idv: true, bio: true, db: true, smart: false }
   ];
   const tmpl = (id) => TEMPLATES.find(t => t.id === id) || TEMPLATES[0];
   const DURATION = { instant: 5200, link: 9000, records: 600 };
@@ -314,6 +314,8 @@
   }
 
   function VerifyChooserBody({ subject, hasId, verified, tplId, setTplId, mode, setMode, via, setVia, email, setEmail, phone, setPhone, onScanMore, onCapture, recommended }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     const t = tmpl(tplId);
     const m = mode || (hasId ? 'inperson' : 'link');
     const list = verified ? TEMPLATES : TEMPLATES.filter(t => t.id !== 'quick');
@@ -329,7 +331,7 @@
                 <span className="text-[13.5px] font-semibold" style={{ color: CD.ink }}>{tt.label}</span>
                 {meta.tag && <span className="text-[9.5px] font-semibold px-1.5 py-0.5" style={{ color: on ? KYC_BLUE : CD.mute, background: on ? 'rgba(43,80,226,.10)' : CD.lineSoft, borderRadius: 5 }}>{meta.tag}</span>}
               </div>
-              <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{tt.tagline}</div>
+              <div className="text-[11.5px] mt-0.5" style={{ color: CD.mute }}>{lead} {tt.tagline}</div>
             </div>
           </button>); })}
       </div>
@@ -363,6 +365,8 @@
      SEND MODAL — choose a verification, delivery, confirm the bill, send
      ==================================================================== */
   function SendModal({ subject, kind, rec, by, onClose, initialTpl }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     rec = rec || {};
     const verified = (() => { try { return checksFor(subject).some(c => (c.template === 'verify' || c.template === 'plus') && c.status === 'completed' && c.result && c.result.decision === 'approved'); } catch (e) { return false; } })();
     const [tplId, setTplId] = useState((initialTpl && (verified || initialTpl !== 'quick')) ? initialTpl : 'verify');
@@ -390,7 +394,7 @@
           <span className="grid place-items-center flex-none" style={{ width: 38, height: 38, background: CD.ink, borderRadius: 10 }}><Ic n="id" s={19} c="var(--cd-on-ink)" /></span>
           <div className="flex-1 min-w-0">
             <div className="text-[15px] font-semibold leading-tight" style={{ color: CD.ink }}>Verify {subject}</div>
-            <div className="text-[11.5px] flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n="lock" s={11} c={CD.mute} /> Persona is not connected yet. No check is sent.</div>
+            <div className="text-[11.5px] flex items-center gap-1.5" style={{ color: CD.mute }}><Ic n="lock" s={11} c={CD.mute} /> {lead} No check is sent.</div>
           </div>
           <button onClick={onClose} className="grid place-items-center flex-none" style={{ width: 30, height: 30, borderRadius: 8, color: CD.mute }}><Ic n="x" s={16} /></button>
         </div>
@@ -402,7 +406,7 @@
 
           {/* footer — the bill + send */}
           <div className="flex items-center gap-3 px-5 py-3.5 flex-none" style={{ borderTop: `1px solid ${CD.line}`, background: CD.panel }}>
-            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>Persona is not connected yet</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
+            <div className="flex-1"><div className="text-[11px]" style={{ color: CD.faint }}>{lead}</div><div className="text-[13px] font-semibold leading-none" style={{ color: CD.mute }}>Nothing is charged</div></div>
             <button onClick={onClose} className="px-3.5 py-2.5 text-sm font-medium" style={{ border: `1px solid ${CD.line}`, borderRadius: 9, color: CD.mute }}>Cancel</button>
             <button onClick={send} disabled={del.missing} className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-white" style={{ background: del.missing ? 'var(--cd-disabled)' : KYC_BLUE, borderRadius: 9, cursor: del.missing ? 'not-allowed' : 'pointer', boxShadow: del.missing ? 'none' : '0 6px 18px rgba(43,80,226,.32)' }}><Ic n="send" s={15} c="var(--cd-on-ink)" /> {del.label}</button>
           </div>
@@ -410,7 +414,7 @@
           /* Nothing was sent. The button used to claim a check was running. */
           <div className="px-6 py-8 text-center">
             <span className="grid place-items-center mx-auto mb-3" style={{ width: 54, height: 54, borderRadius: '50%', background: CD.lineSoft }}><Ic n="shield" s={26} c={CD.mute} /></span>
-            <div className="text-[16px] font-semibold" style={{ color: CD.ink }}>Persona is not connected yet</div>
+            <div className="text-[16px] font-semibold" style={{ color: CD.ink }}>{lead}</div>
             <div className="text-[12.5px] mt-1 mx-auto" style={{ color: CD.mute, maxWidth: 360 }}>No check was sent for <b style={{ color: CD.ink }}>{subject}</b>. Nothing was read off an ID, nothing was screened, and nothing was charged.</div>
             <div><button onClick={onClose} className="mt-5 px-5 py-2.5 text-sm font-semibold text-white" style={{ background: CD.ink, borderRadius: 9 }}>Done</button></div>
           </div>
@@ -548,6 +552,7 @@
     const latest = checks[0];
     const [idvStatus, setIdvStatus] = useState('');
     const [checksOn, setChecksOn] = useState(false);
+    const [idvShop, setIdvShop] = useState(null);
     const [recordState, setRecordState] = useState('loading');
     useEffect(() => {
       if (!clientId) return undefined;
@@ -559,6 +564,7 @@
           if (!live || !body) return;
           setIdvStatus(typeof body.status === 'string' ? body.status : '');
           setChecksOn(!!body.checksEnabled);
+          setIdvShop(body);
         }).catch(() => {});
       }
       if (!checksApi || !checksApi.checks) { setRecordState('no'); return () => { live = false; }; }
@@ -581,6 +587,7 @@
       expired: 'Expired',
     }[idvStatus] || '';
     const configured = checksOn || !!idvStatus;
+    const lead = window.CDOS.idvLead(idvShop);
 
     // when a verification comes back, fold what the provider read off the ID into the contact
     useEffect(() => {
@@ -605,8 +612,8 @@
       <div className="flex items-center gap-2.5 mb-3">
         <span className="grid place-items-center" style={{ width: 28, height: 28, borderRadius: 8, background: CD.lineSoft }}><Ic n="id" s={15} c={CD.mute} /></span>
         <div>
-          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : "Persona is not connected yet, so this desk does not run a background check or an ID verification. Sanctions screening is not connected yet. Check clients against your government's official lists yourself."} /></div>
-          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (checks.length ? (idvWords || 'Identity checks are on for this shop.') : 'Identity checks are on for this shop.') : 'Persona is not connected yet.'}</div>
+          <div className="text-sm font-semibold flex items-center gap-2" style={{ color: CD.ink }}>Identity verification <window.CDOS.InfoTip title="Identity verification" body={configured ? "This line follows the identity check on this file. Sanctions screening is separate. Check clients against your government's official lists yourself." : lead + " Sanctions screening is not connected yet. Check clients against your government's official lists yourself."} /></div>
+          <div className="text-[11px]" data-testid={configured ? 'persona-connection' : 'persona-not-connected'} style={{ color: CD.mute }}>{configured ? (checks.length ? (idvWords || 'Identity checks are on for this shop.') : 'Identity checks are on for this shop.') : lead}</div>
           <div className="text-[11px]" data-testid="client-not-screened" style={{ color: CD.mute }}>{clientScreenLine(rec)}</div>
         </div>
       </div>
@@ -622,7 +629,7 @@
         </div>); })()}
 
       {checks.length ? <div className="space-y-1.5">{checks.map(c => <CheckRow key={c.id} check={c} />)}</div>
-        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>{configured ? 'No verifications on file.' : 'No verifications on file. Persona is not connected yet.'}</div>}
+        : <div className="text-center py-6 text-[12px]" style={{ color: CD.faint }}>{configured ? 'No verifications on file.' : 'No verifications on file. ' + lead}</div>}
     </div>);
   }
 
@@ -636,6 +643,8 @@
      is read off the ID.
      ==================================================================== */
   function NewContactFlow({ initialName, by, setClients, onClose, onDone }) {
+    const idvShop = window.CDOS.useIdvShop();
+    const lead = window.CDOS.idvLead(idvShop);
     const [step, setStep] = useState('id');
     const [photo, setPhoto] = useState(null);
     const [name, setName] = useState(initialName || '');
@@ -754,7 +763,11 @@
 
         <div className="flex-1 overflow-auto px-5 py-4">
           {step === 'id' && (<div>
-            <div className="text-[12.5px] mb-3" style={{ color: CD.mute }}>Capture the customer's government ID. Nothing is read off the document until you check the ID.</div>
+            <div className="text-[12.5px]" style={{ color: CD.mute }}>Capture the customer's government ID. Nothing is read off the document.</div>
+            <div data-testid="add-contact-idv-note" className="flex items-start gap-1.5 mt-2 mb-3" style={{ color: CD.mute, flexWrap: "nowrap" }}>
+              <span className="flex-none" style={{ marginTop: 1 }}><Ic n="info" s={14} c={CD.mute} /></span>
+              <span className="text-[12px]" style={{ lineHeight: 1.45, minWidth: 0 }}>{lead}</span>
+            </div>
             {photo ? (
               <div className="relative" style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${CD.line}` }}>
                 <img src={photo} alt="ID" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
