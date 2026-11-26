@@ -40,7 +40,7 @@ function shopName(fill: ConsentFill, wording: Wording = "current"): string {
   return wording === "legacy" ? "[Shop legal name]" : FALLBACK_SHOP;
 }
 
-function shownPhone(value: string): string {
+export function shownPhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
   if (local.length !== 10) return value.trim();

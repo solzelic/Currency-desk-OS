@@ -10,6 +10,7 @@ import { CONSENT_VERSION, DIDIT_CONSENT_VERSION, diditNoSelfieConsentCopy, didit
 import { recordCounterFaceMatch } from "./counter-scan.js";
 import { generateOneTimeLink } from "./persona-calls.js";
 import { diditConfigured, diditDocScanAvailable, diditSelection, diditSessionLink } from "./providers/didit.js";
+import { noteDiditLink, sendDiditLink } from "./send-link.js";
 import { personaApiKey } from "./providers/persona.js";
 import type { IdvRouteOptions } from "./registry.js";
 import {
@@ -76,6 +77,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       quebec: gate.quebec,
       counterLine: gate.line,
       privacyReady: privacyReady(fill),
+      shopName: fill.legalName?.trim() || null,
     };
   });
 
@@ -213,6 +215,35 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     } catch {
       return reply.code(502).send({ error: "link_failed", message: "The ID check link could not be opened." });
     }
+  });
+
+  app.post<{ Params: { inquiryId: string } }>("/api/idv/inquiries/:inquiryId/send-link", async (req, reply) => {
+    const actor = await who(req, reply);
+    if (!actor) return;
+    if (!hasBackendPermission(actor.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
+    const email = req.body && typeof req.body === "object" ? (req.body as { email?: unknown }).email : undefined;
+    const saved = await sendDiditLink(db, actor, req.params.inquiryId ?? "", email, {
+      env: env(), fetch: options?.fetch, mail: options?.mail, now: options?.now,
+    });
+    if (!saved.ok) {
+      if (saved.error === "COUNTER_ONLY") return reply.code(saved.status).send({ code: "COUNTER_ONLY", message: saved.message });
+      return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    }
+    return saved.body;
+  });
+
+  app.post<{ Params: { inquiryId: string } }>("/api/idv/inquiries/:inquiryId/link-note", async (req, reply) => {
+    const actor = await who(req, reply);
+    if (!actor) return;
+    if (!hasBackendPermission(actor.role, "customer:write")) return reply.code(403).send({ error: "forbidden" });
+    const kind = req.body && typeof req.body === "object" ? (req.body as { kind?: unknown }).kind : undefined;
+    if (kind !== "link" && kind !== "text") return reply.code(400).send({ error: "invalid_request" });
+    const saved = await noteDiditLink(db, actor, req.params.inquiryId ?? "", kind, { env: env(), fetch: options?.fetch });
+    if (!saved.ok) {
+      if (saved.error === "COUNTER_ONLY") return reply.code(saved.status).send({ code: "COUNTER_ONLY", message: saved.message });
+      return reply.code(saved.status).send({ error: saved.error, message: saved.message });
+    }
+    return saved.body;
   });
 
   app.get<{ Params: { clientId: string } }>("/api/idv/clients/:clientId/checks", async (req, reply) => {
