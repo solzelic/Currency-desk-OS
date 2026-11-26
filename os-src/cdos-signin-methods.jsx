@@ -402,7 +402,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     );
   }
 
-  function MethodsList({ methods, onAction }) {
+  function MethodsList({ methods, onAction, busy = false }) {
     const blockedReason = "Add another way to sign in before removing this one.";
     return (
       <div className="methods">
@@ -416,7 +416,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
                 <div className="meta">{m.meta}</div>
                 {blocked ? <div className="hint" id={"why-" + m.id}>{blockedReason}</div> : null}
               </div>
-              {m.action ? <button type="button" className="act" disabled={blocked} aria-describedby={blocked ? "why-" + m.id : undefined} onClick={() => onAction(m)}>{m.action}</button> : <span />}
+              {m.action ? <button type="button" className="act" disabled={blocked || busy} aria-describedby={blocked ? "why-" + m.id : undefined} onClick={() => onAction(m)}>{m.action}</button> : <span />}
             </div>
           );
         })}
@@ -787,15 +787,36 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     return <SignInScreen preview flags={flags} state={name} device={device} motion={motion} />;
   }
 
-  function SignInMethodsSettings() {
+  function SignInMethodsSettings({ owner = false }) {
     const [notice, setNotice] = useState("");
     const [methods, setMethods] = useState([]);
+    const [loaded, setLoaded] = useState(false);
+    const [pending, setPending] = useState(null);
+    const [password, setPassword] = useState("");
+    const [totp, setTotp] = useState("");
+    const [factorRequired, setFactorRequired] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [hasTotp, setHasTotp] = useState(false);
+    const [hasPasskey, setHasPasskey] = useState(false);
+    const [enrollment, setEnrollment] = useState(null);
+    const [enrollCode, setEnrollCode] = useState("");
+    const [savedCodes, setSavedCodes] = useState(false);
+    const [success, setSuccess] = useState("");
+    const sending = useRef(false);
+    const live = useRef(true);
+    const request = useRef(null);
     useEffect(() => {
-      let live = true;
-      fetch("/api/auth/methods", { credentials: "same-origin" })
-        .then((r) => (r.ok ? r.json() : null))
+      live.current = true;
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 30_000);
+      fetch("/api/auth/methods", { credentials: "same-origin", signal: controller.signal })
+        .then((r) => { if (!r.ok) throw new Error("methods_unavailable"); return r.json(); })
         .then((d) => {
-          if (!live || !d || !Array.isArray(d.methods)) return;
+          if (!live.current) return;
+          if (!d || !Array.isArray(d.methods)) throw new Error("methods_unavailable");
+          setLoaded(true);
+          setHasTotp(d.methods.some((m) => m.id === "totp" && m.connected));
+          setHasPasskey(d.methods.some((m) => m.id === "passkey" && m.connected));
           setMethods(d.methods.filter((m) => m.id === "password" || m.id === "google" || m.id === "microsoft").map((m) => ({
             id: m.id,
             name: m.name,
@@ -805,26 +826,168 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
             icon: m.id === "google" ? "google" : m.id === "microsoft" ? "microsoft" : "mail",
           })));
         })
-        .catch(() => {});
-      return () => { live = false; };
+        .catch(() => { if (live.current) setNotice("Sign-in methods could not load. Reload to try again."); })
+        .finally(() => clearTimeout(deadline));
+      return () => { live.current = false; controller.abort(); if (request.current) request.current.abort(); };
     }, []);
-    const onAction = async (method) => {
-      if (!method.action) return;
+    const clearConfirmation = () => {
+      setPending(null);
+      setPassword("");
+      setTotp("");
+      setFactorRequired(false);
+      setEnrollment(null);
+      setEnrollCode("");
+      setSavedCodes(false);
+    };
+    const onAction = (method) => {
+      if (!method.action || !loaded || sending.current) return;
       if (method.action === "Remove" && adapter().removalBlocked(methods, method.id)) return;
       if (method.action === "Connect") {
+        if (owner && !hasTotp && !hasPasskey) {
+          setNotice("Set up your authenticator and recovery codes before connecting Google or Microsoft.");
+          return;
+        }
         const flags = adapter().flagsFromWindow(window);
         if ((method.id === "google" && !flags.google) || (method.id === "microsoft" && !flags.microsoft)) {
           setNotice(NOT_READY);
           return;
         }
-        window.location.assign("/api/auth/sso/link/" + method.id + "/start");
+      }
+      clearConfirmation();
+      setNotice("");
+      setSuccess("");
+      setPending(method);
+    };
+    const confirm = async (event, usePasskey = false) => {
+      event.preventDefault();
+      if (!pending || (!usePasskey && !password) || sending.current) return;
+      sending.current = true;
+      setBusy(true);
+      setNotice("");
+      const controller = new AbortController();
+      request.current = controller;
+      // One deadline covers confirmation, body parsing and optional removal.
+      // These requests do not create a new sign-in session.
+      const deadline = setTimeout(() => controller.abort(), 30_000);
+      try {
+        let proof = { password, ...(totp ? { totp } : {}) };
+        if (usePasskey) {
+          if (!window.PublicKeyCredential || typeof PublicKeyCredential.parseRequestOptionsFromJSON !== "function") {
+            setNotice("This browser cannot confirm with a passkey. Update it, or use your password and authenticator.");
+            return;
+          }
+          const options = await fetch("/api/auth/stepup/passkey/options", {
+            method: "POST", credentials: "same-origin", signal: controller.signal,
+          });
+          if (!options.ok) throw new Error("passkey_not_available");
+          const body = await options.json();
+          if (!live.current) return;
+          if (controller.signal.aborted) throw new Error("request_expired");
+          const credential = await navigator.credentials.get({
+            publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(body), signal: controller.signal,
+          });
+          if (!live.current) return;
+          if (controller.signal.aborted || !credential) throw new Error("passkey_cancelled");
+          proof = credential.toJSON();
+        }
+        const res = await fetch(usePasskey ? "/api/auth/stepup/passkey/verify" : "/api/auth/stepup", {
+          method: "POST", credentials: "same-origin", signal: controller.signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(proof),
+        });
+        const data = await res.json().catch(() => null);
+        if (!live.current) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        if (res.status === 403 && data && data.error === "factor_required") {
+          setFactorRequired(true);
+          setNotice("Enter the code from your authenticator app to continue.");
+          return;
+        }
+        if (!res.ok || !data || data.ok !== true) {
+          setNotice(res.status === 429 ? "Too many tries. Wait before trying again." : "We could not confirm it's you. Check your details and try again.");
+          setPassword("");
+          setTotp("");
+          return;
+        }
+        setPassword("");
+        setTotp("");
+        if (pending.id === "totp") {
+          const setup = await fetch("/api/auth/mfa/" + (hasTotp ? "recovery" : "enroll/start"), {
+            method: "POST", credentials: "same-origin", signal: controller.signal,
+          });
+          const body = await setup.json().catch(() => null);
+          if (!live.current) return;
+          if (controller.signal.aborted) throw new Error("request_expired");
+          if (!setup.ok || !body || body.ok !== true || !Array.isArray(body.backupCodes) || !body.backupCodes.length ||
+              !body.backupCodes.every((c) => typeof c === "string") ||
+              (!hasTotp && (typeof body.ticket !== "string" || typeof body.manualSecret !== "string"))) {
+            setNotice("Authenticator setup could not finish. Confirm again to retry.");
+            return;
+          }
+          setEnrollment({ ticket: body.ticket, secret: body.manualSecret, codes: body.backupCodes, recoveryOnly: hasTotp });
+          return;
+        }
+        if (pending.action === "Connect") {
+          window.location.assign("/api/auth/sso/link/" + pending.id + "/start");
+          return;
+        }
+        const removed = await fetch("/api/auth/sso/" + pending.id + "/unlink", {
+          method: "POST", credentials: "same-origin", signal: controller.signal,
+        });
+        if (!live.current) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        if (removed.status === 409) { setNotice("Add another way to sign in before removing this one."); return; }
+        if (!removed.ok) { setNotice("The method could not be removed. Confirm again to retry."); return; }
+        window.location.assign("/login");
+      } catch {
+        if (live.current) setNotice("The request could not finish. Check your connection and confirm again.");
+      } finally {
+        clearTimeout(deadline);
+        request.current = null;
+        sending.current = false;
+        if (live.current) setBusy(false);
+      }
+    };
+    const finishEnrollment = async (event) => {
+      event.preventDefault();
+      if (sending.current || !enrollment || !savedCodes) return;
+      if (enrollment.recoveryOnly) {
+        clearConfirmation();
+        setSuccess("Recovery codes replaced. Keep the new codes somewhere safe.");
         return;
       }
-      const res = await fetch("/api/auth/sso/" + method.id + "/unlink", { method: "POST", credentials: "same-origin" });
-      if (res.status === 403) { setNotice("Confirm it's you before removing this."); return; }
-      if (res.status === 409) { setNotice("Add another way to sign in before removing this one."); return; }
-      if (!res.ok) { setNotice(NOT_READY); return; }
-      window.location.assign("/login");
+      if (!/^\d{6}$/.test(enrollCode)) return;
+      sending.current = true;
+      setBusy(true);
+      setNotice("");
+      const controller = new AbortController();
+      request.current = controller;
+      const deadline = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const res = await fetch("/api/auth/mfa/enroll/confirm", {
+          method: "POST", credentials: "same-origin", signal: controller.signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ticket: enrollment.ticket, code: enrollCode }),
+        });
+        const body = await res.json().catch(() => null);
+        if (!live.current) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        setEnrollCode("");
+        if (!res.ok || !body || body.ok !== true) {
+          setNotice(res.status === 429 ? "Too many tries. Wait before trying again." : "Setup could not be confirmed. Use a fresh authenticator code or cancel and start again.");
+          return;
+        }
+        setHasTotp(true);
+        clearConfirmation();
+        setSuccess("Authenticator connected. You can now connect Google or Microsoft and use your authenticator when signing in.");
+      } catch {
+        if (live.current) setNotice("Setup could not be confirmed. Check your connection. Reload to check whether it completed before starting again.");
+      } finally {
+        clearTimeout(deadline);
+        request.current = null;
+        sending.current = false;
+        if (live.current) setBusy(false);
+      }
     };
     return (
       <div>
@@ -832,9 +995,43 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         <h2 style={{ fontFamily: "Archivo, sans-serif", fontSize: 22, margin: "0 0 8px" }}>Sign-in methods</h2>
         <p style={{ color: "#45403A", fontSize: 14, marginTop: 0 }}>Ways you can open the desk. The last remaining method stays until you add another.</p>
         <div className="cd-set" style={{ width: "auto", height: "auto", background: "transparent" }}>
-          <MethodsList methods={methods} onAction={onAction} />
+          <MethodsList methods={methods} onAction={onAction} busy={busy} />
+          {owner ? <section style={{ marginTop: 20 }} aria-label="Owner sign-in protection">
+            <h3>Authenticator and recovery codes</h3>
+            <p>Owners need an authenticator and unused recovery codes to sign in with Google or Microsoft. Keep your password as a way back in.</p>
+            <button type="button" disabled={busy || !loaded} onClick={() => onAction({ id: "totp", name: "your authenticator", action: "Set up" })}>{hasTotp ? "Replace recovery codes" : "Set up authenticator"}</button>
+          </section> : null}
+          {pending && !enrollment ? <form onSubmit={confirm} aria-label="Confirm sign-in method change" style={{ padding: 20, marginTop: 16, border: "1px solid #D9D2C4", borderRadius: 16 }}>
+            <h3>Confirm it's you</h3>
+            <p>Confirm before you {pending.action === "Connect" ? "connect" : pending.action === "Remove" ? "remove" : "set up"} {pending.name}.</p>
+            <label style={{ display: "block", marginBottom: 12 }}>Password
+              <input autoFocus type="password" autoComplete="current-password" value={password} disabled={busy} onChange={(e) => setPassword(e.target.value)} required style={{ display: "block", width: "100%", padding: 12 }} />
+            </label>
+            {factorRequired ? <label style={{ display: "block", marginBottom: 12 }}>Authenticator code
+              <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totp} disabled={busy} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} required style={{ display: "block", width: "100%", padding: 12 }} />
+            </label> : null}
+            <button type="submit" disabled={busy}>Confirm and continue</button>
+            {hasPasskey ? <button type="button" disabled={busy} onClick={(e) => confirm(e, true)}>Confirm with passkey</button> : null}
+            <button type="button" disabled={busy} onClick={() => { if (!sending.current) { clearConfirmation(); setNotice(""); } }}>Cancel</button>
+          </form> : null}
+          {enrollment ? <form onSubmit={finishEnrollment} aria-label="Authenticator setup" style={{ padding: 20, marginTop: 16, border: "1px solid #D9D2C4", borderRadius: 16 }}>
+            <h3>{enrollment.recoveryOnly ? "Save your new recovery codes" : "Set up your authenticator"}</h3>
+            {enrollment.recoveryOnly ? <p>Your previous recovery codes no longer work.</p> : <>
+              <p>Add an account in your authenticator app using this setup key. Choose a time-based, six-digit code.</p>
+              <code style={{ overflowWrap: "anywhere" }}>{enrollment.secret}</code>
+              <label style={{ display: "block", margin: "16px 0" }}>New authenticator code
+                <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={enrollCode} disabled={busy} onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, ""))} required style={{ display: "block", width: "100%", padding: 12 }} />
+              </label>
+            </>}
+            <p>Save these recovery codes privately. Each works once. They will disappear when you leave this screen.</p>
+            <ul>{enrollment.codes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+            <label style={{ display: "block", marginBottom: 16 }}><input type="checkbox" checked={savedCodes} disabled={busy} onChange={(e) => setSavedCodes(e.target.checked)} /> I saved these recovery codes</label>
+            <button type="submit" disabled={busy || !savedCodes}>{enrollment.recoveryOnly ? "Done" : "Finish setup"}</button>
+            {!enrollment.recoveryOnly ? <button type="button" disabled={busy} onClick={() => { if (!sending.current) { clearConfirmation(); setNotice(""); } }}>Cancel</button> : null}
+          </form> : null}
           <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
-          {notice ? <p className="hold" role="status">{notice}</p> : null}
+          {notice ? <p className="hold" role="alert">{notice}</p> : null}
+          {success ? <p role="status">{success}</p> : null}
         </div>
       </div>
     );

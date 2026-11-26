@@ -41,6 +41,12 @@ These already exist. There is no tenant id in the environment.
 | `WEBAUTHN_ORIGINS` | Comma-separated https origins for that relying party. |
 | `PLATFORM_MFA_KEY` | Encrypts owner authenticator secrets. Already required in production for platform operators. |
 
+Sol confirmed on 26 November that staging passkeys will use
+`WEBAUTHN_RP_ID=currencydesk-staging.onrender.com` and
+`WEBAUTHN_ORIGINS=https://currencydesk-staging.onrender.com`. This chooses the
+staging binding only; it does not enable the unfinished passkey sign-in flow or
+choose a live relying party. Staging credentials will be separate from live.
+
 A shop may set `tenants.ms_tenant_allowlist` to a list of Microsoft
 tenant ids. Null, the default, leaves that check off.
 
@@ -50,3 +56,34 @@ tenant ids. Null, the default, leaves that check off.
 - Treat an identity-provider sign-in as a second factor. An owner also needs an authenticator or a passkey, plus a recovery code, and must enter that second step.
 - Store an identity-provider access token or refresh token.
 - Run with live keys on the demo shop `tnt-yorkfx`.
+
+## Connecting a method from Settings
+
+With a sign-in flag enabled, Settings → Sign-in methods asks for fresh
+confirmation before Connect or Remove. It calls `/api/auth/stepup` with the
+password and, when required, an authenticator code. An already-enrolled passkey
+can instead use the existing `/stepup/passkey/options` and `/verify` endpoints.
+That browser path requires `PublicKeyCredential.parseRequestOptionsFromJSON`
+and `toJSON`; older browsers keep the password/authenticator path.
+
+Owners first set up an authenticator through `/api/auth/mfa/enroll/start` and
+`/confirm`. The UI shows the setup key and recovery codes in memory only and
+requires acknowledgment that the codes were saved. It never stores them in
+browser storage or the desk state. Existing owners can replace their recovery
+codes through `/api/auth/mfa/recovery` after reconfirming; this immediately
+invalidates the older codes. The server retains all role, session, tenant,
+factor, lockout and last-method checks.
+
+The new setup controls disable duplicate actions, abort on unmount and use a
+30-second budget. No operation is automatically retried. A lost enrollment
+confirmation may have committed, so the screen asks the person to reload and
+check before starting again. This does not implement passkey registration or
+returning passkey login, and does not enable a provider or change hosted config.
+
+`signin-method-setup.spec.ts` checks UI failure/cancellation and routing with
+explicit API responses (including a simulated authenticator). The separate
+`signin-method-setup-server.spec.ts` drives the built Settings component against
+a real HTTP server and disposable PGlite, enrolls a real TOTP secret, and checks
+that the server then requires the factor. It owns an ephemeral loopback port;
+its flags do not change the ordinary flags-off test server. Neither spec proves
+real Google/Microsoft authorization or physical-device passkey behavior.
