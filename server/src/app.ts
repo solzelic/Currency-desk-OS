@@ -456,6 +456,12 @@ export async function buildApp(
       allowedPath: (pathname, root) => root !== staticDir || isPublicAsset(pathname, compiledShells),
     });
     app.get("/", (req, reply) => {
+      /* Staging's front door is the role picker. The site is served when
+         the door key is present, including /?door=, /?door and
+         /?x=1&door=. /d still serves the site. A live host never
+         matches stagingDoorOpen. */
+      const query = req.query ?? {};
+      if (stagingDoorOpen(req.headers) && !Object.prototype.hasOwnProperty.call(query, "door")) return reply.redirect("/login", 302);
       if (!hasMobile) return reply.sendFile(rootFile);
       // caches must not serve one layout to the other audience
       reply.header("Vary", "User-Agent");
