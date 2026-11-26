@@ -351,13 +351,13 @@ describe("didit routes", () => {
       method: "PUT", url: "/api/settings/idv", cookies: cookies.owner, payload: { provider: "didit" },
     });
     expect(saved.statusCode).toBe(422);
-    expect(saved.json().message).toBe("Didit can be used only on a staging test shop.");
+    expect(saved.json().message).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
     await enable("didit");
     const start = await app.inject({
       method: "POST", url: "/api/idv/start-check", cookies: cookies.teller, payload: { tier: "3" },
     });
     expect(start.statusCode).toBe(409);
-    expect(start.json().message).toBe("Didit can be used only on a staging test shop.");
+    expect(start.json().message).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
   });
 
   it("keeps Didit off on live Render unless the live flag is set", async () => {
@@ -368,13 +368,13 @@ describe("didit routes", () => {
       method: "PUT", url: "/api/settings/idv", cookies: owner, payload: { provider: "didit", checksEnabled: true },
     });
     expect(saved.statusCode).toBe(422);
-    expect(saved.json().message).toBe("Didit is not available on this server.");
+    expect(saved.json().message).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
     await enable("didit");
     const start = await live.inject({
       method: "POST", url: "/api/idv/start-check", cookies: teller, payload: { tier: "3" },
     });
     expect(start.statusCode).toBe(409);
-    expect(start.json().message).toBe("Didit is not available on this server.");
+    expect(start.json().message).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
     const hook = await live.inject({
       method: "POST", url: "/api/webhooks/idv/didit", payload: FIXTURE.toString("utf8"),
       headers: headers(FIXTURE, Math.floor(Date.now() / 1000)),
@@ -653,7 +653,7 @@ describe("didit routes", () => {
       payload: { tier: "3", method: "counter_id_scan", clientId: "cli-didit" },
     });
     expect(locked.statusCode).toBe(409);
-    expect(locked.json().message).toBe("Didit is not available on this server.");
+    expect(locked.json().message).toBe("Automatic ID check with Didit is not available for this shop. Check the ID in person instead.");
     expect(calls).toHaveLength(0);
   });
 

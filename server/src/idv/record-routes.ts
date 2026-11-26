@@ -16,6 +16,7 @@ import {
   agreedConsent, consentFill, dbQuery, inquiryClientId, linkRecordDeal, listReveals, loadShopIdv, readClientChecks, recordInPerson,
   recordReturning, revealNumber, storeConsent, supersedeRecord, viewFaceCrop, type DeskActor,
 } from "./records.js";
+import { readIdvReady } from "./ready.js";
 import { shopEnvCodeFor } from "./shop-config.js";
 import { counterOnly } from "./tiers.js";
 
@@ -55,6 +56,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       [actor.branchId, actor.legalEntityId],
     );
     const gate = counterOnly(branch.rows[0] ? String(branch.rows[0].province ?? "") : null);
+    const readiness = await readIdvReady(db, actor, env());
     const tenant = await dbQuery(db).query("SELECT is_test_shop FROM tenants WHERE id = $1", [actor.tenantId]);
     const testShop = tenant.rows[0]?.is_test_shop === true;
     const docScan = didit && diditSelection(env(), testShop).ok && diditDocScanAvailable(env());
@@ -65,7 +67,10 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
       selfieConsent: didit ? diditSelfieConsentCopy(fill) : selfieConsentCopy(fill),
       noSelfieConsent: docScan ? diditNoSelfieConsentCopy(fill) : null,
       docScan,
-      provider: didit ? "didit" : "persona",
+      provider: readiness.provider,
+      ready: readiness.ready,
+      testShop: readiness.testShop,
+      sandbox: readiness.sandbox,
       tier4: didit ? "unavailable" : null,
       counterOnly: gate.counter,
       quebec: gate.quebec,
@@ -183,7 +188,7 @@ export function registerIdvRecordRoutes(app: FastifyInstance, db: Db, options?: 
     if (isStagingRuntime(undefined, env()) && !privacyReady(fill)) {
       return reply.code(409).send({
         code: "PRIVACY_CONTACT",
-        message: "Set the shop privacy contact before a face match. The owner adds it in identity check settings.",
+        message: "Automatic ID check needs the shop privacy contact first. The owner adds it in Settings, Clients and KYC.",
       });
     }
     const shop = await loadShopIdv(db, actor.legalEntityId);
