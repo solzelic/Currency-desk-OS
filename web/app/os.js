@@ -72497,7 +72497,8 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
       let url = "";
       let link = null;
       try {
-        const date = new Date().toISOString().slice(0, 10);
+        const now = new Date();
+        const date = [now.getUTCFullYear(), String(now.getUTCMonth() + 1).padStart(2, "0"), String(now.getUTCDate()).padStart(2, "0")].join("-");
         const text = enrollment.codes.join("\n") + "\n" + date + "\n" + RECOVERY_LINE + "\n";
         url = URL.createObjectURL(new Blob([text], {
           type: "text/plain"
