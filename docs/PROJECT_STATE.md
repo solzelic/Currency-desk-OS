@@ -69,13 +69,26 @@ It checks the raw-body signature and a 300-second timestamp, and it is
 idempotent on session id plus status. The decision body, the secret, and the
 ID photos are not stored and not logged. Names and the sandbox workflow id
 are in `docs/IDV.md`. On the teller ID check, a Didit shop shows
-"What the customer does": "Open the link on the counter device, or send it
-to the customer's phone." "The customer reads the notice and chooses whether
+"What the customer does": "The link goes to the customer by email, or you
+copy a text. The counter device is never handed over." "The customer reads the notice and chooses whether
 to go ahead. If they say no, check the ID at the counter." "The customer
 scans their ID and takes a selfie with Didit." "The result comes back to
 this screen." Under that list: "Your shop is not billed for a check that is
-declined, abandoned or expired." A Persona shop does not show those steps.
-A counter only shop does not show them either.
+declined, abandoned or expired." The link step says "The link goes to the
+customer's email, or they get a copied message or the Copy link." A Persona shop does not show those steps.
+A counter only shop does not show them either. Send on that screen posts
+the Didit link by email. Copy link and Copy text stay on the same screen.
+Text is copied, not sent. The email subject is "Your ID check link from"
+the shop legal name. The message says that shop sent the link to complete
+the ID check, then the link, then to ignore it or contact that shop at its
+privacy email, or the privacy phone when both are on the shop record. The
+officer name is not in that line. A shop that is not privacy ready, or
+whose privacy email is missing or not valid, is refused and no message is
+sent. The reply-to is that same privacy email. The send panel says the email
+comes from the shop by name. Staging email goes only to an @staging.invalid
+address. A missing Didit setup or a missing mail setup answers 503 and the
+desk says the message was not sent. Quebec and a branch with no province
+are refused with 409 before any email is sent.
 
 ## Microsoft sign-in and link (CD-276, 20 November 2026)
 
