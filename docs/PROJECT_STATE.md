@@ -12,7 +12,9 @@ and dark. Confirm and continue is the primary button; while the request is in
 flight it reads Confirming, the form is aria-busy, and Cancel stays enabled.
 Cancel aborts that request and clears the password and authenticator code,
 and a timeout clears those fields too. A wrong factor is described on the
-field it belongs to. The setup key is shown in groups of four; Copy writes
+field it belongs to. After a wrong password, a request for an authenticator
+code, or a wrong code, focus returns to that field once it is enabled again.
+The password-rule placeholder is not on this screen. The setup key is shown in groups of four; Copy writes
 the raw key. Recovery codes can be copied or downloaded in the browser as
 currencydesk-recovery-codes.txt. That file is built in memory and not stored
 or logged. No QR is shown, because the repo has no QR library.

@@ -861,6 +861,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
     const request = useRef(null);
     const attempt = useRef(0);
     const blobUrl = useRef("");
+    const focusTarget = useRef("");
     useEffect(() => {
       live.current = true;
       const controller = new AbortController();
@@ -892,6 +893,15 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
         if (blobUrl.current) { URL.revokeObjectURL(blobUrl.current); blobUrl.current = ""; }
       };
     }, []);
+    useEffect(() => {
+      if (busy || !focusTarget.current) return undefined;
+      const id = focusTarget.current === "totp" ? "signin-totp" : "signin-password";
+      const node = document.getElementById(id);
+      if (!node || node.disabled) return undefined;
+      node.focus();
+      focusTarget.current = "";
+      return undefined;
+    }, [busy, fieldError, factorRequired]);
     const clearConfirmation = () => {
       setPending(null);
       setPassword("");
@@ -935,6 +945,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
       setPending(method);
     };
     const miss = (field, text) => {
+      focusTarget.current = field === "totp" ? "totp" : "password";
       setFieldError({ field, text });
       setPassword("");
       setTotp("");
@@ -983,6 +994,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
         if (!current()) return;
         if (controller.signal.aborted) throw new Error("request_expired");
         if (res.status === 403 && data && data.error === "factor_required") {
+          focusTarget.current = "totp";
           setFactorRequired(true);
           setTotp("");
           setFieldError({ field: "totp", text: "Enter the code from your authenticator app to continue." });
@@ -1177,7 +1189,6 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
           </div>
           {reason ? <p id="finish-reason" className="why">{reason}</p> : null}
         </form> : null}
-        <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
         {notice ? <p className="hold" role="alert">{notice}</p> : null}
         {success ? <p role="status">{success}</p> : null}
       </div>

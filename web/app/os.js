@@ -72264,6 +72264,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
     const request = useRef(null);
     const attempt = useRef(0);
     const blobUrl = useRef("");
+    const focusTarget = useRef("");
     useEffect(() => {
       live.current = true;
       const controller = new AbortController();
@@ -72302,6 +72303,15 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
         }
       };
     }, []);
+    useEffect(() => {
+      if (busy || !focusTarget.current) return undefined;
+      const id = focusTarget.current === "totp" ? "signin-totp" : "signin-password";
+      const node = document.getElementById(id);
+      if (!node || node.disabled) return undefined;
+      node.focus();
+      focusTarget.current = "";
+      return undefined;
+    }, [busy, fieldError, factorRequired]);
     const clearConfirmation = () => {
       setPending(null);
       setPassword("");
@@ -72345,6 +72355,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
       setPending(method);
     };
     const miss = (field, text) => {
+      focusTarget.current = field === "totp" ? "totp" : "password";
       setFieldError({
         field,
         text
@@ -72408,6 +72419,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
         if (!current()) return;
         if (controller.signal.aborted) throw new Error("request_expired");
         if (res.status === 403 && data && data.error === "factor_required") {
+          focusTarget.current = "totp";
           setFactorRequired(true);
           setTotp("");
           setFieldError({
@@ -72733,11 +72745,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
     }, "Cancel") : null), reason ? /*#__PURE__*/React.createElement("p", {
       id: "finish-reason",
       className: "why"
-    }, reason) : null) : null, /*#__PURE__*/React.createElement("div", {
-      className: "placeholder"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "plab"
-    }, "Password rule pending Sol"), /*#__PURE__*/React.createElement("p", null, "The owner and admin password rule is not decided yet. This line is a placeholder.")), notice ? /*#__PURE__*/React.createElement("p", {
+    }, reason) : null) : null, notice ? /*#__PURE__*/React.createElement("p", {
       className: "hold",
       role: "alert"
     }, notice) : null, success ? /*#__PURE__*/React.createElement("p", {

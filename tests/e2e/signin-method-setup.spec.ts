@@ -393,3 +393,44 @@ test("the setup key copies without spaces and a disabled finish says why", async
   await expect(page.getByText("Enter the 6 digit code and tick that you saved your recovery codes.")).toHaveCount(0);
   expect(logs.join("\n")).not.toMatch(/test-recovery-code|JBSWY3DPEHPK3PXP/);
 });
+
+async function focusedId(page: import("@playwright/test").Page) {
+  return page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.id : ""));
+}
+
+test("a wrong password returns focus to the password field", async ({ page }) => {
+  await page.route("**/api/auth/stepup", route => route.fulfill({ status: 401, json: { error: "invalid_credentials" } }));
+  await openSettings(page);
+  await page.locator(".meth").filter({ hasText: "Google" }).getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Password", { exact: true }).fill("synthetic-wrong-password");
+  await page.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(page.locator("#signin-password-error")).toContainText("could not confirm");
+  await expect.poll(() => focusedId(page)).toBe("signin-password");
+});
+
+test("a code-needed answer returns focus to the authenticator field", async ({ page }) => {
+  await page.route("**/api/auth/stepup", route => route.fulfill({ status: 403, json: { error: "factor_required" } }));
+  await openSettings(page);
+  await page.locator(".meth").filter({ hasText: "Google" }).getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(page.locator("#signin-totp-error")).toContainText("Enter the code from your authenticator app");
+  await expect.poll(() => focusedId(page)).toBe("signin-totp");
+});
+
+test("a wrong code returns focus to the authenticator field", async ({ page }) => {
+  let n = 0;
+  await page.route("**/api/auth/stepup", route => {
+    n += 1;
+    if (n === 1) return route.fulfill({ status: 403, json: { error: "factor_required" } });
+    return route.fulfill({ status: 401, json: { error: "invalid_credentials" } });
+  });
+  await openSettings(page);
+  await page.locator(".meth").filter({ hasText: "Google" }).getByRole("button", { name: "Connect" }).click();
+  await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
+  await page.getByRole("button", { name: "Confirm and continue" }).click();
+  await page.getByLabel("Authenticator code").fill("000000");
+  await page.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(page.locator("#signin-totp-error")).toContainText("could not confirm");
+  await expect.poll(() => focusedId(page)).toBe("signin-totp");
+});
