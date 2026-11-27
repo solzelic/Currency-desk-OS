@@ -68,7 +68,7 @@ test("owner can enroll an authenticator through Settings and prove it to the ser
   await page.getByRole("button", { name: "Confirm and continue" }).click();
   const form = page.getByRole("form", { name: "Authenticator setup" });
   await expect(form).toBeVisible();
-  const secret = await form.locator(":scope > code").innerText();
+  const secret = (await form.locator("code.setup-key").innerText()).replace(/\s/g, "");
   const totp = new TOTP({ secret, digits: 6, period: 30, algorithm: "SHA1" });
   await page.getByLabel("New authenticator code").fill(totp.generate());
   await page.getByLabel("I saved these recovery codes").check();

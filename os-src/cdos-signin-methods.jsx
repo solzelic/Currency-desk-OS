@@ -149,14 +149,15 @@
 .cd-set .body{flex:1;padding:28px 48px;overflow:hidden}
 .cd-set h1{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:40px;line-height:1.05;margin:0 0 8px}
 .cd-set .lead{font-size:15px;line-height:1.45;color:#45403A;margin:0 0 22px;max-width:640px}
-.cd-set .methods{background:#fff;border:1px solid #D9D2C4;border-radius:14px;max-width:760px}
-.cd-set .meth{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:start;padding:16px 18px;border-bottom:1px solid #D9D2C4}
+.cd-set .methods{background:var(--white);border:1px solid var(--hair);border-radius:14px;max-width:760px;color:var(--ink)}
+.cd-set .meth{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--hair)}
 .cd-set .meth:last-child{border-bottom:0}
-.cd-set .meth .name{font-size:15px;font-weight:650}
-.cd-set .meth .meta{font-size:13px;color:#45403A;margin-top:2px}
-.cd-set .meth .act{margin-top:10px;font-size:13px;font-weight:600;background:none;border:0;border-bottom:1px solid #D9D2C4;padding:0 0 1px;min-height:44px;cursor:pointer}
-.cd-set .meth .act:disabled{color:#9C948A;border-bottom-color:transparent;cursor:not-allowed}
-.cd-set .meth .hint{grid-column:2;font-size:13px;line-height:1.4;color:#6E675E;margin-top:6px}
+.cd-set .meth .ico{width:40px;height:40px;border-radius:10px;background:var(--paper);border:1px solid var(--hair);display:grid;place-items:center;color:var(--ink)}
+.cd-set .meth .name{font-size:15px;font-weight:650;color:var(--ink)}
+.cd-set .meth .meta{font-size:13px;color:var(--graph);margin-top:2px}
+.cd-set .meth .act{margin-top:0;font-size:13px;font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 1px;min-height:44px;cursor:pointer;color:var(--ink)}
+.cd-set .meth .act:disabled{color:var(--mute);border-bottom-color:transparent;cursor:not-allowed}
+.cd-set .meth .hint{grid-column:2;font-size:13px;line-height:1.4;color:var(--mute);margin-top:6px}
 .cd-set .bft{display:flex;gap:24px;padding:0 28px;height:40px;align-items:center;border-top:1px solid #D9D2C4;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6E675E}
 .cd-set.is-phone .desk-only,.cd-set.is-phone .subnav,.cd-set.is-phone .bft{display:none}
 .cd-set.is-phone .body{padding:8px 16px 16px}
@@ -167,6 +168,36 @@
 .cd-set .tabbar span{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#6E675E}
 .cd-set .tabbar span.on{color:#17140F}
 html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4;--paper:#14120E;--white:#221F1A;--graph:#C9C1B4;--mute:#A39B90;--faint:#8A8278;--hair:#3A342C;--field:#4A433A;--soft:#1C3A2C;--warn-bg:#3A2E18;--warn-text:#E6C98A;--positive-text:#B7E4C7;--positive-bg:#163528;background:var(--paper);color:var(--ink)}
+.cd-set.is-live{width:auto;height:auto;min-height:0;display:block;background:transparent;color:var(--ink)}
+html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
+.cd-set.is-live h2{font-family:Archivo,system-ui,sans-serif;font-size:22px;margin:0 0 8px;color:var(--ink)}
+.cd-set.is-live .intro{color:var(--graph);font-size:14px;line-height:1.45;margin:0 0 16px}
+.cd-set .owner-auth{margin-top:20px;color:var(--ink)}
+.cd-set .owner-auth h3,.cd-set .panel h3{margin:0 0 8px;font-size:18px;color:var(--ink)}
+.cd-set .owner-auth p,.cd-set .panel p{margin:0 0 12px;color:var(--graph);font-size:14px;line-height:1.45}
+.cd-set .panel{padding:20px;margin-top:16px;border:1px solid var(--hair);border-radius:16px;background:var(--white);color:var(--ink)}
+.cd-set .stack{margin:0 0 12px}
+.cd-set .stack label,.cd-set .check{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px}
+.cd-set .check{display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:12px 0}
+.cd-set .stack input,.cd-set .panel input[type="password"],.cd-set .panel input[inputmode="numeric"]{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid var(--field);background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+.cd-set .stack input:disabled{opacity:.7}
+.cd-set .panel p.field-error{margin:8px 0 0;font-size:14px;line-height:1.4;color:var(--warn-text)}
+.cd-set .panel p.why{margin:8px 0 0;font-size:14px;line-height:1.4;color:var(--graph)}
+.cd-set .actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.cd-set .btn{min-height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;font:inherit;font-size:15px;font-weight:600;border:0;cursor:pointer;color:var(--ink);background:transparent}
+.cd-set .btn.primary{background:var(--ink);color:var(--paper)}
+.cd-set .btn.sec{background:var(--white);border:1px solid var(--hair);color:var(--ink)}
+.cd-set .btn:disabled{opacity:.55;cursor:not-allowed}
+.cd-set .btn:focus-visible,.cd-set .panel input:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
+.cd-set .keyrow{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 16px}
+.cd-set .setup-key{font-family:var(--mono);font-size:16px;letter-spacing:.04em;background:var(--paper);color:var(--ink);padding:10px 12px;border-radius:10px;border:1px solid var(--hair)}
+.cd-set .setup-key span+span{margin-left:.55em}
+.cd-set .codes{margin:0 0 12px;padding-left:1.2em;color:var(--ink)}
+.cd-set .codes code{font-family:var(--mono);color:var(--ink)}
+.cd-set .hold{margin-top:14px;font-size:14px;color:var(--warn-text)}
+.cd-set .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;flex:none;animation:cdSpin .7s linear infinite}
+@keyframes cdSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.cd-set .spin{animation:none}}
 .cd-si .staging{position:absolute;left:64px;bottom:64px;display:grid;gap:8px;width:280px}
 .cd-si.is-phone .staging{position:relative;left:auto;bottom:auto;width:auto;margin:12px 0 24px}
 `;
@@ -220,7 +251,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#17140F" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 10l1.5-6h13L20 10M3 10h18v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2z" /><path d="M6 14v5h4v-5M14 14v5h4v-5" /></svg>;
   }
   function IcoMail() {
-    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#17140F" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M4 7l8 6 8-6" /></svg>;
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M4 7l8 6 8-6" /></svg>;
   }
 
   const SUBS = {
@@ -787,8 +818,28 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     return <SignInScreen preview flags={flags} state={name} device={device} motion={motion} />;
   }
 
+  const RECOVERY_FILE = "currencydesk-recovery-codes.txt";
+  const RECOVERY_LINE = "Each code works once. Keep this file somewhere safe.";
+
+  function finishGap(enrollment, enrollCode, savedCodes) {
+    if (!enrollment) return "";
+    if (enrollment.recoveryOnly) return savedCodes ? "" : "Tick that you saved your recovery codes.";
+    const codeOk = /^\d{6}$/.test(enrollCode);
+    if (codeOk && savedCodes) return "";
+    if (!codeOk && !savedCodes) return "Enter the 6 digit code and tick that you saved your recovery codes.";
+    if (!codeOk) return "Enter the 6 digit code.";
+    return "Tick that you saved your recovery codes.";
+  }
+
+  /* Groups of four are display only. Copy sends the raw key.
+     No QR is drawn: package.json has no QR library, and the key stays on the page. */
+  function groupedKey(secret) {
+    return String(secret || "").replace(/\s/g, "").match(/.{1,4}/g) || [];
+  }
+
   function SignInMethodsSettings({ owner = false }) {
     const [notice, setNotice] = useState("");
+    const [fieldError, setFieldError] = useState(null);
     const [methods, setMethods] = useState([]);
     const [loaded, setLoaded] = useState(false);
     const [pending, setPending] = useState(null);
@@ -802,9 +853,14 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     const [enrollCode, setEnrollCode] = useState("");
     const [savedCodes, setSavedCodes] = useState(false);
     const [success, setSuccess] = useState("");
+    const [copiedKey, setCopiedKey] = useState(false);
+    const [copiedCodes, setCopiedCodes] = useState(false);
+    const [downloaded, setDownloaded] = useState(false);
     const sending = useRef(false);
     const live = useRef(true);
     const request = useRef(null);
+    const attempt = useRef(0);
+    const blobUrl = useRef("");
     useEffect(() => {
       live.current = true;
       const controller = new AbortController();
@@ -828,7 +884,13 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         })
         .catch(() => { if (live.current) setNotice("Sign-in methods could not load. Reload to try again."); })
         .finally(() => clearTimeout(deadline));
-      return () => { live.current = false; controller.abort(); if (request.current) request.current.abort(); };
+      return () => {
+        live.current = false;
+        attempt.current += 1;
+        controller.abort();
+        if (request.current) request.current.abort();
+        if (blobUrl.current) { URL.revokeObjectURL(blobUrl.current); blobUrl.current = ""; }
+      };
     }, []);
     const clearConfirmation = () => {
       setPending(null);
@@ -838,6 +900,20 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       setEnrollment(null);
       setEnrollCode("");
       setSavedCodes(false);
+      setFieldError(null);
+      setCopiedKey(false);
+      setCopiedCodes(false);
+      setDownloaded(false);
+    };
+    const cancelPending = () => {
+      attempt.current += 1;
+      const active = request.current;
+      request.current = null;
+      sending.current = false;
+      if (active) active.abort();
+      setBusy(false);
+      clearConfirmation();
+      setNotice("");
     };
     const onAction = (method) => {
       if (!method.action || !loaded || sending.current) return;
@@ -858,14 +934,22 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       setSuccess("");
       setPending(method);
     };
+    const miss = (field, text) => {
+      setFieldError({ field, text });
+      setPassword("");
+      setTotp("");
+    };
     const confirm = async (event, usePasskey = false) => {
       event.preventDefault();
       if (!pending || (!usePasskey && !password) || sending.current) return;
+      const id = ++attempt.current;
       sending.current = true;
       setBusy(true);
       setNotice("");
+      setFieldError(null);
       const controller = new AbortController();
       request.current = controller;
+      const current = () => live.current && id === attempt.current;
       // One deadline covers confirmation, body parsing and optional removal.
       // These requests do not create a new sign-in session.
       const deadline = setTimeout(() => controller.abort(), 30_000);
@@ -881,12 +965,12 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           });
           if (!options.ok) throw new Error("passkey_not_available");
           const body = await options.json();
-          if (!live.current) return;
+          if (!current()) return;
           if (controller.signal.aborted) throw new Error("request_expired");
           const credential = await navigator.credentials.get({
             publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(body), signal: controller.signal,
           });
-          if (!live.current) return;
+          if (!current()) return;
           if (controller.signal.aborted || !credential) throw new Error("passkey_cancelled");
           proof = credential.toJSON();
         }
@@ -896,17 +980,16 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           body: JSON.stringify(proof),
         });
         const data = await res.json().catch(() => null);
-        if (!live.current) return;
+        if (!current()) return;
         if (controller.signal.aborted) throw new Error("request_expired");
         if (res.status === 403 && data && data.error === "factor_required") {
           setFactorRequired(true);
-          setNotice("Enter the code from your authenticator app to continue.");
+          setTotp("");
+          setFieldError({ field: "totp", text: "Enter the code from your authenticator app to continue." });
           return;
         }
         if (!res.ok || !data || data.ok !== true) {
-          setNotice(res.status === 429 ? "Too many tries. Wait before trying again." : "We could not confirm it's you. Check your details and try again.");
-          setPassword("");
-          setTotp("");
+          miss(factorRequired ? "totp" : "password", res.status === 429 ? "Too many tries. Wait before trying again." : "We could not confirm it's you. Check your details and try again.");
           return;
         }
         setPassword("");
@@ -916,12 +999,12 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
             method: "POST", credentials: "same-origin", signal: controller.signal,
           });
           const body = await setup.json().catch(() => null);
-          if (!live.current) return;
+          if (!current()) return;
           if (controller.signal.aborted) throw new Error("request_expired");
           if (!setup.ok || !body || body.ok !== true || !Array.isArray(body.backupCodes) || !body.backupCodes.length ||
               !body.backupCodes.every((c) => typeof c === "string") ||
               (!hasTotp && (typeof body.ticket !== "string" || typeof body.manualSecret !== "string"))) {
-            setNotice("Authenticator setup could not finish. Confirm again to retry.");
+            setFieldError({ field: "password", text: "Authenticator setup could not finish. Confirm again to retry." });
             return;
           }
           setEnrollment({ ticket: body.ticket, secret: body.manualSecret, codes: body.backupCodes, recoveryOnly: hasTotp });
@@ -934,18 +1017,56 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         const removed = await fetch("/api/auth/sso/" + pending.id + "/unlink", {
           method: "POST", credentials: "same-origin", signal: controller.signal,
         });
-        if (!live.current) return;
+        if (!current()) return;
         if (controller.signal.aborted) throw new Error("request_expired");
         if (removed.status === 409) { setNotice("Add another way to sign in before removing this one."); return; }
         if (!removed.ok) { setNotice("The method could not be removed. Confirm again to retry."); return; }
         window.location.assign("/login");
       } catch {
-        if (live.current) setNotice("The request could not finish. Check your connection and confirm again.");
+        if (!current()) return;
+        setPassword("");
+        setTotp("");
+        setEnrollCode("");
+        setFieldError({ field: "password", text: "The request could not finish. Check your connection and confirm again." });
       } finally {
         clearTimeout(deadline);
-        request.current = null;
-        sending.current = false;
-        if (live.current) setBusy(false);
+        if (request.current === controller) request.current = null;
+        if (id === attempt.current) {
+          sending.current = false;
+          if (live.current) setBusy(false);
+        }
+      }
+    };
+    const copyValue = async (text, which) => {
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+        await navigator.clipboard.writeText(text);
+        if (!live.current) return;
+        if (which === "key") setCopiedKey(true);
+        else setCopiedCodes(true);
+      } catch { /* A failed copy stays on Copy. The codes are not logged. */ }
+    };
+    const downloadCodes = () => {
+      if (!enrollment || !enrollment.codes || !enrollment.codes.length) return;
+      let url = "";
+      let link = null;
+      try {
+        const date = new Date().toISOString().slice(0, 10);
+        const text = enrollment.codes.join("\n") + "\n" + date + "\n" + RECOVERY_LINE + "\n";
+        url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+        blobUrl.current = url;
+        link = document.createElement("a");
+        link.href = url;
+        link.download = RECOVERY_FILE;
+        document.body.appendChild(link);
+        link.click();
+        if (live.current) setDownloaded(true);
+      } catch {
+        if (live.current) setDownloaded(false);
+      } finally {
+        if (link && link.parentNode) link.remove();
+        if (url) URL.revokeObjectURL(url);
+        if (blobUrl.current === url) blobUrl.current = "";
       }
     };
     const finishEnrollment = async (event) => {
@@ -957,11 +1078,14 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
         return;
       }
       if (!/^\d{6}$/.test(enrollCode)) return;
+      const id = ++attempt.current;
       sending.current = true;
       setBusy(true);
       setNotice("");
+      setFieldError(null);
       const controller = new AbortController();
       request.current = controller;
+      const current = () => live.current && id === attempt.current;
       const deadline = setTimeout(() => controller.abort(), 30_000);
       try {
         const res = await fetch("/api/auth/mfa/enroll/confirm", {
@@ -970,69 +1094,91 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           body: JSON.stringify({ ticket: enrollment.ticket, code: enrollCode }),
         });
         const body = await res.json().catch(() => null);
-        if (!live.current) return;
+        if (!current()) return;
         if (controller.signal.aborted) throw new Error("request_expired");
         setEnrollCode("");
         if (!res.ok || !body || body.ok !== true) {
-          setNotice(res.status === 429 ? "Too many tries. Wait before trying again." : "Setup could not be confirmed. Use a fresh authenticator code or cancel and start again.");
+          setFieldError({ field: "enroll", text: res.status === 429 ? "Too many tries. Wait before trying again." : "Setup could not be confirmed. Use a fresh authenticator code or cancel and start again." });
           return;
         }
         setHasTotp(true);
         clearConfirmation();
         setSuccess("Authenticator connected. You can now connect Google or Microsoft and use your authenticator when signing in.");
       } catch {
-        if (live.current) setNotice("Setup could not be confirmed. Check your connection. Reload to check whether it completed before starting again.");
+        if (!current()) return;
+        setEnrollCode("");
+        setFieldError({ field: "enroll", text: "Setup could not be confirmed. Check your connection. Reload to check whether it completed before starting again." });
       } finally {
         clearTimeout(deadline);
-        request.current = null;
-        sending.current = false;
-        if (live.current) setBusy(false);
+        if (request.current === controller) request.current = null;
+        if (id === attempt.current) {
+          sending.current = false;
+          if (live.current) setBusy(false);
+        }
       }
     };
+    const reason = finishGap(enrollment, enrollCode, savedCodes);
+    const rawKey = enrollment && !enrollment.recoveryOnly ? String(enrollment.secret || "").replace(/\s/g, "") : "";
     return (
-      <div>
+      <div className="cd-set is-live">
         <style>{CSS}</style>
-        <h2 style={{ fontFamily: "Archivo, sans-serif", fontSize: 22, margin: "0 0 8px" }}>Sign-in methods</h2>
-        <p style={{ color: "#45403A", fontSize: 14, marginTop: 0 }}>Ways you can open the desk. The last remaining method stays until you add another.</p>
-        <div className="cd-set" style={{ width: "auto", height: "auto", background: "transparent" }}>
-          <MethodsList methods={methods} onAction={onAction} busy={busy} />
-          {owner ? <section style={{ marginTop: 20 }} aria-label="Owner sign-in protection">
-            <h3>Authenticator and recovery codes</h3>
-            <p>Owners need an authenticator and unused recovery codes to sign in with Google or Microsoft. Keep your password as a way back in.</p>
-            <button type="button" disabled={busy || !loaded} onClick={() => onAction({ id: "totp", name: "your authenticator", action: "Set up" })}>{hasTotp ? "Replace recovery codes" : "Set up authenticator"}</button>
-          </section> : null}
-          {pending && !enrollment ? <form onSubmit={confirm} aria-label="Confirm sign-in method change" style={{ padding: 20, marginTop: 16, border: "1px solid #D9D2C4", borderRadius: 16 }}>
-            <h3>Confirm it's you</h3>
-            <p>Confirm before you {pending.action === "Connect" ? "connect" : pending.action === "Remove" ? "remove" : "set up"} {pending.name}.</p>
-            <label style={{ display: "block", marginBottom: 12 }}>Password
-              <input autoFocus type="password" autoComplete="current-password" value={password} disabled={busy} onChange={(e) => setPassword(e.target.value)} required style={{ display: "block", width: "100%", padding: 12 }} />
-            </label>
-            {factorRequired ? <label style={{ display: "block", marginBottom: 12 }}>Authenticator code
-              <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totp} disabled={busy} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} required style={{ display: "block", width: "100%", padding: 12 }} />
-            </label> : null}
-            <button type="submit" disabled={busy}>Confirm and continue</button>
-            {hasPasskey ? <button type="button" disabled={busy} onClick={(e) => confirm(e, true)}>Confirm with passkey</button> : null}
-            <button type="button" disabled={busy} onClick={() => { if (!sending.current) { clearConfirmation(); setNotice(""); } }}>Cancel</button>
-          </form> : null}
-          {enrollment ? <form onSubmit={finishEnrollment} aria-label="Authenticator setup" style={{ padding: 20, marginTop: 16, border: "1px solid #D9D2C4", borderRadius: 16 }}>
-            <h3>{enrollment.recoveryOnly ? "Save your new recovery codes" : "Set up your authenticator"}</h3>
-            {enrollment.recoveryOnly ? <p>Your previous recovery codes no longer work.</p> : <>
-              <p>Add an account in your authenticator app using this setup key. Choose a time-based, six-digit code.</p>
-              <code style={{ overflowWrap: "anywhere" }}>{enrollment.secret}</code>
-              <label style={{ display: "block", margin: "16px 0" }}>New authenticator code
-                <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={enrollCode} disabled={busy} onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, ""))} required style={{ display: "block", width: "100%", padding: 12 }} />
-              </label>
-            </>}
-            <p>Save these recovery codes privately. Each works once. They will disappear when you leave this screen.</p>
-            <ul>{enrollment.codes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
-            <label style={{ display: "block", marginBottom: 16 }}><input type="checkbox" checked={savedCodes} disabled={busy} onChange={(e) => setSavedCodes(e.target.checked)} /> I saved these recovery codes</label>
-            <button type="submit" disabled={busy || !savedCodes}>{enrollment.recoveryOnly ? "Done" : "Finish setup"}</button>
-            {!enrollment.recoveryOnly ? <button type="button" disabled={busy} onClick={() => { if (!sending.current) { clearConfirmation(); setNotice(""); } }}>Cancel</button> : null}
-          </form> : null}
-          <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
-          {notice ? <p className="hold" role="alert">{notice}</p> : null}
-          {success ? <p role="status">{success}</p> : null}
-        </div>
+        <h2>Sign-in methods</h2>
+        <p className="intro">Ways you can open the desk. The last remaining method stays until you add another.</p>
+        <MethodsList methods={methods} onAction={onAction} busy={busy} />
+        {owner ? <section className="owner-auth" aria-label="Owner sign-in protection">
+          <h3>Authenticator and recovery codes</h3>
+          <p>Owners need an authenticator and unused recovery codes to sign in with Google or Microsoft. Keep your password as a way back in.</p>
+          <button type="button" className="btn primary" disabled={busy || !loaded} onClick={() => onAction({ id: "totp", name: "your authenticator", action: "Set up" })}>{hasTotp ? "Replace recovery codes" : "Set up authenticator"}</button>
+        </section> : null}
+        {pending && !enrollment ? <form onSubmit={confirm} aria-label="Confirm sign-in method change" aria-busy={busy ? "true" : "false"} className="panel">
+          <h3>Confirm it's you</h3>
+          <p>Confirm before you {pending.action === "Connect" ? "connect" : pending.action === "Remove" ? "remove" : "set up"} {pending.name}.</p>
+          <div className="stack">
+            <label htmlFor="signin-password">Password</label>
+            <input id="signin-password" autoFocus type="password" autoComplete="current-password" value={password} disabled={busy} onChange={(e) => setPassword(e.target.value)} required aria-invalid={fieldError && fieldError.field === "password" ? "true" : undefined} aria-describedby={fieldError && fieldError.field === "password" ? "signin-password-error" : undefined} />
+            {fieldError && fieldError.field === "password" ? <p id="signin-password-error" className="field-error" role="alert">{fieldError.text}</p> : null}
+          </div>
+          {factorRequired ? <div className="stack">
+            <label htmlFor="signin-totp">Authenticator code</label>
+            <input id="signin-totp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totp} disabled={busy} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} required aria-invalid={fieldError && fieldError.field === "totp" ? "true" : undefined} aria-describedby={fieldError && fieldError.field === "totp" ? "signin-totp-error" : undefined} />
+            {fieldError && fieldError.field === "totp" ? <p id="signin-totp-error" className="field-error" role="alert">{fieldError.text}</p> : null}
+          </div> : null}
+          <div className="actions">
+            <button type="submit" className="btn primary" disabled={busy}>{busy ? <span className="spin" aria-hidden="true" /> : null}{busy ? "Confirming" : "Confirm and continue"}</button>
+            {hasPasskey ? <button type="button" className="btn sec" disabled={busy} onClick={(e) => confirm(e, true)}>Confirm with passkey</button> : null}
+            <button type="button" className="btn sec" onClick={cancelPending}>Cancel</button>
+          </div>
+        </form> : null}
+        {enrollment ? <form onSubmit={finishEnrollment} aria-label="Authenticator setup" aria-busy={busy ? "true" : "false"} className="panel">
+          <h3>{enrollment.recoveryOnly ? "Save your new recovery codes" : "Set up your authenticator"}</h3>
+          {enrollment.recoveryOnly ? <p>Your previous recovery codes no longer work.</p> : <>
+            <p>Add an account in your authenticator app using this setup key. Choose a time-based, six-digit code.</p>
+            <div className="keyrow">
+              <code className="setup-key">{groupedKey(rawKey).map((group, i) => <span key={i}>{group}</span>)}</code>
+              <button type="button" className="btn sec" onClick={() => copyValue(rawKey, "key")}>{copiedKey ? "Copied" : "Copy"}</button>
+            </div>
+            <div className="stack">
+              <label htmlFor="signin-enroll-code">New authenticator code</label>
+              <input id="signin-enroll-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={enrollCode} disabled={busy} onChange={(e) => setEnrollCode(e.target.value.replace(/\D/g, ""))} required aria-invalid={fieldError && fieldError.field === "enroll" ? "true" : undefined} aria-describedby={fieldError && fieldError.field === "enroll" ? "signin-enroll-error" : undefined} />
+              {fieldError && fieldError.field === "enroll" ? <p id="signin-enroll-error" className="field-error" role="alert">{fieldError.text}</p> : null}
+            </div>
+          </>}
+          <p>Save these recovery codes privately. Each works once. They will disappear when you leave this screen.</p>
+          <ul className="codes">{enrollment.codes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+          <div className="actions">
+            <button type="button" className="btn sec" onClick={() => copyValue(enrollment.codes.join("\n"), "codes")}>{copiedCodes ? "Copied" : "Copy all"}</button>
+            <button type="button" className="btn sec" onClick={downloadCodes}>{downloaded ? "Downloaded" : "Download"}</button>
+          </div>
+          <label className="check"><input type="checkbox" checked={savedCodes} disabled={busy} onChange={(e) => setSavedCodes(e.target.checked)} /> I saved these recovery codes</label>
+          <div className="actions">
+            <button type="submit" className="btn primary" disabled={busy || !!reason} aria-describedby={reason ? "finish-reason" : undefined}>{enrollment.recoveryOnly ? "Done" : "Finish setup"}</button>
+            {!enrollment.recoveryOnly ? <button type="button" className="btn sec" onClick={cancelPending}>Cancel</button> : null}
+          </div>
+          {reason ? <p id="finish-reason" className="why">{reason}</p> : null}
+        </form> : null}
+        <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
+        {notice ? <p className="hold" role="alert">{notice}</p> : null}
+        {success ? <p role="status">{success}</p> : null}
       </div>
     );
   }

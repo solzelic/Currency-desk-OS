@@ -7,6 +7,15 @@ set up their authenticator and acknowledge the server-generated recovery codes,
 then replace recovery codes after reconfirming. Setup secrets stay in component
 memory and disappear on completion, cancellation or leaving Settings. Pending
 requests are guarded and aborted on unmount, with a 30-second request budget.
+The methods list uses the theme tokens, so the card and its text follow light
+and dark. Confirm and continue is the primary button; while the request is in
+flight it reads Confirming, the form is aria-busy, and Cancel stays enabled.
+Cancel aborts that request and clears the password and authenticator code,
+and a timeout clears those fields too. A wrong factor is described on the
+field it belongs to. The setup key is shown in groups of four; Copy writes
+the raw key. Recovery codes can be copied or downloaded in the browser as
+currencydesk-recovery-codes.txt. That file is built in memory and not stored
+or logged. No QR is shown, because the repo has no QR library.
 
 This supplies UI for the existing server endpoints; no auth policy, flags,
 provider configuration, schema or signup flow changes. Passkey registration and
