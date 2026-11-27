@@ -32,3 +32,10 @@ test("the sign-in preview renders a state without an auth call", async ({ page }
   await expect(page.getByText("Waiting for your device")).toBeVisible();
   expect(auth).toEqual([]);
 });
+
+test("sign-in preview h does not show a password-rule placeholder", async ({ page }) => {
+  await page.goto("/design-preview/signin/h?d=1280&motion=still");
+  await expect(page.getByRole("heading", { name: "Sign-in methods" })).toBeVisible();
+  await expect(page.getByText("Password rule pending", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("password rule is not decided", { exact: false })).toHaveCount(0);
+});

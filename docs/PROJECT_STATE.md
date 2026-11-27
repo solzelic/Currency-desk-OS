@@ -1,3 +1,30 @@
+## Settings sign-in setup (26 November 2026)
+
+Settings now asks for fresh server confirmation before connecting or removing
+Google/Microsoft. It accepts password plus an enrolled authenticator, or an
+existing passkey on browsers supporting WebAuthn JSON conversion. Owners can
+set up their authenticator and acknowledge the server-generated recovery codes,
+then replace recovery codes after reconfirming. Setup secrets stay in component
+memory and disappear on completion, cancellation or leaving Settings. Pending
+requests are guarded and aborted on unmount, with a 30-second request budget.
+The methods list uses the theme tokens, so the card and its text follow light
+and dark. Confirm and continue is the primary button; while the request is in
+flight it reads Confirming, the form is aria-busy, and Cancel stays enabled.
+Cancel aborts that request and clears the password and authenticator code,
+and a timeout clears those fields too. A wrong factor is described on the
+field it belongs to. After a wrong password, a request for an authenticator
+code, or a wrong code, focus returns to that field once it is enabled again.
+The password-rule placeholder is not on this screen. The setup key is shown in groups of four; Copy writes
+the raw key. Recovery codes can be copied or downloaded in the browser as
+currencydesk-recovery-codes.txt. That file is built in memory and not stored
+or logged. No QR is shown, because the repo has no QR library.
+
+This supplies UI for the existing server endpoints; no auth policy, flags,
+provider configuration, schema or signup flow changes. Passkey registration and
+returning passkey sign-in remain unwired. Hosted staging still reported all three
+methods unavailable when checked on 26 November. Real Google/Microsoft account
+access, hosted configuration, device checks and release approval remain open.
+
 ## Which identity provider, and why a check stopped (25 November 2026)
 
 `GET /api/idv/clients/:clientId` answers any signed-in desk role with `provider` (`persona` or `didit`), `ready` (`off`, `not_test_shop`, `not_configured`, `privacy_missing`, or `ok`), `checksEnabled`, `testShop`, and `sandbox`. The consent read returns the same `ready`, `testShop`, and `sandbox`. A missing read says the status is not available. Checks off say "Automatic ID checks are off. Check the ID in person instead." A ready Persona shop says "Automatic ID check uses Persona." and adds " (test)" when the key is a sandbox key. Didit is sandbox only, so a ready Didit shop says "Automatic ID check uses Didit (test)." Not configured and not a test shop say the automatic check is not available and to check the ID in person. The teller screen does not say staging. A missing privacy contact says the owner adds it in Settings, Clients and KYC. Customer consent is `consent-v0.3.10-draft` for Persona and `didit-consent-sandbox-v1` for Didit. Rows stored under `consent-v0.3.9-draft` or `didit-consent-sandbox-v0` still render the wording that was shown then, including the bracket placeholders. New consent uses "This shop" and "the staff at this counter" when a field is empty, and drops a privacy-policy or Persona notice sentence when there is no URL. That fallback wording is draft for Compliance review (CD-219). Didit customer copy needs Data and Privacy Lead approval before live (#825). Staging still refuses a customer link until `privacyReady` is true. The live lock and tier 4 are unchanged.

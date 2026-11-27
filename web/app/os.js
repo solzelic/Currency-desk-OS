@@ -13751,7 +13751,9 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         on: !!settings.requireCountOnHandoff,
         click: () => toggleSet('requireCountOnHandoff', 'Require count at handoff')
       })));
-    })(), signInOn && tab === 'signin-methods' && window.CDOS.SignInMethodsSettings ? React.createElement(window.CDOS.SignInMethodsSettings, null) : null, tab === 'ticker' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
+    })(), signInOn && tab === 'signin-methods' && window.CDOS.SignInMethodsSettings ? React.createElement(window.CDOS.SignInMethodsSettings, {
+      owner: serverRole === 'administrator'
+    }) : null, tab === 'ticker' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(SectionTitle, {
       icon: "bars",
       title: "Ticker tape",
       sub: "The scrolling rate strip in the desk header. Rates come from the Rate Board \u2014 these control how it looks."
@@ -71208,9 +71210,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .hold{margin-top:14px;font-size:14px;color:var(--flag,#8A5A0E)}
 .cd-si .cancel-row{margin-top:16px}
 .cd-si .linkish{color:var(--ink);font-weight:600;font-size:14px;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer}
-.cd-si .placeholder,.cd-set .placeholder{margin-top:14px;background:var(--warn-bg,#F5E8CF);border:1px solid #D9C08A;border-radius:12px;padding:14px 16px;color:var(--warn-text,#8A5A0E)}
-.cd-si .placeholder .plab,.cd-set .placeholder .plab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--warn-text,#8A5A0E);margin-bottom:4px}
-.cd-si .placeholder p,.cd-set .placeholder p{font-size:13px;line-height:1.4;color:var(--warn-text,#8A5A0E);margin:0}
 .cd-si.is-phone{height:844px;min-height:844px;overflow:hidden}
 .cd-si.is-phone .left{position:relative;left:auto;top:auto;width:auto;padding:12px 0 0}
 .cd-si.is-phone h1.display{font-size:56px;line-height:.9;margin-top:8px}
@@ -71257,14 +71256,15 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-set .body{flex:1;padding:28px 48px;overflow:hidden}
 .cd-set h1{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:40px;line-height:1.05;margin:0 0 8px}
 .cd-set .lead{font-size:15px;line-height:1.45;color:#45403A;margin:0 0 22px;max-width:640px}
-.cd-set .methods{background:#fff;border:1px solid #D9D2C4;border-radius:14px;max-width:760px}
-.cd-set .meth{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:start;padding:16px 18px;border-bottom:1px solid #D9D2C4}
+.cd-set .methods{background:var(--white);border:1px solid var(--hair);border-radius:14px;max-width:760px;color:var(--ink)}
+.cd-set .meth{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--hair)}
 .cd-set .meth:last-child{border-bottom:0}
-.cd-set .meth .name{font-size:15px;font-weight:650}
-.cd-set .meth .meta{font-size:13px;color:#45403A;margin-top:2px}
-.cd-set .meth .act{margin-top:10px;font-size:13px;font-weight:600;background:none;border:0;border-bottom:1px solid #D9D2C4;padding:0 0 1px;min-height:44px;cursor:pointer}
-.cd-set .meth .act:disabled{color:#9C948A;border-bottom-color:transparent;cursor:not-allowed}
-.cd-set .meth .hint{grid-column:2;font-size:13px;line-height:1.4;color:#6E675E;margin-top:6px}
+.cd-set .meth .ico{width:40px;height:40px;border-radius:10px;background:var(--paper);border:1px solid var(--hair);display:grid;place-items:center;color:var(--ink)}
+.cd-set .meth .name{font-size:15px;font-weight:650;color:var(--ink)}
+.cd-set .meth .meta{font-size:13px;color:var(--graph);margin-top:2px}
+.cd-set .meth .act{margin-top:0;font-size:13px;font-weight:600;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 1px;min-height:44px;cursor:pointer;color:var(--ink)}
+.cd-set .meth .act:disabled{color:var(--mute);border-bottom-color:transparent;cursor:not-allowed}
+.cd-set .meth .hint{grid-column:2;font-size:13px;line-height:1.4;color:var(--mute);margin-top:6px}
 .cd-set .bft{display:flex;gap:24px;padding:0 28px;height:40px;align-items:center;border-top:1px solid #D9D2C4;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#6E675E}
 .cd-set.is-phone .desk-only,.cd-set.is-phone .subnav,.cd-set.is-phone .bft{display:none}
 .cd-set.is-phone .body{padding:8px 16px 16px}
@@ -71275,6 +71275,36 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-set .tabbar span{flex:1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#6E675E}
 .cd-set .tabbar span.on{color:#17140F}
 html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4;--paper:#14120E;--white:#221F1A;--graph:#C9C1B4;--mute:#A39B90;--faint:#8A8278;--hair:#3A342C;--field:#4A433A;--soft:#1C3A2C;--warn-bg:#3A2E18;--warn-text:#E6C98A;--positive-text:#B7E4C7;--positive-bg:#163528;background:var(--paper);color:var(--ink)}
+.cd-set.is-live{width:auto;height:auto;min-height:0;display:block;background:transparent;color:var(--ink)}
+html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
+.cd-set.is-live h2{font-family:Archivo,system-ui,sans-serif;font-size:22px;margin:0 0 8px;color:var(--ink)}
+.cd-set.is-live .intro{color:var(--graph);font-size:14px;line-height:1.45;margin:0 0 16px}
+.cd-set .owner-auth{margin-top:20px;color:var(--ink)}
+.cd-set .owner-auth h3,.cd-set .panel h3{margin:0 0 8px;font-size:18px;color:var(--ink)}
+.cd-set .owner-auth p,.cd-set .panel p{margin:0 0 12px;color:var(--graph);font-size:14px;line-height:1.45}
+.cd-set .panel{padding:20px;margin-top:16px;border:1px solid var(--hair);border-radius:16px;background:var(--white);color:var(--ink)}
+.cd-set .stack{margin:0 0 12px}
+.cd-set .stack label,.cd-set .check{display:block;font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px}
+.cd-set .check{display:flex;gap:8px;align-items:flex-start;font-weight:500;margin:12px 0}
+.cd-set .stack input,.cd-set .panel input[type="password"],.cd-set .panel input[inputmode="numeric"]{display:block;width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid var(--field);background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+.cd-set .stack input:disabled{opacity:.7}
+.cd-set .panel p.field-error{margin:8px 0 0;font-size:14px;line-height:1.4;color:var(--warn-text)}
+.cd-set .panel p.why{margin:8px 0 0;font-size:14px;line-height:1.4;color:var(--graph)}
+.cd-set .actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.cd-set .btn{min-height:48px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;font:inherit;font-size:15px;font-weight:600;border:0;cursor:pointer;color:var(--ink);background:transparent}
+.cd-set .btn.primary{background:var(--ink);color:var(--paper)}
+.cd-set .btn.sec{background:var(--white);border:1px solid var(--hair);color:var(--ink)}
+.cd-set .btn:disabled{opacity:.55;cursor:not-allowed}
+.cd-set .btn:focus-visible,.cd-set .panel input:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
+.cd-set .keyrow{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:0 0 16px}
+.cd-set .setup-key{font-family:var(--mono);font-size:16px;letter-spacing:.04em;background:var(--paper);color:var(--ink);padding:10px 12px;border-radius:10px;border:1px solid var(--hair)}
+.cd-set .setup-key span+span{margin-left:.55em}
+.cd-set .codes{margin:0 0 12px;padding-left:1.2em;color:var(--ink)}
+.cd-set .codes code{font-family:var(--mono);color:var(--ink)}
+.cd-set .hold{margin-top:14px;font-size:14px;color:var(--warn-text)}
+.cd-set .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;display:inline-block;flex:none;animation:cdSpin .7s linear infinite}
+@keyframes cdSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.cd-set .spin{animation:none}}
 .cd-si .staging{position:absolute;left:64px;bottom:64px;display:grid;gap:8px;width:280px}
 .cd-si.is-phone .staging{position:relative;left:auto;bottom:auto;width:auto;margin:12px 0 24px}
 `;
@@ -71460,7 +71490,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       height: "18",
       viewBox: "0 0 24 24",
       fill: "none",
-      stroke: "#17140F",
+      stroke: "currentColor",
       strokeWidth: "1.7",
       strokeLinecap: "round",
       strokeLinejoin: "round",
@@ -71751,7 +71781,8 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
   }
   function MethodsList({
     methods,
-    onAction
+    onAction,
+    busy = false
   }) {
     const blockedReason = "Add another way to sign in before removing this one.";
     return /*#__PURE__*/React.createElement("div", {
@@ -71773,7 +71804,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       }, blockedReason) : null), m.action ? /*#__PURE__*/React.createElement("button", {
         type: "button",
         className: "act",
-        disabled: blocked,
+        disabled: blocked || busy,
         "aria-describedby": blocked ? "why-" + m.id : undefined,
         onClick: () => onAction(m)
       }, m.action) : /*#__PURE__*/React.createElement("span", null));
@@ -71821,11 +71852,7 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
     }, "Ways you can open the desk. The last remaining method stays until you add another."), /*#__PURE__*/React.createElement(MethodsList, {
       methods: PREVIEW_METHODS,
       onAction: onAction
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "placeholder"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "plab"
-    }, "Password rule pending Sol"), /*#__PURE__*/React.createElement("p", null, "The owner and admin password rule is not decided yet. This line is a placeholder.")), notice ? /*#__PURE__*/React.createElement("p", {
+    }), notice ? /*#__PURE__*/React.createElement("p", {
       className: "hold",
       role: "status"
     }, notice) : null), /*#__PURE__*/React.createElement("div", {
@@ -72460,15 +72487,66 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
       motion: motion
     });
   }
-  function SignInMethodsSettings() {
+  const RECOVERY_FILE = "currencydesk-recovery-codes.txt";
+  const RECOVERY_LINE = "Each code works once. Keep this file somewhere safe.";
+  function finishGap(enrollment, enrollCode, savedCodes) {
+    if (!enrollment) return "";
+    if (enrollment.recoveryOnly) return savedCodes ? "" : "Tick that you saved your recovery codes.";
+    const codeOk = /^\d{6}$/.test(enrollCode);
+    if (codeOk && savedCodes) return "";
+    if (!codeOk && !savedCodes) return "Enter the 6 digit code and tick that you saved your recovery codes.";
+    if (!codeOk) return "Enter the 6 digit code.";
+    return "Tick that you saved your recovery codes.";
+  }
+
+  /* Groups of four are display only. Copy sends the raw key.
+     No QR is drawn: package.json has no QR library, and the key stays on the page. */
+  function groupedKey(secret) {
+    return String(secret || "").replace(/\s/g, "").match(/.{1,4}/g) || [];
+  }
+  function SignInMethodsSettings({
+    owner = false
+  }) {
     const [notice, setNotice] = useState("");
+    const [fieldError, setFieldError] = useState(null);
     const [methods, setMethods] = useState([]);
+    const [loaded, setLoaded] = useState(false);
+    const [pending, setPending] = useState(null);
+    const [password, setPassword] = useState("");
+    const [totp, setTotp] = useState("");
+    const [factorRequired, setFactorRequired] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [hasTotp, setHasTotp] = useState(false);
+    const [hasPasskey, setHasPasskey] = useState(false);
+    const [enrollment, setEnrollment] = useState(null);
+    const [enrollCode, setEnrollCode] = useState("");
+    const [savedCodes, setSavedCodes] = useState(false);
+    const [success, setSuccess] = useState("");
+    const [copiedKey, setCopiedKey] = useState(false);
+    const [copiedCodes, setCopiedCodes] = useState(false);
+    const [downloaded, setDownloaded] = useState(false);
+    const sending = useRef(false);
+    const live = useRef(true);
+    const request = useRef(null);
+    const attempt = useRef(0);
+    const blobUrl = useRef("");
+    const focusTarget = useRef("");
     useEffect(() => {
-      let live = true;
+      live.current = true;
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 30_000);
       fetch("/api/auth/methods", {
-        credentials: "same-origin"
-      }).then(r => r.ok ? r.json() : null).then(d => {
-        if (!live || !d || !Array.isArray(d.methods)) return;
+        credentials: "same-origin",
+        signal: controller.signal
+      }).then(r => {
+        if (!r.ok) throw new Error("methods_unavailable");
+        return r.json();
+      }).then(d => {
+        if (!live.current) return;
+        if (!d || !Array.isArray(d.methods)) throw new Error("methods_unavailable");
+        setLoaded(true);
+        setHasTotp(d.methods.some(m => m.id === "totp" && m.connected));
+        setHasPasskey(d.methods.some(m => m.id === "passkey" && m.connected));
         setMethods(d.methods.filter(m => m.id === "password" || m.id === "google" || m.id === "microsoft").map(m => ({
           id: m.id,
           name: m.name,
@@ -72477,71 +72555,468 @@ html[data-cdtheme="dark"] .cd-si,html[data-cdtheme="dark"] .cd-set{--ink:#F3EEE4
           action: m.id === "password" ? "" : m.connected ? "Remove" : "Connect",
           icon: m.id === "google" ? "google" : m.id === "microsoft" ? "microsoft" : "mail"
         })));
-      }).catch(() => {});
+      }).catch(() => {
+        if (live.current) setNotice("Sign-in methods could not load. Reload to try again.");
+      }).finally(() => clearTimeout(deadline));
       return () => {
-        live = false;
+        live.current = false;
+        attempt.current += 1;
+        controller.abort();
+        if (request.current) request.current.abort();
+        if (blobUrl.current) {
+          URL.revokeObjectURL(blobUrl.current);
+          blobUrl.current = "";
+        }
       };
     }, []);
-    const onAction = async method => {
-      if (!method.action) return;
+    useEffect(() => {
+      if (busy || !focusTarget.current) return undefined;
+      const id = focusTarget.current === "totp" ? "signin-totp" : "signin-password";
+      const node = document.getElementById(id);
+      if (!node || node.disabled) return undefined;
+      node.focus();
+      focusTarget.current = "";
+      return undefined;
+    }, [busy, fieldError, factorRequired]);
+    const clearConfirmation = () => {
+      setPending(null);
+      setPassword("");
+      setTotp("");
+      setFactorRequired(false);
+      setEnrollment(null);
+      setEnrollCode("");
+      setSavedCodes(false);
+      setFieldError(null);
+      setCopiedKey(false);
+      setCopiedCodes(false);
+      setDownloaded(false);
+    };
+    const cancelPending = () => {
+      attempt.current += 1;
+      const active = request.current;
+      request.current = null;
+      sending.current = false;
+      if (active) active.abort();
+      setBusy(false);
+      clearConfirmation();
+      setNotice("");
+    };
+    const onAction = method => {
+      if (!method.action || !loaded || sending.current) return;
       if (method.action === "Remove" && adapter().removalBlocked(methods, method.id)) return;
       if (method.action === "Connect") {
+        if (owner && !hasTotp && !hasPasskey) {
+          setNotice("Set up your authenticator and recovery codes before connecting Google or Microsoft.");
+          return;
+        }
         const flags = adapter().flagsFromWindow(window);
         if (method.id === "google" && !flags.google || method.id === "microsoft" && !flags.microsoft) {
           setNotice(NOT_READY);
           return;
         }
-        window.location.assign("/api/auth/sso/link/" + method.id + "/start");
-        return;
       }
-      const res = await fetch("/api/auth/sso/" + method.id + "/unlink", {
-        method: "POST",
-        credentials: "same-origin"
-      });
-      if (res.status === 403) {
-        setNotice("Confirm it's you before removing this.");
-        return;
-      }
-      if (res.status === 409) {
-        setNotice("Add another way to sign in before removing this one.");
-        return;
-      }
-      if (!res.ok) {
-        setNotice(NOT_READY);
-        return;
-      }
-      window.location.assign("/login");
+      clearConfirmation();
+      setNotice("");
+      setSuccess("");
+      setPending(method);
     };
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("h2", {
-      style: {
-        fontFamily: "Archivo, sans-serif",
-        fontSize: 22,
-        margin: "0 0 8px"
+    const miss = (field, text) => {
+      focusTarget.current = field === "totp" ? "totp" : "password";
+      setFieldError({
+        field,
+        text
+      });
+      setPassword("");
+      setTotp("");
+    };
+    const confirm = async (event, usePasskey = false) => {
+      event.preventDefault();
+      if (!pending || !usePasskey && !password || sending.current) return;
+      const id = ++attempt.current;
+      sending.current = true;
+      setBusy(true);
+      setNotice("");
+      setFieldError(null);
+      const controller = new AbortController();
+      request.current = controller;
+      const current = () => live.current && id === attempt.current;
+      // One deadline covers confirmation, body parsing and optional removal.
+      // These requests do not create a new sign-in session.
+      const deadline = setTimeout(() => controller.abort(), 30_000);
+      try {
+        let proof = {
+          password,
+          ...(totp ? {
+            totp
+          } : {})
+        };
+        if (usePasskey) {
+          if (!window.PublicKeyCredential || typeof PublicKeyCredential.parseRequestOptionsFromJSON !== "function") {
+            setNotice("This browser cannot confirm with a passkey. Update it, or use your password and authenticator.");
+            return;
+          }
+          const options = await fetch("/api/auth/stepup/passkey/options", {
+            method: "POST",
+            credentials: "same-origin",
+            signal: controller.signal
+          });
+          if (!options.ok) throw new Error("passkey_not_available");
+          const body = await options.json();
+          if (!current()) return;
+          if (controller.signal.aborted) throw new Error("request_expired");
+          const credential = await navigator.credentials.get({
+            publicKey: PublicKeyCredential.parseRequestOptionsFromJSON(body),
+            signal: controller.signal
+          });
+          if (!current()) return;
+          if (controller.signal.aborted || !credential) throw new Error("passkey_cancelled");
+          proof = credential.toJSON();
+        }
+        const res = await fetch(usePasskey ? "/api/auth/stepup/passkey/verify" : "/api/auth/stepup", {
+          method: "POST",
+          credentials: "same-origin",
+          signal: controller.signal,
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(proof)
+        });
+        const data = await res.json().catch(() => null);
+        if (!current()) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        if (res.status === 403 && data && data.error === "factor_required") {
+          focusTarget.current = "totp";
+          setFactorRequired(true);
+          setTotp("");
+          setFieldError({
+            field: "totp",
+            text: "Enter the code from your authenticator app to continue."
+          });
+          return;
+        }
+        if (!res.ok || !data || data.ok !== true) {
+          miss(factorRequired ? "totp" : "password", res.status === 429 ? "Too many tries. Wait before trying again." : "We could not confirm it's you. Check your details and try again.");
+          return;
+        }
+        setPassword("");
+        setTotp("");
+        if (pending.id === "totp") {
+          const setup = await fetch("/api/auth/mfa/" + (hasTotp ? "recovery" : "enroll/start"), {
+            method: "POST",
+            credentials: "same-origin",
+            signal: controller.signal
+          });
+          const body = await setup.json().catch(() => null);
+          if (!current()) return;
+          if (controller.signal.aborted) throw new Error("request_expired");
+          if (!setup.ok || !body || body.ok !== true || !Array.isArray(body.backupCodes) || !body.backupCodes.length || !body.backupCodes.every(c => typeof c === "string") || !hasTotp && (typeof body.ticket !== "string" || typeof body.manualSecret !== "string")) {
+            setFieldError({
+              field: "password",
+              text: "Authenticator setup could not finish. Confirm again to retry."
+            });
+            return;
+          }
+          setEnrollment({
+            ticket: body.ticket,
+            secret: body.manualSecret,
+            codes: body.backupCodes,
+            recoveryOnly: hasTotp
+          });
+          return;
+        }
+        if (pending.action === "Connect") {
+          window.location.assign("/api/auth/sso/link/" + pending.id + "/start");
+          return;
+        }
+        const removed = await fetch("/api/auth/sso/" + pending.id + "/unlink", {
+          method: "POST",
+          credentials: "same-origin",
+          signal: controller.signal
+        });
+        if (!current()) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        if (removed.status === 409) {
+          setNotice("Add another way to sign in before removing this one.");
+          return;
+        }
+        if (!removed.ok) {
+          setNotice("The method could not be removed. Confirm again to retry.");
+          return;
+        }
+        window.location.assign("/login");
+      } catch {
+        if (!current()) return;
+        setPassword("");
+        setTotp("");
+        setEnrollCode("");
+        setFieldError({
+          field: "password",
+          text: "The request could not finish. Check your connection and confirm again."
+        });
+      } finally {
+        clearTimeout(deadline);
+        if (request.current === controller) request.current = null;
+        if (id === attempt.current) {
+          sending.current = false;
+          if (live.current) setBusy(false);
+        }
       }
-    }, "Sign-in methods"), /*#__PURE__*/React.createElement("p", {
-      style: {
-        color: "#45403A",
-        fontSize: 14,
-        marginTop: 0
+    };
+    const copyValue = async (text, which) => {
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+        await navigator.clipboard.writeText(text);
+        if (!live.current) return;
+        if (which === "key") setCopiedKey(true);else setCopiedCodes(true);
+      } catch {/* A failed copy stays on Copy. The codes are not logged. */}
+    };
+    const downloadCodes = () => {
+      if (!enrollment || !enrollment.codes || !enrollment.codes.length) return;
+      let url = "";
+      let link = null;
+      try {
+        const now = new Date();
+        const date = [now.getUTCFullYear(), String(now.getUTCMonth() + 1).padStart(2, "0"), String(now.getUTCDate()).padStart(2, "0")].join("-");
+        const text = enrollment.codes.join("\n") + "\n" + date + "\n" + RECOVERY_LINE + "\n";
+        url = URL.createObjectURL(new Blob([text], {
+          type: "text/plain"
+        }));
+        blobUrl.current = url;
+        link = document.createElement("a");
+        link.href = url;
+        link.download = RECOVERY_FILE;
+        document.body.appendChild(link);
+        link.click();
+        if (live.current) setDownloaded(true);
+      } catch {
+        if (live.current) setDownloaded(false);
+      } finally {
+        if (link && link.parentNode) link.remove();
+        if (url) URL.revokeObjectURL(url);
+        if (blobUrl.current === url) blobUrl.current = "";
       }
-    }, "Ways you can open the desk. The last remaining method stays until you add another."), /*#__PURE__*/React.createElement("div", {
-      className: "cd-set",
-      style: {
-        width: "auto",
-        height: "auto",
-        background: "transparent"
+    };
+    const finishEnrollment = async event => {
+      event.preventDefault();
+      if (sending.current || !enrollment || !savedCodes) return;
+      if (enrollment.recoveryOnly) {
+        clearConfirmation();
+        setSuccess("Recovery codes replaced. Keep the new codes somewhere safe.");
+        return;
       }
-    }, /*#__PURE__*/React.createElement(MethodsList, {
+      if (!/^\d{6}$/.test(enrollCode)) return;
+      const id = ++attempt.current;
+      sending.current = true;
+      setBusy(true);
+      setNotice("");
+      setFieldError(null);
+      const controller = new AbortController();
+      request.current = controller;
+      const current = () => live.current && id === attempt.current;
+      const deadline = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const res = await fetch("/api/auth/mfa/enroll/confirm", {
+          method: "POST",
+          credentials: "same-origin",
+          signal: controller.signal,
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            ticket: enrollment.ticket,
+            code: enrollCode
+          })
+        });
+        const body = await res.json().catch(() => null);
+        if (!current()) return;
+        if (controller.signal.aborted) throw new Error("request_expired");
+        setEnrollCode("");
+        if (!res.ok || !body || body.ok !== true) {
+          setFieldError({
+            field: "enroll",
+            text: res.status === 429 ? "Too many tries. Wait before trying again." : "Setup could not be confirmed. Use a fresh authenticator code or cancel and start again."
+          });
+          return;
+        }
+        setHasTotp(true);
+        clearConfirmation();
+        setSuccess("Authenticator connected. You can now connect Google or Microsoft and use your authenticator when signing in.");
+      } catch {
+        if (!current()) return;
+        setEnrollCode("");
+        setFieldError({
+          field: "enroll",
+          text: "Setup could not be confirmed. Check your connection. Reload to check whether it completed before starting again."
+        });
+      } finally {
+        clearTimeout(deadline);
+        if (request.current === controller) request.current = null;
+        if (id === attempt.current) {
+          sending.current = false;
+          if (live.current) setBusy(false);
+        }
+      }
+    };
+    const reason = finishGap(enrollment, enrollCode, savedCodes);
+    const rawKey = enrollment && !enrollment.recoveryOnly ? String(enrollment.secret || "").replace(/\s/g, "") : "";
+    return /*#__PURE__*/React.createElement("div", {
+      className: "cd-set is-live"
+    }, /*#__PURE__*/React.createElement("style", null, CSS), /*#__PURE__*/React.createElement("h2", null, "Sign-in methods"), /*#__PURE__*/React.createElement("p", {
+      className: "intro"
+    }, "Ways you can open the desk. The last remaining method stays until you add another."), /*#__PURE__*/React.createElement(MethodsList, {
       methods: methods,
-      onAction: onAction
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "placeholder"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "plab"
-    }, "Password rule pending Sol"), /*#__PURE__*/React.createElement("p", null, "The owner and admin password rule is not decided yet. This line is a placeholder.")), notice ? /*#__PURE__*/React.createElement("p", {
+      onAction: onAction,
+      busy: busy
+    }), owner ? /*#__PURE__*/React.createElement("section", {
+      className: "owner-auth",
+      "aria-label": "Owner sign-in protection"
+    }, /*#__PURE__*/React.createElement("h3", null, "Authenticator and recovery codes"), /*#__PURE__*/React.createElement("p", null, "Owners need an authenticator and unused recovery codes to sign in with Google or Microsoft. Keep your password as a way back in."), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn primary",
+      disabled: busy || !loaded,
+      onClick: () => onAction({
+        id: "totp",
+        name: "your authenticator",
+        action: "Set up"
+      })
+    }, hasTotp ? "Replace recovery codes" : "Set up authenticator")) : null, pending && !enrollment ? /*#__PURE__*/React.createElement("form", {
+      onSubmit: confirm,
+      "aria-label": "Confirm sign-in method change",
+      "aria-busy": busy ? "true" : "false",
+      className: "panel"
+    }, /*#__PURE__*/React.createElement("h3", null, "Confirm it's you"), /*#__PURE__*/React.createElement("p", null, "Confirm before you ", pending.action === "Connect" ? "connect" : pending.action === "Remove" ? "remove" : "set up", " ", pending.name, "."), /*#__PURE__*/React.createElement("div", {
+      className: "stack"
+    }, /*#__PURE__*/React.createElement("label", {
+      htmlFor: "signin-password"
+    }, "Password"), /*#__PURE__*/React.createElement("input", {
+      id: "signin-password",
+      autoFocus: true,
+      type: "password",
+      autoComplete: "current-password",
+      value: password,
+      disabled: busy,
+      onChange: e => setPassword(e.target.value),
+      required: true,
+      "aria-invalid": fieldError && fieldError.field === "password" ? "true" : undefined,
+      "aria-describedby": fieldError && fieldError.field === "password" ? "signin-password-error" : undefined
+    }), fieldError && fieldError.field === "password" ? /*#__PURE__*/React.createElement("p", {
+      id: "signin-password-error",
+      className: "field-error",
+      role: "alert"
+    }, fieldError.text) : null), factorRequired ? /*#__PURE__*/React.createElement("div", {
+      className: "stack"
+    }, /*#__PURE__*/React.createElement("label", {
+      htmlFor: "signin-totp"
+    }, "Authenticator code"), /*#__PURE__*/React.createElement("input", {
+      id: "signin-totp",
+      inputMode: "numeric",
+      autoComplete: "one-time-code",
+      pattern: "[0-9]{6}",
+      maxLength: 6,
+      value: totp,
+      disabled: busy,
+      onChange: e => setTotp(e.target.value.replace(/\D/g, "")),
+      required: true,
+      "aria-invalid": fieldError && fieldError.field === "totp" ? "true" : undefined,
+      "aria-describedby": fieldError && fieldError.field === "totp" ? "signin-totp-error" : undefined
+    }), fieldError && fieldError.field === "totp" ? /*#__PURE__*/React.createElement("p", {
+      id: "signin-totp-error",
+      className: "field-error",
+      role: "alert"
+    }, fieldError.text) : null) : null, /*#__PURE__*/React.createElement("div", {
+      className: "actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "submit",
+      className: "btn primary",
+      disabled: busy
+    }, busy ? /*#__PURE__*/React.createElement("span", {
+      className: "spin",
+      "aria-hidden": "true"
+    }) : null, busy ? "Confirming" : "Confirm and continue"), hasPasskey ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      disabled: busy,
+      onClick: e => confirm(e, true)
+    }, "Confirm with passkey") : null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      onClick: cancelPending
+    }, "Cancel"))) : null, enrollment ? /*#__PURE__*/React.createElement("form", {
+      onSubmit: finishEnrollment,
+      "aria-label": "Authenticator setup",
+      "aria-busy": busy ? "true" : "false",
+      className: "panel"
+    }, /*#__PURE__*/React.createElement("h3", null, enrollment.recoveryOnly ? "Save your new recovery codes" : "Set up your authenticator"), enrollment.recoveryOnly ? /*#__PURE__*/React.createElement("p", null, "Your previous recovery codes no longer work.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, "Add an account in your authenticator app using this setup key. Choose a time-based, six-digit code."), /*#__PURE__*/React.createElement("div", {
+      className: "keyrow"
+    }, /*#__PURE__*/React.createElement("code", {
+      className: "setup-key"
+    }, groupedKey(rawKey).map((group, i) => /*#__PURE__*/React.createElement("span", {
+      key: i
+    }, group))), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      onClick: () => copyValue(rawKey, "key")
+    }, copiedKey ? "Copied" : "Copy")), /*#__PURE__*/React.createElement("div", {
+      className: "stack"
+    }, /*#__PURE__*/React.createElement("label", {
+      htmlFor: "signin-enroll-code"
+    }, "New authenticator code"), /*#__PURE__*/React.createElement("input", {
+      id: "signin-enroll-code",
+      inputMode: "numeric",
+      autoComplete: "one-time-code",
+      pattern: "[0-9]{6}",
+      maxLength: 6,
+      value: enrollCode,
+      disabled: busy,
+      onChange: e => setEnrollCode(e.target.value.replace(/\D/g, "")),
+      required: true,
+      "aria-invalid": fieldError && fieldError.field === "enroll" ? "true" : undefined,
+      "aria-describedby": fieldError && fieldError.field === "enroll" ? "signin-enroll-error" : undefined
+    }), fieldError && fieldError.field === "enroll" ? /*#__PURE__*/React.createElement("p", {
+      id: "signin-enroll-error",
+      className: "field-error",
+      role: "alert"
+    }, fieldError.text) : null)), /*#__PURE__*/React.createElement("p", null, "Save these recovery codes privately. Each works once. They will disappear when you leave this screen."), /*#__PURE__*/React.createElement("ul", {
+      className: "codes"
+    }, enrollment.codes.map(code => /*#__PURE__*/React.createElement("li", {
+      key: code
+    }, /*#__PURE__*/React.createElement("code", null, code)))), /*#__PURE__*/React.createElement("div", {
+      className: "actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      onClick: () => copyValue(enrollment.codes.join("\n"), "codes")
+    }, copiedCodes ? "Copied" : "Copy all"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      onClick: downloadCodes
+    }, downloaded ? "Downloaded" : "Download")), /*#__PURE__*/React.createElement("label", {
+      className: "check"
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: savedCodes,
+      disabled: busy,
+      onChange: e => setSavedCodes(e.target.checked)
+    }), " I saved these recovery codes"), /*#__PURE__*/React.createElement("div", {
+      className: "actions"
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "submit",
+      className: "btn primary",
+      disabled: busy || !!reason,
+      "aria-describedby": reason ? "finish-reason" : undefined
+    }, enrollment.recoveryOnly ? "Done" : "Finish setup"), !enrollment.recoveryOnly ? /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn sec",
+      onClick: cancelPending
+    }, "Cancel") : null), reason ? /*#__PURE__*/React.createElement("p", {
+      id: "finish-reason",
+      className: "why"
+    }, reason) : null) : null, notice ? /*#__PURE__*/React.createElement("p", {
       className: "hold",
+      role: "alert"
+    }, notice) : null, success ? /*#__PURE__*/React.createElement("p", {
       role: "status"
-    }, notice) : null));
+    }, success) : null);
   }
   window.CDOS = window.CDOS || {};
   window.CDOS.continueWithEmail = continueWithEmail;

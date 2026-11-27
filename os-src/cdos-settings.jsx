@@ -2522,7 +2522,7 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}tbody tr{border-bot
         </div>); })()}
 
         {signInOn && tab === 'signin-methods' && window.CDOS.SignInMethodsSettings
-          ? React.createElement(window.CDOS.SignInMethodsSettings, null)
+          ? React.createElement(window.CDOS.SignInMethodsSettings, { owner: serverRole === 'administrator' })
           : null}
 
         {tab === 'ticker' && (<div>
