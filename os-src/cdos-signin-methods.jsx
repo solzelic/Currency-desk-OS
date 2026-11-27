@@ -100,9 +100,6 @@
 .cd-si .hold{margin-top:14px;font-size:14px;color:var(--flag,#8A5A0E)}
 .cd-si .cancel-row{margin-top:16px}
 .cd-si .linkish{color:var(--ink);font-weight:600;font-size:14px;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer}
-.cd-si .placeholder,.cd-set .placeholder{margin-top:14px;background:var(--warn-bg,#F5E8CF);border:1px solid #D9C08A;border-radius:12px;padding:14px 16px;color:var(--warn-text,#8A5A0E)}
-.cd-si .placeholder .plab,.cd-set .placeholder .plab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--warn-text,#8A5A0E);margin-bottom:4px}
-.cd-si .placeholder p,.cd-set .placeholder p{font-size:13px;line-height:1.4;color:var(--warn-text,#8A5A0E);margin:0}
 .cd-si.is-phone{height:844px;min-height:844px;overflow:hidden}
 .cd-si.is-phone .left{position:relative;left:auto;top:auto;width:auto;padding:12px 0 0}
 .cd-si.is-phone h1.display{font-size:56px;line-height:.9;margin-top:8px}
@@ -474,7 +471,6 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
           <h1>Sign-in methods</h1>
           <p className="lead">Ways you can open the desk. The last remaining method stays until you add another.</p>
           <MethodsList methods={PREVIEW_METHODS} onAction={onAction} />
-          <div className="placeholder"><div className="plab">Password rule pending Sol</div><p>The owner and admin password rule is not decided yet. This line is a placeholder.</p></div>
           {notice ? <p className="hold" role="status">{notice}</p> : null}
         </div>
         <div className="bft"><span>York Currency Exchange</span><span>J. Hale · Owner</span><span>18 Nov 2026 · 2:14 pm</span><span>Canada rules</span></div>

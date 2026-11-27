@@ -187,9 +187,6 @@ function _extends() { return _extends = Object.assign ? Object.assign.bind() : f
 .cd-si .hold{margin-top:14px;font-size:14px;color:var(--flag,#8A5A0E)}
 .cd-si .cancel-row{margin-top:16px}
 .cd-si .linkish{color:var(--ink);font-weight:600;font-size:14px;background:none;border:0;border-bottom:1px solid var(--hair);padding:0 0 2px;cursor:pointer}
-.cd-si .placeholder,.cd-set .placeholder{margin-top:14px;background:var(--warn-bg,#F5E8CF);border:1px solid #D9C08A;border-radius:12px;padding:14px 16px;color:var(--warn-text,#8A5A0E)}
-.cd-si .placeholder .plab,.cd-set .placeholder .plab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--warn-text,#8A5A0E);margin-bottom:4px}
-.cd-si .placeholder p,.cd-set .placeholder p{font-size:13px;line-height:1.4;color:var(--warn-text,#8A5A0E);margin:0}
 .cd-si.is-phone{height:844px;min-height:844px;overflow:hidden}
 .cd-si.is-phone .left{position:relative;left:auto;top:auto;width:auto;padding:12px 0 0}
 .cd-si.is-phone h1.display{font-size:56px;line-height:.9;margin-top:8px}
@@ -832,11 +829,7 @@ html[data-cdtheme="dark"] .cd-set.is-live{background:transparent}
     }, "Ways you can open the desk. The last remaining method stays until you add another."), /*#__PURE__*/React.createElement(MethodsList, {
       methods: PREVIEW_METHODS,
       onAction: onAction
-    }), /*#__PURE__*/React.createElement("div", {
-      className: "placeholder"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "plab"
-    }, "Password rule pending Sol"), /*#__PURE__*/React.createElement("p", null, "The owner and admin password rule is not decided yet. This line is a placeholder.")), notice ? /*#__PURE__*/React.createElement("p", {
+    }), notice ? /*#__PURE__*/React.createElement("p", {
       className: "hold",
       role: "status"
     }, notice) : null), /*#__PURE__*/React.createElement("div", {
